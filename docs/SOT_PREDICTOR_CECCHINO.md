@@ -266,7 +266,7 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 | Fase 2 v2 | Dominanza Rating/Edge/Prob + Shift + Contrasto opposto |
 | Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v2` (percentile P95 nearest-rank, zero-anchored; solo eligible + snapshot verificato pre-kickoff) |
 | Gate | Edge/Vantaggio ≤0 → score ufficiale 0, raw pre-gate preservato |
-| UI | Acq. V2 · Acq. V3 candidato (V1.1 rimossa solo dalla UI KPI; backend invariato) |
+| UI | Unica colonna **Acquistabilità** = V3 (STEP 2.2); V2 rimossa solo dalla UI KPI; backend invariato |
 | Backfill | `python -m app.jobs.backfill_purchasability_v2` (dry-run default non scrivente; `--apply` + token; salta non verificabili) |
 | Lab | non toccato |
 
@@ -277,13 +277,14 @@ History guard: `evaluate_purchasability_v2_historical_source` — rifiuta non el
 | Campo | Valore |
 |-------|--------|
 | v1.1 / v2 | invariate in backend (`purchasability_preview` / `purchasability_preview_v2`) |
-| v3 parallela | `cecchino_purchasability_v3_candidate_1` / `fixed_discount_v3` → `purchasability_preview_v3` |
+| v3 | `cecchino_purchasability_v3_candidate_1` / `fixed_discount_v3` → `purchasability_preview_v3` |
 | Formula | `value × quality / 100` (ROUND_HALF_UP); scale fisse; nessun profilo storico |
 | Gate | Edge e vantaggio entrambi > 0; altrimenti `score=null`, `not_applicable` |
 | Famiglie | MATCH_WINNER_FT / GOALS_FT_2_5 / DOUBLE_CHANCE separate |
-| UI STEP 2 | Pannello KPI: Acq. V2 + Acq. V3 (badge Candidato); popup analitico gate/value/penalità/famiglia/opposto/linked/finale; V1.1 non più in colonna |
+| UI STEP 2 | Pannello KPI: Acq. V2 + Acq. V3 (badge Candidato); popup analitico; V1.1 non più in colonna |
 | UI STEP 2.1 | Audit hardening: versioni distinte, metadata snapshot, `market_rows` reali, gate reading semantici, details input, quote derivate diagnostiche; formula invariata |
-| Promozione | non operativa; serve replay storico (STEP 3) |
+| UI STEP 2.2 | Unica colonna **Acquistabilità** (V3); V2 solo backend; popup semplificato + dettagli tecnici richiudibili; linked nei dettagli; formula invariata |
+| Replay | ancora da eseguire (STEP 3) prima della validazione storica |
 
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 

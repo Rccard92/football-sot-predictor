@@ -5,8 +5,6 @@ import type {
   CecchinoKpiExplanationsResponse,
   CecchinoKpiV2Panel,
   CecchinoKpiV2Row,
-  CecchinoPurchasabilityObservationalItem,
-  CecchinoPurchasabilityPreviewItem,
   CecchinoPurchasabilityV3Item,
 } from '../../lib/cecchinoTodayApi'
 import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
@@ -21,7 +19,6 @@ import {
   formatEdgePct,
   historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
-  purchasabilityBadgeClass,
   purchasabilityV3BadgeClass,
   ratingBadgeClass,
   resolvePurchasabilityV3CellState,
@@ -73,11 +70,6 @@ type Props = {
   historicalReliabilityByMarketKey?: Record<string, HistoricalReliabilityItem>
   historicalReliabilityLoading?: boolean
   historicalReliabilityError?: string | null
-  purchasabilityV2ByMarketKey?: Record<string, CecchinoPurchasabilityPreviewItem>
-  purchasabilityObservationalV2ByMarketKey?: Record<
-    string,
-    CecchinoPurchasabilityObservationalItem
-  >
   purchasabilityV3ByMarketKey?: Record<string, CecchinoPurchasabilityV3Item>
   purchasabilityV3SnapshotAvailable?: boolean
   todayFixtureId?: number
@@ -112,55 +104,6 @@ function AnalyzableCell({
   )
 }
 
-function PurchasabilityCell({
-  item,
-  observational,
-  ariaPrefix = 'Acquistabilità',
-}: {
-  item: CecchinoPurchasabilityPreviewItem | undefined
-  observational?: CecchinoPurchasabilityObservationalItem
-  ariaPrefix?: string
-}) {
-  if (!item || item.status === 'unavailable' || item.score == null) {
-    return <span className="text-slate-500">—</span>
-  }
-  const label =
-    item.class != null
-      ? `${ariaPrefix} ${item.score}, classe ${item.class}`
-      : `${ariaPrefix} ${item.score}`
-
-  let subline: string
-  if (observational?.status === 'available') {
-    const n = observational.sample_size ?? 0
-    const roi = observational.roi_pct
-    let roiLabel = '—'
-    if (roi != null && !Number.isNaN(Number(roi))) {
-      const pct = Number(roi)
-      const sign = pct > 0 ? '+' : ''
-      roiLabel = `${sign}${pct.toFixed(1)}%`
-    }
-    subline = `${n} casi · ROI ${roiLabel}`
-  } else if (observational?.status === 'insufficient_data') {
-    subline = 'Campione insufficiente'
-  } else {
-    subline = 'Non valutato'
-  }
-
-  return (
-    <span className="text-left" aria-label={`${label}. ${subline}`}>
-      <span
-        className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityBadgeClass(
-          item.class,
-          item.calculation_quality,
-        )}`}
-      >
-        {item.score}
-      </span>
-      <span className="mt-0.5 block text-[9px] text-slate-400">{subline}</span>
-    </span>
-  )
-}
-
 function PurchasabilityV3Cell({
   item,
   snapshotAvailable,
@@ -172,7 +115,6 @@ function PurchasabilityV3Cell({
   const ariaParts = [state.primary]
   if (state.classLabel) ariaParts.push(`classe ${state.classLabel}`)
   if (state.subtitle) ariaParts.push(state.subtitle)
-  if (state.showCandidateChip) ariaParts.push('V3 candidato')
 
   if (state.kind === 'score' && state.showScoreBadge) {
     return (
@@ -182,20 +124,13 @@ function PurchasabilityV3Cell({
         data-testid="purchasability-v3-cell"
         data-v3-kind={state.kind}
       >
-        <span className="inline-flex flex-wrap items-center justify-center gap-1">
-          <span
-            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityV3BadgeClass(
-              state.classLabel,
-              state.calculationQuality,
-            )} ${state.derivedQuote ? 'ring-1 ring-violet-300/70' : ''}`}
-          >
-            {state.score}
-          </span>
-          {state.showCandidateChip ? (
-            <span className="rounded border border-cyan-400/50 bg-cyan-900/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-cyan-100">
-              V3 candidato
-            </span>
-          ) : null}
+        <span
+          className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityV3BadgeClass(
+            state.classLabel,
+            state.calculationQuality,
+          )} ${state.derivedQuote ? 'ring-1 ring-violet-300/70' : ''}`}
+        >
+          {state.score}
         </span>
         {state.classLabel ? (
           <span className="mt-0.5 block text-[9px] text-slate-300">{state.classLabel}</span>
@@ -456,8 +391,6 @@ export function CecchinoTodayKpiPanel({
   historicalReliabilityByMarketKey,
   historicalReliabilityLoading,
   historicalReliabilityError,
-  purchasabilityV2ByMarketKey,
-  purchasabilityObservationalV2ByMarketKey,
   purchasabilityV3ByMarketKey,
   purchasabilityV3SnapshotAvailable = false,
   todayFixtureId,
@@ -532,16 +465,6 @@ export function CecchinoTodayKpiPanel({
   const lookup = (row: CecchinoKpiV2Row) =>
     historicalReliabilityByMarketKey?.[row.market_key] ||
     historicalReliabilityByMarketKey?.[row.segno] ||
-    undefined
-
-  const lookupPurchV2 = (row: CecchinoKpiV2Row) =>
-    purchasabilityV2ByMarketKey?.[row.market_key] ||
-    purchasabilityV2ByMarketKey?.[row.segno] ||
-    undefined
-
-  const lookupObsV2 = (row: CecchinoKpiV2Row) =>
-    purchasabilityObservationalV2ByMarketKey?.[row.market_key] ||
-    purchasabilityObservationalV2ByMarketKey?.[row.segno] ||
     undefined
 
   const lookupPurchV3 = (row: CecchinoKpiV2Row) =>
@@ -629,18 +552,17 @@ export function CecchinoTodayKpiPanel({
       <div className="hidden bg-[#163352] xl:block">
         <table className="w-full table-fixed border-collapse text-center text-[11px] text-white 2xl:text-xs">
           <colgroup>
-            <col className="w-[8%]" />
-            <col className="w-[5%]" />
-            <col className="w-[6%]" />
-            <col className="w-[5%]" />
+            <col className="w-[9%]" />
             <col className="w-[6%]" />
             <col className="w-[7%]" />
             <col className="w-[6%]" />
-            <col className="w-[5%]" />
-            <col className="w-[9%]" />
-            <col className="w-[19%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[7%]" />
+            <col className="w-[8%]" />
+            <col className="w-[7%]" />
+            <col className="w-[6%]" />
+            <col className="w-[10%]" />
+            <col className="w-[20%]" />
+            <col className="w-[14%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-400/50 bg-[#0f2847]">
@@ -674,14 +596,11 @@ export function CecchinoTodayKpiPanel({
               <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Affidabilità
               </th>
-              <th className="border-r border-slate-500/40 px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100">
-                Acq. V2
-              </th>
-              <th className="px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100">
-                <span className="block">Acq. V3</span>
-                <span className="mt-0.5 inline-block rounded border border-cyan-400/40 bg-cyan-900/30 px-1 py-px text-[8px] font-medium normal-case tracking-wide text-cyan-100">
-                  Candidato
-                </span>
+              <th
+                className="px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100"
+                title="Valuta quanto valore teorico rimane dopo rischi e penalità."
+              >
+                Acquistabilità
               </th>
             </tr>
           </thead>
@@ -694,8 +613,6 @@ export function CecchinoTodayKpiPanel({
                 ? 'font-bold text-white'
                 : 'font-medium text-slate-300'
               const emp = lookup(row)
-              const purchV2 = lookupPurchV2(row)
-              const obsV2 = lookupObsV2(row)
               const purchV3 = lookupPurchV3(row)
               const mk = row.market_key
               const v3State = resolvePurchasabilityV3CellState(purchV3, {
@@ -812,23 +729,10 @@ export function CecchinoTodayKpiPanel({
                       />
                     </AnalyzableCell>
                   </td>
-                  <td className="border-r border-slate-500/40 px-1 py-2.5">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Acquistabilità v2"
-                      onOpen={() => openMetric(mk, 'purchasability_v2')}
-                    >
-                      <PurchasabilityCell
-                        item={purchV2}
-                        observational={obsV2}
-                        ariaPrefix="Acquistabilità v2"
-                      />
-                    </AnalyzableCell>
-                  </td>
                   <td className="px-1 py-2.5">
                     <AnalyzableCell
                       active={v3Clickable}
-                      label="Acquistabilità v3 candidato"
+                      label="Acquistabilità"
                       onOpen={() => openMetric(mk, 'purchasability_v3')}
                     >
                       <PurchasabilityV3Cell
@@ -848,8 +752,6 @@ export function CecchinoTodayKpiPanel({
         {(panel.rows || []).map((row) => {
           const segnoLabel = kpiSegnoLabel(row)
           const emp = lookup(row)
-          const purchV2 = lookupPurchV2(row)
-          const obsV2 = lookupObsV2(row)
           const purchV3 = lookupPurchV3(row)
           const mk = row.market_key
           const v3State = resolvePurchasabilityV3CellState(purchV3, {
@@ -897,39 +799,23 @@ export function CecchinoTodayKpiPanel({
                   />
                 </AnalyzableCell>
               </div>
-              <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-[10px] uppercase text-slate-300">Acquistabilità V2</p>
-                  <AnalyzableCell
-                    active={analysisMode}
-                    label="Acquistabilità v2"
-                    onOpen={() => openMetric(mk, 'purchasability_v2')}
-                  >
-                    <PurchasabilityCell
-                      item={purchV2}
-                      observational={obsV2}
-                      ariaPrefix="Acquistabilità v2"
-                    />
-                  </AnalyzableCell>
-                </div>
-                <div>
-                  <p className="mb-1 text-[10px] uppercase text-slate-300">
-                    Acquistabilità V3{' '}
-                    <span className="rounded border border-cyan-400/40 px-1 text-[8px] normal-case text-cyan-100">
-                      Candidato
-                    </span>
-                  </p>
-                  <AnalyzableCell
-                    active={v3Clickable}
-                    label="Acquistabilità v3 candidato"
-                    onOpen={() => openMetric(mk, 'purchasability_v3')}
-                  >
-                    <PurchasabilityV3Cell
-                      item={purchV3}
-                      snapshotAvailable={purchasabilityV3SnapshotAvailable}
-                    />
-                  </AnalyzableCell>
-                </div>
+              <div className="mb-2">
+                <p
+                  className="mb-1 text-[10px] uppercase text-slate-300"
+                  title="Valuta quanto valore teorico rimane dopo rischi e penalità."
+                >
+                  Acquistabilità
+                </p>
+                <AnalyzableCell
+                  active={v3Clickable}
+                  label="Acquistabilità"
+                  onOpen={() => openMetric(mk, 'purchasability_v3')}
+                >
+                  <PurchasabilityV3Cell
+                    item={purchV3}
+                    snapshotAvailable={purchasabilityV3SnapshotAvailable}
+                  />
+                </AnalyzableCell>
               </div>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
                 <dt className="text-slate-400">Quota Book</dt>

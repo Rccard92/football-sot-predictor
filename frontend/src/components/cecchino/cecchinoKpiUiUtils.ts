@@ -281,7 +281,7 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'snapshot_absent',
       primary: '—',
-      subtitle: 'V3 non disponibile',
+      subtitle: 'Non disponibile',
       showScoreBadge: false,
       showCandidateChip: false,
       derivedQuote: false,
@@ -296,7 +296,7 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'snapshot_absent',
       primary: '—',
-      subtitle: 'V3 non disponibile',
+      subtitle: 'Non disponibile',
       showScoreBadge: false,
       showCandidateChip: false,
       derivedQuote: false,
@@ -331,7 +331,7 @@ export function resolvePurchasabilityV3CellState(
       return {
         kind: gate === 'unavailable_inputs' ? 'missing_inputs' : 'not_calculable',
         primary: 'Non calcolabile',
-        subtitle: null,
+        subtitle: 'Input mancanti',
         showScoreBadge: false,
         showCandidateChip: false,
         derivedQuote: derived,
@@ -368,9 +368,9 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'score',
       primary: String(item.score),
-      subtitle: derived ? 'Quota derivata · Solo diagnostico' : 'Non validato',
+      subtitle: derived ? 'Quota derivata' : null,
       showScoreBadge: true,
-      showCandidateChip: true,
+      showCandidateChip: false,
       derivedQuote: derived,
       analyzable: true,
       score: item.score,
@@ -383,9 +383,9 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'score',
       primary: String(item.score),
-      subtitle: derived ? 'Quota derivata · Solo diagnostico' : 'Non validato',
+      subtitle: derived ? 'Quota derivata' : null,
       showScoreBadge: true,
-      showCandidateChip: true,
+      showCandidateChip: false,
       derivedQuote: derived,
       analyzable: true,
       score: item.score,
@@ -397,7 +397,7 @@ export function resolvePurchasabilityV3CellState(
   return {
     kind: 'not_calculable',
     primary: 'Non calcolabile',
-    subtitle: null,
+    subtitle: 'Input mancanti',
     showScoreBadge: false,
     showCandidateChip: false,
     derivedQuote: derived,

@@ -54,59 +54,50 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p id={titleId} className="text-sm font-bold tracking-wide sm:text-base">
-                Analisi formula
+                {isV3 ? 'Analisi Acquistabilità' : 'Analisi formula'}
               </p>
               <p className="mt-1 text-xs text-slate-200">
                 Mercato: <span className="font-semibold text-white">{explanation.market_label}</span>
-                {' · '}
-                Metrica:{' '}
-                <span className="font-semibold text-white">{explanation.metric_label}</span>
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span
-                  className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${statusBadgeClass(
-                    explanation.status,
-                  )}`}
-                >
-                  {explanation.status}
-                </span>
                 {isV3 ? (
                   <>
-                    {(explanation as CecchinoKpiExplanation & { candidate_version?: string })
-                      .candidate_version ? (
-                      <span
-                        className="rounded border border-cyan-300/50 bg-cyan-500/20 px-1.5 py-0.5 text-[10px] text-cyan-50"
-                        data-testid="audit-modal-candidate-badge"
-                      >
-                        V3 candidato
-                      </span>
-                    ) : null}
-                    {explanation.formula_version ? (
-                      <span
-                        className="rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-100"
-                        data-testid="audit-modal-formula-badge"
-                      >
-                        Formula fixed discount v1
-                      </span>
-                    ) : null}
+                    {' · '}
+                    Metrica: <span className="font-semibold text-white">Acquistabilità</span>
                   </>
-                ) : explanation.formula_version ? (
-                  <span className="rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-100">
-                    {explanation.formula_version}
-                  </span>
-                ) : null}
-                {(
-                  (explanation as CecchinoKpiExplanation & { audit_badges?: string[] })
-                    .audit_badges ?? ['Snapshot persistito']
-                ).map((badge) => (
+                ) : (
+                  <>
+                    {' · '}
+                    Metrica:{' '}
+                    <span className="font-semibold text-white">{explanation.metric_label}</span>
+                  </>
+                )}
+              </p>
+              {isV3 ? null : (
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   <span
-                    key={badge}
-                    className="rounded border border-sky-300/40 bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-100"
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${statusBadgeClass(
+                      explanation.status,
+                    )}`}
                   >
-                    {badge}
+                    {explanation.status}
                   </span>
-                ))}
-              </div>
+                  {explanation.formula_version ? (
+                    <span className="rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-100">
+                      {explanation.formula_version}
+                    </span>
+                  ) : null}
+                  {(
+                    (explanation as CecchinoKpiExplanation & { audit_badges?: string[] })
+                      .audit_badges ?? ['Snapshot persistito']
+                  ).map((badge) => (
+                    <span
+                      key={badge}
+                      className="rounded border border-sky-300/40 bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-100"
+                    >
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               ref={closeRef}

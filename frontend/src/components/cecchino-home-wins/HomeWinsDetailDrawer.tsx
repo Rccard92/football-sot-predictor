@@ -54,7 +54,6 @@ export function HomeWinsDetailDrawer({ detail, loading, onClose }: Props) {
     | undefined
   const kpi = asKpiPanel(pre?.kpi_panel)
   const purch = purchMap(pre?.purchasability_preview)
-  const purchV2 = purchMap(pre?.purchasability_preview_v2)
   const purchV3Snap = pre?.purchasability_preview_v3 as
     | CecchinoPurchasabilityV3Snapshot
     | null
@@ -136,7 +135,6 @@ export function HomeWinsDetailDrawer({ detail, loading, onClose }: Props) {
               {kpi ? (
                 <CecchinoTodayKpiPanel
                   panel={kpi}
-                  purchasabilityV2ByMarketKey={purchV2}
                   purchasabilityV3ByMarketKey={purchV3}
                   purchasabilityV3SnapshotAvailable={purchV3Available}
                 />

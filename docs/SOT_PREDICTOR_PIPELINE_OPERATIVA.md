@@ -122,7 +122,7 @@ flowchart TD
 
 1. Apertura partita Today: **nessuna** richiesta `kpi-explanations` (impatto nullo).
 2. Pulsante testata `ƒx Analisi formule` → una sola `GET /api/cecchino/today/{id}/kpi-explanations` (cache in memoria per fixture).
-3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acq. v2, Acq. v3 (alias legacy `purchasability`/`purchasability_v1_1` restano nell’audit JSON ma non in colonna KPI).
+3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acquistabilità (`purchasability_v3`; alias legacy `purchasability`/`purchasability_v1_1`/`purchasability_v2` restano nell’audit JSON ma non in colonna KPI).
 4. Non cliccabili: SEGNO, QUOTA BOOK.
 5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato; include v1.1 + v2 + v3 + delta).
 6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals. v2/v3 derivabili read-only se snapshot assente.
@@ -139,6 +139,13 @@ flowchart TD
 1. Audit KPI read-only: `market_family`/`market_family_label`, triade `candidate`/`formula`/`audit` version, `generated_at`/`source_snapshot_at`, `family_comparison.market_rows`.
 2. FE popup: nessuna ricostruzione Edge; details input chiusi; reading non duplicata; gate reading dal backend; quote derivate = solo diagnostico.
 3. Formula/soglie/score/snapshot V3 e V1.1/V2 invariati; nessun replay storico.
+
+## Acquistabilità v3 — promozione UI (STEP 2.2, 2026-07-29)
+
+1. Pannello KPI: unica colonna **Acquistabilità** da `purchasability_preview_v3`; V2 rimossa solo dalla UI (desktop/mobile); backend/API V2 preservati.
+2. Cella: score+classe / Non attivato / Non calcolabile / Non supportato / Non disponibile; quota derivata senza «Solo diagnostico» in cella; niente badge candidato/V3.
+3. Popup: flusso principale leggibile (risultato, gate, valore quota, penalità applicate con opposto integrato, famiglia compatta, formula finale); dettagli tecnici/audit richiudibili (linked, metadata, raw, steps, penalità non applicate).
+4. Nessuna modifica a formula/soglie/snapshot; nessun replay; Run #3 invariato.
 
 ## Acquistabilità v3 — freeze parallelo (2026-07-29)
 

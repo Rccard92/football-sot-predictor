@@ -48,6 +48,13 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Gate reading semantici (`unsupported_market` / `unavailable_inputs` / failed / passed); input grezzi in `<details>` chiuso; reading non duplicata; quote derivate solo diagnostiche.
 - Replay storico ancora **non** eseguito (STEP 3).
 
+### STEP 2.2 — Promozione UI (2026-07-29)
+
+- Pannello KPI: unica colonna **Acquistabilità** da V3; **V2 rimossa solo dalla UI** (backend/API/export/audit legacy preservati).
+- Cella: score+classe / Non attivato / Non calcolabile / Non supportato / Non disponibile; «Quota derivata» senza «Solo diagnostico» in cella; niente badge candidato/V3/Non validato.
+- Popup: flusso principale (risultato, esiste valore?, valore quota, penalità applicate con opposto integrato, famiglia compatta, risultato finale); **Dettagli tecnici e audit** richiudibili (metadata, raw, scala Edge, linked, penalità non applicate, formula steps).
+- Formula/soglie/score/snapshot invariati; replay storico ancora da eseguire (STEP 3).
+
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)

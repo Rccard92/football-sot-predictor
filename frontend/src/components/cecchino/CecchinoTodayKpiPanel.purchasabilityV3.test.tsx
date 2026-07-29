@@ -69,36 +69,26 @@ afterEach(() => {
   cleanup()
 })
 
-describe('CecchinoTodayKpiPanel purchasability V3', () => {
-  it('non mostra Acq. V1.1 desktop/mobile; mostra V2 e V3', () => {
+describe('CecchinoTodayKpiPanel purchasability V3 STEP 2.2', () => {
+  it('unica colonna Acquistabilità; V2 e V1.1 assenti desktop/mobile', () => {
     render(
       <CecchinoTodayKpiPanel
         panel={panel}
-        purchasabilityV2ByMarketKey={{
-          AWAY: {
-            market_key: 'AWAY',
-            status: 'available',
-            score: 55,
-            class: 'Media',
-          },
-        }}
-        purchasabilityObservationalV2ByMarketKey={{
-          AWAY: { status: 'available', sample_size: 12, roi_pct: 0.05 },
-        }}
         purchasabilityV3ByMarketKey={{ AWAY: AWAY_V3_ITEM }}
         purchasabilityV3SnapshotAvailable
       />,
     )
     expect(screen.queryByText('Acq. V1.1')).toBeNull()
     expect(screen.queryByText('Acquistabilità V1.1')).toBeNull()
-    expect(screen.getAllByText('Acq. V2').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Acq\. V3/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Candidato').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Acquistabilità V2').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Acquistabilità V3/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Acq. V2')).toBeNull()
+    expect(screen.queryByText('Acquistabilità V2')).toBeNull()
+    expect(screen.queryByText('Acq. V3')).toBeNull()
+    expect(screen.queryByText(/Acquistabilità V3/)).toBeNull()
+    expect(screen.queryByText('Candidato')).toBeNull()
+    expect(screen.getAllByText('Acquistabilità').length).toBeGreaterThan(0)
   })
 
-  it('mostra score V3 e chip V3 candidato', () => {
+  it('mostra score senza chip V3 candidato né Non validato', () => {
     render(
       <CecchinoTodayKpiPanel
         panel={panel}
@@ -108,8 +98,9 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     )
     const cells = screen.getAllByTestId('purchasability-v3-cell')
     expect(cells.some((c) => c.textContent?.includes('47'))).toBe(true)
-    expect(screen.getAllByText('V3 candidato').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Non validato').length).toBeGreaterThan(0)
+    expect(cells.some((c) => c.textContent?.includes('Media'))).toBe(true)
+    expect(screen.queryByText('V3 candidato')).toBeNull()
+    expect(screen.queryByText('Non validato')).toBeNull()
   })
 
   it('gate fallito mostra Non attivato e non 0', () => {
@@ -138,6 +129,11 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     expect(
       screen.getAllByTestId('purchasability-v3-cell').some((c) =>
         c.textContent?.includes('Non calcolabile'),
+      ),
+    ).toBe(true)
+    expect(
+      screen.getAllByTestId('purchasability-v3-cell').some((c) =>
+        c.textContent?.includes('Input mancanti'),
       ),
     ).toBe(true)
 
@@ -181,12 +177,12 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     )
     expect(
       screen.getAllByTestId('purchasability-v3-cell').some((c) =>
-        c.textContent?.includes('V3 non disponibile'),
+        c.textContent?.includes('Non disponibile'),
       ),
     ).toBe(true)
   })
 
-  it('quota derivata', () => {
+  it('quota derivata senza Solo diagnostico in cella', () => {
     render(
       <CecchinoTodayKpiPanel
         panel={panel}
@@ -197,12 +193,16 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     expect(
       screen.getAllByText((content) => content.includes('Quota derivata')).length,
     ).toBeGreaterThan(0)
-    expect(
-      screen.getAllByText((content) => content.includes('Solo diagnostico')).length,
-    ).toBeGreaterThan(0)
+    expect(screen.queryByText(/Solo diagnostico/)).toBeNull()
   })
 
-  it('cella V3 e gate-failed cliccabili in analisi; lazy load', async () => {
+  it('payload senza V3 non rompe il pannello', () => {
+    render(<CecchinoTodayKpiPanel panel={panel} />)
+    expect(screen.getByText('PANNELLO KPI')).toBeTruthy()
+    expect(screen.getAllByText('Acquistabilità').length).toBeGreaterThan(0)
+  })
+
+  it('cella cliccabile in analisi; lazy load; titolo Analisi Acquistabilità', async () => {
     vi.mocked(getKpiExplanations).mockResolvedValue({
       status: 'ok',
       markets: {
@@ -248,12 +248,14 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     expect(getKpiExplanations).toHaveBeenCalledTimes(1)
 
     const analyzeButtons = await screen.findAllByRole('button', {
-      name: /Analizza formula: Acquistabilità v3/i,
+      name: /Analizza formula: Acquistabilità$/i,
     })
     expect(analyzeButtons.length).toBeGreaterThan(0)
     fireEvent.click(analyzeButtons[0])
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(screen.getByTestId('purchasability-v3-audit-view')).toBeTruthy()
+    expect(screen.getByText('Analisi Acquistabilità')).toBeTruthy()
+    expect(screen.queryByTestId('audit-modal-candidate-badge')).toBeNull()
   })
 
   it('download audit usa lo stesso lazy load', async () => {
@@ -276,17 +278,15 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
     await vi.waitFor(() => expect(createObjectURL).toHaveBeenCalled())
   })
 
-  it('V2 ancora presente nei valori', () => {
+  it('non mostra score V2 osservazionale', () => {
     render(
       <CecchinoTodayKpiPanel
         panel={panel}
-        purchasabilityV2ByMarketKey={{
-          AWAY: { market_key: 'AWAY', status: 'available', score: 61, class: 'Alta' },
-        }}
         purchasabilityV3ByMarketKey={{ AWAY: AWAY_V3_ITEM }}
         purchasabilityV3SnapshotAvailable
       />,
     )
-    expect(screen.getAllByText('61').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/casi · ROI/)).toBeNull()
+    expect(screen.queryByText('Campione insufficiente')).toBeNull()
   })
 })

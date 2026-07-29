@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Promote purchasability v3 UI (2026-07-29)
+
+- Perché: rendere V3 l’unica Acquistabilità visibile nel Pannello KPI e semplificare il popup senza toccare le formule.
+- Cosa: rimozione UI V2 dal KPI (desktop/mobile); colonna unica «Acquistabilità»; cella senza badge candidato/Non validato; popup V3 a sezioni leggibili + dettagli tecnici richiudibili; test FE + doc STEP 2.2.
+- Cosa non fa: non modifica engine/snapshot V1.1/V2/V3; nessuna migration, scansione, backfill, replay Run #3; download audit JSON invariato.
+
 ## Fix — Harden purchasability v3 audit UI (2026-07-29)
 
 - Perché: il popup V3 confondeva versioni, lasciava metadata vuoti e ricostruiva Edge famiglia in FE (gap negativo → Edge leader errato).

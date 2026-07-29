@@ -87,17 +87,34 @@ const MARKET_LABELS: Record<string, string> = {
   UNDER_2_5: 'Under 2.5',
 }
 
+const FAMILY_LABELS: Record<string, string> = {
+  MATCH_WINNER_FT: 'Esito finale 1/X/2',
+  GOALS_FT_2_5: 'Goal FT 2.5',
+  DOUBLE_CHANCE: 'Doppia chance',
+}
+
 const HUMAN_CODE_LABELS: Record<string, string> = {
-  normalized_1x2_market: 'Mercato 1X2 Betfair normalizzato',
+  passed: 'Attivato',
+  failed_non_positive_edge: 'Edge non positivo',
+  failed_non_positive_probability_advantage: 'Vantaggio non positivo',
+  failed_multiple_non_positive_components: 'Nessun valore positivo',
+  unsupported_market: 'Non supportato',
+  unavailable_inputs: 'Input mancanti',
+  normalized_1x2_market: 'Quota Betfair 1X2',
   linked_double_chance_away_cover: 'X2 collegato al segno 2',
   linked_double_chance_home_cover: '1X collegato al segno 1',
   linked_double_chance_anti_draw: '12 collegato al pareggio',
+  linked_match_winner_away: 'Segno 2 collegato',
+  direct_goals_competitor: 'Concorrente goal diretto',
   leader_clear: 'Leader netto',
   leader_close: 'Leader con margine ridotto',
   not_leader: 'Non leader della famiglia',
   insufficient_family_comparison: 'Confronto famiglia insufficiente',
   AWAY_to_X_TWO: '2 → X2 (contesto collegato)',
   HOME_to_ONE_X: '1 → 1X (contesto collegato)',
+  MATCH_WINNER_FT: 'Esito finale 1/X/2',
+  GOALS_FT_2_5: 'Goal FT 2.5',
+  DOUBLE_CHANCE: 'Doppia chance',
 }
 
 const EDGE_SCALE = [
@@ -117,6 +134,17 @@ function marketLabel(key: string | null | undefined): string {
 function humanizeCode(code: string | null | undefined): string {
   if (!code) return '—'
   return HUMAN_CODE_LABELS[code] || code
+}
+
+function gateStatusHuman(status: string | null): string {
+  if (!status) return '—'
+  return humanizeCode(status)
+}
+
+function familyLabelHuman(code: string | null, label: string | null): string {
+  if (label) return label
+  if (!code) return '—'
+  return FAMILY_LABELS[code] || humanizeCode(code)
 }
 
 function DlRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -148,12 +176,62 @@ function Section({
   )
 }
 
-function gateStatusHuman(status: string | null): string {
-  if (!status) return '—'
-  if (status === 'passed') return 'passed'
-  if (status === 'unsupported_market') return 'unsupported_market'
-  if (status === 'unavailable_inputs') return 'unavailable_inputs'
-  return status
+function penaltyMainDatum(key: string, pen: UnknownRecord, opposite: UnknownRecord): string | null {
+  const raw = asRecord(pen.raw_inputs) ?? {}
+  if (key === 'opposite_market_pressure') {
+    const oppKey = asString(opposite.opposite_market_key) ?? asString(raw.opposite_market_key)
+    const fair =
+      asNumber(opposite.opposite_fair_probability) ?? asNumber(raw.opposite_fair_probability)
+    const parts: string[] = []
+    if (oppKey) parts.push(`Mercato opposto: ${marketLabel(oppKey)}`)
+    if (fair != null) parts.push(`Probabilità fair: ${formatV3PctFromFraction(fair)}`)
+    return parts.length ? parts.join(' · ') : null
+  }
+  if (key === 'probability_risk') {
+    const p =
+      asNumber(raw.probability_cecchino_pct) ??
+      (asNumber(raw.probability_cecchino) != null
+        ? asNumber(raw.probability_cecchino)! * 100
+        : null)
+    if (p != null) return `Probabilità Cecchino: ${formatV3PctAlready(p)}`
+  }
+  if (key === 'extreme_divergence') {
+    const edge = asNumber(raw.edge_pct)
+    if (edge != null) return `Edge: ${formatV3PctAlready(edge)}`
+  }
+  if (key === 'family_ambiguity') {
+    const gap = asNumber(raw.edge_gap_or_deficit) ?? asNumber(raw.edge_diff_from_leader)
+    if (gap != null) return `Margine Edge: ${formatV3Number(gap)}`
+  }
+  if (key === 'quote_quality') {
+    const pt = asString(raw.performance_type)
+    if (pt) return `Tipo quota: ${pt}`
+  }
+  const first = Object.entries(raw).find(([, v]) => v != null)
+  if (first) return `${first[0]}: ${String(first[1])}`
+  return null
+}
+
+function thresholdHumanLines(key: string, pen: UnknownRecord): string[] {
+  const start = asNumber(pen.threshold_start)
+  const full = asNumber(pen.threshold_full)
+  const asPct = (n: number) => formatV3Number(n <= 1 && n > 0 ? n * 100 : n)
+  const lines: string[] = []
+  if (key === 'opposite_market_pressure') {
+    if (start != null) lines.push(`La penalità inizia sopra il ${asPct(start)}%`)
+    if (full != null) lines.push(`La penalità massima si applica al ${asPct(full)}% o più`)
+    return lines
+  }
+  if (start != null) lines.push(`La penalità inizia sotto il ${asPct(start)}%`)
+  if (full != null) lines.push(`La penalità massima si applica al ${asPct(full)}% o meno`)
+  return lines
+}
+
+function isPenaltyApplied(pen: UnknownRecord | null): boolean {
+  if (!pen) return false
+  if (pen.applied === true) return true
+  const points = asNumber(pen.penalty_points)
+  return points != null && points > 0
 }
 
 export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
@@ -182,8 +260,12 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
     (typeof explanation.stored_result === 'number' ? explanation.stored_result : null)
   const klass = asString(finalCalc.class) ?? asString(persisted.class)
 
-  const marketFamilyLabel =
-    asString(explRec.market_family_label) ?? asString(family.market_family_label)
+  const marketFamilyLabel = familyLabelHuman(
+    asString(explRec.market_family) ??
+      asString(family.market_family) ??
+      asString(input.market_family),
+    asString(explRec.market_family_label) ?? asString(family.market_family_label),
+  )
   const marketFamilyCode =
     asString(explRec.market_family) ??
     asString(family.market_family) ??
@@ -194,11 +276,9 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
     asString(explanation.reading_detailed) ?? asString(explanation.simple_explanation)
   const readingsIdentical =
     Boolean(readingShort && readingDetailed && readingShort === readingDetailed)
-  const showDetailedOutsideBox = Boolean(readingDetailed && !readingsIdentical)
-  const howToReadText =
-    readingDetailed ||
-    readingShort ||
-    'Il valore della quota viene ridotto dalle penalità di qualità rilevate.'
+  const primaryReading = readingsIdentical
+    ? readingShort
+    : readingDetailed || readingShort || null
 
   const candidateVersion =
     asString(explRec.candidate_version) ?? asString(input.candidate_version)
@@ -214,22 +294,6 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
     asString(input.performance_type) === 'derived' ||
     asBool(input.not_real_book_quote) === true ||
     asBool(input.diagnostic_only) === true
-  const diagnosticOnly =
-    asBool(explRec.diagnostic_only) === true ||
-    asBool(input.diagnostic_only) === true ||
-    derivedQuote
-
-  const badges = [
-    'V3 parallela',
-    'Scale fisse',
-    'Nessun profilo storico',
-    'Pre-match',
-    'Non validata storicamente',
-    ...((explanation.audit_badges as string[] | undefined) ?? []).filter(
-      (b) =>
-        !['V3 parallela', 'Scale fisse', 'Nessun profilo storico', 'Pre-match'].includes(b),
-    ),
-  ]
 
   const formulaSteps = asStringList(finalCalc.formula_steps)
   const edgePct = asNumber(input.edge_pct)
@@ -245,13 +309,16 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
   const familyReading = (() => {
     const selectedIsLeader = asBool(family.selected_is_family_edge_leader)
     const gap = asNumber(family.edge_gap_or_deficit)
+    const leaderKey = asString(family.leader_market_key)
+    const selectedLabel =
+      marketLabel(explanation.market_key) || explanation.market_label || 'Il mercato analizzato'
     if (selectedIsLeader === true) {
-      return `Il mercato analizzato ha l’Edge più alto della famiglia${
-        gap != null ? ` con un distacco di ${formatV3Number(gap)} punti.` : '.'
+      return `Il segno ${selectedLabel} ha l’Edge più alto della famiglia${
+        gap != null ? ` con ${formatV3Number(gap)} punti di vantaggio.` : '.'
       }`
     }
     if (selectedIsLeader === false) {
-      return 'Un altro mercato della famiglia presenta Edge maggiore.'
+      return `Un altro mercato${leaderKey ? ` (${marketLabel(leaderKey)})` : ''} della famiglia presenta Edge maggiore.`
     }
     return null
   })()
@@ -269,95 +336,86 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
       ? Object.entries(sourcePaths as UnknownRecord).map(([k, v]) => `${k}: ${String(v)}`)
       : []
 
-  const quoteQualityPen = asRecord(penalties.quote_quality)
+  const appliedPenalties = PENALTY_ORDER.map((key) => {
+    const pen = asRecord(penalties[key])
+    return pen && isPenaltyApplied(pen) ? { key, pen } : null
+  }).filter(Boolean) as { key: (typeof PENALTY_ORDER)[number]; pen: UnknownRecord }[]
+
+  const nonAppliedPenalties = PENALTY_ORDER.map((key) => {
+    const pen = asRecord(penalties[key])
+    return pen && !isPenaltyApplied(pen) ? { key, pen } : null
+  }).filter(Boolean) as { key: (typeof PENALTY_ORDER)[number]; pen: UnknownRecord }[]
+
+  const compactFormula =
+    valueScore != null && qualityScore != null
+      ? `${formatV3Number(valueScore)} × ${formatV3Number(qualityScore)}% = ${formatV3Number(
+          (valueScore * qualityScore) / 100,
+        )} → ${score ?? '—'}`
+      : null
 
   return (
     <div className="space-y-4" data-testid="purchasability-v3-audit-view">
-      <Section title="Risultato in parole semplici" testId="v3-section-result">
-        <div className="flex flex-wrap gap-1.5" data-testid="v3-badges">
-          {badges.map((b) => (
-            <span
-              key={b}
-              className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-900"
-            >
-              {b}
-            </span>
-          ))}
-          <span
-            className="rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-900"
-            data-testid="v3-badge-candidate"
+      {/* A. Risultato */}
+      <Section title="Risultato" testId="v3-section-result">
+        {derivedQuote ? (
+          <div
+            className="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-2 text-sm text-violet-950"
+            data-testid="v3-derived-banner"
           >
-            V3 candidato
-          </span>
-          {formulaVersion ? (
-            <span
-              className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
-              data-testid="v3-badge-formula"
-            >
-              Formula fixed discount v1
-            </span>
-          ) : null}
-          {derivedQuote ? (
-            <span
-              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900"
-              data-testid="v3-badge-derived"
-            >
-              Quota derivata
-            </span>
-          ) : null}
-          {diagnosticOnly ? (
-            <span
-              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900"
-              data-testid="v3-badge-diagnostic"
-            >
-              Solo diagnostico
-            </span>
-          ) : null}
-        </div>
-        <dl className="mt-2 space-y-1.5 text-sm">
-          <DlRow label="Score finale">
-            <span data-testid="v3-score-final">
-              {gateFailed && score == null ? 'Indice non attivato' : score ?? '—'}
-            </span>
-          </DlRow>
-          <DlRow label="Classe">{gateFailed && !klass ? '—' : klass ?? '—'}</DlRow>
-          <DlRow label="Stato gate">{gateStatusHuman(gateStatus)}</DlRow>
+            <p className="font-semibold" data-testid="v3-badge-derived">
+              Quota derivata — solo analisi
+            </p>
+            <p className="mt-1 text-xs">
+              Non rappresenta una quota Betfair realmente rilevata.
+            </p>
+          </div>
+        ) : null}
+        <dl className="space-y-1.5 text-sm">
           <DlRow label="Mercato">{explanation.market_label || explanation.market_key}</DlRow>
           <DlRow label="Famiglia">
-            <span data-testid="v3-family-label">{marketFamilyLabel ?? '—'}</span>
+            <span data-testid="v3-family-label">{marketFamilyLabel}</span>
           </DlRow>
+          <DlRow label="Acquistabilità">
+            <span data-testid="v3-score-final">
+              {gateFailed && score == null
+                ? 'Indice non attivato'
+                : score != null && klass
+                  ? `${score} — ${klass}`
+                  : score ?? '—'}
+            </span>
+          </DlRow>
+          {klass && !(gateFailed && score == null) ? (
+            <DlRow label="Classe">{klass}</DlRow>
+          ) : null}
         </dl>
-        {readingShort ? (
+        {primaryReading ? (
           <p
-            className="mt-2 rounded-md bg-slate-50 px-2.5 py-2 text-sm font-medium text-slate-900"
-            data-testid="v3-reading-short"
+            className="mt-1 rounded-md bg-slate-50 px-2.5 py-2 text-sm leading-relaxed text-slate-800"
+            data-testid="v3-reading-primary"
           >
-            {readingShort}
+            {primaryReading}
           </p>
         ) : null}
-        {showDetailedOutsideBox ? (
-          <p className="text-sm leading-relaxed text-slate-700" data-testid="v3-reading-detailed-inline">
-            {readingDetailed}
-          </p>
-        ) : null}
-        <div
-          className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 text-sm text-indigo-950"
-          data-testid="v3-how-to-read"
-        >
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
-            Come leggere questo risultato
-          </p>
-          <p className="mt-1" data-testid="v3-reading-detailed">
-            {howToReadText}
-          </p>
-        </div>
       </Section>
 
-      <Section title="1. Esiste valore?" testId="v3-section-gate">
-        <p className="text-xs text-slate-600">
-          L’indice si attiva soltanto quando Edge e vantaggio probabilistico sono entrambi
-          positivi.
-        </p>
+      {/* B. Esiste valore? */}
+      <Section title="Esiste valore?" testId="v3-section-gate">
+        <dl className="space-y-1.5">
+          <DlRow label="Edge">{formatV3PctAlready(edgePct)}</DlRow>
+          <DlRow label="Vantaggio probabilistico">
+            {vantFraction != null
+              ? `${vantFraction > 0 ? '+' : ''}${formatV3Number(vantFraction * 100)} pp`
+              : '—'}
+          </DlRow>
+          <DlRow label="Indice">
+            <span
+              className={gatePassed ? 'text-emerald-800' : 'text-amber-900'}
+              data-testid="v3-gate-status-human"
+            >
+              {gatePassed ? 'Attivato' : 'Indice non attivato'}
+            </span>
+          </DlRow>
+        </dl>
         {gateReading ? (
           <p
             className={`rounded-md border px-2.5 py-2 text-sm font-semibold ${
@@ -371,35 +429,407 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
           </p>
         ) : gateFailed ? (
           <p
-            className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950"
+            className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm text-amber-950"
             data-testid="v3-gate-not-activated"
           >
-            Indice non attivato
+            Edge e vantaggio probabilistico non sono entrambi positivi.
           </p>
         ) : null}
-        <dl className="space-y-1.5">
-          <DlRow label="Edge">{formatV3PctAlready(edgePct)}</DlRow>
-          <DlRow label="Edge positivo">{yesNo(asBool(gate.edge_positive))}</DlRow>
-          <DlRow label="Vantaggio probabilistico">
-            {vantFraction != null
-              ? `${vantFraction > 0 ? '+' : ''}${formatV3Number(vantFraction * 100)} pp`
-              : '—'}
-          </DlRow>
-          <DlRow label="Vantaggio positivo">
-            {yesNo(asBool(gate.probability_advantage_positive))}
-          </DlRow>
-          <DlRow label="Gate">{gateStatus ?? '—'}</DlRow>
-          <DlRow label="Motivazione">{gateReading ?? '—'}</DlRow>
-        </dl>
-        {(Object.keys(input).length > 0 || gateFailed) && (
-          <details className="rounded border border-slate-200" data-testid="v3-raw-inputs-details">
-            <summary
-              className="cursor-pointer px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              data-testid="v3-raw-inputs-summary"
+      </Section>
+
+      {/* C. Valore della quota */}
+      {gatePassed ? (
+        <Section title="Valore della quota" testId="v3-section-value">
+          <dl className="space-y-1.5">
+            <DlRow label="Quota Book">{formatV3Number(asNumber(input.quota_book))}</DlRow>
+            <DlRow label="Quota Cecchino">
+              {formatV3Number(asNumber(input.quota_cecchino))}
+            </DlRow>
+            <DlRow label="Probabilità Book fair">
+              {formatV3PctFromFraction(asNumber(input.fair_book_probability))}
+            </DlRow>
+            <DlRow label="Probabilità Cecchino">
+              {asNumber(input.probability_cecchino_pct) != null
+                ? formatV3PctAlready(asNumber(input.probability_cecchino_pct))
+                : formatV3PctFromFraction(asNumber(input.probability_cecchino))}
+            </DlRow>
+            <DlRow label="Value score">
+              <span data-testid="v3-value-score">{formatV3Number(valueScore)}</span>
+            </DlRow>
+          </dl>
+          <p className="text-xs text-slate-600" data-testid="v3-value-score-note">
+            Il Value score misura soltanto la forza dell’Edge.
+          </p>
+        </Section>
+      ) : null}
+
+      {/* D. Cosa riduce il punteggio? */}
+      {gatePassed ? (
+        <Section title="Cosa riduce il punteggio?" testId="v3-section-penalties">
+          {appliedPenalties.length === 0 ? (
+            <p className="text-sm text-slate-600">Nessuna penalità applicata.</p>
+          ) : (
+            <div className="space-y-2">
+              {appliedPenalties.map(({ key, pen }) => {
+                const points =
+                  key === 'opposite_market_pressure'
+                    ? (oppPenalty ?? asNumber(pen.penalty_points))
+                    : asNumber(pen.penalty_points)
+                const mainDatum = penaltyMainDatum(key, pen, opposite)
+                return (
+                  <div
+                    key={key}
+                    className="rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-2"
+                    data-testid={`v3-penalty-${key}`}
+                  >
+                    <p className="text-sm font-semibold text-slate-900">
+                      {asString(pen.label) || PENALTY_TITLES[key] || key}
+                    </p>
+                    {asString(pen.explanation) ? (
+                      <p className="mt-1 text-xs text-slate-700">{asString(pen.explanation)}</p>
+                    ) : null}
+                    {mainDatum ? (
+                      <p className="mt-1 text-xs text-slate-600">{mainDatum}</p>
+                    ) : null}
+                    {key === 'opposite_market_pressure' ? (
+                      <dl className="mt-2 space-y-1 text-xs" data-testid="v3-opposite-integrated">
+                        <DlRow label="Mercato opposto">
+                          {marketLabel(asString(opposite.opposite_market_key))}
+                        </DlRow>
+                        <DlRow label="Probabilità fair">
+                          {formatV3PctFromFraction(asNumber(opposite.opposite_fair_probability))}
+                        </DlRow>
+                        <DlRow label="Penalità">
+                          <span
+                            className="font-semibold tabular-nums text-rose-700"
+                            data-testid={`v3-penalty-points-${key}`}
+                          >
+                            {formatPenaltyPointsNegative(points)}
+                          </span>
+                        </DlRow>
+                      </dl>
+                    ) : (
+                      <p className="mt-2 text-sm font-semibold tabular-nums text-rose-700">
+                        <span data-testid={`v3-penalty-points-${key}`}>
+                          {formatPenaltyPointsNegative(points)}
+                        </span>{' '}
+                        punti
+                      </p>
+                    )}
+                    {key === 'quote_quality' && derivedQuote ? (
+                      <p
+                        className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs text-violet-950"
+                        data-testid="v3-derived-quote-note"
+                      >
+                        Non rappresenta una quota Betfair realmente rilevata.
+                      </p>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <dl className="mt-2 space-y-1 rounded-md border border-slate-200 px-2.5 py-2 text-sm">
+            <DlRow label="Penalità totali">
+              <span className="font-semibold text-rose-700" data-testid="v3-total-penalty">
+                {formatPenaltyPointsNegative(totalPenalty)}
+              </span>
+            </DlRow>
+            <DlRow label="Qualità finale">
+              <span data-testid="v3-quality-final">{formatV3Number(qualityScore)}</span>
+            </DlRow>
+          </dl>
+        </Section>
+      ) : null}
+
+      {/* E. Confronto nella famiglia */}
+      {gatePassed ? (
+        <Section title="Confronto nella famiglia" testId="v3-section-family">
+          {marketRows.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table
+                className="w-full min-w-[360px] border-collapse text-left text-xs"
+                data-testid="v3-family-table"
+              >
+                <thead className="bg-slate-100 text-slate-600">
+                  <tr>
+                    <th className="px-2 py-1.5">Mercato</th>
+                    <th className="px-2 py-1.5">Edge</th>
+                    <th className="px-2 py-1.5">Stato</th>
+                    <th className="px-2 py-1.5">Posizione</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketRows.map((row) => {
+                    const mk = String(row.market_key || '')
+                    const isSelected = Boolean(row.is_selected)
+                    const isLeader = Boolean(row.is_leader)
+                    const edge = asNumber(row.edge_pct)
+                    const statusLabel = isLeader
+                      ? 'Leader'
+                      : row.gate_passed
+                        ? 'Attivato'
+                        : gateStatusHuman(asString(row.gate_status))
+                    return (
+                      <tr
+                        key={mk}
+                        className={`border-t border-slate-100 ${
+                          isSelected ? 'bg-amber-50' : isLeader ? 'bg-emerald-50/70' : ''
+                        }`}
+                        data-testid={`v3-family-row-${mk}`}
+                      >
+                        <td className="px-2 py-1.5 font-medium">
+                          {asString(row.market_label) || marketLabel(mk)}
+                          {isSelected ? ' (analizzato)' : ''}
+                        </td>
+                        <td
+                          className="px-2 py-1.5 tabular-nums"
+                          data-testid={`v3-family-edge-${mk}`}
+                        >
+                          {edge != null ? formatV3PctAlready(edge) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {isLeader ? (
+                            <span data-testid={`v3-family-leader-badge-${mk}`}>{statusLabel}</span>
+                          ) : (
+                            statusLabel
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 tabular-nums">
+                          {row.rank_by_edge != null ? String(row.rank_by_edge) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600" data-testid="v3-family-rows-missing">
+              Confronto famiglia non disponibile nel payload audit.
+            </p>
+          )}
+          {familyReading ? (
+            <p className="text-sm text-slate-700" data-testid="v3-family-reading">
+              {familyReading}
+            </p>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {/* F. Risultato finale */}
+      {gatePassed ? (
+        <Section title="Risultato finale" testId="v3-section-final">
+          <dl className="space-y-1.5 text-sm">
+            <DlRow label="Valore iniziale">
+              <span data-testid="v3-quality-start">{formatV3Number(qualityStart)}</span>
+            </DlRow>
+            <DlRow label="Penalità totali">
+              {formatPenaltyPointsNegative(totalPenalty)}
+            </DlRow>
+            <DlRow label="Qualità finale">{formatV3Number(qualityScore)}</DlRow>
+            <DlRow label="Acquistabilità">{score ?? '—'}</DlRow>
+          </dl>
+          {compactFormula ? (
+            <p
+              className="rounded-md bg-slate-50 px-2.5 py-2 font-mono text-sm text-slate-900"
+              data-testid="v3-final-formula-compact"
             >
-              Mostra dati tecnici grezzi
-            </summary>
-            <div className="overflow-x-auto border-t border-slate-100 px-1 pb-2">
+              {compactFormula}
+            </p>
+          ) : null}
+          <p className="text-xs text-slate-500" data-testid="v3-no-geometric-mean">
+            Formula: value × quality / 100 (nessuna media geometrica).
+          </p>
+        </Section>
+      ) : null}
+
+      {/* Dettagli tecnici */}
+      <details
+        className="rounded-lg border border-slate-200"
+        data-testid="v3-technical-details"
+      >
+        <summary
+          className="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          data-testid="v3-technical-details-summary"
+        >
+          Dettagli tecnici e audit
+        </summary>
+        <div className="space-y-4 border-t border-slate-100 px-3 py-3" data-testid="v3-section-diagnostics">
+          <p className="text-xs text-amber-800" data-testid="v3-validation-note">
+            Validazione storica completa da eseguire.
+          </p>
+          <p className="text-xs text-slate-600" data-testid="v3-parallel-warning">
+            Formula: {formulaVersion ?? '—'} — validazione storica completa da eseguire.
+          </p>
+          <dl className="space-y-1.5 text-sm">
+            <DlRow label="Risultato persistito">
+              <span data-testid="v3-persisted-result">
+                {asNumber(persisted.score) ??
+                  explanation.stored_result_display ??
+                  String(explanation.stored_result ?? '—')}
+              </span>
+            </DlRow>
+            <DlRow label="Risultato audit">
+              <span data-testid="v3-audit-result">
+                {explanation.audit_result == null ? '—' : String(explanation.audit_result)}
+              </span>
+            </DlRow>
+            <DlRow label="Delta">
+              {explanation.consistency?.delta != null
+                ? String(explanation.consistency.delta)
+                : '—'}
+            </DlRow>
+            <DlRow label="Consistency">
+              <span data-testid="v3-consistency">{explanation.consistency?.status ?? '—'}</span>
+            </DlRow>
+            <DlRow label="Arrotondamento">
+              {explanation.rounding?.policy ?? '—'}
+              {explanation.rounding?.precision != null
+                ? ` · prec. ${explanation.rounding.precision}`
+                : ''}
+            </DlRow>
+            <DlRow label="Famiglia (codice)">
+              <span className="font-mono text-xs" data-testid="v3-family-code">
+                {marketFamilyCode ?? '—'}
+              </span>
+            </DlRow>
+            <DlRow label="Gate (codice)">
+              <span className="font-mono text-xs">{gateStatus ?? '—'}</span>
+            </DlRow>
+            <DlRow label="candidate_version">
+              <span data-testid="v3-candidate-version">{candidateVersion ?? '—'}</span>
+            </DlRow>
+            <DlRow label="formula_version">
+              <span data-testid="v3-formula-version">{formulaVersion ?? '—'}</span>
+            </DlRow>
+            <DlRow label="audit_version">
+              <span data-testid="v3-audit-version">{auditVersion ?? '—'}</span>
+            </DlRow>
+            <DlRow label="generated_at">
+              <span data-testid="v3-generated-at">{generatedAt ?? '—'}</span>
+            </DlRow>
+            <DlRow label="source_snapshot_at">
+              <span data-testid="v3-source-snapshot-at">{sourceSnapshotAt ?? '—'}</span>
+            </DlRow>
+            <DlRow label="pre_match_only">
+              {yesNo(asBool(dataOrigin.pre_match_only) ?? true)}
+            </DlRow>
+            <DlRow label="historical_profile_used">
+              {yesNo(
+                asBool(dataOrigin.historical_profile_used) ??
+                  asBool(dep.historical_profile_used) ??
+                  false,
+              )}
+            </DlRow>
+            <DlRow label="fixed_scales_used">
+              {yesNo(asBool(dataOrigin.fixed_scales_used) ?? asBool(dep.fixed_scales_used) ?? true)}
+            </DlRow>
+            <DlRow label="current_operational_version">
+              {yesNo(
+                asBool(dataOrigin.current_operational_version) ??
+                  asBool(dep.current_operational_version) ??
+                  false,
+              )}
+            </DlRow>
+            <DlRow label="parallel_candidate">
+              {yesNo(asBool(dataOrigin.parallel_candidate) ?? asBool(dep.parallel_candidate))}
+            </DlRow>
+          </dl>
+
+          <div data-testid="v3-edge-scale">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">Scala fissa Edge</p>
+            <div className="mt-1 overflow-x-auto">
+              <table className="w-full min-w-[280px] text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-2 py-1">Edge</th>
+                    <th className="px-2 py-1">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {EDGE_SCALE.map((row) => (
+                    <tr key={row.edge} className="border-t border-slate-100">
+                      <td className="px-2 py-1">{row.edge}</td>
+                      <td className="px-2 py-1 tabular-nums">{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-1 font-mono text-[11px] text-slate-600">
+              {asString(value.value_formula) ||
+                'value_score = clamp(edge_pct / 50 × 100, 0, 100)'}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Probabilità Book grezza:{' '}
+              {formatV3PctFromFraction(asNumber(input.raw_book_probability))}
+            </p>
+          </div>
+
+          {nonAppliedPenalties.length > 0 ? (
+            <div data-testid="v3-penalties-not-applied">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Penalità non applicate
+              </p>
+              <div className="mt-2 space-y-2">
+                {nonAppliedPenalties.map(({ key, pen }) => (
+                  <div
+                    key={key}
+                    className="rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs"
+                    data-testid={`v3-penalty-not-applied-${key}`}
+                  >
+                    <p className="font-semibold text-slate-800">
+                      {asString(pen.label) || PENALTY_TITLES[key] || key}
+                    </p>
+                    {thresholdHumanLines(key, pen).map((line) => (
+                      <p key={line} className="mt-0.5 text-slate-600">
+                        {line}
+                      </p>
+                    ))}
+                    <p className="mt-1 text-slate-500">
+                      Severity: {formatV3Number(asNumber(pen.severity))} · Max:{' '}
+                      {formatV3Number(asNumber(pen.max_points))}
+                    </p>
+                    <pre className="mt-1 overflow-x-auto font-mono text-[10px] text-slate-500">
+                      {JSON.stringify(asRecord(pen.raw_inputs) ?? {}, null, 0)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {appliedPenalties.length > 0 ? (
+            <div data-testid="v3-penalties-tech-applied">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Dettaglio tecnico penalità applicate
+              </p>
+              <div className="mt-2 space-y-2">
+                {appliedPenalties.map(({ key, pen }) => (
+                  <div key={key} className="rounded border border-slate-100 px-2 py-2 text-xs">
+                    <p className="font-semibold">{PENALTY_TITLES[key] || key}</p>
+                    {thresholdHumanLines(key, pen).map((line) => (
+                      <p key={line} className="mt-0.5 text-slate-600">
+                        {line}
+                      </p>
+                    ))}
+                    <p className="mt-1 text-slate-500">
+                      Severity: {formatV3Number(asNumber(pen.severity))} · Max:{' '}
+                      {formatV3Number(asNumber(pen.max_points))}
+                    </p>
+                    <pre className="mt-1 overflow-x-auto font-mono text-[10px] text-slate-500">
+                      {JSON.stringify(asRecord(pen.raw_inputs) ?? {}, null, 0)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div data-testid="v3-raw-inputs-details">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">Input grezzi</p>
+            <div className="mt-1 overflow-x-auto">
               <table className="w-full min-w-[320px] text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
@@ -423,501 +853,103 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
                 </tbody>
               </table>
             </div>
-          </details>
-        )}
-      </Section>
-
-      {gatePassed ? (
-        <Section title="2. Quanto è forte il valore?" testId="v3-section-value">
-          <dl className="space-y-1.5">
-            <DlRow label="Quota Book">{formatV3Number(asNumber(input.quota_book))}</DlRow>
-            <DlRow label="Quota Cecchino">
-              {formatV3Number(asNumber(input.quota_cecchino))}
-            </DlRow>
-            <DlRow label="Probabilità Book fair">
-              {formatV3PctFromFraction(asNumber(input.fair_book_probability))}
-            </DlRow>
-            <DlRow label="Probabilità Book grezza">
-              {formatV3PctFromFraction(asNumber(input.raw_book_probability))}
-            </DlRow>
-            <DlRow label="Probabilità Cecchino">
-              {asNumber(input.probability_cecchino_pct) != null
-                ? formatV3PctAlready(asNumber(input.probability_cecchino_pct))
-                : formatV3PctFromFraction(asNumber(input.probability_cecchino))}
-            </DlRow>
-            <DlRow label="Edge">{formatV3PctAlready(edgePct)}</DlRow>
-            <DlRow label="Vantaggio probabilistico">
-              {vantFraction != null
-                ? `${vantFraction > 0 ? '+' : ''}${formatV3Number(vantFraction * 100)} pp`
-                : '—'}
-            </DlRow>
-            <DlRow label="Value score">{formatV3Number(valueScore)}</DlRow>
-          </dl>
-          <div data-testid="v3-edge-scale">
-            <p className="text-[10px] font-semibold uppercase text-slate-500">Scala fissa Edge</p>
-            <div className="mt-1 overflow-x-auto">
-              <table className="w-full min-w-[280px] text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="px-2 py-1">Edge</th>
-                    <th className="px-2 py-1">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {EDGE_SCALE.map((row) => (
-                    <tr key={row.edge} className="border-t border-slate-100">
-                      <td className="px-2 py-1">{row.edge}</td>
-                      <td className="px-2 py-1 tabular-nums">{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
-          <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-[#0f2847] px-3 py-2 font-mono text-[11px] text-amber-100 whitespace-pre-wrap">
-            {asString(value.value_formula) ||
-              'value_score = clamp(edge_pct / 50 × 100, 0, 100)'}
-          </pre>
-          <ul className="list-disc space-y-1 pl-4 text-xs text-slate-600">
-            <li>Rating non entra nel punteggio V3.</li>
-            <li>
-              Il vantaggio probabilistico serve al gate ma non viene pesato nuovamente.
-            </li>
-            <li>Nessun profilo storico modifica il valore.</li>
-          </ul>
-        </Section>
-      ) : null}
 
-      {gatePassed ? (
-        <Section title="3. Quali rischi riducono il valore?" testId="v3-section-penalties">
-          <div className="space-y-2">
-            {PENALTY_ORDER.map((key) => {
-              const pen = asRecord(penalties[key])
-              if (!pen) return null
-              const points = asNumber(pen.penalty_points)
-              const raw = asRecord(pen.raw_inputs) ?? {}
-              return (
-                <div
-                  key={key}
-                  className="rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-2"
-                  data-testid={`v3-penalty-${key}`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">
-                      {asString(pen.label) || PENALTY_TITLES[key] || key}
-                    </p>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        pen.applied
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {pen.applied ? 'Applicata' : 'Non applicata'}
-                    </span>
-                  </div>
-                  {asString(pen.explanation) ? (
-                    <p className="mt-1 text-xs text-slate-700">{asString(pen.explanation)}</p>
-                  ) : null}
-                  {key === 'quote_quality' && derivedQuote ? (
-                    <p
-                      className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs text-violet-950"
-                      data-testid="v3-derived-quote-note"
-                    >
-                      Questa quota è derivata matematicamente e non rappresenta una quota Betfair
-                      realmente rilevata. Il risultato serve soltanto per analisi.
-                    </p>
-                  ) : null}
-                  <dl className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-                    {Object.entries(raw).map(([rk, rv]) => (
-                      <div key={rk}>
-                        <span className="text-slate-500">{rk}: </span>
-                        <span className="tabular-nums text-slate-900">
-                          {rv == null ? '—' : String(rv)}
-                        </span>
-                      </div>
-                    ))}
-                    <div>
-                      <span className="text-slate-500">Soglia iniziale: </span>
-                      <span className="tabular-nums">
-                        {formatV3Number(asNumber(pen.threshold_start))}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Soglia massima: </span>
-                      <span className="tabular-nums">
-                        {formatV3Number(asNumber(pen.threshold_full))}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Severità: </span>
-                      <span className="tabular-nums">
-                        {formatV3Number(asNumber(pen.severity))}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Penalità massima: </span>
-                      <span className="tabular-nums">
-                        {formatV3Number(asNumber(pen.max_points))}
-                      </span>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-500">Punti sottratti: </span>
-                      <span
-                        className="font-semibold tabular-nums text-rose-700"
-                        data-testid={`v3-penalty-points-${key}`}
-                      >
-                        {formatPenaltyPointsNegative(points)}
-                      </span>
-                    </div>
-                  </dl>
-                </div>
-              )
-            })}
+          <div data-testid="v3-formula-steps-tech">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">Formula steps</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-5 font-mono text-[11px] leading-relaxed">
+              {(formulaSteps.length
+                ? formulaSteps
+                : [
+                    `Value score = ${formatV3Number(valueScore)}`,
+                    `Qualità finale = ${formatV3Number(qualityScore)}`,
+                    `Raw score = Value × Qualità / 100`,
+                    `Score finale = ROUND_HALF_UP(...)`,
+                  ]
+              ).map((step, i) => (
+                <li key={`${i}-${step}`}>{step}</li>
+              ))}
+            </ol>
           </div>
-          {derivedQuote && !quoteQualityPen ? (
-            <p
-              className="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-2 text-xs text-violet-950"
-              data-testid="v3-derived-quote-note"
-            >
-              Questa quota è derivata matematicamente e non rappresenta una quota Betfair
-              realmente rilevata. Il risultato serve soltanto per analisi.
-            </p>
-          ) : null}
-          <dl className="mt-2 space-y-1 rounded-md border border-slate-200 px-2.5 py-2 text-sm">
-            <DlRow label="Penalità totali">
-              <span className="font-semibold text-rose-700" data-testid="v3-total-penalty">
-                {formatPenaltyPointsNegative(totalPenalty)}
-              </span>
-            </DlRow>
-            <DlRow label="Qualità iniziale">
-              <span data-testid="v3-quality-start">{formatV3Number(qualityStart)}</span>
-            </DlRow>
-            <DlRow label="Qualità finale">
-              <span data-testid="v3-quality-final">{formatV3Number(qualityScore)}</span>
-            </DlRow>
-          </dl>
-        </Section>
-      ) : null}
 
-      {gatePassed ? (
-        <Section
-          title="4. È la scelta migliore nella sua famiglia?"
-          testId="v3-section-family"
-        >
-          {marketRows.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table
-                className="w-full min-w-[520px] border-collapse text-left text-xs"
-                data-testid="v3-family-table"
-              >
-                <thead className="bg-slate-100 text-slate-600">
-                  <tr>
-                    <th className="px-2 py-1.5">Mercato</th>
-                    <th className="px-2 py-1.5">Edge</th>
-                    <th className="px-2 py-1.5">Gate</th>
-                    <th className="px-2 py-1.5">Posizione</th>
-                    <th className="px-2 py-1.5">Leader</th>
-                    <th className="px-2 py-1.5">Diff. dal leader</th>
-                    <th className="px-2 py-1.5">Nel confronto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {marketRows.map((row) => {
-                    const mk = String(row.market_key || '')
-                    const isSelected = Boolean(row.is_selected)
-                    const isLeader = Boolean(row.is_leader)
-                    const edge = asNumber(row.edge_pct)
-                    const diff = asNumber(row.edge_diff_from_leader)
-                    return (
-                      <tr
-                        key={mk}
-                        className={`border-t border-slate-100 ${
-                          isSelected ? 'bg-amber-50' : isLeader ? 'bg-emerald-50/70' : ''
-                        }`}
-                        data-testid={`v3-family-row-${mk}`}
-                      >
-                        <td className="px-2 py-1.5 font-medium">
-                          {asString(row.market_label) || marketLabel(mk)}
-                          {isSelected ? ' (analizzato)' : ''}
-                          {isLeader ? (
-                            <span
-                              className="ml-1 rounded bg-emerald-100 px-1 py-px text-[9px] font-semibold text-emerald-800"
-                              data-testid={`v3-family-leader-badge-${mk}`}
-                            >
-                              Leader
-                            </span>
-                          ) : null}
-                        </td>
-                        <td
-                          className="px-2 py-1.5 tabular-nums"
-                          data-testid={`v3-family-edge-${mk}`}
-                        >
-                          {edge != null ? formatV3PctAlready(edge) : '—'}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {row.gate_passed
-                            ? 'passed'
-                            : asString(row.gate_status) || '—'}
-                        </td>
-                        <td className="px-2 py-1.5 tabular-nums">
-                          {row.rank_by_edge != null ? String(row.rank_by_edge) : '—'}
-                        </td>
-                        <td className="px-2 py-1.5">{yesNo(isLeader)}</td>
-                        <td
-                          className="px-2 py-1.5 tabular-nums"
-                          data-testid={`v3-family-diff-${mk}`}
-                        >
-                          {isLeader
-                            ? '—'
-                            : diff != null
-                              ? formatV3Number(diff)
-                              : '—'}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {yesNo(asBool(row.included_in_gate_passed_comparison))}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600" data-testid="v3-family-rows-missing">
-              Confronto famiglia non disponibile nel payload audit.
+          <div data-testid="v3-section-linked">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">
+              Contesto collegato
             </p>
-          )}
-          {familyReading ? <p className="text-sm text-slate-700">{familyReading}</p> : null}
-          <p className="text-xs text-slate-500">
-            Ambiguità: {humanizeCode(asString(family.ambiguity_status))} · Penalità famiglia:{' '}
-            {formatPenaltyPointsNegative(
-              asNumber(asRecord(penalties.family_ambiguity)?.penalty_points),
+            <p className="mt-1 text-xs text-slate-600" data-testid="v3-linked-no-score-note">
+              Questo mercato non modifica il punteggio.
+            </p>
+            {linked ? (
+              <dl className="mt-2 space-y-1.5 text-sm">
+                <DlRow label="Mercato collegato">
+                  {marketLabel(asString(linked.linked_market_key))}
+                </DlRow>
+                <DlRow label="Relazione">
+                  {humanizeCode(asString(linked.relationship))}
+                </DlRow>
+                <DlRow label="Relazione (codice)">
+                  <span className="font-mono text-[10px]">{asString(linked.relationship)}</span>
+                </DlRow>
+                <DlRow label="Edge">{formatV3PctAlready(asNumber(linked.edge_pct))}</DlRow>
+                <DlRow label="Vantaggio">
+                  {asNumber(linked.vantaggio_prob) != null
+                    ? `${Number(linked.vantaggio_prob) > 0 ? '+' : ''}${formatV3Number(
+                        Math.abs(Number(linked.vantaggio_prob)) <= 1
+                          ? Number(linked.vantaggio_prob) * 100
+                          : Number(linked.vantaggio_prob),
+                      )} pp`
+                    : '—'}
+                </DlRow>
+                <DlRow label="Rating">{formatV3Number(asNumber(linked.rating), 0)}</DlRow>
+                <DlRow label="Gate">{asString(linked.gate_status) ?? '—'}</DlRow>
+              </dl>
+            ) : (
+              <p className="mt-1 text-sm text-slate-600">
+                Nessun contesto collegato per questo mercato.
+              </p>
             )}
-          </p>
-        </Section>
-      ) : null}
-
-      {gatePassed ? (
-        <Section title="5. Quanto è forte il mercato opposto?" testId="v3-section-opposite">
-          <dl className="space-y-1.5">
-            <DlRow label="Mercato opposto">
-              {marketLabel(asString(opposite.opposite_market_key))}
-            </DlRow>
-            <DlRow label="Probabilità Book fair opposta">
-              {formatV3PctFromFraction(asNumber(opposite.opposite_fair_probability))}
-            </DlRow>
-            <DlRow label="Probabilità grezza opposta">
-              {formatV3PctFromFraction(asNumber(opposite.opposite_raw_probability))}
-            </DlRow>
-            <DlRow label="Soglia inizio penalità">
-              {formatV3Number(
-                asNumber(
-                  asRecord(penalties.opposite_market_pressure)?.threshold_start,
-                ),
-              )}
-            </DlRow>
-            <DlRow label="Soglia penalità massima">
-              {formatV3Number(
-                asNumber(asRecord(penalties.opposite_market_pressure)?.threshold_full),
-              )}
-            </DlRow>
-            <DlRow label="Punti sottratti">
-              <span className="font-semibold text-rose-700">
-                {formatPenaltyPointsNegative(
-                  oppPenalty ??
-                    asNumber(
-                      asRecord(penalties.opposite_market_pressure)?.penalty_points,
-                    ),
-                )}
-              </span>
-            </DlRow>
-          </dl>
-          {explanation.market_key === 'DRAW' ? (
-            <p className="text-xs text-slate-600">
-              Per il pareggio il sistema usa il lato più favorito fra HOME e AWAY come mercato
-              opposto.
-            </p>
-          ) : null}
-          <p className="rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
-            La pressione del mercato opposto è una penalità reale: questi punti vengono sottratti
-            dalla qualità.
-          </p>
-        </Section>
-      ) : null}
-
-      <Section title="Contesto collegato — non usato nello score" testId="v3-section-linked">
-        {linked ? (
-          <>
-            <div className="flex flex-wrap gap-1.5">
-              <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900">
-                Solo diagnostico
-              </span>
-              <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900">
-                Non modifica il punteggio
-              </span>
-            </div>
-            <dl className="mt-2 space-y-1.5">
-              <DlRow label="Mercato collegato">
-                {marketLabel(asString(linked.linked_market_key))}
-              </DlRow>
-              <DlRow label="Relazione">
-                {humanizeCode(asString(linked.relationship))}
-              </DlRow>
-              <DlRow label="Edge">{formatV3PctAlready(asNumber(linked.edge_pct))}</DlRow>
-              <DlRow label="Vantaggio">
-                {asNumber(linked.vantaggio_prob) != null
-                  ? `${Number(linked.vantaggio_prob) > 0 ? '+' : ''}${formatV3Number(
-                      Math.abs(Number(linked.vantaggio_prob)) <= 1
-                        ? Number(linked.vantaggio_prob) * 100
-                        : Number(linked.vantaggio_prob),
-                    )} pp`
-                  : '—'}
-              </DlRow>
-              <DlRow label="Rating">{formatV3Number(asNumber(linked.rating), 0)}</DlRow>
-              <DlRow label="Gate">{asString(linked.gate_status) ?? '—'}</DlRow>
-            </dl>
             {explanation.market_key === 'AWAY' &&
+            linked &&
             asString(linked.linked_market_key) === 'X_TWO' ? (
-              <p className="text-xs text-slate-600" data-testid="v3-x2-diagnostic-note">
+              <p className="mt-2 text-xs text-slate-600" data-testid="v3-x2-diagnostic-note">
                 X2 è soltanto un contesto collegato diagnostico per il 2: non è un concorrente
                 diretto nella famiglia MATCH_WINNER_FT.
               </p>
             ) : null}
-            <p className="font-mono text-[10px] text-slate-400">
-              {asString(linked.relationship)}
+          </div>
+
+          {sourcePathList.length > 0 ? (
+            <div>
+              <p className="text-[10px] font-semibold uppercase text-slate-500">Source paths</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-[10px] text-slate-600">
+                {sourcePathList.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {derivedQuote ? (
+            <dl className="space-y-1 text-xs text-slate-600">
+              <DlRow label="performance_type">
+                {asString(input.performance_type) ?? '—'}
+              </DlRow>
+              <DlRow label="quote_source">{asString(input.quote_source) ?? '—'}</DlRow>
+              <DlRow label="not_real_book_quote">
+                {yesNo(asBool(input.not_real_book_quote))}
+              </DlRow>
+              <DlRow label="diagnostic_only">{yesNo(asBool(input.diagnostic_only))}</DlRow>
+            </dl>
+          ) : null}
+
+          {asNumber(opposite.opposite_raw_probability) != null ? (
+            <p className="text-xs text-slate-500">
+              Probabilità grezza opposta:{' '}
+              {formatV3PctFromFraction(asNumber(opposite.opposite_raw_probability))}
             </p>
-          </>
-        ) : (
-          <p className="text-sm text-slate-600">Nessun contesto collegato per questo mercato.</p>
-        )}
-      </Section>
-
-      {gatePassed ? (
-        <Section title="6. Calcolo finale" testId="v3-section-final">
-          <p className="text-sm font-medium text-slate-900">La qualità sconta il valore.</p>
-          <ol className="list-decimal space-y-1 pl-5 font-mono text-[12px] leading-relaxed">
-            {(formulaSteps.length
-              ? formulaSteps
-              : [
-                  `Value score = ${formatV3Number(valueScore)}`,
-                  `Qualità iniziale = ${formatV3Number(qualityStart)}`,
-                  `Penalità probabilità = ${formatPenaltyPointsNegative(
-                    asNumber(asRecord(penalties.probability_risk)?.penalty_points),
-                  )}`,
-                  `Penalità opposto = ${formatPenaltyPointsNegative(
-                    asNumber(asRecord(penalties.opposite_market_pressure)?.penalty_points),
-                  )}`,
-                  `Penalità divergenza = ${formatPenaltyPointsNegative(
-                    asNumber(asRecord(penalties.extreme_divergence)?.penalty_points),
-                  )}`,
-                  `Penalità famiglia = ${formatPenaltyPointsNegative(
-                    asNumber(asRecord(penalties.family_ambiguity)?.penalty_points),
-                  )}`,
-                  `Penalità quota = ${formatPenaltyPointsNegative(
-                    asNumber(asRecord(penalties.quote_quality)?.penalty_points),
-                  )}`,
-                  `Qualità finale = ${formatV3Number(qualityScore)}`,
-                  `Raw score = Value × Qualità / 100`,
-                  `Score finale = ROUND_HALF_UP(...)`,
-                ]
-            ).map((step, i) => (
-              <li key={`${i}-${step}`}>{step}</li>
-            ))}
-          </ol>
-          <p className="text-xs text-slate-500" data-testid="v3-no-geometric-mean">
-            Formula V3: value × quality / 100 (nessuna media geometrica).
-          </p>
-        </Section>
-      ) : null}
-
-      <Section title="Diagnostica" testId="v3-section-diagnostics">
-        <dl className="space-y-1.5 text-sm">
-          <DlRow label="Risultato persistito">
-            <span data-testid="v3-persisted-result">
-              {asNumber(persisted.score) ??
-                explanation.stored_result_display ??
-                String(explanation.stored_result ?? '—')}
-            </span>
-          </DlRow>
-          <DlRow label="Risultato audit">
-            <span data-testid="v3-audit-result">
-              {explanation.audit_result == null ? '—' : String(explanation.audit_result)}
-            </span>
-          </DlRow>
-          <DlRow label="Delta">
-            {explanation.consistency?.delta != null
-              ? String(explanation.consistency.delta)
-              : '—'}
-          </DlRow>
-          <DlRow label="Consistency">
-            <span data-testid="v3-consistency">{explanation.consistency?.status ?? '—'}</span>
-          </DlRow>
-          <DlRow label="Arrotondamento">
-            {explanation.rounding?.policy ?? '—'}
-            {explanation.rounding?.precision != null
-              ? ` · prec. ${explanation.rounding.precision}`
-              : ''}
-          </DlRow>
-          <DlRow label="Famiglia (codice)">
-            <span className="font-mono text-xs" data-testid="v3-family-code">
-              {marketFamilyCode ?? '—'}
-            </span>
-          </DlRow>
-          <DlRow label="candidate_version">
-            <span data-testid="v3-candidate-version">{candidateVersion ?? '—'}</span>
-          </DlRow>
-          <DlRow label="formula_version">
-            <span data-testid="v3-formula-version">{formulaVersion ?? '—'}</span>
-          </DlRow>
-          <DlRow label="audit_version">
-            <span data-testid="v3-audit-version">{auditVersion ?? '—'}</span>
-          </DlRow>
-          <DlRow label="generated_at">
-            <span data-testid="v3-generated-at">{generatedAt ?? '—'}</span>
-          </DlRow>
-          <DlRow label="source_snapshot_at">
-            <span data-testid="v3-source-snapshot-at">{sourceSnapshotAt ?? '—'}</span>
-          </DlRow>
-          <DlRow label="pre_match_only">
-            {yesNo(asBool(dataOrigin.pre_match_only) ?? true)}
-          </DlRow>
-          <DlRow label="historical_profile_used">
-            {yesNo(
-              asBool(dataOrigin.historical_profile_used) ??
-                asBool(dep.historical_profile_used) ??
-                false,
-            )}
-          </DlRow>
-          <DlRow label="fixed_scales_used">
-            {yesNo(asBool(dataOrigin.fixed_scales_used) ?? asBool(dep.fixed_scales_used) ?? true)}
-          </DlRow>
-          <DlRow label="current_operational_version">
-            {yesNo(
-              asBool(dataOrigin.current_operational_version) ??
-                asBool(dep.current_operational_version) ??
-                false,
-            )}
-          </DlRow>
-          <DlRow label="parallel_candidate">
-            {yesNo(asBool(dataOrigin.parallel_candidate) ?? true)}
-          </DlRow>
-        </dl>
-        {sourcePathList.length > 0 ? (
-          <ul className="mt-2 space-y-1 font-mono text-[10px] text-slate-500">
-            {sourcePathList.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        ) : null}
-        <p
-          className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-950"
-          data-testid="v3-parallel-warning"
-        >
-          V3 è un candidato parallelo. Il punteggio non è ancora stato validato sullo storico e non
-          sostituisce la V2.
-        </p>
-      </Section>
+          ) : null}
+        </div>
+      </details>
     </div>
   )
 }

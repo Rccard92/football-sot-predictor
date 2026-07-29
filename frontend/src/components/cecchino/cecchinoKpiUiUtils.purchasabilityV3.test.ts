@@ -9,15 +9,16 @@ import {
   DERIVED_V3_ITEM,
   GATE_FAILED_V3_ITEM,
   MISSING_INPUTS_V3_ITEM,
+  UNDER_2_5_V3_ITEM,
   UNSUPPORTED_V3_ITEM,
 } from './fixtures/purchasabilityV3AwayRegression'
 
 describe('resolvePurchasabilityV3CellState', () => {
-  it('snapshot assente → V3 non disponibile', () => {
+  it('snapshot assente → Non disponibile', () => {
     const s = resolvePurchasabilityV3CellState(undefined, { snapshotAvailable: false })
     expect(s.kind).toBe('snapshot_absent')
     expect(s.primary).toBe('—')
-    expect(s.subtitle).toBe('V3 non disponibile')
+    expect(s.subtitle).toBe('Non disponibile')
     expect(s.analyzable).toBe(false)
   })
 
@@ -33,12 +34,13 @@ describe('resolvePurchasabilityV3CellState', () => {
     expect(s.analyzable).toBe(true)
   })
 
-  it('input mancanti → Non calcolabile', () => {
+  it('input mancanti → Non calcolabile + Input mancanti', () => {
     const s = resolvePurchasabilityV3CellState(MISSING_INPUTS_V3_ITEM, {
       snapshotAvailable: true,
     })
     expect(s.kind).toBe('missing_inputs')
     expect(s.primary).toBe('Non calcolabile')
+    expect(s.subtitle).toBe('Input mancanti')
     expect(s.analyzable).toBe(true)
   })
 
@@ -52,18 +54,26 @@ describe('resolvePurchasabilityV3CellState', () => {
     expect(s.analyzable).toBe(false)
   })
 
-  it('score disponibile con chip candidato e Non validato', () => {
+  it('score disponibile senza chip candidato né Non validato', () => {
     const s = resolvePurchasabilityV3CellState(AWAY_V3_ITEM, { snapshotAvailable: true })
     expect(s.kind).toBe('score')
     expect(s.score).toBe(47)
-    expect(s.showCandidateChip).toBe(true)
-    expect(s.subtitle).toBe('Non validato')
+    expect(s.showCandidateChip).toBe(false)
+    expect(s.subtitle).toBeNull()
+    expect(s.classLabel).toBe('Media')
   })
 
-  it('quota derivata', () => {
+  it('quota derivata mostra solo Quota derivata', () => {
     const s = resolvePurchasabilityV3CellState(DERIVED_V3_ITEM, { snapshotAvailable: true })
     expect(s.derivedQuote).toBe(true)
-    expect(s.subtitle).toBe('Quota derivata · Solo diagnostico')
+    expect(s.score).toBe(50)
+    expect(s.subtitle).toBe('Quota derivata')
+    expect(s.showCandidateChip).toBe(false)
+  })
+
+  it('fixture UNDER 2.5 score 12', () => {
+    const s = resolvePurchasabilityV3CellState(UNDER_2_5_V3_ITEM, { snapshotAvailable: true })
+    expect(s.score).toBe(12)
   })
 })
 
