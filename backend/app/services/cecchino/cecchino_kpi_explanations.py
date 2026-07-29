@@ -36,6 +36,17 @@ from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
     build_purchasability_comparison,
     index_purchasability_v2_snapshot_by_market,
 )
+from app.schemas.cecchino_purchasability_v3 import (
+    PURCHASABILITY_V3_AUDIT_VERSION,
+    PURCHASABILITY_V3_FORMULA_VERSION,
+)
+from app.services.cecchino.cecchino_purchasability_v3_opposition import (
+    FAMILY_DOUBLE_CHANCE,
+    FAMILY_GOALS_FT_2_5,
+    FAMILY_MATCH_WINNER_FT,
+    market_family_for,
+    market_label_for,
+)
 from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
     build_candidate_and_compact_snapshot_v3,
     index_purchasability_v3_snapshot_by_market,
@@ -56,6 +67,38 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
+
+# Label umane famiglie V3 (solo audit UI — non usate dal motore).
+_V3_MARKET_FAMILY_LABELS: dict[str, str] = {
+    FAMILY_MATCH_WINNER_FT: "Esito finale 1/X/2",
+    FAMILY_GOALS_FT_2_5: "Goal FT 2.5",
+    FAMILY_DOUBLE_CHANCE: "Doppia chance",
+}
+
+# Ordine canonico display tabella famiglia (non alfabetico).
+_V3_FAMILY_DISPLAY_ORDER: dict[str, tuple[str, ...]] = {
+    FAMILY_MATCH_WINNER_FT: (SEL_HOME, SEL_DRAW, SEL_AWAY),
+    FAMILY_GOALS_FT_2_5: (SEL_OVER_2_5, SEL_UNDER_2_5),
+    FAMILY_DOUBLE_CHANCE: (SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO),
+}
+
+_V3_GATE_READING_BY_STATUS: dict[str, str] = {
+    "passed": "Indice attivato",
+    "failed_non_positive_edge": (
+        "Indice non attivato: valore positivo non presente (Edge non positivo)."
+    ),
+    "failed_non_positive_probability_advantage": (
+        "Indice non attivato: valore positivo non presente "
+        "(vantaggio probabilistico non positivo)."
+    ),
+    "failed_multiple_non_positive_components": (
+        "Indice non attivato: Edge e vantaggio probabilistico non sono positivi."
+    ),
+    "unavailable_inputs": (
+        "Indice non calcolabile: uno o più input obbligatori non sono disponibili."
+    ),
+    "unsupported_market": "Mercato non supportato dall'Acquistabilità V3.",
+}
 
 AUDIT_VERSION = "cecchino_kpi_explanations_v1"
 
@@ -258,7 +301,11 @@ def _unavailable(
     formula_version: str = KPI_V2_VERSION,
     description: str = "",
     purpose: str = "",
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    merged = {"unavailable_reason": reason}
+    if extra:
+        merged.update(extra)
     return _base_explanation(
         market_key=market_key,
         market_label=market_label,
@@ -277,7 +324,7 @@ def _unavailable(
         rounding={"policy": "n/a", "precision": None, "display_precision": None},
         formula_version=formula_version,
         warnings=[reason],
-        extra={"unavailable_reason": reason},
+        extra=merged,
     )
 
 
@@ -1577,12 +1624,155 @@ def _explain_purchasability_v2(
     )
 
 
+def _v3_market_family_label(family: str | None) -> str | None:
+    if not family:
+        return None
+    return _V3_MARKET_FAMILY_LABELS.get(family)
+
+
+def _v3_gate_reading_for_audit(gate_status: str | None) -> str | None:
+    if not gate_status:
+        return None
+    return _V3_GATE_READING_BY_STATUS.get(
+        str(gate_status),
+        "Indice non attivato: valore positivo non presente",
+    )
+
+
+def _v3_resolve_item_source(
+    market_key: str,
+    *,
+    preview_v3_index: dict[str, dict[str, Any]] | None,
+    candidate_v3_index: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    cand = (candidate_v3_index or {}).get(market_key) or {}
+    snap = (preview_v3_index or {}).get(market_key) or {}
+    return cand if cand else snap
+
+
+def _v3_edge_from_sources(
+    market_key: str,
+    *,
+    item: dict[str, Any],
+    kpi_rows_by_market: dict[str, dict[str, Any]] | None,
+) -> float | None:
+    inp = item.get("input") if isinstance(item.get("input"), dict) else {}
+    edge = _num(inp.get("edge_pct")) if inp else None
+    if edge is not None:
+        return edge
+    row = (kpi_rows_by_market or {}).get(market_key) or {}
+    return _num(row.get("edge_pct"))
+
+
+def _build_v3_family_market_rows(
+    selected_market_key: str,
+    *,
+    market_family: str | None,
+    family_block: dict[str, Any],
+    preview_v3_index: dict[str, dict[str, Any]] | None,
+    candidate_v3_index: dict[str, dict[str, Any]] | None,
+    kpi_rows_by_market: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Assembla righe famiglia da dati persistiti — nessun ricalcolo formula."""
+    if not market_family:
+        return []
+    order = _V3_FAMILY_DISPLAY_ORDER.get(market_family)
+    if not order:
+        return []
+
+    gate_passed_comps = {
+        str(x)
+        for x in (family_block.get("gate_passed_family_competitors") or [])
+        if x
+    }
+
+    edges: dict[str, float | None] = {}
+    items: dict[str, dict[str, Any]] = {}
+    for mk in order:
+        item = _v3_resolve_item_source(
+            mk,
+            preview_v3_index=preview_v3_index,
+            candidate_v3_index=candidate_v3_index,
+        )
+        items[mk] = item
+        edges[mk] = _v3_edge_from_sources(
+            mk, item=item, kpi_rows_by_market=kpi_rows_by_market
+        )
+
+    ranked = sorted(
+        ((mk, e) for mk, e in edges.items() if e is not None),
+        key=lambda t: t[1],
+        reverse=True,
+    )
+    rank_by: dict[str, int] = {mk: i + 1 for i, (mk, _) in enumerate(ranked)}
+    leader_key = ranked[0][0] if ranked else None
+    second_key = ranked[1][0] if len(ranked) > 1 else None
+    # Preferisci leader/secondo già persistiti nel blocco family se coerenti.
+    persisted_leader = family_block.get("best_family_market_by_edge")
+    persisted_second = family_block.get("second_best_family_market_by_edge")
+    if persisted_leader and persisted_leader in order:
+        leader_key = str(persisted_leader)
+    if persisted_second and persisted_second in order:
+        second_key = str(persisted_second)
+    leader_edge = edges.get(leader_key) if leader_key else None
+
+    rows: list[dict[str, Any]] = []
+    for mk in order:
+        item = items.get(mk) or {}
+        edge = edges.get(mk)
+        gate_status = item.get("gate_status")
+        if gate_status is None:
+            gate = item.get("gate") if isinstance(item.get("gate"), dict) else {}
+            gate_status = gate.get("gate_status")
+        gate_status_s = str(gate_status) if gate_status else None
+        gate_passed = gate_status_s == "passed"
+        is_leader = mk == leader_key
+        is_second = mk == second_key and not is_leader
+        if edge is not None and leader_edge is not None and not is_leader:
+            edge_diff: float | None = float(edge) - float(leader_edge)
+        elif is_leader:
+            edge_diff = 0.0
+        else:
+            edge_diff = None
+        score_val = item.get("score")
+        score_num = (
+            int(score_val)
+            if isinstance(score_val, (int, float)) and not isinstance(score_val, bool)
+            else None
+        )
+        rows.append(
+            {
+                "market_key": mk,
+                "market_label": market_label_for(mk),
+                "market_family": market_family,
+                "edge_pct": edge,
+                "gate_status": gate_status_s,
+                "gate_passed": gate_passed,
+                "is_selected": mk == selected_market_key,
+                "is_leader": is_leader,
+                "is_second": is_second,
+                "rank_by_edge": rank_by.get(mk),
+                "included_in_family": True,
+                "included_in_gate_passed_comparison": bool(
+                    gate_passed or mk in gate_passed_comps
+                ),
+                "score": score_num,
+                "edge_diff_from_leader": edge_diff,
+            }
+        )
+    return rows
+
+
 def _explain_purchasability_v3(
     row: dict[str, Any],
     market_label: str,
     preview_item: dict[str, Any] | None,
     candidate_item: dict[str, Any] | None,
     preview_meta: dict[str, Any],
+    *,
+    preview_v3_index: dict[str, dict[str, Any]] | None = None,
+    candidate_v3_index: dict[str, dict[str, Any]] | None = None,
+    kpi_rows_by_market: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     mk = str(row.get("market_key") or "")
     formula = (
@@ -1593,7 +1783,31 @@ def _explain_purchasability_v3(
     cand = candidate_item or {}
     source = cand if cand else snap
 
+    candidate_version = (
+        preview_meta.get("candidate_version")
+        or source.get("candidate_version")
+        or None
+    )
+    formula_version = (
+        preview_meta.get("formula_version")
+        or source.get("formula_version")
+        or PURCHASABILITY_V3_FORMULA_VERSION
+    )
+    audit_version = (
+        preview_meta.get("audit_version")
+        or source.get("audit_version")
+        or PURCHASABILITY_V3_AUDIT_VERSION
+    )
+    generated_at = preview_meta.get("generated_at")
+    source_snapshot_at = preview_meta.get("source_snapshot_at")
+    meta_warnings: list[str] = []
+    if generated_at is None:
+        meta_warnings.append("generated_at_unavailable")
+    if source_snapshot_at is None:
+        meta_warnings.append("source_snapshot_at_unavailable")
+
     if not snap and not cand:
+        fam = market_family_for(mk)
         return _unavailable(
             market_key=mk,
             market_label=market_label,
@@ -1601,11 +1815,7 @@ def _explain_purchasability_v3(
             formula_symbolic=formula,
             inputs=[],
             reason="Snapshot Acquistabilità v3 assente",
-            formula_version=str(
-                preview_meta.get("formula_version")
-                or preview_meta.get("candidate_version")
-                or "purchasability_v3"
-            ),
+            formula_version=str(formula_version or "purchasability_v3"),
             description=(
                 "Misura quanto del valore Cecchino rimane dopo aver considerato "
                 "rischio e qualità della decisione (scale fisse, senza profilo storico)."
@@ -1613,10 +1823,40 @@ def _explain_purchasability_v3(
             purpose=(
                 "Indice parallelo osservazionale (v3) — non sostituisce v1.1 né v2."
             ),
+            extra={
+                "market_family": fam,
+                "market_family_label": _v3_market_family_label(fam),
+                "candidate_version": candidate_version,
+                "audit_version": audit_version,
+                "generated_at": generated_at,
+                "source_snapshot_at": source_snapshot_at,
+                "audit_meta_warnings": meta_warnings,
+            },
         )
 
-    gate = source.get("gate") if isinstance(source.get("gate"), dict) else {}
+    gate = dict(source.get("gate")) if isinstance(source.get("gate"), dict) else {}
     gate_status = source.get("gate_status") or gate.get("gate_status")
+    gate_status_s = str(gate_status) if gate_status else None
+    gate_reading = _v3_gate_reading_for_audit(gate_status_s)
+    if gate:
+        gate["gate_reading"] = gate_reading
+        if gate_status_s and not gate.get("gate_status"):
+            gate["gate_status"] = gate_status_s
+    else:
+        gate = {
+            "gate_status": gate_status_s,
+            "gate_reason_codes": list(source.get("gate_reason_codes") or []),
+            "gate_reading": gate_reading,
+            "edge_available": source.get("edge_available"),
+            "edge_positive": source.get("edge_positive"),
+            "probability_advantage_available": source.get(
+                "probability_advantage_available"
+            ),
+            "probability_advantage_positive": source.get(
+                "probability_advantage_positive"
+            ),
+        }
+
     value_score = _num(source.get("value_score"))
     quality_score = _num(source.get("quality_score"))
     stored_raw = _num(source.get("raw_score"))
@@ -1624,7 +1864,11 @@ def _explain_purchasability_v3(
     penalties = (
         source.get("penalties") if isinstance(source.get("penalties"), dict) else {}
     )
-    family = source.get("family") if isinstance(source.get("family"), dict) else {}
+    family = (
+        dict(source.get("family"))
+        if isinstance(source.get("family"), dict)
+        else {}
+    )
     linked = (
         source.get("linked_market_context")
         if isinstance(source.get("linked_market_context"), dict)
@@ -1632,12 +1876,70 @@ def _explain_purchasability_v3(
     )
     inp = source.get("input") if isinstance(source.get("input"), dict) else {}
 
+    market_family = (
+        source.get("market_family")
+        or family.get("market_family")
+        or (inp.get("market_family") if inp else None)
+        or market_family_for(mk)
+    )
+    market_family_s = str(market_family) if market_family else None
+    market_family_label = _v3_market_family_label(market_family_s)
+
+    # Indici locali: includi almeno gli item già noti.
+    local_preview = dict(preview_v3_index or {})
+    local_candidate = dict(candidate_v3_index or {})
+    if snap and mk:
+        local_preview.setdefault(mk, snap)
+    if cand and mk:
+        local_candidate.setdefault(mk, cand)
+    local_kpi = dict(kpi_rows_by_market or {})
+    if mk:
+        local_kpi.setdefault(mk, row)
+
+    market_rows = _build_v3_family_market_rows(
+        mk,
+        market_family=market_family_s,
+        family_block=family,
+        preview_v3_index=local_preview,
+        candidate_v3_index=local_candidate,
+        kpi_rows_by_market=local_kpi,
+    )
+    family_comparison = {
+        **family,
+        "market_family": market_family_s,
+        "market_family_label": market_family_label,
+        "market_rows": market_rows,
+    }
+
+    pre_match_only = preview_meta.get("pre_match_only")
+    if pre_match_only is None:
+        pre_match_only = True
+    historical_profile_used = preview_meta.get("historical_profile_used")
+    if historical_profile_used is None:
+        historical_profile_used = False
+    fixed_scales_used = preview_meta.get("fixed_scales_used")
+    if fixed_scales_used is None:
+        fixed_scales_used = True
+    parallel_candidate = preview_meta.get("parallel_candidate")
+    if parallel_candidate is None:
+        parallel_candidate = True
+    current_operational_version = preview_meta.get("current_operational_version")
+    if current_operational_version is None:
+        current_operational_version = False
+
+    inp_flags = inp or {}
+    derived_quote = (
+        inp_flags.get("performance_type") == "derived"
+        or inp_flags.get("not_real_book_quote") is True
+        or inp_flags.get("diagnostic_only") is True
+    )
+
     inputs = [
         _input(
             key="gate_status",
             label="Gate valore",
-            value=gate_status,
-            display_value=str(gate_status or "—"),
+            value=gate_status_s,
+            display_value=str(gate_status_s or "—"),
             source_path="purchasability_preview_v3.items[].gate_status",
         ),
         _input(
@@ -1671,19 +1973,29 @@ def _explain_purchasability_v3(
         _input(
             key="candidate_version",
             label="Candidate version",
-            value=preview_meta.get("candidate_version") or source.get("candidate_version"),
-            display_value=str(
-                preview_meta.get("candidate_version")
-                or source.get("candidate_version")
-                or "—"
-            ),
+            value=candidate_version,
+            display_value=str(candidate_version or "—"),
             source_path="purchasability_preview_v3.candidate_version",
+        ),
+        _input(
+            key="formula_version",
+            label="Formula version",
+            value=formula_version,
+            display_value=str(formula_version or "—"),
+            source_path="purchasability_preview_v3.formula_version",
+        ),
+        _input(
+            key="audit_version",
+            label="Audit version",
+            value=audit_version,
+            display_value=str(audit_version or "—"),
+            source_path="purchasability_preview_v3.audit_version",
         ),
     ]
 
     applied: list[str] = []
     audit_raw = None
-    if gate_status == "passed" and value_score is not None and quality_score is not None:
+    if gate_status_s == "passed" and value_score is not None and quality_score is not None:
         audit_raw = value_score * quality_score / 100.0
         applied = [
             f"value_score = {_fmt_it(value_score)}",
@@ -1691,13 +2003,16 @@ def _explain_purchasability_v3(
             f"raw_score = {_fmt_it(value_score)} × {_fmt_it(quality_score)} / 100 = {_fmt_it(audit_raw, 4)}",
             f"score = ROUND_HALF_UP({_fmt_it(audit_raw, 4)}) = {int(stored_score) if stored_score is not None else '—'}",
         ]
-    elif gate_status and gate_status != "passed":
+    elif gate_status_s and gate_status_s != "passed":
         applied = [
-            f"gate = {gate_status}",
+            f"gate = {gate_status_s}",
             "score = null (indice non attivato)",
         ]
     else:
         applied = ["Dati V3 incompleti per verifica formula"]
+
+    warnings = list(source.get("warnings") or source.get("reason_codes") or [])
+    warnings.extend(meta_warnings)
 
     extra = {
         "what_it_measures": (
@@ -1710,10 +2025,13 @@ def _explain_purchasability_v3(
             "Nessun profilo storico",
             "Pre-match",
         ],
-        "gate": gate or {
-            "gate_status": gate_status,
-            "gate_reason_codes": source.get("gate_reason_codes"),
-        },
+        "market_family": market_family_s,
+        "market_family_label": market_family_label,
+        "candidate_version": candidate_version,
+        "audit_version": audit_version,
+        "generated_at": generated_at,
+        "source_snapshot_at": source_snapshot_at,
+        "gate": gate,
         "value": {
             "value_score": value_score,
             "value_formula": source.get("value_formula"),
@@ -1726,7 +2044,7 @@ def _explain_purchasability_v3(
             "total_penalty": source.get("total_penalty"),
         },
         "penalties_table": penalties,
-        "family_comparison": family,
+        "family_comparison": family_comparison,
         "opposite_market": {
             "opposite_market_key": source.get("opposite_market_key"),
             "opposite_fair_probability": source.get("opposite_fair_probability"),
@@ -1742,17 +2060,19 @@ def _explain_purchasability_v3(
             "formula_steps": source.get("formula_steps"),
         },
         "persisted_result": {
-            "score": snap.get("score"),
-            "class": snap.get("class"),
-            "gate_status": snap.get("gate_status"),
+            "score": snap.get("score") if snap else source.get("score"),
+            "class": snap.get("class") if snap else source.get("class"),
+            "gate_status": snap.get("gate_status") if snap else source.get("gate_status"),
         },
         "data_origin": {
             "source_paths": source.get("source_paths"),
-            "pre_match_only": True,
-            "historical_profile_used": False,
-            "fixed_scales_used": True,
-            "parallel_candidate": True,
-            "current_operational_version": False,
+            "generated_at": generated_at,
+            "source_snapshot_at": source_snapshot_at,
+            "pre_match_only": pre_match_only,
+            "historical_profile_used": historical_profile_used,
+            "fixed_scales_used": fixed_scales_used,
+            "parallel_candidate": parallel_candidate,
+            "current_operational_version": current_operational_version,
         },
         "simple_explanation": source.get("reading_detailed") or source.get("reading_short"),
         "reading_short": source.get("reading_short"),
@@ -1761,11 +2081,17 @@ def _explain_purchasability_v3(
         "risks": source.get("risks"),
         "dependency_meta": source.get("dependency_meta"),
         "input": inp,
+        "derived_quote": derived_quote,
+        "diagnostic_only": bool(inp_flags.get("diagnostic_only") or derived_quote),
         "score_acquisto_used": False,
         "rating_used_in_score": False,
         "probability_advantage_used_as_weight": False,
-        "historical_profile_used": False,
+        "historical_profile_used": historical_profile_used,
         "linked_markets_used_in_score": False,
+        "pre_match_only": pre_match_only,
+        "fixed_scales_used": fixed_scales_used,
+        "parallel_candidate": parallel_candidate,
+        "current_operational_version": current_operational_version,
     }
 
     status = str(source.get("status") or "unavailable")
@@ -1792,12 +2118,8 @@ def _explain_purchasability_v3(
             audit_result=audit_raw,
             consistency={"status": "unavailable", "delta": None},
             rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
-            formula_version=str(
-                preview_meta.get("formula_version")
-                or source.get("formula_version")
-                or "purchasability_v3"
-            ),
-            warnings=list(source.get("warnings") or source.get("reason_codes") or []),
+            formula_version=str(formula_version or "purchasability_v3"),
+            warnings=warnings,
             extra=extra,
         )
 
@@ -1830,12 +2152,8 @@ def _explain_purchasability_v3(
         audit_result=round(audit_raw, 4) if audit_raw is not None else None,
         consistency=cons,
         rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
-        formula_version=str(
-            preview_meta.get("formula_version")
-            or source.get("formula_version")
-            or "purchasability_v3"
-        ),
-        warnings=list(source.get("warnings") or source.get("reason_codes") or []),
+        formula_version=str(formula_version or "purchasability_v3"),
+        warnings=warnings,
         extra=extra,
     )
 
@@ -2250,12 +2568,38 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
         "snapshot_version": preview_v3.get("snapshot_version") if preview_v3 else None,
         "formula_version": preview_v3.get("formula_version") if preview_v3 else None,
         "audit_version": preview_v3.get("audit_version") if preview_v3 else None,
+        "generated_at": preview_v3.get("generated_at") if preview_v3 else None,
+        "source_snapshot_at": preview_v3.get("source_snapshot_at") if preview_v3 else None,
+        "pre_match_only": preview_v3.get("pre_match_only") if preview_v3 else None,
+        "historical_profile_used": (
+            preview_v3.get("historical_profile_used") if preview_v3 else None
+        ),
+        "fixed_scales_used": preview_v3.get("fixed_scales_used") if preview_v3 else None,
+        "parallel_candidate": preview_v3.get("parallel_candidate") if preview_v3 else None,
+        "current_operational_version": (
+            preview_v3.get("current_operational_version") if preview_v3 else None
+        ),
     }
     if candidate_v3 and not preview_v3_meta.get("candidate_version"):
         preview_v3_meta["candidate_version"] = candidate_v3.get("candidate_version")
         preview_v3_meta["candidate_name"] = candidate_v3.get("candidate_name")
         preview_v3_meta["formula_version"] = candidate_v3.get("formula_version")
         preview_v3_meta["audit_version"] = candidate_v3.get("audit_version")
+        if preview_v3_meta.get("generated_at") is None:
+            preview_v3_meta["generated_at"] = candidate_v3.get("generated_at")
+        if preview_v3_meta.get("source_snapshot_at") is None:
+            preview_v3_meta["source_snapshot_at"] = candidate_v3.get(
+                "source_snapshot_at"
+            )
+        for flag in (
+            "pre_match_only",
+            "historical_profile_used",
+            "fixed_scales_used",
+            "parallel_candidate",
+            "current_operational_version",
+        ):
+            if preview_v3_meta.get(flag) is None and flag in candidate_v3:
+                preview_v3_meta[flag] = candidate_v3.get(flag)
 
     comparison = build_purchasability_comparison(
         preview if isinstance(preview, dict) else None,
@@ -2264,6 +2608,11 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
     comparison_items = (
         comparison.get("items") if isinstance(comparison.get("items"), dict) else {}
     )
+
+    kpi_rows_by_market: dict[str, dict[str, Any]] = {}
+    for r in kpi_panel.get("rows") or []:
+        if isinstance(r, dict) and r.get("market_key"):
+            kpi_rows_by_market[str(r["market_key"])] = r
 
     markets: dict[str, dict[str, Any]] = {}
     for r in kpi_panel.get("rows") or []:
@@ -2318,6 +2667,9 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
                 preview_v3_index.get(mk),
                 candidate_v3_index.get(mk),
                 preview_v3_meta,
+                preview_v3_index=preview_v3_index,
+                candidate_v3_index=candidate_v3_index,
+                kpi_rows_by_market=kpi_rows_by_market,
             )
             market_explanations["purchasability_delta"] = _explain_purchasability_delta(
                 r,

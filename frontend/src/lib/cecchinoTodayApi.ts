@@ -470,8 +470,26 @@ export type CecchinoPurchasabilityV3Gate = {
   gate_reading?: string | null
 }
 
+export type CecchinoPurchasabilityV3FamilyMarketRow = {
+  market_key?: string | null
+  market_label?: string | null
+  market_family?: string | null
+  edge_pct?: number | null
+  gate_status?: string | null
+  gate_passed?: boolean | null
+  is_selected?: boolean | null
+  is_leader?: boolean | null
+  is_second?: boolean | null
+  rank_by_edge?: number | null
+  included_in_family?: boolean | null
+  included_in_gate_passed_comparison?: boolean | null
+  score?: number | null
+  edge_diff_from_leader?: number | null
+}
+
 export type CecchinoPurchasabilityV3Family = {
   market_family?: string | null
+  market_family_label?: string | null
   selected_is_family_edge_leader?: boolean | null
   family_edge_leader_key?: string | null
   family_edge_leader_edge_pct?: number | null
@@ -483,6 +501,12 @@ export type CecchinoPurchasabilityV3Family = {
   family_competitors?: string[]
   evaluated_family_competitors?: string[]
   gate_passed_family_competitors?: string[]
+  best_family_market_by_edge?: string | null
+  second_best_family_market_by_edge?: string | null
+  selected_edge?: number | null
+  best_other_edge?: number | null
+  edge_gap_or_deficit?: number | null
+  market_rows?: CecchinoPurchasabilityV3FamilyMarketRow[]
   comparison_rows?: Array<{
     market_key?: string | null
     market_label?: string | null

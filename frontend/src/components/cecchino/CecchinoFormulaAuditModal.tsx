@@ -70,7 +70,27 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
                 >
                   {explanation.status}
                 </span>
-                {explanation.formula_version ? (
+                {isV3 ? (
+                  <>
+                    {(explanation as CecchinoKpiExplanation & { candidate_version?: string })
+                      .candidate_version ? (
+                      <span
+                        className="rounded border border-cyan-300/50 bg-cyan-500/20 px-1.5 py-0.5 text-[10px] text-cyan-50"
+                        data-testid="audit-modal-candidate-badge"
+                      >
+                        V3 candidato
+                      </span>
+                    ) : null}
+                    {explanation.formula_version ? (
+                      <span
+                        className="rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-100"
+                        data-testid="audit-modal-formula-badge"
+                      >
+                        Formula fixed discount v1
+                      </span>
+                    ) : null}
+                  </>
+                ) : explanation.formula_version ? (
                   <span className="rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-100">
                     {explanation.formula_version}
                   </span>

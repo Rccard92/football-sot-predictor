@@ -430,3 +430,360 @@ def test_historical_reliability_present(db_mock):
     expl = out["markets"][SEL_HOME]["historical_reliability"]
     assert expl["status"] == "available"
     assert expl["stored_result"] == 62
+
+
+# ---------------------------------------------------------------------------
+# STEP 2.1 — Acquistabilità V3 audit hardening
+# ---------------------------------------------------------------------------
+
+
+def _v3_audit_item(
+    mk: str,
+    *,
+    edge: float,
+    gate_status: str,
+    score: int | None,
+    family: str,
+    label: str,
+    is_leader: bool = False,
+    second: str | None = None,
+    leader: str | None = None,
+    gap: float | None = None,
+    gate_passed_comps: list[str] | None = None,
+    performance_type: str = "real",
+    derived: bool = False,
+) -> dict:
+    return {
+        "market_key": mk,
+        "market_label": label,
+        "market_family": family,
+        "status": "available" if score is not None else "not_applicable",
+        "score": score,
+        "raw_score": float(score) if score is not None else None,
+        "class": "Media" if score == 47 else ("Bassa" if score else None),
+        "gate_status": gate_status,
+        "gate": {
+            "gate_status": gate_status,
+            "gate_reason_codes": [],
+            "gate_reading": None,
+        },
+        "gate_reason_codes": [],
+        "value_score": 100 if score else None,
+        "quality_score": float(score) if score else None,
+        "quality_start": 100,
+        "total_penalty": None,
+        "penalties": {},
+        "candidate_version": "cecchino_purchasability_v3_candidate_1",
+        "formula_version": "cecchino_purchasability_v3_fixed_discount_v1",
+        "input": {
+            "edge_pct": edge,
+            "probability_advantage_pp": 5.0 if gate_status == "passed" else -1.0,
+            "performance_type": "derived" if derived else performance_type,
+            "not_real_book_quote": derived,
+            "diagnostic_only": derived,
+        },
+        "family": {
+            "family_competitors": [],
+            "gate_passed_family_competitors": gate_passed_comps or [],
+            "best_family_market_by_edge": leader or mk,
+            "second_best_family_market_by_edge": second,
+            "selected_is_family_edge_leader": is_leader,
+            "selected_edge": edge,
+            "best_other_edge": 20.0 if mk == "AWAY" else 83.04,
+            "edge_gap_or_deficit": gap,
+            "ambiguity_status": "leader_clear" if is_leader else "not_leader",
+        },
+        "reading_short": "sintesi",
+        "reading_detailed": "dettaglio",
+        "historical_profile_used": False,
+        "fixed_scales_used": True,
+        "parallel_candidate": True,
+        "current_operational_version": False,
+    }
+
+
+def test_purchasability_v3_audit_step21_family_and_versions():
+    from app.services.cecchino.cecchino_kpi_explanations import (
+        _explain_purchasability_v3,
+        _v3_gate_reading_for_audit,
+    )
+
+    home = _v3_audit_item(
+        "HOME",
+        edge=-30.59,
+        gate_status="failed_multiple_non_positive_components",
+        score=None,
+        family="MATCH_WINNER_FT",
+        label="1",
+        leader="AWAY",
+        second="DRAW",
+        gap=None,
+        gate_passed_comps=["DRAW", "AWAY"],
+    )
+    draw = _v3_audit_item(
+        "DRAW",
+        edge=20.0,
+        gate_status="passed",
+        score=11,
+        family="MATCH_WINNER_FT",
+        label="X",
+        leader="AWAY",
+        second="DRAW",
+        gap=-63.04,
+        is_leader=False,
+        gate_passed_comps=["DRAW", "AWAY"],
+    )
+    away = _v3_audit_item(
+        "AWAY",
+        edge=83.04,
+        gate_status="passed",
+        score=47,
+        family="MATCH_WINNER_FT",
+        label="2",
+        leader="AWAY",
+        second="DRAW",
+        gap=63.04,
+        is_leader=True,
+        gate_passed_comps=["DRAW", "AWAY"],
+    )
+    index = {"HOME": home, "DRAW": draw, "AWAY": away}
+    kpi = {
+        "HOME": {"market_key": "HOME", "edge_pct": -30.59},
+        "DRAW": {"market_key": "DRAW", "edge_pct": 20.0},
+        "AWAY": {"market_key": "AWAY", "edge_pct": 83.04},
+    }
+    meta = {
+        "candidate_version": "cecchino_purchasability_v3_candidate_1",
+        "formula_version": "cecchino_purchasability_v3_fixed_discount_v1",
+        "audit_version": "cecchino_purchasability_v3_audit_v1",
+        "generated_at": "2026-07-28T12:00:00+00:00",
+        "source_snapshot_at": "2026-07-28T10:00:00+00:00",
+        "pre_match_only": True,
+        "historical_profile_used": False,
+        "fixed_scales_used": True,
+        "parallel_candidate": True,
+        "current_operational_version": False,
+    }
+
+    expl = _explain_purchasability_v3(
+        kpi["AWAY"],
+        "2",
+        away,
+        away,
+        meta,
+        preview_v3_index=index,
+        candidate_v3_index=index,
+        kpi_rows_by_market=kpi,
+    )
+    assert expl["market_family"] == "MATCH_WINNER_FT"
+    assert expl["market_family_label"] == "Esito finale 1/X/2"
+    assert expl["candidate_version"] == "cecchino_purchasability_v3_candidate_1"
+    assert expl["formula_version"] == "cecchino_purchasability_v3_fixed_discount_v1"
+    assert expl["candidate_version"] != expl["formula_version"]
+    assert expl["audit_version"] == "cecchino_purchasability_v3_audit_v1"
+    assert expl["generated_at"] == meta["generated_at"]
+    assert expl["source_snapshot_at"] == meta["source_snapshot_at"]
+
+    rows = expl["family_comparison"]["market_rows"]
+    assert [r["market_key"] for r in rows] == ["HOME", "DRAW", "AWAY"]
+    by_key = {r["market_key"]: r for r in rows}
+    assert by_key["AWAY"]["edge_pct"] == 83.04
+    assert by_key["DRAW"]["edge_pct"] == 20.0
+    assert by_key["HOME"]["edge_pct"] == -30.59
+    assert by_key["AWAY"]["is_leader"] is True
+    assert by_key["DRAW"]["is_second"] is True
+    assert by_key["AWAY"]["rank_by_edge"] == 1
+    assert by_key["DRAW"]["rank_by_edge"] == 2
+    assert by_key["HOME"]["rank_by_edge"] == 3
+    assert by_key["HOME"]["gate_status"] == "failed_multiple_non_positive_components"
+    assert by_key["DRAW"]["gate_status"] == "passed"
+    assert by_key["AWAY"]["gate_status"] == "passed"
+    assert by_key["AWAY"]["score"] == 47
+    assert by_key["DRAW"]["score"] == 11
+    assert by_key["HOME"]["score"] is None
+    assert abs(by_key["DRAW"]["edge_diff_from_leader"] - (-63.04)) < 0.01
+    # Nessuna ricostruzione score
+    assert expl["persisted_result"]["score"] == 47
+    assert expl["stored_result"] == 47
+
+    expl_draw = _explain_purchasability_v3(
+        kpi["DRAW"],
+        "X",
+        draw,
+        draw,
+        meta,
+        preview_v3_index=index,
+        candidate_v3_index=index,
+        kpi_rows_by_market=kpi,
+    )
+    rows_d = {r["market_key"]: r for r in expl_draw["family_comparison"]["market_rows"]}
+    assert rows_d["AWAY"]["edge_pct"] == 83.04
+    assert rows_d["DRAW"]["edge_pct"] == 20.0
+    assert rows_d["HOME"]["edge_pct"] == -30.59
+    assert rows_d["AWAY"]["is_leader"] is True
+
+    assert "Non supportato" in _v3_gate_reading_for_audit("unsupported_market") or (
+        "non supportato" in _v3_gate_reading_for_audit("unsupported_market").lower()
+    )
+    assert "non sono disponibili" in _v3_gate_reading_for_audit("unavailable_inputs").lower()
+    assert "non sono positivi" in _v3_gate_reading_for_audit(
+        "failed_multiple_non_positive_components"
+    ).lower()
+    assert _v3_gate_reading_for_audit("passed") == "Indice attivato"
+
+
+def test_purchasability_v3_audit_family_goals_and_dc():
+    from app.services.cecchino.cecchino_kpi_explanations import _explain_purchasability_v3
+
+    over = _v3_audit_item(
+        "OVER_2_5",
+        edge=10.0,
+        gate_status="passed",
+        score=20,
+        family="GOALS_FT_2_5",
+        label="Over 2.5",
+        leader="UNDER_2_5",
+        second="OVER_2_5",
+        is_leader=False,
+        gate_passed_comps=["OVER_2_5", "UNDER_2_5"],
+    )
+    under = _v3_audit_item(
+        "UNDER_2_5",
+        edge=25.0,
+        gate_status="passed",
+        score=12,
+        family="GOALS_FT_2_5",
+        label="Under 2.5",
+        leader="UNDER_2_5",
+        second="OVER_2_5",
+        is_leader=True,
+        gate_passed_comps=["OVER_2_5", "UNDER_2_5"],
+    )
+    # Fix under edge higher for leader
+    under["input"]["edge_pct"] = 25.0
+    over["input"]["edge_pct"] = 10.0
+    g_index = {"OVER_2_5": over, "UNDER_2_5": under}
+    expl_g = _explain_purchasability_v3(
+        {"market_key": "UNDER_2_5", "edge_pct": 25.0},
+        "Under 2.5",
+        under,
+        under,
+        {
+            "candidate_version": "cecchino_purchasability_v3_candidate_1",
+            "formula_version": "cecchino_purchasability_v3_fixed_discount_v1",
+            "audit_version": "cecchino_purchasability_v3_audit_v1",
+        },
+        preview_v3_index=g_index,
+        candidate_v3_index=g_index,
+        kpi_rows_by_market={
+            "OVER_2_5": {"market_key": "OVER_2_5", "edge_pct": 10.0},
+            "UNDER_2_5": {"market_key": "UNDER_2_5", "edge_pct": 25.0},
+        },
+    )
+    assert expl_g["market_family"] == "GOALS_FT_2_5"
+    assert expl_g["market_family_label"] == "Goal FT 2.5"
+    keys_g = [r["market_key"] for r in expl_g["family_comparison"]["market_rows"]]
+    assert keys_g == ["OVER_2_5", "UNDER_2_5"]
+    assert set(keys_g) == {"OVER_2_5", "UNDER_2_5"}
+
+    ox = _v3_audit_item(
+        "ONE_X",
+        edge=5.0,
+        gate_status="passed",
+        score=10,
+        family="DOUBLE_CHANCE",
+        label="1X",
+        leader="X_TWO",
+        second="ONE_X",
+        derived=True,
+        gate_passed_comps=["ONE_X", "X_TWO", "ONE_TWO"],
+    )
+    xt = _v3_audit_item(
+        "X_TWO",
+        edge=40.0,
+        gate_status="passed",
+        score=50,
+        family="DOUBLE_CHANCE",
+        label="X2",
+        leader="X_TWO",
+        second="ONE_X",
+        is_leader=True,
+        derived=True,
+        gate_passed_comps=["ONE_X", "X_TWO", "ONE_TWO"],
+    )
+    ot = _v3_audit_item(
+        "ONE_TWO",
+        edge=-5.0,
+        gate_status="failed_non_positive_edge",
+        score=None,
+        family="DOUBLE_CHANCE",
+        label="12",
+        leader="X_TWO",
+        second="ONE_X",
+        derived=True,
+        gate_passed_comps=["ONE_X", "X_TWO"],
+    )
+    d_index = {"ONE_X": ox, "X_TWO": xt, "ONE_TWO": ot}
+    expl_d = _explain_purchasability_v3(
+        {"market_key": "X_TWO", "edge_pct": 40.0},
+        "X2",
+        xt,
+        xt,
+        {
+            "candidate_version": "cecchino_purchasability_v3_candidate_1",
+            "formula_version": "cecchino_purchasability_v3_fixed_discount_v1",
+            "audit_version": "cecchino_purchasability_v3_audit_v1",
+        },
+        preview_v3_index=d_index,
+        candidate_v3_index=d_index,
+        kpi_rows_by_market={
+            "ONE_X": {"market_key": "ONE_X", "edge_pct": 5.0},
+            "X_TWO": {"market_key": "X_TWO", "edge_pct": 40.0},
+            "ONE_TWO": {"market_key": "ONE_TWO", "edge_pct": -5.0},
+        },
+    )
+    assert expl_d["market_family"] == "DOUBLE_CHANCE"
+    assert expl_d["market_family_label"] == "Doppia chance"
+    keys_d = [r["market_key"] for r in expl_d["family_comparison"]["market_rows"]]
+    assert keys_d == ["ONE_X", "X_TWO", "ONE_TWO"]
+    assert expl_d["derived_quote"] is True
+    assert expl_d["stored_result"] == 50
+
+
+def test_purchasability_v3_audit_null_timestamps_and_v2_intact(db_mock):
+    from app.services.cecchino.cecchino_kpi_explanations import _explain_purchasability_v3
+
+    away = _v3_audit_item(
+        "AWAY",
+        edge=83.04,
+        gate_status="passed",
+        score=47,
+        family="MATCH_WINNER_FT",
+        label="2",
+        is_leader=True,
+        leader="AWAY",
+        second="DRAW",
+        gate_passed_comps=["DRAW", "AWAY"],
+    )
+    expl = _explain_purchasability_v3(
+        {"market_key": "AWAY", "edge_pct": 83.04},
+        "2",
+        away,
+        away,
+        {
+            "candidate_version": "cecchino_purchasability_v3_candidate_1",
+            "formula_version": "cecchino_purchasability_v3_fixed_discount_v1",
+            "audit_version": "cecchino_purchasability_v3_audit_v1",
+        },
+    )
+    assert expl["generated_at"] is None
+    assert expl["source_snapshot_at"] is None
+
+    out = build_kpi_explanations(_make_fixture(), db_mock)
+    # V1.1 / V2 ancora presenti e analizzabili
+    assert "purchasability_v1_1" in out["markets"][SEL_HOME]
+    assert "purchasability_v2" in out["markets"][SEL_HOME]
+    assert "purchasability_v3" in out["markets"][SEL_HOME]
+    v11 = out["markets"][SEL_HOME]["purchasability_v1_1"]
+    assert v11["metric_key"] == "purchasability_v1_1"
+    assert v11["stored_result"] == 55

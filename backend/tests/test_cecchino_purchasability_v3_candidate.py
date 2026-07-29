@@ -597,16 +597,36 @@ def test_away_not_compared_with_x_two():
 
 def test_audit_explain_v3_complete():
     by, fair, model = _regression_panel()
-    item = _item(SEL_AWAY, by, fair, model)
+    away = _item(SEL_AWAY, by, fair, model)
+    draw = _item(SEL_DRAW, by, fair, model)
+    home = _item(SEL_HOME, by, fair, model)
+    preview_index = {
+        SEL_AWAY: away,
+        SEL_DRAW: draw,
+        SEL_HOME: home,
+    }
+    generated = "2026-07-28T12:00:00+00:00"
+    source_snap = "2026-07-28T10:00:00+00:00"
     expl = _explain_purchasability_v3(
         by[SEL_AWAY],
         "2",
-        item,
-        item,
+        away,
+        away,
         {
             "candidate_version": PURCHASABILITY_V3_CANDIDATE_VERSION,
             "formula_version": PURCHASABILITY_V3_FORMULA_VERSION,
+            "audit_version": "cecchino_purchasability_v3_audit_v1",
+            "generated_at": generated,
+            "source_snapshot_at": source_snap,
+            "pre_match_only": True,
+            "historical_profile_used": False,
+            "fixed_scales_used": True,
+            "parallel_candidate": True,
+            "current_operational_version": False,
         },
+        preview_v3_index=preview_index,
+        candidate_v3_index=preview_index,
+        kpi_rows_by_market=by,
     )
     assert expl["metric_key"] == "purchasability_v3"
     assert "gate" in expl
@@ -620,6 +640,77 @@ def test_audit_explain_v3_complete():
     assert "simple_explanation" in expl
     assert expl["historical_profile_used"] is False
     assert expl["stored_result"] == 47
+    assert expl["market_family"] == "MATCH_WINNER_FT"
+    assert expl["market_family_label"] == "Esito finale 1/X/2"
+    assert expl["candidate_version"] == PURCHASABILITY_V3_CANDIDATE_VERSION
+    assert expl["formula_version"] == PURCHASABILITY_V3_FORMULA_VERSION
+    assert expl["candidate_version"] != expl["formula_version"]
+    assert expl["audit_version"] == "cecchino_purchasability_v3_audit_v1"
+    assert expl["generated_at"] == generated
+    assert expl["source_snapshot_at"] == source_snap
+    assert expl["data_origin"]["source_snapshot_at"] == source_snap
+    rows = expl["family_comparison"]["market_rows"]
+    assert [r["market_key"] for r in rows] == [SEL_HOME, SEL_DRAW, SEL_AWAY]
+    by_key = {r["market_key"]: r for r in rows}
+    assert by_key[SEL_AWAY]["edge_pct"] == 83.04
+    assert by_key[SEL_DRAW]["edge_pct"] == 20.0
+    assert by_key[SEL_AWAY]["is_leader"] is True
+    assert by_key[SEL_DRAW]["is_second"] is True
+    assert by_key[SEL_AWAY]["score"] == 47
+    assert by_key[SEL_HOME]["score"] is None
+    assert by_key[SEL_HOME]["gate_passed"] is False
+    assert abs(by_key[SEL_DRAW]["edge_diff_from_leader"] - (20.0 - 83.04)) < 0.01
+    assert expl["gate"]["gate_reading"] == "Indice attivato"
+    # Score persistito non ricalcolato
+    assert expl["persisted_result"]["score"] == 47
+    assert expl["final_calculation"]["score"] == 47
+
+
+def test_audit_explain_v3_gate_readings():
+    by = {SEL_AWAY: _row(SEL_AWAY, edge=None, vant=0.05)}
+    item = _item(SEL_AWAY, by, {SEL_AWAY: _fair(0.3)})
+    expl = _explain_purchasability_v3(
+        by[SEL_AWAY], "2", item, item, {"audit_version": "cecchino_purchasability_v3_audit_v1"}
+    )
+    assert expl["gate"]["gate_status"] == "unavailable_inputs"
+    assert "Non calcolabile" in (expl["gate"]["gate_reading"] or "") or (
+        "non sono disponibili" in (expl["gate"]["gate_reading"] or "").lower()
+    )
+
+    by2 = {SEL_OVER_PT_1_5: _row(SEL_OVER_PT_1_5, edge=10, vant=0.05)}
+    item2 = _item(SEL_OVER_PT_1_5, by2, {SEL_OVER_PT_1_5: _fair(0.5)})
+    expl2 = _explain_purchasability_v3(
+        by2[SEL_OVER_PT_1_5], "Over PT 1.5", item2, item2, {}
+    )
+    assert expl2["gate"]["gate_status"] == "unsupported_market"
+    assert "non supportato" in (expl2["gate"]["gate_reading"] or "").lower()
+    assert "nessun valore positivo" not in (expl2["gate"]["gate_reading"] or "").lower()
+
+    by3 = {SEL_HOME: _row(SEL_HOME, edge=-5, vant=-0.02)}
+    item3 = _item(SEL_HOME, by3, {SEL_HOME: _fair(0.6)})
+    expl3 = _explain_purchasability_v3(by3[SEL_HOME], "1", item3, item3, {})
+    assert expl3["gate"]["gate_status"] == "failed_multiple_non_positive_components"
+    assert "non attivato" in (expl3["gate"]["gate_reading"] or "").lower()
+
+
+def test_audit_explain_v3_null_timestamps():
+    by, fair, model = _regression_panel()
+    item = _item(SEL_AWAY, by, fair, model)
+    expl = _explain_purchasability_v3(
+        by[SEL_AWAY],
+        "2",
+        item,
+        item,
+        {
+            "candidate_version": PURCHASABILITY_V3_CANDIDATE_VERSION,
+            "formula_version": PURCHASABILITY_V3_FORMULA_VERSION,
+            "audit_version": "cecchino_purchasability_v3_audit_v1",
+        },
+    )
+    assert expl["generated_at"] is None
+    assert expl["source_snapshot_at"] is None
+    assert "generated_at_unavailable" in expl["warnings"]
+    assert "source_snapshot_at_unavailable" in expl["warnings"]
 
 
 def test_deterministic_natural_language():

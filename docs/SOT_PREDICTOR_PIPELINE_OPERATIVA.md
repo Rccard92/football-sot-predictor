@@ -134,6 +134,12 @@ flowchart TD
 3. Popup dedicato `metric_key=purchasability_v3`: gate, value, penalità come sottrazioni, famiglie separate, mercato opposto, linked diagnostico, calcolo `value×quality/100`, diagnostica.
 4. Nessuna scansione, migration, replay Run #3; formule V1.1/V2/V3 invariate; V3 non promossa.
 
+## Acquistabilità v3 — audit hardening (STEP 2.1, 2026-07-29)
+
+1. Audit KPI read-only: `market_family`/`market_family_label`, triade `candidate`/`formula`/`audit` version, `generated_at`/`source_snapshot_at`, `family_comparison.market_rows`.
+2. FE popup: nessuna ricostruzione Edge; details input chiusi; reading non duplicata; gate reading dal backend; quote derivate = solo diagnostico.
+3. Formula/soglie/score/snapshot V3 e V1.1/V2 invariati; nessun replay storico.
+
 ## Acquistabilità v3 — freeze parallelo (2026-07-29)
 
 1. Scan/recompute: dopo attach v1.1 e v2 → `attach_purchasability_preview_v3_to_output` (fail-soft; solo `purchasability_preview_v3`).

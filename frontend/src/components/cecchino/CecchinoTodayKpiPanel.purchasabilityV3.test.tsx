@@ -194,7 +194,12 @@ describe('CecchinoTodayKpiPanel purchasability V3', () => {
         purchasabilityV3SnapshotAvailable
       />,
     )
-    expect(screen.getAllByText('Quota derivata').length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText((content) => content.includes('Quota derivata')).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText((content) => content.includes('Solo diagnostico')).length,
+    ).toBeGreaterThan(0)
   })
 
   it('cella V3 e gate-failed cliccabili in analisi; lazy load', async () => {

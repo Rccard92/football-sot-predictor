@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Harden purchasability v3 audit UI (2026-07-29)
+
+- Perché: il popup V3 confondeva versioni, lasciava metadata vuoti e ricostruiva Edge famiglia in FE (gap negativo → Edge leader errato).
+- Cosa: audit read-only (`cecchino_kpi_explanations`) espone `market_family`/`label`, triade versioni, timestamp, `market_rows`, `gate_reading` semantici; FE consuma solo payload persistito; details input; quote derivate diagnostiche; test + doc STEP 2.1.
+- Cosa non fa: non tocca formula/soglie/score/snapshot V3 né V1.1/V2; nessuna migration, scansione, backfill, replay Run #3.
+
 ## Feat — Acquistabilità v3 analysis UI (2026-07-29)
 
 - Perché: esporre il candidato V3 nel Pannello KPI con popup analitico leggibile, senza promuovere V3 né toccare le formule.

@@ -63,7 +63,7 @@ describe('resolvePurchasabilityV3CellState', () => {
   it('quota derivata', () => {
     const s = resolvePurchasabilityV3CellState(DERIVED_V3_ITEM, { snapshotAvailable: true })
     expect(s.derivedQuote).toBe(true)
-    expect(s.subtitle).toBe('Quota derivata')
+    expect(s.subtitle).toBe('Quota derivata · Solo diagnostico')
   })
 })
 

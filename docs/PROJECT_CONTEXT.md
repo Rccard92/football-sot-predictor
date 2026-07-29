@@ -166,7 +166,7 @@ Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5
 
 ## Acquistabilità v3 — fixed discount parallelo (2026-07-29)
 
-`fixed_discount_v3` (`cecchino_purchasability_v3_candidate_1`) è un candidato **parallelo osservazionale**. Non sostituisce v1.1 né v2. Snapshot: `purchasability_preview_v3`. Gate valore positivo → score null se fallisce. Value solo da Edge (scala fissa /50); qualità come sconto da penalità reali; formula `value×quality/100`. Nessun profilo storico, nessun percentile. **STEP 2 UI:** Pannello KPI mostra Acq. V2 + Acq. V3 (candidato); V1.1 rimossa solo dalla UI KPI (backend/API/audit legacy invariati); popup analitico dedicato `purchasability_v3`. Replay storico richiesto prima della promozione (STEP 3). Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+`fixed_discount_v3` (`cecchino_purchasability_v3_candidate_1`) è un candidato **parallelo osservazionale**. Non sostituisce v1.1 né v2. Snapshot: `purchasability_preview_v3`. Gate valore positivo → score null se fallisce. Value solo da Edge (scala fissa /50); qualità come sconto da penalità reali; formula `value×quality/100`. Nessun profilo storico, nessun percentile. **STEP 2 UI:** Pannello KPI mostra Acq. V2 + Acq. V3 (candidato); V1.1 rimossa solo dalla UI KPI (backend/API/audit legacy invariati); popup analitico dedicato `purchasability_v3`. **STEP 2.1:** audit hardening (versioni distinte, metadata, `market_rows` reali, no ricostruzione FE, gate semantici, details input, quote derivate diagnostiche); formula invariata; replay storico ancora non eseguito. Replay storico richiesto prima della promozione (STEP 3). Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
 
 ## Acquistabilità v2 — Indice decisionale parallelo (2026-07-27)
 

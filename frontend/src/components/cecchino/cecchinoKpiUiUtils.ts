@@ -368,7 +368,7 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'score',
       primary: String(item.score),
-      subtitle: derived ? 'Quota derivata' : 'Non validato',
+      subtitle: derived ? 'Quota derivata · Solo diagnostico' : 'Non validato',
       showScoreBadge: true,
       showCandidateChip: true,
       derivedQuote: derived,
@@ -383,7 +383,7 @@ export function resolvePurchasabilityV3CellState(
     return {
       kind: 'score',
       primary: String(item.score),
-      subtitle: derived ? 'Quota derivata' : 'Non validato',
+      subtitle: derived ? 'Quota derivata · Solo diagnostico' : 'Non validato',
       showScoreBadge: true,
       showCandidateChip: true,
       derivedQuote: derived,

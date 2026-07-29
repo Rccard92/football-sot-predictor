@@ -12,6 +12,23 @@ type Props = {
 
 type UnknownRecord = Record<string, unknown>
 
+type FamilyMarketRow = {
+  market_key?: string | null
+  market_label?: string | null
+  market_family?: string | null
+  edge_pct?: number | null
+  gate_status?: string | null
+  gate_passed?: boolean | null
+  is_selected?: boolean | null
+  is_leader?: boolean | null
+  is_second?: boolean | null
+  rank_by_edge?: number | null
+  included_in_family?: boolean | null
+  included_in_gate_passed_comparison?: boolean | null
+  score?: number | null
+  edge_diff_from_leader?: number | null
+}
+
 function asRecord(v: unknown): UnknownRecord | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as UnknownRecord) : null
 }
@@ -70,6 +87,19 @@ const MARKET_LABELS: Record<string, string> = {
   UNDER_2_5: 'Under 2.5',
 }
 
+const HUMAN_CODE_LABELS: Record<string, string> = {
+  normalized_1x2_market: 'Mercato 1X2 Betfair normalizzato',
+  linked_double_chance_away_cover: 'X2 collegato al segno 2',
+  linked_double_chance_home_cover: '1X collegato al segno 1',
+  linked_double_chance_anti_draw: '12 collegato al pareggio',
+  leader_clear: 'Leader netto',
+  leader_close: 'Leader con margine ridotto',
+  not_leader: 'Non leader della famiglia',
+  insufficient_family_comparison: 'Confronto famiglia insufficiente',
+  AWAY_to_X_TWO: '2 → X2 (contesto collegato)',
+  HOME_to_ONE_X: '1 → 1X (contesto collegato)',
+}
+
 const EDGE_SCALE = [
   { edge: '0%', value: '0' },
   { edge: '10%', value: '20' },
@@ -84,17 +114,9 @@ function marketLabel(key: string | null | undefined): string {
   return MARKET_LABELS[key] || key
 }
 
-function familyMarkets(familyKey: string | null | undefined): string[] {
-  switch (familyKey) {
-    case 'MATCH_WINNER_FT':
-      return ['HOME', 'DRAW', 'AWAY']
-    case 'GOALS_FT_2_5':
-      return ['OVER_2_5', 'UNDER_2_5']
-    case 'DOUBLE_CHANCE':
-      return ['ONE_X', 'X_TWO', 'ONE_TWO']
-    default:
-      return []
-  }
+function humanizeCode(code: string | null | undefined): string {
+  if (!code) return '—'
+  return HUMAN_CODE_LABELS[code] || code
 }
 
 function DlRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -126,7 +148,16 @@ function Section({
   )
 }
 
+function gateStatusHuman(status: string | null): string {
+  if (!status) return '—'
+  if (status === 'passed') return 'passed'
+  if (status === 'unsupported_market') return 'unsupported_market'
+  if (status === 'unavailable_inputs') return 'unavailable_inputs'
+  return status
+}
+
 export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
+  const explRec = explanation as UnknownRecord
   const gate = asRecord(explanation.gate) ?? {}
   const value = asRecord(explanation.value) ?? {}
   const quality = asRecord(explanation.quality) ?? {}
@@ -143,20 +174,50 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
   const gateStatus = asString(gate.gate_status) ?? asString(persisted.gate_status)
   const gatePassed = gateStatus === 'passed'
   const gateFailed = Boolean(gateStatus && gateStatus !== 'passed')
+  const gateReading = asString(gate.gate_reading)
 
   const score =
     asNumber(finalCalc.score) ??
     asNumber(persisted.score) ??
     (typeof explanation.stored_result === 'number' ? explanation.stored_result : null)
   const klass = asString(finalCalc.class) ?? asString(persisted.class)
-  const marketFamily =
+
+  const marketFamilyLabel =
+    asString(explRec.market_family_label) ?? asString(family.market_family_label)
+  const marketFamilyCode =
+    asString(explRec.market_family) ??
     asString(family.market_family) ??
-    asString(input.market_family) ??
-    asString((explanation as UnknownRecord).market_family)
+    asString(input.market_family)
 
   const readingShort = asString(explanation.reading_short)
   const readingDetailed =
     asString(explanation.reading_detailed) ?? asString(explanation.simple_explanation)
+  const readingsIdentical =
+    Boolean(readingShort && readingDetailed && readingShort === readingDetailed)
+  const showDetailedOutsideBox = Boolean(readingDetailed && !readingsIdentical)
+  const howToReadText =
+    readingDetailed ||
+    readingShort ||
+    'Il valore della quota viene ridotto dalle penalità di qualità rilevate.'
+
+  const candidateVersion =
+    asString(explRec.candidate_version) ?? asString(input.candidate_version)
+  const formulaVersion = explanation.formula_version ?? null
+  const auditVersion = asString(explRec.audit_version)
+  const generatedAt =
+    asString(explRec.generated_at) ?? asString(dataOrigin.generated_at)
+  const sourceSnapshotAt =
+    asString(explRec.source_snapshot_at) ?? asString(dataOrigin.source_snapshot_at)
+
+  const derivedQuote =
+    asBool(explRec.derived_quote) === true ||
+    asString(input.performance_type) === 'derived' ||
+    asBool(input.not_real_book_quote) === true ||
+    asBool(input.diagnostic_only) === true
+  const diagnosticOnly =
+    asBool(explRec.diagnostic_only) === true ||
+    asBool(input.diagnostic_only) === true ||
+    derivedQuote
 
   const badges = [
     'V3 parallela',
@@ -176,26 +237,24 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
   const vantFraction =
     vantPp != null && Math.abs(vantPp) <= 1 ? vantPp : vantPp != null ? vantPp / 100 : null
 
-  const familyKeys = familyMarkets(marketFamily)
-  const familyCompetitors = asStringList(family.family_competitors)
-  const rowsForFamily =
-    familyKeys.length > 0
-      ? familyKeys
-      : [explanation.market_key, ...familyCompetitors].filter(Boolean)
+  const marketRowsRaw = family.market_rows
+  const marketRows: FamilyMarketRow[] = Array.isArray(marketRowsRaw)
+    ? (marketRowsRaw as FamilyMarketRow[])
+    : []
 
-  const leaderKey = asString(family.best_family_market_by_edge)
-  const selectedIsLeader = asBool(family.selected_is_family_edge_leader)
-  const gap = asNumber(family.edge_gap_or_deficit)
-  const selectedEdge = asNumber(family.selected_edge) ?? edgePct
-
-  const familyReading =
-    selectedIsLeader === true
-      ? `Il mercato analizzato ha l’Edge più alto della famiglia${
-          gap != null ? ` con un distacco di ${formatV3Number(gap)} punti.` : '.'
-        }`
-      : selectedIsLeader === false
-        ? 'Un altro mercato della famiglia presenta Edge maggiore.'
-        : null
+  const familyReading = (() => {
+    const selectedIsLeader = asBool(family.selected_is_family_edge_leader)
+    const gap = asNumber(family.edge_gap_or_deficit)
+    if (selectedIsLeader === true) {
+      return `Il mercato analizzato ha l’Edge più alto della famiglia${
+        gap != null ? ` con un distacco di ${formatV3Number(gap)} punti.` : '.'
+      }`
+    }
+    if (selectedIsLeader === false) {
+      return 'Un altro mercato della famiglia presenta Edge maggiore.'
+    }
+    return null
+  })()
 
   const oppPenalty = asNumber(opposite.opposite_pressure_penalty)
   const totalPenalty = asNumber(quality.total_penalty)
@@ -210,6 +269,8 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
       ? Object.entries(sourcePaths as UnknownRecord).map(([k, v]) => `${k}: ${String(v)}`)
       : []
 
+  const quoteQualityPen = asRecord(penalties.quote_quality)
+
   return (
     <div className="space-y-4" data-testid="purchasability-v3-audit-view">
       <Section title="Risultato in parole semplici" testId="v3-section-result">
@@ -222,23 +283,62 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
               {b}
             </span>
           ))}
+          <span
+            className="rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-900"
+            data-testid="v3-badge-candidate"
+          >
+            V3 candidato
+          </span>
+          {formulaVersion ? (
+            <span
+              className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+              data-testid="v3-badge-formula"
+            >
+              Formula fixed discount v1
+            </span>
+          ) : null}
+          {derivedQuote ? (
+            <span
+              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900"
+              data-testid="v3-badge-derived"
+            >
+              Quota derivata
+            </span>
+          ) : null}
+          {diagnosticOnly ? (
+            <span
+              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900"
+              data-testid="v3-badge-diagnostic"
+            >
+              Solo diagnostico
+            </span>
+          ) : null}
         </div>
         <dl className="mt-2 space-y-1.5 text-sm">
           <DlRow label="Score finale">
-            {gateFailed && score == null ? 'Indice non attivato' : score ?? '—'}
+            <span data-testid="v3-score-final">
+              {gateFailed && score == null ? 'Indice non attivato' : score ?? '—'}
+            </span>
           </DlRow>
           <DlRow label="Classe">{gateFailed && !klass ? '—' : klass ?? '—'}</DlRow>
-          <DlRow label="Stato gate">{gateStatus ?? '—'}</DlRow>
+          <DlRow label="Stato gate">{gateStatusHuman(gateStatus)}</DlRow>
           <DlRow label="Mercato">{explanation.market_label || explanation.market_key}</DlRow>
-          <DlRow label="Famiglia">{marketFamily ?? '—'}</DlRow>
+          <DlRow label="Famiglia">
+            <span data-testid="v3-family-label">{marketFamilyLabel ?? '—'}</span>
+          </DlRow>
         </dl>
         {readingShort ? (
-          <p className="mt-2 rounded-md bg-slate-50 px-2.5 py-2 text-sm font-medium text-slate-900">
+          <p
+            className="mt-2 rounded-md bg-slate-50 px-2.5 py-2 text-sm font-medium text-slate-900"
+            data-testid="v3-reading-short"
+          >
             {readingShort}
           </p>
         ) : null}
-        {readingDetailed ? (
-          <p className="text-sm leading-relaxed text-slate-700">{readingDetailed}</p>
+        {showDetailedOutsideBox ? (
+          <p className="text-sm leading-relaxed text-slate-700" data-testid="v3-reading-detailed-inline">
+            {readingDetailed}
+          </p>
         ) : null}
         <div
           className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 text-sm text-indigo-950"
@@ -247,10 +347,8 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
           <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
             Come leggere questo risultato
           </p>
-          <p className="mt-1">
-            {readingDetailed ||
-              readingShort ||
-              'Il valore della quota viene ridotto dalle penalità di qualità rilevate.'}
+          <p className="mt-1" data-testid="v3-reading-detailed">
+            {howToReadText}
           </p>
         </div>
       </Section>
@@ -260,7 +358,18 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
           L’indice si attiva soltanto quando Edge e vantaggio probabilistico sono entrambi
           positivi.
         </p>
-        {gateFailed ? (
+        {gateReading ? (
+          <p
+            className={`rounded-md border px-2.5 py-2 text-sm font-semibold ${
+              gatePassed
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                : 'border-amber-200 bg-amber-50 text-amber-950'
+            }`}
+            data-testid="v3-gate-reading"
+          >
+            {gateReading}
+          </p>
+        ) : gateFailed ? (
           <p
             className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950"
             data-testid="v3-gate-not-activated"
@@ -279,31 +388,42 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
           <DlRow label="Vantaggio positivo">
             {yesNo(asBool(gate.probability_advantage_positive))}
           </DlRow>
-          <DlRow label="Gate status">{gateStatus ?? '—'}</DlRow>
-          <DlRow label="Reason codes">
-            {(asStringList(gate.gate_reason_codes) || []).join(', ') || '—'}
-          </DlRow>
-          <DlRow label="Gate reading">{asString(gate.gate_reading) ?? '—'}</DlRow>
+          <DlRow label="Gate">{gateStatus ?? '—'}</DlRow>
+          <DlRow label="Motivazione">{gateReading ?? '—'}</DlRow>
         </dl>
         {(Object.keys(input).length > 0 || gateFailed) && (
-          <div className="overflow-x-auto rounded border border-slate-100">
-            <table className="w-full min-w-[320px] text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="px-2 py-1">Input disponibile</th>
-                  <th className="px-2 py-1">Valore</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(input).map(([k, v]) => (
-                  <tr key={k} className="border-t border-slate-100">
-                    <td className="px-2 py-1 font-mono text-[10px]">{k}</td>
-                    <td className="px-2 py-1 tabular-nums">{v == null ? '—' : String(v)}</td>
+          <details className="rounded border border-slate-200" data-testid="v3-raw-inputs-details">
+            <summary
+              className="cursor-pointer px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              data-testid="v3-raw-inputs-summary"
+            >
+              Mostra dati tecnici grezzi
+            </summary>
+            <div className="overflow-x-auto border-t border-slate-100 px-1 pb-2">
+              <table className="w-full min-w-[320px] text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-2 py-1">Input grezzo</th>
+                    <th className="px-2 py-1">Valore</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Object.entries(input).map(([k, v]) => (
+                    <tr key={k} className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-mono text-[10px]">{k}</td>
+                      <td className="px-2 py-1 tabular-nums">{v == null ? '—' : String(v)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-slate-100">
+                    <td className="px-2 py-1 font-mono text-[10px]">gate_reason_codes</td>
+                    <td className="px-2 py-1">
+                      {(asStringList(gate.gate_reason_codes) || []).join(', ') || '—'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
         )}
       </Section>
 
@@ -399,6 +519,15 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
                   {asString(pen.explanation) ? (
                     <p className="mt-1 text-xs text-slate-700">{asString(pen.explanation)}</p>
                   ) : null}
+                  {key === 'quote_quality' && derivedQuote ? (
+                    <p
+                      className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs text-violet-950"
+                      data-testid="v3-derived-quote-note"
+                    >
+                      Questa quota è derivata matematicamente e non rappresenta una quota Betfair
+                      realmente rilevata. Il risultato serve soltanto per analisi.
+                    </p>
+                  ) : null}
                   <dl className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
                     {Object.entries(raw).map(([rk, rv]) => (
                       <div key={rk}>
@@ -446,6 +575,15 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
               )
             })}
           </div>
+          {derivedQuote && !quoteQualityPen ? (
+            <p
+              className="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-2 text-xs text-violet-950"
+              data-testid="v3-derived-quote-note"
+            >
+              Questa quota è derivata matematicamente e non rappresenta una quota Betfair
+              realmente rilevata. Il risultato serve soltanto per analisi.
+            </p>
+          ) : null}
           <dl className="mt-2 space-y-1 rounded-md border border-slate-200 px-2.5 py-2 text-sm">
             <DlRow label="Penalità totali">
               <span className="font-semibold text-rose-700" data-testid="v3-total-penalty">
@@ -467,69 +605,92 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
           title="4. È la scelta migliore nella sua famiglia?"
           testId="v3-section-family"
         >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] border-collapse text-left text-xs">
-              <thead className="bg-slate-100 text-slate-600">
-                <tr>
-                  <th className="px-2 py-1.5">Mercato</th>
-                  <th className="px-2 py-1.5">Edge</th>
-                  <th className="px-2 py-1.5">Gate</th>
-                  <th className="px-2 py-1.5">Leader</th>
-                  <th className="px-2 py-1.5">Diff. leader</th>
-                  <th className="px-2 py-1.5">Nel confronto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rowsForFamily.map((mk) => {
-                  const isSelected = mk === explanation.market_key
-                  const isLeader = mk === leaderKey
-                  const used = asStringList(family.gate_passed_family_competitors).includes(
-                    mk,
-                  ) || isSelected
-                  const edgeForRow =
-                    isSelected
-                      ? selectedEdge
-                      : mk === asString(family.second_best_family_market_by_edge)
-                        ? asNumber(family.best_other_edge)
-                        : mk === leaderKey
-                          ? asNumber(family.best_other_edge) != null &&
-                            selectedIsLeader === false
-                            ? (selectedEdge ?? 0) + (gap ?? 0)
-                            : selectedEdge
-                          : null
-                  return (
-                    <tr
-                      key={mk}
-                      className={`border-t border-slate-100 ${
-                        isSelected ? 'bg-amber-50' : isLeader ? 'bg-emerald-50/70' : ''
-                      }`}
-                      data-testid={`v3-family-row-${mk}`}
-                    >
-                      <td className="px-2 py-1.5 font-medium">
-                        {marketLabel(mk)}
-                        {isSelected ? ' (analizzato)' : ''}
-                        {isLeader ? ' ★' : ''}
-                      </td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {edgeForRow != null ? formatV3PctAlready(edgeForRow) : '—'}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {isSelected ? gateStatus ?? '—' : used ? 'passed' : '—'}
-                      </td>
-                      <td className="px-2 py-1.5">{yesNo(isLeader)}</td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {isSelected && gap != null ? formatV3Number(gap) : '—'}
-                      </td>
-                      <td className="px-2 py-1.5">{yesNo(used)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          {marketRows.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table
+                className="w-full min-w-[520px] border-collapse text-left text-xs"
+                data-testid="v3-family-table"
+              >
+                <thead className="bg-slate-100 text-slate-600">
+                  <tr>
+                    <th className="px-2 py-1.5">Mercato</th>
+                    <th className="px-2 py-1.5">Edge</th>
+                    <th className="px-2 py-1.5">Gate</th>
+                    <th className="px-2 py-1.5">Posizione</th>
+                    <th className="px-2 py-1.5">Leader</th>
+                    <th className="px-2 py-1.5">Diff. dal leader</th>
+                    <th className="px-2 py-1.5">Nel confronto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketRows.map((row) => {
+                    const mk = String(row.market_key || '')
+                    const isSelected = Boolean(row.is_selected)
+                    const isLeader = Boolean(row.is_leader)
+                    const edge = asNumber(row.edge_pct)
+                    const diff = asNumber(row.edge_diff_from_leader)
+                    return (
+                      <tr
+                        key={mk}
+                        className={`border-t border-slate-100 ${
+                          isSelected ? 'bg-amber-50' : isLeader ? 'bg-emerald-50/70' : ''
+                        }`}
+                        data-testid={`v3-family-row-${mk}`}
+                      >
+                        <td className="px-2 py-1.5 font-medium">
+                          {asString(row.market_label) || marketLabel(mk)}
+                          {isSelected ? ' (analizzato)' : ''}
+                          {isLeader ? (
+                            <span
+                              className="ml-1 rounded bg-emerald-100 px-1 py-px text-[9px] font-semibold text-emerald-800"
+                              data-testid={`v3-family-leader-badge-${mk}`}
+                            >
+                              Leader
+                            </span>
+                          ) : null}
+                        </td>
+                        <td
+                          className="px-2 py-1.5 tabular-nums"
+                          data-testid={`v3-family-edge-${mk}`}
+                        >
+                          {edge != null ? formatV3PctAlready(edge) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {row.gate_passed
+                            ? 'passed'
+                            : asString(row.gate_status) || '—'}
+                        </td>
+                        <td className="px-2 py-1.5 tabular-nums">
+                          {row.rank_by_edge != null ? String(row.rank_by_edge) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5">{yesNo(isLeader)}</td>
+                        <td
+                          className="px-2 py-1.5 tabular-nums"
+                          data-testid={`v3-family-diff-${mk}`}
+                        >
+                          {isLeader
+                            ? '—'
+                            : diff != null
+                              ? formatV3Number(diff)
+                              : '—'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {yesNo(asBool(row.included_in_gate_passed_comparison))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600" data-testid="v3-family-rows-missing">
+              Confronto famiglia non disponibile nel payload audit.
+            </p>
+          )}
           {familyReading ? <p className="text-sm text-slate-700">{familyReading}</p> : null}
           <p className="text-xs text-slate-500">
-            Ambiguità: {asString(family.ambiguity_status) ?? '—'} · Penalità famiglia:{' '}
+            Ambiguità: {humanizeCode(asString(family.ambiguity_status))} · Penalità famiglia:{' '}
             {formatPenaltyPointsNegative(
               asNumber(asRecord(penalties.family_ambiguity)?.penalty_points),
             )}
@@ -600,7 +761,9 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
               <DlRow label="Mercato collegato">
                 {marketLabel(asString(linked.linked_market_key))}
               </DlRow>
-              <DlRow label="Relazione">{asString(linked.relationship) ?? '—'}</DlRow>
+              <DlRow label="Relazione">
+                {humanizeCode(asString(linked.relationship))}
+              </DlRow>
               <DlRow label="Edge">{formatV3PctAlready(asNumber(linked.edge_pct))}</DlRow>
               <DlRow label="Vantaggio">
                 {asNumber(linked.vantaggio_prob) != null
@@ -621,6 +784,9 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
                 diretto nella famiglia MATCH_WINNER_FT.
               </p>
             ) : null}
+            <p className="font-mono text-[10px] text-slate-400">
+              {asString(linked.relationship)}
+            </p>
           </>
         ) : (
           <p className="text-sm text-slate-600">Nessun contesto collegato per questo mercato.</p>
@@ -693,27 +859,35 @@ export function CecchinoPurchasabilityV3AuditView({ explanation }: Props) {
               ? ` · prec. ${explanation.rounding.precision}`
               : ''}
           </DlRow>
-          <DlRow label="candidate_version">
-            {asString(input.candidate_version) ||
-              asString((explanation as UnknownRecord).candidate_version) ||
-              explanation.formula_version ||
-              '—'}
+          <DlRow label="Famiglia (codice)">
+            <span className="font-mono text-xs" data-testid="v3-family-code">
+              {marketFamilyCode ?? '—'}
+            </span>
           </DlRow>
-          <DlRow label="formula_version">{explanation.formula_version ?? '—'}</DlRow>
+          <DlRow label="candidate_version">
+            <span data-testid="v3-candidate-version">{candidateVersion ?? '—'}</span>
+          </DlRow>
+          <DlRow label="formula_version">
+            <span data-testid="v3-formula-version">{formulaVersion ?? '—'}</span>
+          </DlRow>
           <DlRow label="audit_version">
-            {asString((explanation as UnknownRecord).audit_version) ?? '—'}
+            <span data-testid="v3-audit-version">{auditVersion ?? '—'}</span>
           </DlRow>
           <DlRow label="generated_at">
-            {asString((explanation as UnknownRecord).generated_at) ?? '—'}
+            <span data-testid="v3-generated-at">{generatedAt ?? '—'}</span>
           </DlRow>
           <DlRow label="source_snapshot_at">
-            {asString(dataOrigin.source_snapshot_at) ?? '—'}
+            <span data-testid="v3-source-snapshot-at">{sourceSnapshotAt ?? '—'}</span>
           </DlRow>
           <DlRow label="pre_match_only">
             {yesNo(asBool(dataOrigin.pre_match_only) ?? true)}
           </DlRow>
           <DlRow label="historical_profile_used">
-            {yesNo(asBool(dataOrigin.historical_profile_used) ?? asBool(dep.historical_profile_used) ?? false)}
+            {yesNo(
+              asBool(dataOrigin.historical_profile_used) ??
+                asBool(dep.historical_profile_used) ??
+                false,
+            )}
           </DlRow>
           <DlRow label="fixed_scales_used">
             {yesNo(asBool(dataOrigin.fixed_scales_used) ?? asBool(dep.fixed_scales_used) ?? true)}

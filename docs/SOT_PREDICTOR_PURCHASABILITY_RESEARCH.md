@@ -39,6 +39,15 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Nessun ROI storico V3 in cella (replay non ancora eseguito); sottotitolo «Non validato».
 - V3 **non** dichiarata operativa, validata, migliore o sostitutiva della V2.
 
+### STEP 2.1 — Audit hardening (2026-07-29)
+
+- Nessuna modifica a formula, soglie, score, snapshot o motori V1.1/V2/V3.
+- Versioni distinte in audit UI: `candidate_version` ≠ `formula_version` ≠ `audit_version` (no fallback candidate←formula).
+- Metadata propagati dallo snapshot: `generated_at`, `source_snapshot_at`, flag pre-match/scale/parallelo (null → «—»).
+- `family_comparison.market_rows`: Edge/gate/leader/rank reali per famiglia; FE non ricostruisce Edge (es. gap negativo DRAW ≠ Edge AWAY inventato).
+- Gate reading semantici (`unsupported_market` / `unavailable_inputs` / failed / passed); input grezzi in `<details>` chiuso; reading non duplicata; quote derivate solo diagnostiche.
+- Replay storico ancora **non** eseguito (STEP 3).
+
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)

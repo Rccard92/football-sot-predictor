@@ -1,10 +1,63 @@
 import type {
   CecchinoKpiExplanation,
+  CecchinoPurchasabilityV3FamilyMarketRow,
   CecchinoPurchasabilityV3Item,
   CecchinoPurchasabilityV3Snapshot,
 } from '../../../lib/cecchinoTodayApi'
 
-/** Fixture regressione AWAY (Book 9.50 / Cecchino 5.19 → score 47). Valori dal payload, non hardcodati in UI. */
+/** Fixture regressione MATCH_WINNER_FT — Edge reali, nessuna ricostruzione FE. */
+export const MATCH_WINNER_FAMILY_ROWS: CecchinoPurchasabilityV3FamilyMarketRow[] = [
+  {
+    market_key: 'HOME',
+    market_label: '1',
+    market_family: 'MATCH_WINNER_FT',
+    edge_pct: -30.59,
+    gate_status: 'failed_multiple_non_positive_components',
+    gate_passed: false,
+    is_selected: false,
+    is_leader: false,
+    is_second: false,
+    rank_by_edge: 3,
+    included_in_family: true,
+    included_in_gate_passed_comparison: false,
+    score: null,
+    edge_diff_from_leader: -113.63,
+  },
+  {
+    market_key: 'DRAW',
+    market_label: 'X',
+    market_family: 'MATCH_WINNER_FT',
+    edge_pct: 20.0,
+    gate_status: 'passed',
+    gate_passed: true,
+    is_selected: false,
+    is_leader: false,
+    is_second: true,
+    rank_by_edge: 2,
+    included_in_family: true,
+    included_in_gate_passed_comparison: true,
+    score: 11,
+    edge_diff_from_leader: -63.04,
+  },
+  {
+    market_key: 'AWAY',
+    market_label: '2',
+    market_family: 'MATCH_WINNER_FT',
+    edge_pct: 83.04,
+    gate_status: 'passed',
+    gate_passed: true,
+    is_selected: true,
+    is_leader: true,
+    is_second: false,
+    rank_by_edge: 1,
+    included_in_family: true,
+    included_in_gate_passed_comparison: true,
+    score: 47,
+    edge_diff_from_leader: 0,
+  },
+]
+
+/** Fixture regressione AWAY (Book 9.50 / Cecchino 5.19 → score 47). */
 export const AWAY_V3_ITEM: CecchinoPurchasabilityV3Item = {
   market_key: 'AWAY',
   market_label: '2',
@@ -124,6 +177,7 @@ export const AWAY_V3_ITEM: CecchinoPurchasabilityV3Item = {
   },
   family: {
     market_family: 'MATCH_WINNER_FT',
+    market_family_label: 'Esito finale 1/X/2',
     family_competitors: ['HOME', 'DRAW'],
     evaluated_family_competitors: ['HOME', 'DRAW'],
     gate_passed_family_competitors: ['DRAW'],
@@ -134,6 +188,10 @@ export const AWAY_V3_ITEM: CecchinoPurchasabilityV3Item = {
     best_other_edge: 20,
     edge_gap_or_deficit: 63.04,
     ambiguity_status: 'leader_clear',
+    market_rows: MATCH_WINNER_FAMILY_ROWS.map((r) => ({
+      ...r,
+      is_selected: r.market_key === 'AWAY',
+    })),
   },
   linked_market_context: {
     linked_market_key: 'X_TWO',
@@ -156,13 +214,142 @@ export const AWAY_V3_ITEM: CecchinoPurchasabilityV3Item = {
   },
 }
 
+export const DRAW_V3_ITEM: CecchinoPurchasabilityV3Item = {
+  market_key: 'DRAW',
+  market_label: 'X',
+  market_family: 'MATCH_WINNER_FT',
+  status: 'available',
+  calculation_quality: 'full',
+  score: 11,
+  raw_score: 11.2,
+  class: 'Bassa',
+  gate_status: 'passed',
+  gate_reason_codes: [],
+  value_score: 40,
+  quality_start: 100,
+  quality_score: 28,
+  total_penalty: 72,
+  opposite_market_key: 'HOME',
+  opposite_fair_probability: 0.75707,
+  opposite_pressure_penalty: 35,
+  historical_profile_used: false,
+  fixed_scales_used: true,
+  parallel_candidate: true,
+  current_operational_version: false,
+  formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+  candidate_version: 'cecchino_purchasability_v3_candidate_1',
+  reading_short: 'Valore ridotto: non leader della famiglia',
+  reading_detailed: 'Il DRAW non è leader di Edge: AWAY guida la famiglia.',
+  input: {
+    quota_book: 6.0,
+    quota_cecchino: 5.0,
+    edge_pct: 20.0,
+    probability_advantage_pp: 4.0,
+    performance_type: 'real',
+    not_real_book_quote: false,
+  },
+  family: {
+    market_family: 'MATCH_WINNER_FT',
+    market_family_label: 'Esito finale 1/X/2',
+    family_competitors: ['HOME', 'AWAY'],
+    gate_passed_family_competitors: ['DRAW', 'AWAY'],
+    best_family_market_by_edge: 'AWAY',
+    second_best_family_market_by_edge: 'DRAW',
+    selected_is_family_edge_leader: false,
+    selected_edge: 20.0,
+    best_other_edge: 83.04,
+    edge_gap_or_deficit: -63.04,
+    ambiguity_status: 'not_leader',
+    market_rows: MATCH_WINNER_FAMILY_ROWS.map((r) => ({
+      ...r,
+      is_selected: r.market_key === 'DRAW',
+    })),
+  },
+  penalties: {
+    family_ambiguity: {
+      key: 'family_ambiguity',
+      label: 'Ambiguità nella famiglia',
+      penalty_points: 25,
+      applied: true,
+      explanation: 'Non leader della famiglia.',
+    },
+    opposite_market_pressure: {
+      key: 'opposite_market_pressure',
+      label: 'Pressione del mercato opposto',
+      penalty_points: 35,
+      applied: true,
+    },
+    probability_risk: {
+      key: 'probability_risk',
+      label: 'Rischio di probabilità',
+      penalty_points: 12,
+      applied: true,
+    },
+    extreme_divergence: {
+      key: 'extreme_divergence',
+      label: 'Divergenza estrema e fragile',
+      penalty_points: 0,
+      applied: false,
+    },
+    quote_quality: {
+      key: 'quote_quality',
+      label: 'Qualità della quota',
+      penalty_points: 0,
+      applied: false,
+      raw_inputs: { performance_type: 'real' },
+    },
+  },
+}
+
+export const HOME_V3_ITEM: CecchinoPurchasabilityV3Item = {
+  market_key: 'HOME',
+  market_label: '1',
+  market_family: 'MATCH_WINNER_FT',
+  status: 'not_applicable',
+  calculation_quality: 'not_applicable',
+  score: null,
+  class: null,
+  gate_status: 'failed_multiple_non_positive_components',
+  gate_reason_codes: ['non_positive_edge', 'non_positive_probability_advantage'],
+  reading_short: 'Indice non attivato',
+  historical_profile_used: false,
+  fixed_scales_used: true,
+  parallel_candidate: true,
+  formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+  candidate_version: 'cecchino_purchasability_v3_candidate_1',
+  input: {
+    quota_book: 1.18,
+    quota_cecchino: 1.7,
+    edge_pct: -30.59,
+    probability_advantage_pp: -5,
+    performance_type: 'real',
+  },
+  family: {
+    market_family: 'MATCH_WINNER_FT',
+    market_family_label: 'Esito finale 1/X/2',
+    best_family_market_by_edge: 'AWAY',
+    second_best_family_market_by_edge: 'DRAW',
+    selected_is_family_edge_leader: false,
+    selected_edge: -30.59,
+    best_other_edge: 83.04,
+    edge_gap_or_deficit: null,
+    market_rows: MATCH_WINNER_FAMILY_ROWS.map((r) => ({
+      ...r,
+      is_selected: r.market_key === 'HOME',
+    })),
+  },
+}
+
 export const AWAY_V3_SNAPSHOT: CecchinoPurchasabilityV3Snapshot = {
   snapshot_version: 'cecchino_purchasability_snapshot_v3',
   candidate_version: 'cecchino_purchasability_v3_candidate_1',
   candidate_name: 'fixed_discount_v3',
   formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+  audit_version: 'cecchino_purchasability_v3_audit_v1',
   status: 'ok',
-  items: [AWAY_V3_ITEM],
+  items: [HOME_V3_ITEM, DRAW_V3_ITEM, AWAY_V3_ITEM],
+  generated_at: '2026-07-28T12:00:00+00:00',
+  source_snapshot_at: '2026-07-28T10:00:00+00:00',
   pre_match_only: true,
   historical_profile_used: false,
   fixed_scales_used: true,
@@ -200,6 +387,12 @@ export function buildAwayV3Explanation(
     consistency: { status: 'rounding_match', delta: 0.17 },
     rounding: { policy: 'ROUND_HALF_UP', precision: 0, display_precision: 0 },
     formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+    candidate_version: 'cecchino_purchasability_v3_candidate_1',
+    audit_version: 'cecchino_purchasability_v3_audit_v1',
+    generated_at: '2026-07-28T12:00:00+00:00',
+    source_snapshot_at: '2026-07-28T10:00:00+00:00',
+    market_family: 'MATCH_WINNER_FT',
+    market_family_label: 'Esito finale 1/X/2',
     audit_badges: ['V3 parallela', 'Scale fisse', 'Nessun profilo storico', 'Pre-match'],
     reading_short: item.reading_short,
     reading_detailed: item.reading_detailed,
@@ -210,7 +403,7 @@ export function buildAwayV3Explanation(
       edge_positive: true,
       probability_advantage_available: true,
       probability_advantage_positive: true,
-      gate_reading: null,
+      gate_reading: 'Indice attivato',
     },
     value: {
       value_score: item.value_score,
@@ -224,7 +417,15 @@ export function buildAwayV3Explanation(
       total_penalty: item.total_penalty,
     },
     penalties_table: item.penalties,
-    family_comparison: { ...item.family, market_family: 'MATCH_WINNER_FT' },
+    family_comparison: {
+      ...item.family,
+      market_family: 'MATCH_WINNER_FT',
+      market_family_label: 'Esito finale 1/X/2',
+      market_rows: MATCH_WINNER_FAMILY_ROWS.map((r) => ({
+        ...r,
+        is_selected: r.market_key === 'AWAY',
+      })),
+    },
     opposite_market: {
       opposite_market_key: item.opposite_market_key,
       opposite_fair_probability: item.opposite_fair_probability,
@@ -249,6 +450,8 @@ export function buildAwayV3Explanation(
         edge_pct: 'kpi_panel.rows[].edge_pct',
         value_score: 'purchasability_preview_v3.items[].value_score',
       },
+      generated_at: '2026-07-28T12:00:00+00:00',
+      source_snapshot_at: '2026-07-28T10:00:00+00:00',
       pre_match_only: true,
       historical_profile_used: false,
       fixed_scales_used: true,
@@ -258,24 +461,52 @@ export function buildAwayV3Explanation(
     input: item.input,
     dependency_meta: item.dependency_meta,
     ...overrides,
-  }
+  } as CecchinoKpiExplanation
+}
+
+export function buildDrawV3Explanation(
+  overrides?: Partial<CecchinoKpiExplanation>,
+): CecchinoKpiExplanation {
+  return buildAwayV3Explanation({
+    market_key: 'DRAW',
+    market_label: 'X',
+    stored_result: 11,
+    stored_result_display: '11',
+    reading_short: DRAW_V3_ITEM.reading_short,
+    reading_detailed: DRAW_V3_ITEM.reading_detailed,
+    gate: {
+      gate_status: 'passed',
+      gate_reason_codes: [],
+      edge_available: true,
+      edge_positive: true,
+      probability_advantage_available: true,
+      probability_advantage_positive: true,
+      gate_reading: 'Indice attivato',
+    },
+    value: { value_score: 40, value_formula: 'clamp(edge_pct / 50 × 100, 0, 100)' },
+    quality: { quality_start: 100, quality_score: 28, total_penalty: 72 },
+    penalties_table: DRAW_V3_ITEM.penalties,
+    family_comparison: {
+      ...DRAW_V3_ITEM.family,
+      market_rows: MATCH_WINNER_FAMILY_ROWS.map((r) => ({
+        ...r,
+        is_selected: r.market_key === 'DRAW',
+      })),
+    },
+    final_calculation: {
+      raw_score: 11.2,
+      score: 11,
+      class: 'Bassa',
+      formula_steps: ['score = 11'],
+    },
+    persisted_result: { score: 11, class: 'Bassa', gate_status: 'passed' },
+    input: DRAW_V3_ITEM.input,
+    ...overrides,
+  })
 }
 
 export const GATE_FAILED_V3_ITEM: CecchinoPurchasabilityV3Item = {
-  market_key: 'HOME',
-  market_label: '1',
-  market_family: 'MATCH_WINNER_FT',
-  status: 'not_applicable',
-  calculation_quality: 'not_applicable',
-  score: null,
-  class: null,
-  gate_status: 'failed_non_positive_edge',
-  gate_reason_codes: ['non_positive_edge'],
-  reading_short: 'Indice non attivato: nessun valore positivo',
-  historical_profile_used: false,
-  fixed_scales_used: true,
-  parallel_candidate: true,
-  input: { edge_pct: -5, probability_advantage_pp: 2 },
+  ...HOME_V3_ITEM,
 }
 
 export const UNSUPPORTED_V3_ITEM: CecchinoPurchasabilityV3Item = {
@@ -299,12 +530,29 @@ export const DERIVED_V3_ITEM: CecchinoPurchasabilityV3Item = {
   market_key: 'X_TWO',
   market_label: 'X2',
   market_family: 'DOUBLE_CHANCE',
-  score: 40,
-  class: 'Bassa',
+  score: 50,
+  class: 'Media',
   input: {
     ...AWAY_V3_ITEM.input,
     performance_type: 'derived',
     not_real_book_quote: true,
+    diagnostic_only: true,
   },
   reason_codes: ['derived_quote'],
+}
+
+export const UNDER_2_5_V3_ITEM: CecchinoPurchasabilityV3Item = {
+  market_key: 'UNDER_2_5',
+  market_label: 'Under 2.5',
+  market_family: 'GOALS_FT_2_5',
+  status: 'available',
+  score: 12,
+  class: 'Bassa',
+  gate_status: 'passed',
+  formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+  candidate_version: 'cecchino_purchasability_v3_candidate_1',
+  input: {
+    edge_pct: 15,
+    performance_type: 'real',
+  },
 }

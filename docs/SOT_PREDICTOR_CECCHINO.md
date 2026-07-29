@@ -282,6 +282,7 @@ History guard: `evaluate_purchasability_v2_historical_source` — rifiuta non el
 | Gate | Edge e vantaggio entrambi > 0; altrimenti `score=null`, `not_applicable` |
 | Famiglie | MATCH_WINNER_FT / GOALS_FT_2_5 / DOUBLE_CHANCE separate |
 | UI STEP 2 | Pannello KPI: Acq. V2 + Acq. V3 (badge Candidato); popup analitico gate/value/penalità/famiglia/opposto/linked/finale; V1.1 non più in colonna |
+| UI STEP 2.1 | Audit hardening: versioni distinte, metadata snapshot, `market_rows` reali, gate reading semantici, details input, quote derivate diagnostiche; formula invariata |
 | Promozione | non operativa; serve replay storico (STEP 3) |
 
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
