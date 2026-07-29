@@ -32,6 +32,13 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 | Non usa | Rating/vantaggio come pesi, Score Acquisto, percentili, caps storici, profilo V2 |
 | Promozione | richiede replay storico dedicato (STEP 3) prima di qualsiasi promozione |
 
+### STEP 2 UI (2026-07-29)
+
+- Pannello KPI: colonne **Acq. V2** e **Acq. V3** (badge «Candidato»); **V1.1 rimossa solo dalla UI** (calcolo/snapshot/API/audit legacy preservati).
+- Popup `purchasability_v3`: ricostruzione completa (gate → value → penalità come sottrazioni → famiglia separata → opposto → linked diagnostico → `value×quality/100` → diagnostica).
+- Nessun ROI storico V3 in cella (replay non ancora eseguito); sottotitolo «Non validato».
+- V3 **non** dichiarata operativa, validata, migliore o sostitutiva della V2.
+
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)

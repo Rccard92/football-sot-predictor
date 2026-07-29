@@ -187,6 +187,280 @@ export function formatPurchasabilityDelta(delta: number | null | undefined): str
   return String(d)
 }
 
+/** Badge score V3 — colore = classe, non stato di validazione. */
+export function purchasabilityV3BadgeClass(
+  klass: string | null | undefined,
+  calculationQuality?: 'full' | 'partial' | 'not_applicable' | string | null,
+): string {
+  let base: string
+  switch (klass) {
+    case 'Molto Bassa':
+      base = 'bg-slate-600 text-white'
+      break
+    case 'Bassa':
+      base = 'bg-orange-600 text-white'
+      break
+    case 'Media':
+      base = 'bg-amber-500 text-slate-950'
+      break
+    case 'Alta':
+      base = 'bg-sky-500 text-white'
+      break
+    case 'Molto Alta':
+      base = 'bg-emerald-500 text-white'
+      break
+    default:
+      base = 'bg-slate-600 text-slate-200'
+  }
+  if (calculationQuality === 'partial') {
+    return `${base} ring-1 ring-dashed ring-white/60`
+  }
+  return base
+}
+
+export type PurchasabilityV3CellKind =
+  | 'score'
+  | 'gate_failed'
+  | 'missing_inputs'
+  | 'unsupported'
+  | 'snapshot_absent'
+  | 'not_calculable'
+
+export type PurchasabilityV3CellState = {
+  kind: PurchasabilityV3CellKind
+  primary: string
+  subtitle: string | null
+  showScoreBadge: boolean
+  showCandidateChip: boolean
+  derivedQuote: boolean
+  analyzable: boolean
+  score: number | null
+  classLabel: string | null
+  calculationQuality: string | null
+}
+
+function isDerivedQuoteItem(item: {
+  input?: Record<string, number | string | boolean | null>
+  reason_codes?: string[]
+  penalties?: Record<string, { raw_inputs?: Record<string, number | string | boolean | null> }>
+} | null | undefined): boolean {
+  if (!item) return false
+  const inp = item.input
+  if (inp) {
+    if (inp.performance_type === 'derived' || inp.not_real_book_quote === true) return true
+    if (inp.diagnostic_only === true && inp.performance_type === 'derived') return true
+  }
+  const codes = item.reason_codes ?? []
+  if (codes.some((c) => /derived|not_real_book/i.test(c))) return true
+  const qq = item.penalties?.quote_quality?.raw_inputs
+  if (qq?.performance_type === 'derived' || qq?.not_real_book_quote === true) return true
+  return false
+}
+
+/**
+ * Risolve lo stato visuale della cella Acquistabilità V3.
+ * snapshotAvailable=false → snapshot assente; item undefined con snapshot → mercato senza item.
+ */
+export function resolvePurchasabilityV3CellState(
+  item: {
+    status?: string | null
+    score?: number | null
+    class?: string | null
+    gate_status?: string | null
+    calculation_quality?: string | null
+    input?: Record<string, number | string | boolean | null>
+    reason_codes?: string[]
+    penalties?: Record<string, CecchinoPurchasabilityV3PenaltyLike>
+  } | null | undefined,
+  opts?: { snapshotAvailable?: boolean },
+): PurchasabilityV3CellState {
+  const snapshotAvailable = opts?.snapshotAvailable !== false
+  const derived = isDerivedQuoteItem(item)
+
+  if (!snapshotAvailable) {
+    return {
+      kind: 'snapshot_absent',
+      primary: '—',
+      subtitle: 'V3 non disponibile',
+      showScoreBadge: false,
+      showCandidateChip: false,
+      derivedQuote: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      calculationQuality: null,
+    }
+  }
+
+  if (!item) {
+    return {
+      kind: 'snapshot_absent',
+      primary: '—',
+      subtitle: 'V3 non disponibile',
+      showScoreBadge: false,
+      showCandidateChip: false,
+      derivedQuote: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      calculationQuality: null,
+    }
+  }
+
+  const gate = item.gate_status ?? null
+  const status = item.status ?? 'unavailable'
+
+  if (gate === 'unsupported_market') {
+    return {
+      kind: 'unsupported',
+      primary: '—',
+      subtitle: 'Non supportato',
+      showScoreBadge: false,
+      showCandidateChip: false,
+      derivedQuote: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      calculationQuality: item.calculation_quality ?? null,
+    }
+  }
+
+  if (gate === 'unavailable_inputs' || status === 'unavailable') {
+    const hasScore = item.score != null
+    if (!hasScore) {
+      return {
+        kind: gate === 'unavailable_inputs' ? 'missing_inputs' : 'not_calculable',
+        primary: 'Non calcolabile',
+        subtitle: null,
+        showScoreBadge: false,
+        showCandidateChip: false,
+        derivedQuote: derived,
+        analyzable: true,
+        score: null,
+        classLabel: null,
+        calculationQuality: item.calculation_quality ?? null,
+      }
+    }
+  }
+
+  const gateFailed =
+    gate != null &&
+    gate !== 'passed' &&
+    gate !== 'unsupported_market' &&
+    gate !== 'unavailable_inputs'
+
+  if (gateFailed || (status === 'not_applicable' && item.score == null)) {
+    return {
+      kind: 'gate_failed',
+      primary: 'Non attivato',
+      subtitle: 'Nessun valore positivo',
+      showScoreBadge: false,
+      showCandidateChip: false,
+      derivedQuote: derived,
+      analyzable: true,
+      score: null,
+      classLabel: null,
+      calculationQuality: item.calculation_quality ?? null,
+    }
+  }
+
+  if (item.score != null && gate === 'passed') {
+    return {
+      kind: 'score',
+      primary: String(item.score),
+      subtitle: derived ? 'Quota derivata' : 'Non validato',
+      showScoreBadge: true,
+      showCandidateChip: true,
+      derivedQuote: derived,
+      analyzable: true,
+      score: item.score,
+      classLabel: item.class ?? null,
+      calculationQuality: item.calculation_quality ?? null,
+    }
+  }
+
+  if (item.score != null) {
+    return {
+      kind: 'score',
+      primary: String(item.score),
+      subtitle: derived ? 'Quota derivata' : 'Non validato',
+      showScoreBadge: true,
+      showCandidateChip: true,
+      derivedQuote: derived,
+      analyzable: true,
+      score: item.score,
+      classLabel: item.class ?? null,
+      calculationQuality: item.calculation_quality ?? null,
+    }
+  }
+
+  return {
+    kind: 'not_calculable',
+    primary: 'Non calcolabile',
+    subtitle: null,
+    showScoreBadge: false,
+    showCandidateChip: false,
+    derivedQuote: derived,
+    analyzable: true,
+    score: null,
+    classLabel: null,
+    calculationQuality: item.calculation_quality ?? null,
+  }
+}
+
+type CecchinoPurchasabilityV3PenaltyLike = {
+  raw_inputs?: Record<string, number | string | boolean | null>
+  penalty_points?: number | null
+}
+
+/** Formatta punti penalità con segno negativo esplicito (es. −35,00). */
+export function formatPenaltyPointsNegative(
+  points: number | null | undefined,
+  digits = 2,
+): string {
+  if (points == null || Number.isNaN(Number(points))) return '—'
+  const n = Math.abs(Number(points))
+  const formatted = n.toLocaleString('it-IT', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+  if (Number(points) === 0) return formatted
+  return `−${formatted}`
+}
+
+export function formatV3Number(
+  value: number | null | undefined,
+  digits = 2,
+): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString('it-IT', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+}
+
+export function formatV3PctFromFraction(
+  value: number | null | undefined,
+  digits = 2,
+): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${(Number(value) * 100).toLocaleString('it-IT', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}%`
+}
+
+export function formatV3PctAlready(
+  value: number | null | undefined,
+  digits = 2,
+): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${Number(value).toLocaleString('it-IT', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}%`
+}
+
 export function historicalReliabilityBadgeClass(klass: string | null | undefined): string {
   switch (klass) {
     case 'Alta':

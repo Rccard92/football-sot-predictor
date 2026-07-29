@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Acquistabilità v3 analysis UI (2026-07-29)
+
+- Perché: esporre il candidato V3 nel Pannello KPI con popup analitico leggibile, senza promuovere V3 né toccare le formule.
+- Cosa: tipi/resolver `purchasability_preview_v3`; colonne Acq. V2 + Acq. V3 (rimozione solo UI di V1.1); cella stati V3; vista audit dedicata (gate/value/penalità/famiglia/opposto/linked/finale/diagnostica); test FE + doc.
+- Cosa non fa: non modifica engine V1.1/V2/V3; nessuna migration, scansione, replay Run #3; V3 resta candidato non validato storicamente.
+
 ## Feat — Acquistabilità v3 candidate engine (2026-07-29)
 
 - Perché: serve un indice parallelo che distingua esistenza del valore, forza (Edge), penalità di rischio/qualità e score finale, senza doppio conteggio né profilo storico V2.

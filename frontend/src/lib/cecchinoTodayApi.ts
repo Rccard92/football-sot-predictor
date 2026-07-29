@@ -423,6 +423,187 @@ export type CecchinoPurchasabilityComparison = {
   items: Record<string, CecchinoPurchasabilityComparisonMarketItem>
 }
 
+export type CecchinoPurchasabilityV3Status =
+  | 'available'
+  | 'partial'
+  | 'unavailable'
+  | 'not_applicable'
+  | string
+
+export type CecchinoPurchasabilityV3Class =
+  | 'Molto Bassa'
+  | 'Bassa'
+  | 'Media'
+  | 'Alta'
+  | 'Molto Alta'
+  | string
+
+export type CecchinoPurchasabilityV3GateStatus =
+  | 'passed'
+  | 'failed_non_positive_edge'
+  | 'failed_non_positive_probability_advantage'
+  | 'failed_multiple_non_positive_components'
+  | 'unavailable_inputs'
+  | 'unsupported_market'
+  | string
+
+export type CecchinoPurchasabilityV3Penalty = {
+  key?: string
+  label?: string | null
+  raw_inputs?: Record<string, number | string | boolean | null>
+  threshold_start?: number | null
+  threshold_full?: number | null
+  severity?: number | null
+  max_points?: number | null
+  penalty_points?: number | null
+  applied?: boolean
+  explanation?: string | null
+}
+
+export type CecchinoPurchasabilityV3Gate = {
+  gate_status?: CecchinoPurchasabilityV3GateStatus | null
+  gate_reason_codes?: string[]
+  edge_available?: boolean | null
+  edge_positive?: boolean | null
+  probability_advantage_available?: boolean | null
+  probability_advantage_positive?: boolean | null
+  gate_reading?: string | null
+}
+
+export type CecchinoPurchasabilityV3Family = {
+  market_family?: string | null
+  selected_is_family_edge_leader?: boolean | null
+  family_edge_leader_key?: string | null
+  family_edge_leader_edge_pct?: number | null
+  family_edge_second_key?: string | null
+  family_edge_second_edge_pct?: number | null
+  family_edge_gap_pct?: number | null
+  family_edge_deficit_pct?: number | null
+  ambiguity_status?: string | null
+  family_competitors?: string[]
+  evaluated_family_competitors?: string[]
+  gate_passed_family_competitors?: string[]
+  comparison_rows?: Array<{
+    market_key?: string | null
+    market_label?: string | null
+    edge_pct?: number | null
+    gate_status?: string | null
+    is_leader?: boolean | null
+    is_selected?: boolean | null
+    gap_from_leader_pct?: number | null
+    used_in_comparison?: boolean | null
+  }>
+  [key: string]: unknown
+}
+
+export type CecchinoPurchasabilityV3LinkedMarketContext = {
+  linked_market_key?: string | null
+  relationship?: string | null
+  edge_pct?: number | null
+  vantaggio_prob?: number | null
+  rating?: number | null
+  gate_status?: string | null
+  used_in_score?: boolean
+  diagnostic_only?: boolean
+}
+
+export type CecchinoPurchasabilityV3DependencyMeta = {
+  rating_used_in_score?: boolean
+  probability_advantage_used_as_weight?: boolean
+  score_acquisto_used?: boolean
+  historical_profile_used?: boolean
+  linked_markets_used_in_score?: boolean
+  fixed_scales_used?: boolean
+  edge_used_in_value_score?: boolean
+  edge_used_in_family_ambiguity_only_as_comparison?: boolean
+  book_opposite_used_only_in_opposite_penalty?: boolean
+  probability_cecchino_used_in_risk_and_divergence_only?: boolean
+}
+
+export type CecchinoPurchasabilityV3Item = {
+  market_key: string
+  market_label?: string | null
+  market_family?: string | null
+  period?: string | null
+  line?: number | null
+  status: CecchinoPurchasabilityV3Status
+  calculation_quality?: 'full' | 'partial' | 'not_applicable' | string | null
+  score: number | null
+  raw_score?: number | null
+  score_display?: string | null
+  class?: CecchinoPurchasabilityV3Class | null
+  gate_status?: CecchinoPurchasabilityV3GateStatus | null
+  gate_reason_codes?: string[]
+  gate?: CecchinoPurchasabilityV3Gate | null
+  value_score?: number | null
+  quality_start?: number | null
+  quality_score?: number | null
+  total_penalty?: number | null
+  penalties?: Record<string, CecchinoPurchasabilityV3Penalty>
+  family?: CecchinoPurchasabilityV3Family | null
+  opposite_market_key?: string | null
+  opposite_fair_probability?: number | null
+  opposite_pressure_penalty?: number | null
+  linked_market_context?: CecchinoPurchasabilityV3LinkedMarketContext | null
+  input?: Record<string, number | string | boolean | null>
+  formula_steps?: string[]
+  reading_short?: string | null
+  reading_detailed?: string | null
+  strengths?: string[]
+  risks?: string[]
+  reason_codes?: string[]
+  warnings?: string[]
+  historical_profile_used?: boolean
+  fixed_scales_used?: boolean
+  current_operational_version?: boolean
+  parallel_candidate?: boolean
+  pre_match_only?: boolean
+  formula_version?: string | null
+  candidate_version?: string | null
+  dependency_meta?: CecchinoPurchasabilityV3DependencyMeta | null
+}
+
+export type CecchinoPurchasabilityV3Snapshot = {
+  snapshot_version: string
+  contract_version?: string
+  feature_version?: string
+  candidate_version: string
+  candidate_name?: string
+  formula_version?: string
+  audit_version?: string
+  registry_status?: string | null
+  status: 'ok' | 'partial' | 'unavailable' | string
+  items: CecchinoPurchasabilityV3Item[]
+  summary?: Record<string, unknown>
+  full_candidate_payload_sha256?: string | null
+  generated_at?: string | null
+  source_snapshot_at?: string | null
+  source_snapshot_verified?: boolean | null
+  source_snapshot_before_kickoff?: boolean | null
+  source_mode?: string | null
+  pre_match_only?: boolean
+  historical_profile_used?: boolean
+  fixed_scales_used?: boolean
+  current_operational_version?: boolean
+  parallel_candidate?: boolean
+  contains_post_match_fields?: boolean
+  signals_integration?: boolean
+  warnings?: string[]
+}
+
+/** Indexer V3 per market_key — analogo ai resolver V1.1/V2 del DetailPanel. */
+export function indexPurchasabilityV3ByMarketKey(
+  snapshot: CecchinoPurchasabilityV3Snapshot | null | undefined,
+): Record<string, CecchinoPurchasabilityV3Item> {
+  const items = snapshot?.items
+  if (!items?.length) return {}
+  const map: Record<string, CecchinoPurchasabilityV3Item> = {}
+  for (const it of items) {
+    if (it?.market_key) map[it.market_key] = it
+  }
+  return map
+}
+
 export type CecchinoBetfairRefreshResponse = {
   status: string
   today_fixture_id?: number
@@ -1179,6 +1360,7 @@ export type CecchinoTodayDetailResponse = {
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   purchasability_preview?: CecchinoPurchasabilityPreviewSnapshot | null
   purchasability_preview_v2?: CecchinoPurchasabilityPreviewSnapshot | null
+  purchasability_preview_v3?: CecchinoPurchasabilityV3Snapshot | null
   purchasability_observational_v1_1?: Record<
     string,
     CecchinoPurchasabilityObservationalItem

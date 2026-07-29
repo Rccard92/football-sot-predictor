@@ -8,7 +8,7 @@ import type {
   CecchinoPurchasabilityPreviewItem,
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
-import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
+import { indexPurchasabilityV3ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
@@ -112,17 +112,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     [canFetch, hrByMarket],
   )
 
-  const purchasabilityByMarketKey = useMemo(() => {
-    const items = detail.purchasability_preview?.items
-    if (!items?.length) return {} as Record<string, CecchinoPurchasabilityPreviewItem>
-    const map: Record<string, CecchinoPurchasabilityPreviewItem> = {}
-    for (const it of items) {
-      const key = it.market_key || it.selection
-      if (key) map[key] = it
-    }
-    return map
-  }, [detail.purchasability_preview])
-
   const purchasabilityV2ByMarketKey = useMemo(() => {
     const items = detail.purchasability_preview_v2?.items
     if (!items?.length) return {} as Record<string, CecchinoPurchasabilityPreviewItem>
@@ -133,6 +122,14 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     }
     return map
   }, [detail.purchasability_preview_v2])
+
+  const purchasabilityV3ByMarketKey = useMemo(
+    () => indexPurchasabilityV3ByMarketKey(detail.purchasability_preview_v3),
+    [detail.purchasability_preview_v3],
+  )
+  const purchasabilityV3SnapshotAvailable =
+    detail.purchasability_preview_v3 != null &&
+    detail.purchasability_preview_v3.status !== 'unavailable'
 
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
@@ -163,14 +160,12 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           historicalReliabilityByMarketKey={hrMemo}
           historicalReliabilityLoading={hrLoading}
           historicalReliabilityError={hrError}
-          purchasabilityByMarketKey={purchasabilityByMarketKey}
           purchasabilityV2ByMarketKey={purchasabilityV2ByMarketKey}
-          purchasabilityObservationalV11ByMarketKey={
-            detail.purchasability_observational_v1_1 ?? undefined
-          }
           purchasabilityObservationalV2ByMarketKey={
             detail.purchasability_observational_v2 ?? undefined
           }
+          purchasabilityV3ByMarketKey={purchasabilityV3ByMarketKey}
+          purchasabilityV3SnapshotAvailable={purchasabilityV3SnapshotAvailable}
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
         />

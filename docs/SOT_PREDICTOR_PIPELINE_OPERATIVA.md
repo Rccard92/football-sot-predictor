@@ -122,16 +122,23 @@ flowchart TD
 
 1. Apertura partita Today: **nessuna** richiesta `kpi-explanations` (impatto nullo).
 2. Pulsante testata `ƒx Analisi formule` → una sola `GET /api/cecchino/today/{id}/kpi-explanations` (cache in memoria per fixture).
-3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acq. v1.1, Acq. v2, Δ V2−V1.1 (alias `purchasability` = v1.1).
+3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acq. v2, Acq. v3 (alias legacy `purchasability`/`purchasability_v1_1` restano nell’audit JSON ma non in colonna KPI).
 4. Non cliccabili: SEGNO, QUOTA BOOK.
 5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato; include v1.1 + v2 + v3 + delta).
 6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals. v2/v3 derivabili read-only se snapshot assente.
 
+## Acquistabilità v3 — UI analisi (STEP 2, 2026-07-29)
+
+1. Pannello KPI: colonne Acq. V2 + Acq. V3 (badge «Candidato»); V1.1 rimossa solo dalla UI.
+2. Cella V3: score / Non attivato / Non calcolabile / Non supportato / V3 non disponibile; sottotitolo «Non validato» (nessun ROI storico finché manca replay).
+3. Popup dedicato `metric_key=purchasability_v3`: gate, value, penalità come sottrazioni, famiglie separate, mercato opposto, linked diagnostico, calcolo `value×quality/100`, diagnostica.
+4. Nessuna scansione, migration, replay Run #3; formule V1.1/V2/V3 invariate; V3 non promossa.
+
 ## Acquistabilità v3 — freeze parallelo (2026-07-29)
 
 1. Scan/recompute: dopo attach v1.1 e v2 → `attach_purchasability_preview_v3_to_output` (fail-soft; solo `purchasability_preview_v3`).
-2. Nessun backfill automatico in questo step; nessuna migration; nessun frontend.
-3. Audit: `metric_key=purchasability_v3` in `kpi-explanations`.
+2. Nessun backfill automatico in questo step; nessuna migration.
+3. Audit: `metric_key=purchasability_v3` in `kpi-explanations` (UI STEP 2 consuma il payload).
 4. Non promuovere a colonna operativa finché non esiste replay storico dedicato.
 
 ## Acquistabilità v2 — backfill manuale (2026-07-27)
