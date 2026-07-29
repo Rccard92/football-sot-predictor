@@ -1,10 +1,30 @@
 ﻿# Schema report AI â€” Cecchino Lab Historical Scan
 
 Versione schema: `cecchino_lab_ai_report_v4`
-Versione aggregazione: `cecchino_lab_analytics_agg_v2_2` (`analytics_aggregation_version`)
+Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation_version`)
 Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
+Versione export Acquistabilità: `cecchino_lab_purchasability_export_v1` (`purchasability_export_schema_version`)
 
-Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, â€¦) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, …) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+
+## Acquistabilità storica — export compatto
+
+Modulo read-only `historical_purchasability_export.py` (nessun ricalcolo formula/pesi/gate; `formula_recomputed=false`).
+
+| File | Ruolo |
+|---|---|
+| `purchasability_compact.jsonl` | **Canonico** — 1 riga = `snapshot_id × market_key`; `purchasability_evaluation_id=run:{id}:snapshot:{id}:market:{mk}` |
+| `purchasability_decisions.jsonl` | Scelta relativa diagnostica per famiglia (`ONE_X_TWO_REAL` / `GOALS_FT_2_5_REAL` / `DOUBLE_CHANCE_DERIVED`) |
+| `purchasability_drift.json` | Drift mensile/campionato (sample size, gate, score≥80, profile hash) |
+| `purchasability_profiles.jsonl` | Profili normalizzazione deduplicati per hash |
+| `purchasability.jsonl` | Legacy full — solo in `full_archive` |
+
+- Score 0 con `gate_status` rejected ≠ fascia «Molto Bassa»: `score_zero_semantics=gate_rejected`, UI «Bloccato dal gate»
+- `final_score` / `persisted_score` = valore congelato; `diagnostic_ungated_score` = `sqrt(phase_1×phase_2)` solo se ricostruibile (read-only)
+- Bande numeriche (`0-19`…) applicate principalmente a `gate_status=accepted`; altrimenti `gate_rejected`
+- Join MarketResult: `matched` / `missing_market_result` / `ambiguous_market_result` / `invalid_market_key`
+- Summary: sezione `purchasability_export` + riconciliazione ID unici
+- Decisioni e soglie: `diagnostic_only=true`, `discovered_on_same_season=true`, `not_a_betting_strategy=true`
 
 ## Segnali A–F: opportunità vs celle
 

@@ -10,10 +10,22 @@ Legge esclusivamente tabelle `cecchino_lab_*` giÃ  persistite. **Non** riesegu
 
 - Nessuna modifica a Cecchino Today / Betfair / formule operative
 - Servizio dedicato: `backend/app/services/cecchino_data_lab/historical_run_analytics_service.py`
-- Aggregazioni pure condivise: `historical_analytics_agg.py` (riusate anche dal report AI ZIP) â€” stessa `analytics_aggregation_version` (`cecchino_lab_analytics_agg_v2_2`)
+- Aggregazioni pure condivise: `historical_analytics_agg.py` (riusate anche dal report AI ZIP) — stessa `analytics_aggregation_version` (`cecchino_lab_analytics_agg_v2_3`)
 - Export segnali: `historical_signal_export.py` (`signal_export_schema_version=cecchino_lab_signal_export_v1`) — opportunità deduplicate vs celle legacy
+- Export Acquistabilità: `historical_purchasability_export.py` (`purchasability_export_schema_version=cecchino_lab_purchasability_export_v1`) — compact/decisions/drift; gate ≠ «Molto Bassa»
 - Route: `backend/app/routes/cecchino_lab.py` sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`
 - Frontend: `/cecchino-lab/historical-scans/:runId`
+
+## Acquistabilità (dashboard)
+
+Quattro viste osservazionali (nessuna modifica formula):
+
+1. **Punteggi per mercato** — gate, score finale persistito, diagnostico pre-gate, Rating/Edge/vantaggio/quota/risultato/profitto
+2. **Gate** — accettati/rifiutati/motivi; etichetta obbligatoria «Bloccato dal gate» (mai «Molto Bassa» su rejected)
+3. **Scelta per famiglia** — 1X2 / Goal 2.5 / DC sintetica; tie espliciti; nessuna selezione se tutti rejected
+4. **Drift** — score zero / gate accepted / ≥80 / sample normalizzazione / profili distinti
+
+Warning persistente: modulo osservazionale; descrive la formula congelata del Run #3; non è una strategia.
 
 ## Segnali A–F (dashboard)
 

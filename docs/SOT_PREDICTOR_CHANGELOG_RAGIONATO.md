@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Export Acquistabilità storica compatto (2026-07-29)
+
+- Cosa: `historical_purchasability_export` + compact/decisions/drift/profiles; semantica gate vs score zero; diagnostic ungated read-only; bump agg `v2_3` + schema export `v1`; dashboard 4 viste; test/doc.
+- Cosa non fa: scan, migration, overwrite Run #3, formula/pesi/gate/normalizzazione, Today/Betfair, `historical_purchasability.py`.
+
 ## Fix — Export opportunità segnali A–F (2026-07-29)
 
 - Cosa: `historical_signal_export` + `signal_opportunities.jsonl`; legacy cells marcate; `with_signal_active` = alias opportunità; overlap/matrice/consenso/F diagnostics; join market; bump agg `v2_2` + schema export `v1`; dashboard FE a due livelli; test/doc.

@@ -66,6 +66,14 @@ from app.services.cecchino_data_lab.historical_signal_export import (
     build_signal_models_summary,
     collect_all_opportunities,
 )
+from app.services.cecchino_data_lab.historical_purchasability_export import (
+    OBSERVATIONAL_WARNING as PURCH_OBSERVATIONAL_WARNING,
+    PURCHASABILITY_EXPORT_SCHEMA_VERSION,
+    build_dashboard_purchasability_views,
+    build_decision_rows,
+    build_purchasability_drift,
+    collect_compact_evaluations,
+)
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 from app.services.cecchino_data_lab.historical_scan_service import run_to_dict
@@ -902,10 +910,25 @@ def dashboard_purchasability(db: Session, run_id: int, filters: dict[str, Any]) 
                 out.append(row)
             return out
 
+        # Export-backed views (gate / decisioni / drift) — read-only
+        evaluations = collect_compact_evaluations(
+            run_id=int(run.id),
+            snaps=perf_snaps,
+            markets=perf_markets,
+        )
+        decisions = build_decision_rows(evaluations)
+        drift = build_purchasability_drift(evaluations)
+        views = build_dashboard_purchasability_views(
+            evaluations=evaluations,
+            decisions=decisions,
+            drift=drift,
+        )
+
         return {
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
             "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
+            "purchasability_export_schema_version": PURCHASABILITY_EXPORT_SCHEMA_VERSION,
             "filters": filters,
             "bands": list(PURCH_BANDS_DASHBOARD),
             "distribution": {
@@ -935,6 +958,15 @@ def dashboard_purchasability(db: Session, run_id: int, filters: dict[str, Any]) 
                 "La distribuzione globale è diagnostica (coverage/conteggi), "
                 "non un ROI universale. Profit null se quote_count=0."
             ),
+            "observational_warning": PURCH_OBSERVATIONAL_WARNING,
+            "scores_by_market": views["scores_by_market"],
+            "gate": views["gate"],
+            "decisions_by_group": views["decisions_by_group"],
+            "drift": views["drift"],
+            "evaluations_total": len(evaluations),
+            "decisions_total": len(decisions),
+            "formula_recomputed": False,
+            "run_snapshot_modified": False,
         }
 
     return _cached_or_compute(db, run_id, "purchasability", filters, compute)

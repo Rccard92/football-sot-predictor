@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — export Acquistabilità storica compatto (2026-07-29)
+
+| Voce | Dettaglio |
+|---|---|
+| Modulo | `historical_purchasability_export.py` |
+| Schema | `cecchino_lab_purchasability_export_v1` + agg `cecchino_lab_analytics_agg_v2_3` |
+| Scope | Solo Lab read-only; formula/pesi/gate/`historical_purchasability.py`/Today invariati |
+| UI | «Bloccato dal gate» per rejected; mai «Molto Bassa» su zero da gate |
+
 ## Cecchino Lab — export opportunità segnali A–F (2026-07-29)
 
 | Voce | Dettaglio |

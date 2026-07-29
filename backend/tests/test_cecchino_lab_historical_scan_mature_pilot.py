@@ -443,7 +443,7 @@ def test_v2_1_manifest_dual_revision_and_markets_identity():
     assert manifest["report_generator_git_commit"] == "generatordeadbeef"
     assert manifest["source_git_commit"] == "abc"
     assert manifest["analytics_aggregation_version"] == ANALYTICS_AGGREGATION_VERSION
-    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_2"
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_3"
     ea = summary["eligible_analysis"]
     assert "rating_by_market" in ea
     assert "purchasability_by_market" in ea

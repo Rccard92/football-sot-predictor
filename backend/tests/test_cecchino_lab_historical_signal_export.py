@@ -175,7 +175,7 @@ def _snap(
 
 
 def test_versions():
-    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_2"
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_3"
     assert SIGNAL_EXPORT_SCHEMA_VERSION == "cecchino_lab_signal_export_v1"
     assert CURRENT_MODEL_KEY == "F"
 

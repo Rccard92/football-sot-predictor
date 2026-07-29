@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Export Acquistabilità storica compatto (2026-07-29)
+
+Export/dashboard read-only: `purchasability_compact.jsonl` canonico, decisioni per famiglia, drift, profili deduplicati; gate zero ≠ «Molto Bassa»; `diagnostic_ungated_score` read-only; agg `cecchino_lab_analytics_agg_v2_3` + schema `cecchino_lab_purchasability_export_v1`. **Nessuna modifica a formula/pesi/gate/normalizzazione/snapshot/Run #3/Today/Betfair.**
+
 ## Fix — Export opportunità segnali A–F (2026-07-29)
 
 Export/dashboard read-only: `signal_opportunities.jsonl` (1 riga/opportunità), `signal_models.jsonl` legacy cell-level; join MarketResult per prob/quota/Rating/Acquistabilità; overlap F distinto da `with_signal_active` (alias deprecato); `cecchino_lab_analytics_agg_v2_2` + `cecchino_lab_signal_export_v1`. **Nessuna modifica a formule/pesi/soglie/snapshot/settlement/Run #3/Today/Betfair.**

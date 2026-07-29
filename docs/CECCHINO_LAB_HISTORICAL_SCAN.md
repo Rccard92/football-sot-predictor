@@ -6,7 +6,7 @@ Dopo il completamento della scansione, aprire l’analisi da **Storico run → A
 
 Documentazione dedicata: [`CECCHINO_LAB_RUN_DASHBOARD.md`](./CECCHINO_LAB_RUN_DASHBOARD.md).
 
-Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2_2`). Export segnali opportunità/celle in `historical_signal_export.py` (`signal_export_schema_version=cecchino_lab_signal_export_v1`). **Nessuna riscrittura** di run/snapshot/settlement.
+Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2_3`). Export segnali opportunità/celle in `historical_signal_export.py` (`signal_export_schema_version=cecchino_lab_signal_export_v1`). Export Acquistabilità compatto in `historical_purchasability_export.py` (`purchasability_export_schema_version=cecchino_lab_purchasability_export_v1`). **Nessuna riscrittura** di run/snapshot/settlement.
 
 Aggregazioni hardened: riconciliazione real+derived+unavailable; medie odds `null` se assenti; pattern sempre `market_key`; soglie su quote reali; `cross_competition_stability`; diagnostiche assenze dati separate. Report AI e dashboard condividono le stesse formule pure — vedi `CECCHINO_LAB_AI_REPORT_SCHEMA.md` e `CECCHINO_LAB_RUN_DASHBOARD.md`.
 
@@ -88,6 +88,7 @@ Report/dashboard espongono anche la revisione **runtime** (`report_generator_git
 - `quote_quality`: `real` | `derived` | `unavailable`
 - Osservazionale: non blocca eleggibilità, non sceglie giocate, non entra in Today
 - Resume: stesso profilo hash dagli snapshot precedenti
+- **Export read-only** (`cecchino_lab_purchasability_export_v1`): `purchasability_compact.jsonl` canonico; gate rejected ≠ «Molto Bassa»; `diagnostic_ungated_score` da phase persistite; decisioni/drift/profili; formula **non** ricalcolata; Run #3 invariato
 
 ## Modelli segnali A–F
 

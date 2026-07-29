@@ -69,6 +69,16 @@ from app.services.cecchino_data_lab.historical_signal_export import (
     collect_all_opportunities,
     public_opportunity_row,
 )
+from app.services.cecchino_data_lab.historical_purchasability_export import (
+    PURCHASABILITY_EXPORT_SCHEMA_VERSION,
+    OBSERVATIONAL_WARNING as PURCH_OBSERVATIONAL_WARNING,
+    build_decision_rows,
+    build_purchasability_drift,
+    build_purchasability_export_summary,
+    build_purchasability_profiles,
+    collect_compact_evaluations,
+    purchasability_manifest_fields,
+)
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
@@ -108,15 +118,21 @@ AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab
 22. Confronta i modelli sullo **stesso mercato**; non mescolare HOME/DRAW/AWAY/Over/Under in un unico ROI.
 23. F è il modello **corrente**, non automaticamente il migliore.
 24. Non modificare pesi o formule basandosi su una sola stagione.
+25. Acquistabilità: file primario `purchasability_compact.jsonl` (1 riga = snapshot×mercato). Distingui `gate_status` da `final_score` e da `diagnostic_ungated_score`.
+26. Score 0 con gate rejected ≠ fascia «Molto Bassa»: etichetta «Bloccato dal gate». `final_score` è sempre il valore persistito (formula_recomputed=false).
+27. `purchasability_decisions.jsonl` = scelta relativa diagnostica per famiglia (1X2 / Goal 2.5 / DC sintetica); non è una strategia produttiva.
+28. `purchasability_drift.json` e profili deduplicati: sola lettura metadati congelati; non ricalcolare normalizzazione.
 
 Cecchino Today operativo resta su **Betfair** e non è modificato da questo report.
 """
 
 SCHEMA_MD = """# Schema report AI Cecchino Lab (v4)
 
-- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`; `signal_export_schema_version`; `performance_granularity=signal_opportunity`; `legacy_cell_file=signal_models.jsonl`
-- `summary.json` / `eligible_analysis`: `rating_by_market`, `purchasability_by_market` (primarie); `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic` (diagnostiche); `quote_reconciliation`
+- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`; `signal_export_schema_version`; `purchasability_export_schema_version`; `performance_granularity=signal_opportunity`; `legacy_cell_file=signal_models.jsonl`
+- `summary.json` / `eligible_analysis`: `rating_by_market`, `purchasability_by_market` (primarie); `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic` (diagnostiche); `quote_reconciliation`; `purchasability_export`
 - Segnali: `signal_opportunities.jsonl` (canonico, 1 riga/opportunità); `signal_models.jsonl` (legacy, 1 riga/cella, `do_not_sum_as_independent_opportunities=true`)
+- Acquistabilità modulo: `purchasability_compact.jsonl` (canonico), `purchasability_decisions.jsonl`, `purchasability_drift.json`, `purchasability_profiles.jsonl`; `purchasability.jsonl` full solo in `full_archive`
+- Gate: `gate_status` / `score_zero_semantics` / `diagnostic_ungated_score` (read-only da phase_1×phase_2); bande numeriche solo su `gate_status=accepted`
 - `signal_export_reconciliation`, `market_join_diagnostics`, `model_overlap_matrix`, `consensus_distribution`, `current_model_F_diagnostics`
 - Profit/ROI/medie odds = `null` se quote_count della tipologia = 0
 - Fascia Rating `100` esclusiva
@@ -488,6 +504,7 @@ def write_historical_report_zip(
         "report_generator_revision_status": generator_rev.get("revision_status"),
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
+        "purchasability_export_schema_version": PURCHASABILITY_EXPORT_SCHEMA_VERSION,
         "current_model_key": SIGNAL_CURRENT_MODEL_KEY,
         "performance_granularity": "signal_opportunity",
         "legacy_cell_file": "signal_models.jsonl",
@@ -622,6 +639,24 @@ def _finalize_report_zip(
         markets=eligible_markets,
     )
     signal_models_summary = build_signal_models_summary(signal_opportunities)
+
+    # Acquistabilità export compatto (read-only, nessuna formula ricalcolata)
+    purch_evaluations = collect_compact_evaluations(
+        run_id=int(run.id),
+        snaps=eligible_snaps,
+        markets=eligible_markets,
+    )
+    purch_decisions = build_decision_rows(purch_evaluations)
+    purch_drift = build_purchasability_drift(purch_evaluations)
+    purch_profiles = build_purchasability_profiles(
+        snaps=eligible_snaps, evaluations=purch_evaluations
+    )
+    purch_export_summary = build_purchasability_export_summary(
+        evaluations=purch_evaluations,
+        decisions=purch_decisions,
+        drift=purch_drift,
+        profiles=purch_profiles,
+    )
 
     eligibility: dict[str, int] = defaultdict(int)
     for s in snaps:
@@ -982,6 +1017,8 @@ def _finalize_report_zip(
         "excluded_diagnostics": excluded_diagnostics,
         "errors": errors_section,
         "data_coverage": data_coverage,
+        "purchasability_export": purch_export_summary,
+        "purchasability_observational_warning": PURCH_OBSERVATIONAL_WARNING,
     }
 
     patterns = _build_combined_patterns(
@@ -996,7 +1033,6 @@ def _finalize_report_zip(
 
         zf.writestr("AI_INSTRUCTIONS.md", AI_INSTRUCTIONS_MD.encode("utf-8"))
         zf.writestr("SCHEMA.md", SCHEMA_MD.encode("utf-8"))
-        _put_json("manifest.json", manifest)
 
         if mode_norm in ("ai_summary", "competition", "full_archive"):
             _put_json("summary.json", summary)
@@ -1251,9 +1287,48 @@ def _finalize_report_zip(
                     )
 
         def _iter_purch_compact() -> Iterator[str]:
-            for s in eligible_snaps:
-                for row in _purchasability_compact_rows(s, markets_by_snap):
-                    yield json.dumps(row, ensure_ascii=False, default=str)
+            for row in purch_evaluations:
+                yield json.dumps(row, ensure_ascii=False, default=str)
+
+        def _iter_purch_decisions() -> Iterator[str]:
+            for row in purch_decisions:
+                yield json.dumps(row, ensure_ascii=False, default=str)
+
+        def _iter_purch_profiles() -> Iterator[str]:
+            for row in purch_profiles:
+                yield json.dumps(row, ensure_ascii=False, default=str)
+
+        def _write_purchasability_export_files(*, include_legacy_full: bool) -> None:
+            line_counts["purchasability_compact.jsonl"] = _write_jsonl_to_zip(
+                zf, "purchasability_compact.jsonl", _iter_purch_compact()
+            )
+            line_counts["purchasability_decisions.jsonl"] = _write_jsonl_to_zip(
+                zf, "purchasability_decisions.jsonl", _iter_purch_decisions()
+            )
+            line_counts["purchasability_profiles.jsonl"] = _write_jsonl_to_zip(
+                zf, "purchasability_profiles.jsonl", _iter_purch_profiles()
+            )
+            _put_json("purchasability_drift.json", purch_drift)
+            if include_legacy_full:
+                line_counts["purchasability.jsonl"] = _write_jsonl_to_zip(
+                    zf, "purchasability.jsonl", _iter_purch_full()
+                )
+            manifest.update(
+                purchasability_manifest_fields(
+                    include_legacy_full=include_legacy_full,
+                    line_counts={
+                        k: line_counts[k]
+                        for k in (
+                            "purchasability_compact.jsonl",
+                            "purchasability_decisions.jsonl",
+                            "purchasability_profiles.jsonl",
+                            "purchasability.jsonl",
+                        )
+                        if k in line_counts
+                    },
+                    unique_profiles=len(purch_profiles),
+                )
+            )
 
         def _iter_balance() -> Iterator[str]:
             for s in eligible_snaps:
@@ -1275,9 +1350,8 @@ def _finalize_report_zip(
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
-            line_counts["purchasability.jsonl"] = _write_jsonl_to_zip(
-                zf, "purchasability.jsonl", _iter_purch_full()
-            )
+            _write_purchasability_export_files(include_legacy_full=True)
+            line_counts["balance.jsonl"] = _write_jsonl_to_zip(zf, "balance.jsonl", _iter_balance())
         elif mode_norm == "competition":
             line_counts["matches_compact.jsonl"] = _write_jsonl_to_zip(
                 zf, "matches_compact.jsonl", _iter_matches_compact()
@@ -1287,9 +1361,7 @@ def _finalize_report_zip(
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
-            line_counts["purchasability_compact.jsonl"] = _write_jsonl_to_zip(
-                zf, "purchasability_compact.jsonl", _iter_purch_compact()
-            )
+            _write_purchasability_export_files(include_legacy_full=False)
         elif mode_norm == "module":
             if module_norm == "markets":
                 line_counts["markets.jsonl"] = _write_jsonl_to_zip(
@@ -1302,18 +1374,13 @@ def _finalize_report_zip(
                     zf, "goal_intensity.jsonl", _iter_goal_intensity()
                 )
             elif module_norm == "purchasability":
-                line_counts["purchasability.jsonl"] = _write_jsonl_to_zip(
-                    zf, "purchasability.jsonl", _iter_purch_full()
-                )
-                line_counts["purchasability_compact.jsonl"] = _write_jsonl_to_zip(
-                    zf, "purchasability_compact.jsonl", _iter_purch_compact()
-                )
+                _write_purchasability_export_files(include_legacy_full=False)
             elif module_norm == "balance":
                 line_counts["balance.jsonl"] = _write_jsonl_to_zip(
                     zf, "balance.jsonl", _iter_balance()
                 )
 
-        # report_index con conteggi finali (scritto una sola volta)
+        # report_index + manifest aggiornato (conteggi finali / campi purchasability)
         report_index = {
             "run_id": int(run.id),
             "schema_version": REPORT_SCHEMA_VERSION,
@@ -1360,6 +1427,10 @@ def _finalize_report_zip(
             ),
         }
         _put_json("report_index.json", report_index)
+        # Riscrivi manifest con campi purchasability e line_counts consolidati
+        manifest["line_counts"] = dict(line_counts)
+        manifest["uncompressed_size_hint_bytes"] = None
+        _put_json("manifest.json", manifest)
 
     dest.seek(0, os.SEEK_END)
     size = int(dest.tell())

@@ -79,6 +79,8 @@ Rating / score_acquisto / Affidabilità storica: solo diagnostici, mai pesi.
 **Finale:** `√(phase_1 × phase_2)` → intero 0–100 (v2: ROUND_HALF_UP).  
 Classi: Molto Bassa / Bassa / Media / Alta / Molto Alta su soglie 20/40/60/80.
 
+**Nota Lab storico:** nello export/dashboard Acquistabilità storica (`cecchino_lab_purchasability_export_v1`) uno score finale 0 con gate rejected **non** va etichettato «Molto Bassa»: usare «Bloccato dal gate» / `score_zero_semantics=gate_rejected`. `final_score` resta il valore persistito; `diagnostic_ungated_score` è solo diagnostica read-only (`√(phase_1×phase_2)`). Formula/pesi/gate operativi invariati.
+
 ## Acquistabilità — FASE 2/5 feature operative pre-match (2026-07-19)
 
 Layer feature `cecchino_purchasability_features_v1` su snapshot `kpi_panel_json` (read-only).

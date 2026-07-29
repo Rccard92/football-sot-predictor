@@ -1173,6 +1173,201 @@ export type HistoricalRunRatingCell = {
   confidence_status: string
 }
 
+export type HistoricalPurchasabilityGateStatus =
+  | 'accepted'
+  | 'rejected_non_positive_edge'
+  | 'rejected_non_positive_probability_advantage'
+  | 'rejected_multiple_non_positive_components'
+  | 'not_evaluated_insufficient_history'
+  | 'unsupported_market'
+  | 'unavailable_inputs'
+  | 'unknown_legacy'
+  | string
+
+export type HistoricalPurchasabilityDecisionGroup =
+  | 'ONE_X_TWO_REAL'
+  | 'GOALS_FT_2_5_REAL'
+  | 'DOUBLE_CHANCE_DERIVED'
+  | string
+
+export type HistoricalPurchasabilityEvaluation = {
+  purchasability_evaluation_id?: string
+  run_id?: number
+  snapshot_id?: number
+  match_snapshot_id?: number
+  lab_match_id?: number | null
+  dataset_id?: number | null
+  competition_name?: string | null
+  season_label?: string | null
+  kickoff_at?: string | null
+  chronological_order?: number | null
+  home_team?: string | null
+  away_team?: string | null
+  home_score_ft?: number | null
+  away_score_ft?: number | null
+  home_score_ht?: number | null
+  away_score_ht?: number | null
+  eligibility_status?: string | null
+  settlement_status?: string | null
+  market_key?: string | null
+  market_label?: string | null
+  period?: string | null
+  line?: string | null
+  quote_quality?: string | null
+  is_real_book_quote?: boolean | null
+  is_derived_quote?: boolean | null
+  real_book_odds?: number | null
+  derived_odds?: number | null
+  prob_book_raw?: number | null
+  prob_book_fair?: number | null
+  prob_cecchino?: number | null
+  quota_cecchino?: number | null
+  rating?: number | null
+  edge_pct?: number | null
+  vantaggio_prob?: number | null
+  signal_active_current_F?: boolean | null
+  won?: boolean | null
+  evaluation_status?: string | null
+  result_reason?: string | null
+  profit_1u_real?: number | null
+  profit_1u_synthetic?: number | null
+  market_join_status?: string | null
+  final_score?: number | null
+  persisted_score?: number | null
+  score_class?: string | null
+  positive_value_gate?: Record<string, unknown> | null
+  gate_status?: HistoricalPurchasabilityGateStatus | null
+  gate_reasons?: string[]
+  score_zero_semantics?: string | null
+  diagnostic_ungated_score?: number | null
+  diagnostic_ungated_score_source?: string | null
+  phase_1_score?: number | null
+  phase_2_score?: number | null
+  formula_version?: string | null
+  parity_status?: string | null
+  formula_recomputed?: boolean
+}
+
+export type HistoricalPurchasabilityDecision = {
+  decision_id: string
+  run_id: number
+  snapshot_id: number
+  competition_name?: string | null
+  kickoff_at?: string | null
+  decision_group: HistoricalPurchasabilityDecisionGroup
+  candidate_markets: string[]
+  evaluated_markets_count: number
+  accepted_markets_count: number
+  rejected_markets_count: number
+  highest_final_score?: number | null
+  selected_market_key?: string | null
+  selected_score?: number | null
+  selected_gate_status?: string | null
+  selection_tied: boolean
+  tied_market_keys: string[]
+  selection_rule: string
+  selected_quote_quality?: string | null
+  selected_odds?: number | null
+  selected_won?: boolean | null
+  selected_profit_1u_real?: number | null
+  selected_profit_1u_synthetic?: number | null
+  performance_available?: boolean
+  best_diagnostic_ungated_score?: number | null
+  best_diagnostic_ungated_market_key?: string | null
+  performance_type?: string
+  not_real_bet365_strategy?: boolean
+  diagnostic_only: boolean
+  not_a_production_strategy: boolean
+}
+
+export type HistoricalPurchasabilityDriftBucket = {
+  evaluations_count?: number
+  computed_count?: number
+  insufficient_history_count?: number
+  unsupported_count?: number
+  unavailable_count?: number
+  gate_accepted_count?: number
+  gate_rejected_count?: number
+  gate_accepted_pct?: number | null
+  score_zero_count?: number
+  score_zero_pct?: number | null
+  score_ge_80_count?: number
+  score_ge_80_pct?: number | null
+  mean_accepted_score?: number | null
+  median_accepted_score?: number | null
+  p10_accepted_score?: number | null
+  p90_accepted_score?: number | null
+  mean_normalization_sample_size?: number | null
+  min_normalization_sample_size?: number | null
+  max_normalization_sample_size?: number | null
+  distinct_profile_hashes?: number
+  first_profile_hash?: string | null
+  last_profile_hash?: string | null
+  cap_diagnostics_available?: boolean
+}
+
+export type HistoricalPurchasabilityMarketJoinDiagnostics = {
+  evaluations_total: number
+  matched_count: number
+  missing_count: number
+  ambiguous_count: number
+  invalid_count: number
+  matched_pct: number | null
+  by_market_key?: Record<string, Record<string, number>>
+  by_competition?: Record<string, Record<string, number>>
+  matched_plus_missing_plus_ambiguous_plus_invalid_equals_total?: boolean
+}
+
+export type HistoricalPurchasabilityExportReconciliation = {
+  market_evaluations: number
+  unique_evaluation_ids: number
+  duplicate_evaluation_ids: number
+  evaluation_id_unique: boolean
+  matched_plus_missing_plus_ambiguous_plus_invalid_equals_total: boolean
+  source_snapshots_unchanged: boolean
+}
+
+export type HistoricalPurchasabilityExportSummary = {
+  export_schema_version: string
+  evaluations_total: number
+  evaluations_by_status?: Record<string, number>
+  gate_status_counts?: Record<string, number>
+  gate_reason_counts?: Record<string, number>
+  final_score_zero_count?: number
+  gate_rejected_zero_count?: number
+  calculated_zero_count?: number
+  diagnostic_ungated_score_available_count?: number
+  market_join_diagnostics?: HistoricalPurchasabilityMarketJoinDiagnostics
+  quote_quality_counts?: Record<string, number>
+  decision_group_counts?: Record<string, number>
+  normalization_drift_summary?: HistoricalPurchasabilityDriftBucket
+  compact_export_reconciliation?: HistoricalPurchasabilityExportReconciliation
+  formula_recomputed?: boolean
+  run_snapshot_modified?: boolean
+}
+
+export type HistoricalPurchasabilityScoreRow = {
+  market_key?: string
+  gate_status?: string | null
+  gate_label?: string
+  final_score?: number | null
+  diagnostic_ungated_score?: number | null
+  rating?: number | null
+  edge_pct?: number | null
+  vantaggio_prob?: number | null
+  quote_quality?: string | null
+  real_book_odds?: number | null
+  derived_odds?: number | null
+  won?: boolean | null
+  profit_1u_real?: number | null
+  profit_1u_synthetic?: number | null
+  score_class?: string | null
+  competition_name?: string | null
+  home_team?: string | null
+  away_team?: string | null
+  kickoff_at?: string | null
+}
+
 export type HistoricalRunPurchasabilityAnalytics = {
   run_id: number
   is_provisional: boolean
@@ -1191,6 +1386,45 @@ export type HistoricalRunPurchasabilityAnalytics = {
   observation_status?: string
   execution_status?: string
   profile_sample_size?: number
+  analytics_aggregation_version?: string
+  purchasability_export_schema_version?: string
+  observational_warning?: string
+  scores_by_market?: Record<string, HistoricalPurchasabilityScoreRow[]>
+  gate?: {
+    accepted?: number
+    rejected?: number
+    other?: number
+    gate_status_counts?: Record<string, number>
+    gate_reason_counts?: Record<string, number>
+    gate_status_by_market?: Record<string, Record<string, number>>
+    gate_rejected_zero_count?: number
+    blocked_label?: string
+  }
+  decisions_by_group?: Record<string, HistoricalPurchasabilityDecision[]>
+  drift?: {
+    by_month?: Record<string, HistoricalPurchasabilityDriftBucket>
+    by_competition?: Record<string, HistoricalPurchasabilityDriftBucket>
+    overall?: HistoricalPurchasabilityDriftBucket
+  }
+  evaluations_total?: number
+  decisions_total?: number
+  formula_recomputed?: boolean
+  run_snapshot_modified?: boolean
+}
+
+/** Etichetta UI: mai «Molto Bassa» per gate rejected. */
+export function purchasabilityGateDisplayLabel(
+  gateStatus: string | null | undefined,
+  scoreClass: string | null | undefined,
+): string {
+  if (gateStatus && String(gateStatus).startsWith('rejected_')) {
+    return 'Bloccato dal gate'
+  }
+  if (gateStatus === 'accepted') {
+    return scoreClass && scoreClass !== 'Molto Bassa' ? scoreClass : 'Accettato'
+  }
+  if (!gateStatus) return scoreClass || '—'
+  return String(gateStatus)
 }
 
 export type HistoricalSignalCell = {

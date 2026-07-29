@@ -12,7 +12,7 @@ from typing import Any
 
 from app.models.cecchino_lab_historical_market_result import CecchinoLabHistoricalMarketResult
 
-ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2_2"
+ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2_3"
 
 # Pilastri Balance canonici (ordine UI dashboard)
 BALANCE_CANONICAL_PILLARS: tuple[str, ...] = (
@@ -361,7 +361,11 @@ def rating_band_dashboard(rating: Any) -> str:
 
 
 def purchasability_band_dashboard(score: Any) -> str:
-    """Fasce granulari 0-9 … 90-99, 100, unavailable."""
+    """Fasce granulari 0-9 … 90-99, 100, unavailable.
+
+    Legacy: non distingue zero da gate. Preferire
+    `purchasability_accepted_score_band_dashboard` + gate_status.
+    """
     if score is None:
         return "unavailable"
     try:
@@ -377,7 +381,11 @@ def purchasability_band_dashboard(score: Any) -> str:
 
 
 def purchasability_band_report(score: Any) -> str:
-    """Fasce grosse usate nei pattern del report AI."""
+    """Fasce grosse usate nei pattern del report AI (legacy).
+
+    Deprecato per zero-da-gate: uno score 0 gated finisce in 0-19.
+    Preferire `purchasability_accepted_score_band_report` con gate_status.
+    """
     if score is None:
         return "no_purch"
     try:
@@ -393,6 +401,209 @@ def purchasability_band_report(score: Any) -> str:
     if ps < 80:
         return "60-79"
     return "80-100"
+
+
+PURCH_ACCEPTED_BANDS_REPORT: tuple[str, ...] = (
+    "0-19",
+    "20-39",
+    "40-59",
+    "60-79",
+    "80-100",
+    "gate_rejected",
+    "unavailable",
+    "no_purch",
+)
+
+
+def purchasability_accepted_score_band_report(
+    score: Any,
+    *,
+    gate_status: str | None = None,
+) -> str:
+    """Fascia numerica per score accettati; gate_rejected se gate non accepted."""
+    if gate_status is not None and gate_status != "accepted":
+        if gate_status in (
+            "rejected_non_positive_edge",
+            "rejected_non_positive_probability_advantage",
+            "rejected_multiple_non_positive_components",
+        ) or str(gate_status).startswith("rejected_"):
+            return "gate_rejected"
+        if gate_status in (
+            "not_evaluated_insufficient_history",
+            "unsupported_market",
+            "unavailable_inputs",
+        ):
+            return "unavailable"
+        if gate_status == "unknown_legacy":
+            # fallback legacy numerico
+            return purchasability_band_report(score)
+    if score is None:
+        return "no_purch"
+    return purchasability_band_report(score)
+
+
+def purchasability_accepted_score_band_dashboard(
+    score: Any,
+    *,
+    gate_status: str | None = None,
+) -> str:
+    """Fascia decade per score accettati; gate_rejected se gate non accepted."""
+    if gate_status is not None and gate_status != "accepted":
+        if str(gate_status).startswith("rejected_"):
+            return "gate_rejected"
+        if gate_status in (
+            "not_evaluated_insufficient_history",
+            "unsupported_market",
+            "unavailable_inputs",
+        ):
+            return "unavailable"
+        if gate_status == "unknown_legacy":
+            return purchasability_band_dashboard(score)
+    return purchasability_band_dashboard(score)
+
+
+def classify_purchasability_gate(
+    mk_row: dict[str, Any] | None,
+    *,
+    snap_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Classifica gate da payload congelato — nessuna rivalutazione operativa."""
+    row = mk_row if isinstance(mk_row, dict) else {}
+    snap = snap_payload if isinstance(snap_payload, dict) else {}
+    status_lab = (
+        row.get("status")
+        or snap.get("historical_purchasability_status")
+        or snap.get("execution_status")
+    )
+    gate = row.get("positive_value_gate")
+    if not isinstance(gate, dict):
+        gate = {}
+
+    reason_codes = list(gate.get("reason_codes") or [])
+    # reason_codes utili senza il generico positive_value_gate_failed
+    core_reasons = [
+        r
+        for r in reason_codes
+        if r
+        not in (
+            "positive_value_gate_failed",
+            "positive_value_gate_inputs_missing",
+        )
+    ]
+
+    if status_lab in (
+        "insufficient_historical_normalization_sample",
+        "insufficient_history",
+    ) or (
+        snap.get("execution_status") == "insufficient_historical_normalization_sample"
+        and not row.get("score")
+        and not gate
+    ):
+        if not gate and row.get("score") is None:
+            return {
+                "gate_status": "not_evaluated_insufficient_history",
+                "gate_reasons": ["insufficient_historical_normalization_sample"],
+            }
+
+    if status_lab in ("unsupported", "unsupported_market") or (
+        row.get("status") == "unsupported"
+    ):
+        return {
+            "gate_status": "unsupported_market",
+            "gate_reasons": ["unsupported_market"],
+        }
+
+    gate_st = gate.get("status")
+    if not gate and row.get("score") is None and not reason_codes:
+        # payload legacy o mercato senza valutazione
+        if status_lab in ("unavailable", None) and not row:
+            return {
+                "gate_status": "unavailable_inputs",
+                "gate_reasons": ["unavailable_inputs"],
+            }
+        if not gate and "positive_value_gate" not in row:
+            return {
+                "gate_status": "unknown_legacy",
+                "gate_reasons": [],
+            }
+
+    if gate_st == "passed":
+        return {"gate_status": "accepted", "gate_reasons": []}
+
+    if gate_st == "unavailable" or "positive_value_gate_inputs_missing" in reason_codes:
+        return {
+            "gate_status": "unavailable_inputs",
+            "gate_reasons": reason_codes or ["positive_value_gate_inputs_missing"],
+        }
+
+    if gate_st == "failed":
+        has_edge = "no_positive_edge" in reason_codes
+        has_vant = "no_positive_probability_advantage" in reason_codes
+        if has_edge and has_vant:
+            return {
+                "gate_status": "rejected_multiple_non_positive_components",
+                "gate_reasons": core_reasons or reason_codes,
+            }
+        if has_edge:
+            return {
+                "gate_status": "rejected_non_positive_edge",
+                "gate_reasons": core_reasons or reason_codes,
+            }
+        if has_vant:
+            return {
+                "gate_status": "rejected_non_positive_probability_advantage",
+                "gate_reasons": core_reasons or reason_codes,
+            }
+        return {
+            "gate_status": "rejected_multiple_non_positive_components",
+            "gate_reasons": core_reasons or reason_codes or ["positive_value_gate_failed"],
+        }
+
+    if status_lab == "insufficient_historical_normalization_sample":
+        return {
+            "gate_status": "not_evaluated_insufficient_history",
+            "gate_reasons": ["insufficient_historical_normalization_sample"],
+        }
+
+    return {
+        "gate_status": "unknown_legacy",
+        "gate_reasons": reason_codes,
+    }
+
+
+def score_zero_semantics_for_row(
+    final_score: Any,
+    gate_status: str | None,
+) -> str:
+    """Semantica dello score zero: gate vs calcolato vs N/D."""
+    try:
+        score_f = float(final_score) if final_score is not None else None
+    except (TypeError, ValueError):
+        score_f = None
+
+    if score_f is None:
+        if gate_status in (
+            "not_evaluated_insufficient_history",
+            "unsupported_market",
+            "unavailable_inputs",
+        ):
+            return "not_applicable"
+        return "unavailable"
+
+    if score_f != 0.0:
+        return "not_applicable"
+
+    if gate_status and str(gate_status).startswith("rejected_"):
+        return "gate_rejected"
+    if gate_status == "accepted":
+        return "calculated_zero"
+    if gate_status in (
+        "not_evaluated_insufficient_history",
+        "unsupported_market",
+        "unavailable_inputs",
+    ):
+        return "not_applicable"
+    return "unknown_legacy"
 
 
 def edge_band(edge_pct: Any) -> str | None:

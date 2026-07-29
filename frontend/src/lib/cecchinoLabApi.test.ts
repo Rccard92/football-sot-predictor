@@ -16,6 +16,7 @@ import {
   qualityBadgeClass,
   quoteLegendClass,
   replaceDatasetConfirmMessage,
+  purchasabilityGateDisplayLabel,
   DEFAULT_HISTORICAL_SEASON,
   HISTORICAL_SCAN_CONFIRM_TOKEN,
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
@@ -36,6 +37,18 @@ describe('cecchinoLabApi helpers', () => {
     expect(formatNullableNumber(null)).toBe('—')
     expect(formatNullableNumber(undefined)).toBe('—')
     expect(formatNullableNumber(2.5)).toBe('2.50')
+  })
+
+  it('purchasabilityGateDisplayLabel shows Bloccato dal gate for rejected', () => {
+    expect(purchasabilityGateDisplayLabel('rejected_non_positive_edge', 'Molto Bassa')).toBe(
+      'Bloccato dal gate',
+    )
+    expect(
+      purchasabilityGateDisplayLabel('rejected_non_positive_probability_advantage', 'Molto Bassa'),
+    ).toBe('Bloccato dal gate')
+    expect(purchasabilityGateDisplayLabel('accepted', 'Alta')).toBe('Alta')
+    expect(purchasabilityGateDisplayLabel('accepted', 'Molto Bassa')).toBe('Accettato')
+    expect(purchasabilityGateDisplayLabel(null, null)).toBe('—')
   })
 
   it('pattern badges map sample and stability', () => {
