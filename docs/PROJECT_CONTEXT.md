@@ -2,9 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Harden preflight replay Acquistabilità V3 STEP 3A.1 (2026-07-29)
+
+Incidente Railway su Run #3 (restart durante preflight; nessuna prova definitiva OOM). Causa: full ORM load. Mitigazione: aggregati+streaming, summary/probe separati (`include_probe`), pagina autonoma `/cecchino-lab/purchasability-replay`, budget risorse. **Nessun replay/migration/scansione.** Formula V3 e Run #3 invariati. STEP 3B ancora bloccato.
+
 ## Feat — Preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
 
-Preflight read-only Lab: `GET .../purchasability-v3-replay/preflight` + UI «Verifica replay Acquistabilità» (lazy). Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`. Probe max 30; nessun replay completo/migration/export V3. Motore V3 e export V2 invariati. **Run #3 invariato.** Doc: `CECCHINO_LAB_HISTORICAL_SCAN.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
+Preflight read-only Lab: `GET .../purchasability-v3-replay/preflight` (+ `include_probe` dal 3A.1). Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`. Motore V3 e export V2 invariati. **Run #3 invariato.** Doc: `CECCHINO_LAB_HISTORICAL_SCAN.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
 
 ## Fix — Export Acquistabilità storica compatto (2026-07-29)
 

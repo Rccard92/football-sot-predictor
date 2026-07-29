@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any
 
@@ -62,6 +63,7 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_prefligh
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
+logger = logging.getLogger(__name__)
 
 
 @admin_router.post("/imports/preview")
@@ -788,11 +790,14 @@ def historical_run_dashboard_purchasability(
 @router.get("/historical-scans/{run_id}/purchasability-v3-replay/preflight")
 def historical_purchasability_v3_replay_preflight(
     run_id: int,
+    include_probe: bool = False,
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    """Preflight read-only replay Acquistabilità V3 (STEP 3A). Nessuna scrittura DB."""
+    """Preflight read-only replay Acquistabilità V3 (STEP 3A.1). Nessuna scrittura DB."""
     try:
-        result = run_purchasability_v3_replay_preflight(db, run_id)
+        result = run_purchasability_v3_replay_preflight(
+            db, run_id, include_probe=include_probe
+        )
     except CecchinoLabImportError as exc:
         return JSONResponse(
             status_code=exc.status_code,
@@ -801,6 +806,20 @@ def historical_purchasability_v3_replay_preflight(
                 "error": exc.code,
                 "message": exc.message,
                 "details": exc.details,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "purchasability_v3_preflight_failed run_id=%s phase=route",
+            run_id,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": "purchasability_v3_preflight_failed",
+                "message": "La verifica non è stata completata.",
+                "details": {"run_id": run_id, "phase": "route"},
             },
         )
     return JSONResponse(content=jsonable_encoder(result))

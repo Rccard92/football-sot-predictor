@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Harden purchasability replay preflight resources (STEP 3A.1) (2026-07-29)
+
+- Perché: il primo preflight reale su Run #3 ha riavviato il backend Railway (`Failed to fetch`); carico ORM completo + dashboard concorrente.
+- Cosa: streaming/aggregati; summary vs probe (`include_probe`); budget; pagina autonoma; errori controllati; test+doc.
+- Cosa non fa: nessun replay/migration/scansione/backfill; formula V3 e regole business invariate; Run #3 invariato. STEP 3B ancora bloccato.
+
 ## Feat — Preflight replay Acquistabilità V3 (STEP 3A) (2026-07-29)
 
 - Perché: capire se Run storici (es. #3) hanno già tutti gli input pre-match per ricalcolare V3 senza nuova scansione.

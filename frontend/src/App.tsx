@@ -23,6 +23,7 @@ import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoLabHistoricalRunPage } from './pages/CecchinoLabHistoricalRunPage'
+import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -38,6 +39,10 @@ export default function App() {
           <Route
             path="/cecchino-lab/historical-scans/:runId"
             element={<CecchinoLabHistoricalRunPage />}
+          />
+          <Route
+            path="/cecchino-lab/purchasability-replay"
+            element={<CecchinoLabPurchasabilityReplayPage />}
           />
           <Route path="/monitoraggio-segno-1" element={<CecchinoHomeWinsPage />} />
           <Route path="/monitoraggio-segnali" element={<CecchinoSignalsMonitoringPage />} />

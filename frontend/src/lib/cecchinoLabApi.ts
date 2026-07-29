@@ -1977,13 +1977,31 @@ export type HistoricalPurchasabilityV3ReplayPreflight = {
     recommended_next_action: string
   }
   status_rules?: Record<string, unknown>
+  resource_profile?: {
+    strategy?: string
+    full_orm_entities_loaded?: boolean
+    snapshot_json_fields_loaded?: boolean
+    market_json_fields_loaded?: boolean
+    market_rows_streamed?: number
+    max_market_rows_held_in_memory?: number
+    stream_yield_per?: number
+    probe_requested?: boolean
+    probe_snapshot_count?: number
+    duration_ms?: number
+    resource_budget_exceeded?: boolean
+  }
+  query_profile?: Record<string, number>
 }
 
 export function getHistoricalPurchasabilityV3ReplayPreflight(
   runId: number,
+  opts?: { includeProbe?: boolean },
 ): Promise<HistoricalPurchasabilityV3ReplayPreflight> {
+  const params = new URLSearchParams()
+  if (opts?.includeProbe) params.set('include_probe', 'true')
+  const q = params.toString()
   return requestJson(
-    `/api/cecchino-lab/historical-scans/${runId}/purchasability-v3-replay/preflight`,
+    `/api/cecchino-lab/historical-scans/${runId}/purchasability-v3-replay/preflight${q ? `?${q}` : ''}`,
   )
 }
 

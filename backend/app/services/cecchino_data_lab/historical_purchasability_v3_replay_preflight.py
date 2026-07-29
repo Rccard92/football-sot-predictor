@@ -1,19 +1,21 @@
 """Preflight read-only replay Acquistabilità V3 su run storico Cecchino Lab.
 
-STEP 3A: nessuna scrittura DB, nessun replay completo, nessuna nuova scansione.
-Verifica copertura input congelati pre-match + probe diagnostico max 30 snapshot.
+STEP 3A.1: resource-safe (aggregati SQL + streaming), nessuna scrittura DB,
+nessun replay completo, nessuna nuova scansione. Summary e probe separati.
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Iterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_historical_market_result import CecchinoLabHistoricalMarketResult
@@ -62,6 +64,8 @@ from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 from app.services.cecchino_data_lab.historical_scan_service import _run_scope_meta
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 
+logger = logging.getLogger(__name__)
+
 PREFLIGHT_SCHEMA_VERSION = "cecchino_lab_purchasability_v3_replay_preflight_v1"
 FAIR_SUM_TOLERANCE = 1e-4
 PROBE_SNAPSHOT_LIMIT = 30
@@ -71,6 +75,75 @@ MAX_PROBLEMATIC_SNAPSHOTS = 20
 CACHE_TTL_COMPLETED_S = 300.0
 CACHE_TTL_BLOCKED_S = 60.0
 CACHE_MAX_ENTRIES = 64
+
+PREFLIGHT_STREAM_YIELD_PER = 500
+PREFLIGHT_MAX_SUPPORTED_ROWS = 100_000
+PREFLIGHT_MAX_RUNTIME_SECONDS = 30
+
+SNAPSHOT_LEAN_COLS = (
+    CecchinoLabHistoricalMatchSnapshot.id,
+    CecchinoLabHistoricalMatchSnapshot.run_id,
+    CecchinoLabHistoricalMatchSnapshot.lab_match_id,
+    CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status,
+    CecchinoLabHistoricalMatchSnapshot.historical_eligibility_reason,
+    CecchinoLabHistoricalMatchSnapshot.competition_name,
+    CecchinoLabHistoricalMatchSnapshot.kickoff_at,
+    CecchinoLabHistoricalMatchSnapshot.pre_match_locked_at,
+    CecchinoLabHistoricalMatchSnapshot.pre_match_payload_sha256,
+    CecchinoLabHistoricalMatchSnapshot.chronological_order,
+)
+
+MARKET_STREAM_COLS = (
+    CecchinoLabHistoricalMarketResult.id,
+    CecchinoLabHistoricalMarketResult.match_snapshot_id,
+    CecchinoLabHistoricalMarketResult.market_key,
+    CecchinoLabHistoricalMarketResult.quota_book,
+    CecchinoLabHistoricalMarketResult.quota_cecchino,
+    CecchinoLabHistoricalMarketResult.prob_book_raw,
+    CecchinoLabHistoricalMarketResult.prob_book_fair,
+    CecchinoLabHistoricalMarketResult.prob_cecchino,
+    CecchinoLabHistoricalMarketResult.edge_pct,
+    CecchinoLabHistoricalMarketResult.vantaggio_prob,
+    CecchinoLabHistoricalMarketResult.quote_source_type,
+    CecchinoLabHistoricalMarketResult.is_real_book_quote,
+    CecchinoLabHistoricalMarketResult.is_derived_quote,
+    CecchinoLabHistoricalMarketResult.derivation_method,
+    CecchinoLabHistoricalMarketResult.evaluation_status,
+    CecchinoLabHistoricalMarketResult.won,
+    CecchinoLabHistoricalMarketResult.profit_1u_real,
+    CecchinoLabHistoricalMarketResult.profit_1u_synthetic,
+    CecchinoLabHistoricalMarketResult.result_reason,
+)
+
+HEAVY_JSON_FIELD_NAMES = frozenset(
+    {
+        "input_snapshot_json",
+        "cecchino_output_json",
+        "historical_kpi_json",
+        "result_json",
+        "settlement_summary_json",
+        "signals_json",
+        "balance_v5_json",
+        "goal_intensity_compatibility_json",
+        "purchasability_compatibility_json",
+        "quote_sources_json",
+        "module_availability_json",
+        "blocking_reasons_json",
+        "warnings_json",
+        "error_json",
+        "signal_sources_json",
+    }
+)
+
+
+class PreflightResourceBudgetExceeded(Exception):
+    """Budget risorse superato: risposta blocked controllata, non crash worker."""
+
+    def __init__(self, code: str, message: str, **details: Any) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details
 
 STATUS_READY = "ready"
 STATUS_READY_WITH_WARNINGS = "ready_with_warnings"
@@ -622,11 +695,224 @@ def _fair_group_status(values: list[float | None]) -> str:
     return "fair_group_out_of_tolerance"
 
 
-def _select_probe_snapshot_ids(eligible_snaps: list[Any]) -> list[int]:
-    if not eligible_snaps:
+def _as_row_id(row: Any) -> int:
+    if isinstance(row, int):
+        return int(row)
+    if isinstance(row, (tuple, list)):
+        return int(row[0])
+    mapping = getattr(row, "_mapping", None)
+    if mapping is not None:
+        if "id" in mapping:
+            return int(mapping["id"])
+        return int(next(iter(mapping.values())))
+    if hasattr(row, "id"):
+        return int(row.id)
+    try:
+        return int(row[0])
+    except Exception as exc:  # noqa: BLE001
+        raise TypeError(f"Cannot extract id from row: {type(row)}") from exc
+
+
+def _row_to_ns(row: Any) -> SimpleNamespace:
+    if isinstance(row, SimpleNamespace):
+        return row
+    mapping = getattr(row, "_mapping", None)
+    if mapping is not None:
+        return SimpleNamespace(**dict(mapping))
+    if isinstance(row, dict):
+        return SimpleNamespace(**row)
+    keys = getattr(row, "_fields", None) or getattr(row, "keys", lambda: ())()
+    data = {k: getattr(row, k) for k in keys}
+    return SimpleNamespace(**data)
+
+
+def _empty_resource_profile(*, probe_requested: bool = False) -> dict[str, Any]:
+    return {
+        "strategy": "sql_aggregates_and_streaming",
+        "full_orm_entities_loaded": False,
+        "snapshot_json_fields_loaded": False,
+        "market_json_fields_loaded": False,
+        "market_rows_streamed": 0,
+        "max_market_rows_held_in_memory": 0,
+        "stream_yield_per": PREFLIGHT_STREAM_YIELD_PER,
+        "probe_requested": probe_requested,
+        "probe_snapshot_count": 0,
+        "duration_ms": 0,
+        "resource_budget_exceeded": False,
+    }
+
+
+def _empty_query_profile() -> dict[str, Any]:
+    return {
+        "snapshot_aggregate_queries": 0,
+        "snapshot_lean_queries": 0,
+        "market_count_queries": 0,
+        "market_stream_queries": 0,
+        "unsupported_count_queries": 0,
+        "probe_selection_queries": 0,
+        "probe_market_queries": 0,
+    }
+
+
+def _budget_check_runtime(started: float, phase: str) -> None:
+    elapsed = time.monotonic() - started
+    if elapsed > PREFLIGHT_MAX_RUNTIME_SECONDS:
+        raise PreflightResourceBudgetExceeded(
+            "preflight_resource_budget_exceeded",
+            f"Runtime preflight oltre il budget di {PREFLIGHT_MAX_RUNTIME_SECONDS}s.",
+            phase=phase,
+            elapsed_s=round(elapsed, 3),
+            limit_s=PREFLIGHT_MAX_RUNTIME_SECONDS,
+        )
+
+
+def _scalar_count(db: Session, stmt: Any) -> int:
+    result = db.execute(stmt)
+    value = result.scalar()
+    return int(value or 0)
+
+
+def _load_snapshot_aggregates(
+    db: Session,
+    run_id: int,
+    query_profile: dict[str, Any],
+) -> dict[str, Any]:
+    Snap = CecchinoLabHistoricalMatchSnapshot
+    total = _scalar_count(
+        db,
+        select(func.count()).select_from(Snap).where(Snap.run_id == run_id),
+    )
+    query_profile["snapshot_aggregate_queries"] += 1
+
+    eligible = _scalar_count(
+        db,
+        select(func.count())
+        .select_from(Snap)
+        .where(Snap.run_id == run_id, Snap.historical_eligibility_status == ELIGIBLE_CORE),
+    )
+    query_profile["snapshot_aggregate_queries"] += 1
+
+    excluded = total - eligible
+
+    reason_rows = db.execute(
+        select(Snap.historical_eligibility_reason, func.count())
+        .where(
+            Snap.run_id == run_id,
+            Snap.historical_eligibility_status != ELIGIBLE_CORE,
+        )
+        .group_by(Snap.historical_eligibility_reason)
+    ).all()
+    query_profile["snapshot_aggregate_queries"] += 1
+    exclusions_by_reason: dict[str, int] = {}
+    for reason, cnt in reason_rows:
+        key = str(reason or "unknown")
+        exclusions_by_reason[key] = int(cnt)
+
+    comp_rows = db.execute(
+        select(Snap.competition_name, func.count())
+        .where(Snap.run_id == run_id, Snap.historical_eligibility_status == ELIGIBLE_CORE)
+        .group_by(Snap.competition_name)
+    ).all()
+    query_profile["snapshot_aggregate_queries"] += 1
+    by_competition_eligible = {str(name or "unknown"): int(cnt) for name, cnt in comp_rows}
+
+    return {
+        "snapshots_total": total,
+        "snapshots_eligible_core": eligible,
+        "snapshots_excluded": excluded,
+        "exclusions_by_reason": exclusions_by_reason,
+        "by_competition_eligible": by_competition_eligible,
+    }
+
+
+def _load_eligible_snap_meta(
+    db: Session,
+    run_id: int,
+    query_profile: dict[str, Any],
+) -> dict[int, SimpleNamespace]:
+    """Carica solo colonne lean degli eligible_core (nessun JSON)."""
+    stmt = (
+        select(*SNAPSHOT_LEAN_COLS)
+        .where(
+            CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
+            CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status == ELIGIBLE_CORE,
+        )
+        .order_by(
+            CecchinoLabHistoricalMatchSnapshot.kickoff_at.asc().nulls_last(),
+            CecchinoLabHistoricalMatchSnapshot.chronological_order.asc().nulls_last(),
+            CecchinoLabHistoricalMatchSnapshot.id.asc(),
+        )
+    )
+    rows = db.execute(stmt).all()
+    query_profile["snapshot_lean_queries"] += 1
+    out: dict[int, SimpleNamespace] = {}
+    for row in rows:
+        ns = _row_to_ns(row)
+        out[int(ns.id)] = ns
+    return out
+
+
+def _count_supported_market_rows(db: Session, run_id: int, query_profile: dict[str, Any]) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(CecchinoLabHistoricalMarketResult)
+        .where(
+            CecchinoLabHistoricalMarketResult.run_id == run_id,
+            CecchinoLabHistoricalMarketResult.market_key.in_(list(V3_MARKET_ORDER)),
+        )
+    )
+    n = _scalar_count(db, stmt)
+    query_profile["market_count_queries"] += 1
+    return n
+
+
+def _count_unsupported_market_rows(db: Session, run_id: int, query_profile: dict[str, Any]) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(CecchinoLabHistoricalMarketResult)
+        .where(
+            CecchinoLabHistoricalMarketResult.run_id == run_id,
+            CecchinoLabHistoricalMarketResult.market_key.notin_(list(V3_MARKET_ORDER)),
+        )
+    )
+    n = _scalar_count(db, stmt)
+    query_profile["unsupported_count_queries"] += 1
+    return n
+
+
+def _iter_supported_market_rows(db: Session, run_id: int, query_profile: dict[str, Any]) -> Iterator[Any]:
+    stmt = (
+        select(*MARKET_STREAM_COLS)
+        .where(
+            CecchinoLabHistoricalMarketResult.run_id == run_id,
+            CecchinoLabHistoricalMarketResult.market_key.in_(list(V3_MARKET_ORDER)),
+        )
+        .order_by(
+            CecchinoLabHistoricalMarketResult.match_snapshot_id.asc(),
+            CecchinoLabHistoricalMarketResult.market_key.asc(),
+            CecchinoLabHistoricalMarketResult.id.asc(),
+        )
+        .execution_options(
+            stream_results=True,
+            yield_per=PREFLIGHT_STREAM_YIELD_PER,
+        )
+    )
+    result = db.execute(stmt)
+    query_profile["market_stream_queries"] += 1
+    yield_per = getattr(result, "yield_per", None)
+    if callable(yield_per):
+        iterator = yield_per(PREFLIGHT_STREAM_YIELD_PER)
+    else:
+        iterator = iter(result)
+    for row in iterator:
+        yield row
+
+
+def _select_probe_snapshot_ids_from_meta(eligible_meta: dict[int, SimpleNamespace]) -> list[int]:
+    if not eligible_meta:
         return []
     ordered = sorted(
-        eligible_snaps,
+        eligible_meta.values(),
         key=lambda s: (
             getattr(s, "kickoff_at", None) or datetime.min.replace(tzinfo=timezone.utc),
             int(getattr(s, "chronological_order", 0) or 0),
@@ -636,7 +922,6 @@ def _select_probe_snapshot_ids(eligible_snaps: list[Any]) -> list[int]:
     n = len(ordered)
     if n <= PROBE_SNAPSHOT_LIMIT:
         return [int(s.id) for s in ordered]
-
     first = ordered[:PROBE_BUCKET_SIZE]
     last = ordered[-PROBE_BUCKET_SIZE:]
     mid_start = max(0, (n // 2) - (PROBE_BUCKET_SIZE // 2))
@@ -651,13 +936,99 @@ def _select_probe_snapshot_ids(eligible_snaps: list[Any]) -> list[int]:
     return out[:PROBE_SNAPSHOT_LIMIT]
 
 
+def _select_probe_snapshot_ids_sql(
+    db: Session,
+    run_id: int,
+    eligible_count: int,
+    query_profile: dict[str, Any],
+) -> list[int]:
+    """Selezione deterministica first/mid/last senza materializzare tutti gli ORM."""
+    Snap = CecchinoLabHistoricalMatchSnapshot
+    order = (
+        Snap.kickoff_at.asc().nulls_last(),
+        Snap.chronological_order.asc().nulls_last(),
+        Snap.id.asc(),
+    )
+    base = select(Snap.id).where(
+        Snap.run_id == run_id,
+        Snap.historical_eligibility_status == ELIGIBLE_CORE,
+    )
+    if eligible_count <= PROBE_SNAPSHOT_LIMIT:
+        rows = db.execute(base.order_by(*order)).all()
+        query_profile["probe_selection_queries"] += 1
+        return [_as_row_id(r) for r in rows]
+
+    first_rows = db.execute(base.order_by(*order).limit(PROBE_BUCKET_SIZE)).all()
+    query_profile["probe_selection_queries"] += 1
+    last_rows = db.execute(
+        base.order_by(
+            Snap.kickoff_at.desc().nulls_first(),
+            Snap.chronological_order.desc().nulls_first(),
+            Snap.id.desc(),
+        ).limit(PROBE_BUCKET_SIZE)
+    ).all()
+    query_profile["probe_selection_queries"] += 1
+    mid_start = max(0, (eligible_count // 2) - (PROBE_BUCKET_SIZE // 2))
+    mid_rows = db.execute(
+        base.order_by(*order).offset(mid_start).limit(PROBE_BUCKET_SIZE)
+    ).all()
+    query_profile["probe_selection_queries"] += 1
+
+    seen: set[int] = set()
+    out: list[int] = []
+    for r in first_rows + mid_rows + list(reversed(last_rows)):
+        sid = _as_row_id(r)
+        if sid not in seen:
+            seen.add(sid)
+            out.append(sid)
+    return out[:PROBE_SNAPSHOT_LIMIT]
+
+
+def _load_markets_for_snapshots(
+    db: Session,
+    run_id: int,
+    snap_ids: list[int],
+    query_profile: dict[str, Any],
+) -> dict[int, list[SimpleNamespace]]:
+    if not snap_ids:
+        return {}
+    stmt = (
+        select(*MARKET_STREAM_COLS)
+        .where(
+            CecchinoLabHistoricalMarketResult.run_id == run_id,
+            CecchinoLabHistoricalMarketResult.match_snapshot_id.in_(snap_ids),
+            CecchinoLabHistoricalMarketResult.market_key.in_(list(V3_MARKET_ORDER)),
+        )
+        .order_by(
+            CecchinoLabHistoricalMarketResult.match_snapshot_id.asc(),
+            CecchinoLabHistoricalMarketResult.market_key.asc(),
+            CecchinoLabHistoricalMarketResult.id.asc(),
+        )
+    )
+    rows = db.execute(stmt).all()
+    query_profile["probe_market_queries"] += 1
+    by_snap: dict[int, list[SimpleNamespace]] = defaultdict(list)
+    for row in rows:
+        ns = _row_to_ns(row)
+        by_snap[int(ns.match_snapshot_id)].append(ns)
+    return by_snap
+
+
 def _run_probe(
     *,
-    eligible_snaps: list[Any],
-    markets_by_snap: dict[int, list[Any]],
+    db: Session,
+    run_id: int,
+    eligible_meta: dict[int, SimpleNamespace],
+    query_profile: dict[str, Any],
 ) -> dict[str, Any]:
-    ids = _select_probe_snapshot_ids(eligible_snaps)
-    snap_by_id = {int(s.id): s for s in eligible_snaps}
+    ids = _select_probe_snapshot_ids_sql(
+        db, run_id, len(eligible_meta), query_profile
+    )
+    # Fallback deterministico se SQL mock non distingue limit/offset
+    if not ids and eligible_meta:
+        ids = _select_probe_snapshot_ids_from_meta(eligible_meta)
+    markets_by_snap = _load_markets_for_snapshots(db, run_id, ids, query_profile)
+
     counts = {
         "snapshots_probed": 0,
         "markets_scored": 0,
@@ -669,7 +1040,7 @@ def _run_probe(
     errors: list[dict[str, Any]] = []
 
     for sid in ids:
-        snap = snap_by_id.get(sid)
+        snap = eligible_meta.get(sid)
         if snap is None:
             continue
         rows_src = markets_by_snap.get(sid, [])
@@ -678,7 +1049,6 @@ def _run_probe(
             for m in rows_src
             if is_v3_supported_market(str(getattr(m, "market_key", "") or ""))
         ]
-        # Anti-leakage: nessuna chiave risultato nel panel
         for row in panel_rows:
             for forbidden in FORBIDDEN_FORMULA_FIELDS:
                 assert forbidden not in row
@@ -720,7 +1090,7 @@ def _run_probe(
         except Exception as exc:  # noqa: BLE001 — probe diagnostico
             counts["markets_error"] += 1
             if len(errors) < MAX_EXAMPLES_PER_REASON:
-                errors.append({"snapshot_id": sid, "error": str(exc)[:300]})
+                errors.append({"snapshot_id": sid, "error": type(exc).__name__})
 
     return {
         "probe_is_diagnostic_only": True,
@@ -730,9 +1100,226 @@ def _run_probe(
         "probe_selection_rule": "first_10_chrono + mid_10 + last_10",
         "invoked_v3_formula": True,
         "persisted_results": False,
+        "skipped": False,
         **counts,
         "errors": errors,
     }
+
+
+def _process_eligible_snapshot(
+    *,
+    snap: SimpleNamespace,
+    market_rows: list[Any],
+    by_market: dict[str, dict[str, Any]],
+    by_family: dict[str, dict[str, Any]],
+    by_competition: dict[str, dict[str, Any]],
+    workload: dict[str, Any],
+    quote_quality: dict[str, Any],
+    fair_checks: dict[str, Any],
+    performance_coverage: dict[str, Any],
+    input_coverage: dict[str, Any],
+    integrity_counts: dict[str, Any],
+    example_store: dict[str, list[dict[str, Any]]],
+    problematic_snaps: list[dict[str, Any]],
+) -> bool:
+    """Elabora un singolo snapshot eligible. Ritorna True se ci sono duplicati."""
+    sid = int(snap.id)
+    comp = str(snap.competition_name or "unknown")
+    by_competition[comp]["snapshots_eligible"] += 1
+
+    integrity, integrity_reasons = _pre_match_integrity(snap)
+    if getattr(snap, "pre_match_payload_sha256", None):
+        integrity_counts["with_pre_match_hash"] += 1
+    if getattr(snap, "pre_match_locked_at", None):
+        integrity_counts["with_pre_match_lock"] += 1
+    if integrity == "ok":
+        integrity_counts["lock_before_kickoff"] += 1
+    if "lock_not_before_kickoff" in integrity_reasons:
+        integrity_counts["invalid_lock_timestamp"] += 1
+
+    keyed: dict[str, list[Any]] = defaultdict(list)
+    for m in market_rows:
+        keyed[str(getattr(m, "market_key", "") or "")].append(m)
+
+    duplicate_keys = {k for k, v in keyed.items() if len(v) > 1 and is_v3_supported_market(k)}
+    has_duplicates = bool(duplicate_keys)
+    if has_duplicates:
+        integrity_counts["duplicate_market_keys"] += len(duplicate_keys)
+        integrity_counts["snapshots_with_duplicates"] += 1
+        if len(problematic_snaps) < MAX_PROBLEMATIC_SNAPSHOTS:
+            problematic_snaps.append(
+                {
+                    "snapshot_id": sid,
+                    "competition_name": comp,
+                    "reason": "duplicate_market_keys",
+                    "keys": sorted(duplicate_keys)[:8],
+                }
+            )
+
+    by_mk_single: dict[str, Any] = {k: v[0] for k, v in keyed.items() if len(v) == 1}
+    by_mk_for_opp = {k: v[0] for k, v in keyed.items()}
+
+    for fam, members in (
+        (FAMILY_MATCH_WINNER_FT, (SEL_HOME, SEL_DRAW, SEL_AWAY)),
+        (FAMILY_GOALS_FT_2_5, (SEL_OVER_2_5, SEL_UNDER_2_5)),
+    ):
+        vals = [
+            _safe_float(getattr(by_mk_for_opp[m], "prob_book_fair", None))
+            if m in by_mk_for_opp
+            else None
+            for m in members
+        ]
+        status = _fair_group_status(vals)
+        fair_checks[status] = fair_checks.get(status, 0) + 1
+
+    for mk in DOUBLE_CHANCE_MARKETS:
+        if mk not in by_mk_for_opp:
+            continue
+        m = by_mk_for_opp[mk]
+        if getattr(m, "derivation_method", None) and bool(getattr(m, "is_derived_quote", False)):
+            fair_checks["double_chance_derivation_ok"] += 1
+        else:
+            fair_checks["double_chance_derivation_missing"] += 1
+
+    for fam in FAMILY_ORDER:
+        fam_status = _family_completeness(fam, by_mk_for_opp)
+        if fam_status == "full":
+            by_family[fam]["snapshots_with_full_family"] += 1
+            input_coverage["with_family_full"] += 1
+        elif fam_status == "partial":
+            by_family[fam]["snapshots_with_partial_family"] += 1
+        else:
+            by_family[fam]["snapshots_with_missing_family"] += 1
+        by_family[fam]["family_decisions_theoretical"] += 1
+
+    snap_has_blocker = False
+
+    for mk in V3_MARKET_ORDER:
+        bucket = by_market[mk]
+        bucket["eligible_rows"] += 1
+        duplicate = mk in duplicate_keys
+        m = by_mk_single.get(mk) if not duplicate else (keyed[mk][0] if keyed.get(mk) else None)
+        if m is not None and not duplicate:
+            workload["market_rows_found"] += 1
+
+        score_status, reason_codes = classify_score_replay(
+            market_key=mk,
+            m=m if not duplicate else None,
+            by_mk=by_mk_for_opp,
+            integrity=integrity,
+            integrity_reasons=integrity_reasons,
+            duplicate=duplicate,
+        )
+        if duplicate:
+            score_status, reason_codes = "ambiguous_market_join", ["duplicate_market_key"]
+
+        fam = market_family_for(mk) or "unknown"
+        quote_class = "unavailable"
+        perf_status = "not_applicable"
+        if m is not None and not duplicate:
+            quote_class, _ = classify_quote_quality(m)
+            perf_status = classify_performance(m, quote_class)
+            edge = _safe_float(getattr(m, "edge_pct", None))
+            vant = _safe_float(getattr(m, "vantaggio_prob", None))
+            if edge is not None:
+                input_coverage["with_edge_pct"] += 1
+            if vant is not None:
+                input_coverage["with_vantaggio_prob"] += 1
+            if _safe_float(getattr(m, "prob_cecchino", None)) is not None:
+                input_coverage["with_prob_cecchino"] += 1
+            if _quota_valid(_safe_float(getattr(m, "quota_book", None))):
+                input_coverage["with_quota_book"] += 1
+            if _safe_float(getattr(m, "quota_cecchino", None)) is not None:
+                input_coverage["with_quota_cecchino"] += 1
+            if _safe_float(getattr(m, "prob_book_fair", None)) is not None:
+                input_coverage["with_prob_book_fair"] += 1
+            opp_ok, _ = _opposite_keys_present(mk, by_mk_for_opp)
+            if opp_ok:
+                input_coverage["with_opposite"] += 1
+
+        if quote_class == "real":
+            quote_quality["real"] += 1
+            bucket["quote_real"] += 1
+            by_competition[comp]["quote_real"] += 1
+        elif quote_class == "derived":
+            quote_quality["derived"] += 1
+            bucket["quote_derived"] += 1
+            by_competition[comp]["quote_derived"] += 1
+        elif quote_class == "inconsistent":
+            quote_quality["inconsistent_flags"] += 1
+            bucket["quote_inconsistent"] += 1
+        else:
+            quote_quality["unavailable"] += 1
+            bucket["quote_unavailable"] += 1
+
+        if perf_status == "real_profit_ready":
+            performance_coverage["real_profit_ready"] += 1
+            bucket["performance_real_ready"] += 1
+            by_competition[comp]["performance_ready"] += 1
+        elif perf_status == "synthetic_profit_ready":
+            performance_coverage["synthetic_profit_ready"] += 1
+            bucket["performance_synthetic_ready"] += 1
+            by_competition[comp]["performance_ready"] += 1
+        elif perf_status == "result_available_but_profit_missing":
+            performance_coverage["result_available_but_profit_missing"] += 1
+            bucket["performance_result_without_profit"] += 1
+        else:
+            performance_coverage["not_applicable"] += 1
+            bucket["performance_not_applicable"] += 1
+
+        if score_status == "exact_replay_ready":
+            workload["exact_replay_ready"] += 1
+            bucket["exact_replay_ready"] += 1
+            by_family[fam]["exact_replay_ready"] += 1
+            by_competition[comp]["exact_replay_ready"] += 1
+        elif score_status == "score_replay_ready_with_warning":
+            workload["ready_with_warning"] += 1
+            bucket["ready_with_warning"] += 1
+            by_family[fam]["ready_with_warning"] += 1
+        elif score_status == "gate_only_replay_ready":
+            workload["gate_only_ready"] += 1
+            bucket["gate_only_ready"] += 1
+        elif score_status == "invalid_pre_match_integrity":
+            workload["invalid_pre_match_integrity"] += 1
+            bucket["invalid_pre_match_integrity"] += 1
+            snap_has_blocker = True
+        elif score_status == "ambiguous_market_join":
+            workload["ambiguous_market_join"] += 1
+            bucket["ambiguous_market_join"] += 1
+            snap_has_blocker = True
+        else:
+            workload["not_replayable"] += 1
+            bucket["not_replayable"] += 1
+            by_family[fam]["not_replayable"] += 1
+            by_competition[comp]["missing_inputs"] += 1
+
+        if score_status not in ("exact_replay_ready", "score_replay_ready_with_warning"):
+            for rc in reason_codes or [score_status]:
+                _push_example(
+                    example_store,
+                    rc,
+                    {
+                        "snapshot_id": sid,
+                        "market_key": mk,
+                        "competition_name": comp,
+                        "score_replay_status": score_status,
+                        "performance_evaluation_status": perf_status,
+                    },
+                )
+
+    if snap_has_blocker:
+        by_competition[comp]["blockers"] += 1
+        if len(problematic_snaps) < MAX_PROBLEMATIC_SNAPSHOTS:
+            if not any(p.get("snapshot_id") == sid for p in problematic_snaps):
+                problematic_snaps.append(
+                    {
+                        "snapshot_id": sid,
+                        "competition_name": comp,
+                        "reason": "snapshot_has_blockers",
+                    }
+                )
+
+    return has_duplicates
 
 
 def _blocked_payload(
@@ -742,6 +1329,7 @@ def _blocked_payload(
     blockers: list[dict[str, Any]],
     warnings: list[dict[str, Any]] | None = None,
     extra: dict[str, Any] | None = None,
+    include_probe: bool = False,
 ) -> dict[str, Any]:
     scope = _run_scope_meta(run)
     base = {
@@ -827,8 +1415,10 @@ def _blocked_payload(
             "probe_not_a_backtest": True,
             "probe_snapshot_limit": PROBE_SNAPSHOT_LIMIT,
             "skipped": True,
-            "reason": "run_blocked",
+            "reason": "run_blocked" if not include_probe else "run_blocked",
         },
+        "resource_profile": _empty_resource_profile(probe_requested=include_probe),
+        "query_profile": _empty_query_profile(),
         "blockers": blockers,
         "warnings": warnings or [],
         "status_rules": {
@@ -841,6 +1431,7 @@ def _blocked_payload(
                 "fair_probabilities_structurally_incoherent",
                 "real_derived_indistinguishable",
                 "adapter_non_deterministic",
+                "preflight_resource_budget_exceeded",
             ],
             "ready_with_warnings_if": [
                 "replay_possible_with_incomplete_coverage",
@@ -870,7 +1461,17 @@ def _blocked_payload(
     return make_json_safe(base)
 
 
-def _compute_preflight(db: Session, run_id: int) -> dict[str, Any]:
+def _compute_preflight(
+    db: Session,
+    run_id: int,
+    *,
+    include_probe: bool = False,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    phase = "init"
+    resource_profile = _empty_resource_profile(probe_requested=include_probe)
+    query_profile = _empty_query_profile()
+
     run = db.get(CecchinoLabHistoricalScanRun, run_id)
     if not run:
         raise CecchinoLabImportError("run_not_found", "Run non trovato", status_code=404)
@@ -879,649 +1480,612 @@ def _compute_preflight(db: Session, run_id: int) -> dict[str, Any]:
     scope = _run_scope_meta(run)
     is_partial = bool(scope.get("is_partial_run"))
 
+    def _attach_profiles(payload: dict[str, Any]) -> dict[str, Any]:
+        resource_profile["duration_ms"] = int((time.monotonic() - started) * 1000)
+        payload["resource_profile"] = resource_profile
+        payload["query_profile"] = query_profile
+        return make_json_safe(payload)
+
     if run.status in ACTIVE_STATUSES:
-        return _blocked_payload(
-            run=run,
-            runtime_rev=runtime_rev,
-            blockers=[
-                _issue(
-                    "run_active",
-                    "Il run è ancora attivo: preflight consentito solo come blocked, replay non pronto.",
-                    run_status=run.status,
-                )
-            ],
+        return _attach_profiles(
+            _blocked_payload(
+                run=run,
+                runtime_rev=runtime_rev,
+                include_probe=include_probe,
+                blockers=[
+                    _issue(
+                        "run_active",
+                        "Il run è ancora attivo: preflight consentito solo come blocked, replay non pronto.",
+                        run_status=run.status,
+                    )
+                ],
+            )
         )
 
     if run.status in (STATUS_FAILED, STATUS_CANCELLED):
-        return _blocked_payload(
-            run=run,
-            runtime_rev=runtime_rev,
-            blockers=[
-                _issue(
-                    "run_terminal_incompatible",
-                    f"Run in stato {run.status}: replay non affidabile.",
-                    run_status=run.status,
-                )
-            ],
+        return _attach_profiles(
+            _blocked_payload(
+                run=run,
+                runtime_rev=runtime_rev,
+                include_probe=include_probe,
+                blockers=[
+                    _issue(
+                        "run_terminal_incompatible",
+                        f"Run in stato {run.status}: replay non affidabile.",
+                        run_status=run.status,
+                    )
+                ],
+            )
         )
 
     if run.status not in ALLOWED_RUN_STATUSES:
-        return _blocked_payload(
-            run=run,
-            runtime_rev=runtime_rev,
-            blockers=[
-                _issue(
-                    "run_status_unsupported",
-                    f"Stato run non ammesso al preflight: {run.status}",
-                    run_status=run.status,
-                )
-            ],
-        )
-
-    snaps = list(
-        db.scalars(
-            select(CecchinoLabHistoricalMatchSnapshot).where(
-                CecchinoLabHistoricalMatchSnapshot.run_id == int(run.id)
-            )
-        ).all()
-    )
-    markets = list(
-        db.scalars(
-            select(CecchinoLabHistoricalMarketResult).where(
-                CecchinoLabHistoricalMarketResult.run_id == int(run.id)
-            )
-        ).all()
-    )
-
-    eligible = [s for s in snaps if s.historical_eligibility_status == ELIGIBLE_CORE]
-    excluded = [s for s in snaps if s.historical_eligibility_status != ELIGIBLE_CORE]
-    exclusions_by_reason: dict[str, int] = defaultdict(int)
-    for s in excluded:
-        key = s.historical_eligibility_reason or s.historical_eligibility_status or "unknown"
-        exclusions_by_reason[str(key)] += 1
-
-    if not eligible:
-        return _blocked_payload(
-            run=run,
-            runtime_rev=runtime_rev,
-            blockers=[
-                _issue(
-                    "zero_eligible_core",
-                    "Nessuno snapshot eligible_core: replay non possibile senza nuova scansione.",
-                )
-            ],
-            extra={
-                "source_integrity": {
-                    "snapshots_total": len(snaps),
-                    "snapshots_eligible_core": 0,
-                    "snapshots_excluded": len(excluded),
-                    "exclusions_by_reason": dict(exclusions_by_reason),
-                }
-            },
-        )
-
-    markets_by_snap: dict[int, list[Any]] = defaultdict(list)
-    for m in markets:
-        markets_by_snap[int(m.match_snapshot_id)].append(m)
-
-    example_store = _example_store()
-    problematic_snaps: list[dict[str, Any]] = []
-    by_market = {mk: _empty_market_bucket() for mk in V3_MARKET_ORDER}
-    by_family = {fam: _empty_family_bucket() for fam in FAMILY_ORDER}
-    by_competition: dict[str, dict[str, Any]] = defaultdict(_empty_competition_bucket)
-
-    workload = {
-        "supported_markets_per_snapshot": 8,
-        "theoretical_evaluations": len(eligible) * 8,
-        "market_rows_found": 0,
-        "exact_replay_ready": 0,
-        "ready_with_warning": 0,
-        "gate_only_ready": 0,
-        "not_replayable": 0,
-        "invalid_pre_match_integrity": 0,
-        "ambiguous_market_join": 0,
-        "unsupported_market_rows": 0,
-        "family_decisions_theoretical": len(eligible) * 3,
-    }
-
-    quote_quality = {
-        "real": 0,
-        "derived": 0,
-        "unavailable": 0,
-        "inconsistent_flags": 0,
-    }
-    fair_checks = {
-        "fair_sum_tolerance": FAIR_SUM_TOLERANCE,
-        "fair_group_valid": 0,
-        "fair_group_missing": 0,
-        "fair_group_out_of_tolerance": 0,
-        "fair_group_non_finite": 0,
-        "fair_group_out_of_range": 0,
-        "double_chance_derivation_ok": 0,
-        "double_chance_derivation_missing": 0,
-    }
-    performance_coverage = {
-        "real_profit_ready": 0,
-        "synthetic_profit_ready": 0,
-        "result_available_but_profit_missing": 0,
-        "not_applicable": 0,
-    }
-    input_coverage = {
-        "with_edge_pct": 0,
-        "with_vantaggio_prob": 0,
-        "with_prob_cecchino": 0,
-        "with_quota_book": 0,
-        "with_quota_cecchino": 0,
-        "with_prob_book_fair": 0,
-        "with_opposite": 0,
-        "with_family_full": 0,
-    }
-
-    integrity_counts = {
-        "snapshots_total": len(snaps),
-        "snapshots_eligible_core": len(eligible),
-        "snapshots_excluded": len(excluded),
-        "exclusions_by_reason": dict(exclusions_by_reason),
-        "with_pre_match_hash": 0,
-        "with_pre_match_lock": 0,
-        "lock_before_kickoff": 0,
-        "invalid_lock_timestamp": 0,
-        "duplicate_market_keys": 0,
-        "snapshots_with_duplicates": 0,
-    }
-
-    structural_duplicates = False
-    structural_integrity_absent = False
-    hash_present = 0
-    lock_present = 0
-
-    for snap in eligible:
-        sid = int(snap.id)
-        comp = str(snap.competition_name or "unknown")
-        by_competition[comp]["snapshots_eligible"] += 1
-
-        integrity, integrity_reasons = _pre_match_integrity(snap)
-        if getattr(snap, "pre_match_payload_sha256", None):
-            integrity_counts["with_pre_match_hash"] += 1
-            hash_present += 1
-        if getattr(snap, "pre_match_locked_at", None):
-            integrity_counts["with_pre_match_lock"] += 1
-            lock_present += 1
-        if integrity == "ok":
-            integrity_counts["lock_before_kickoff"] += 1
-        if "lock_not_before_kickoff" in integrity_reasons:
-            integrity_counts["invalid_lock_timestamp"] += 1
-
-        rows = markets_by_snap.get(sid, [])
-        # Index by market_key; detect duplicates
-        keyed: dict[str, list[Any]] = defaultdict(list)
-        for m in rows:
-            keyed[str(m.market_key)].append(m)
-
-        duplicate_keys = {k for k, v in keyed.items() if len(v) > 1}
-        if duplicate_keys:
-            structural_duplicates = True
-            integrity_counts["duplicate_market_keys"] += len(duplicate_keys)
-            integrity_counts["snapshots_with_duplicates"] += 1
-            if len(problematic_snaps) < MAX_PROBLEMATIC_SNAPSHOTS:
-                problematic_snaps.append(
-                    {
-                        "snapshot_id": sid,
-                        "competition_name": comp,
-                        "reason": "duplicate_market_keys",
-                        "keys": sorted(duplicate_keys)[:8],
-                    }
-                )
-
-        by_mk_single: dict[str, Any] = {
-            k: v[0] for k, v in keyed.items() if len(v) == 1
-        }
-        # For supported markets still present once among duplicates, keep first only for opposite checks
-        by_mk_for_opp = {k: v[0] for k, v in keyed.items()}
-
-        # Fair family checks
-        for fam, members in (
-            (FAMILY_MATCH_WINNER_FT, (SEL_HOME, SEL_DRAW, SEL_AWAY)),
-            (FAMILY_GOALS_FT_2_5, (SEL_OVER_2_5, SEL_UNDER_2_5)),
-        ):
-            vals = [
-                _safe_float(getattr(by_mk_for_opp[m], "prob_book_fair", None))
-                if m in by_mk_for_opp
-                else None
-                for m in members
-            ]
-            status = _fair_group_status(vals)
-            fair_checks[status] = fair_checks.get(status, 0) + 1
-
-        for mk in DOUBLE_CHANCE_MARKETS:
-            if mk not in by_mk_for_opp:
-                continue
-            m = by_mk_for_opp[mk]
-            if getattr(m, "derivation_method", None) and bool(getattr(m, "is_derived_quote", False)):
-                fair_checks["double_chance_derivation_ok"] += 1
-            else:
-                fair_checks["double_chance_derivation_missing"] += 1
-
-        # Family completeness per family
-        for fam in FAMILY_ORDER:
-            fam_status = _family_completeness(fam, by_mk_for_opp)
-            if fam_status == "full":
-                by_family[fam]["snapshots_with_full_family"] += 1
-                input_coverage["with_family_full"] += 1
-            elif fam_status == "partial":
-                by_family[fam]["snapshots_with_partial_family"] += 1
-            else:
-                by_family[fam]["snapshots_with_missing_family"] += 1
-            by_family[fam]["family_decisions_theoretical"] += 1
-
-        snap_has_blocker = False
-
-        for mk in V3_MARKET_ORDER:
-            bucket = by_market[mk]
-            bucket["eligible_rows"] += 1
-            duplicate = mk in duplicate_keys
-            m = by_mk_single.get(mk) if not duplicate else (keyed[mk][0] if keyed.get(mk) else None)
-            if m is not None and not duplicate:
-                workload["market_rows_found"] += 1
-
-            score_status, reason_codes = classify_score_replay(
-                market_key=mk,
-                m=m if not duplicate else None,
-                by_mk=by_mk_for_opp,
-                integrity=integrity,
-                integrity_reasons=integrity_reasons,
-                duplicate=duplicate,
-            )
-            # If duplicate, classify as ambiguous even if m exists
-            if duplicate:
-                score_status, reason_codes = "ambiguous_market_join", ["duplicate_market_key"]
-
-            fam = market_family_for(mk) or "unknown"
-            quote_class = "unavailable"
-            perf_status = "not_applicable"
-            if m is not None and not duplicate:
-                quote_class, _ = classify_quote_quality(m)
-                perf_status = classify_performance(m, quote_class)
-                edge = _safe_float(getattr(m, "edge_pct", None))
-                vant = _safe_float(getattr(m, "vantaggio_prob", None))
-                if edge is not None:
-                    input_coverage["with_edge_pct"] += 1
-                if vant is not None:
-                    input_coverage["with_vantaggio_prob"] += 1
-                if _safe_float(getattr(m, "prob_cecchino", None)) is not None:
-                    input_coverage["with_prob_cecchino"] += 1
-                if _quota_valid(_safe_float(getattr(m, "quota_book", None))):
-                    input_coverage["with_quota_book"] += 1
-                if _safe_float(getattr(m, "quota_cecchino", None)) is not None:
-                    input_coverage["with_quota_cecchino"] += 1
-                if _safe_float(getattr(m, "prob_book_fair", None)) is not None:
-                    input_coverage["with_prob_book_fair"] += 1
-                opp_ok, _ = _opposite_keys_present(mk, by_mk_for_opp)
-                if opp_ok:
-                    input_coverage["with_opposite"] += 1
-
-            # Quote counts
-            if quote_class == "real":
-                quote_quality["real"] += 1
-                bucket["quote_real"] += 1
-                by_competition[comp]["quote_real"] += 1
-            elif quote_class == "derived":
-                quote_quality["derived"] += 1
-                bucket["quote_derived"] += 1
-                by_competition[comp]["quote_derived"] += 1
-            elif quote_class == "inconsistent":
-                quote_quality["inconsistent_flags"] += 1
-                bucket["quote_inconsistent"] += 1
-            else:
-                quote_quality["unavailable"] += 1
-                bucket["quote_unavailable"] += 1
-
-            # Performance
-            if perf_status == "real_profit_ready":
-                performance_coverage["real_profit_ready"] += 1
-                bucket["performance_real_ready"] += 1
-                by_competition[comp]["performance_ready"] += 1
-            elif perf_status == "synthetic_profit_ready":
-                performance_coverage["synthetic_profit_ready"] += 1
-                bucket["performance_synthetic_ready"] += 1
-                by_competition[comp]["performance_ready"] += 1
-            elif perf_status == "result_available_but_profit_missing":
-                performance_coverage["result_available_but_profit_missing"] += 1
-                bucket["performance_result_without_profit"] += 1
-            else:
-                performance_coverage["not_applicable"] += 1
-                bucket["performance_not_applicable"] += 1
-
-            # Workload / market buckets
-            if score_status == "exact_replay_ready":
-                workload["exact_replay_ready"] += 1
-                bucket["exact_replay_ready"] += 1
-                by_family[fam]["exact_replay_ready"] += 1
-                by_competition[comp]["exact_replay_ready"] += 1
-            elif score_status == "score_replay_ready_with_warning":
-                workload["ready_with_warning"] += 1
-                bucket["ready_with_warning"] += 1
-                by_family[fam]["ready_with_warning"] += 1
-            elif score_status == "gate_only_replay_ready":
-                workload["gate_only_ready"] += 1
-                bucket["gate_only_ready"] += 1
-            elif score_status == "invalid_pre_match_integrity":
-                workload["invalid_pre_match_integrity"] += 1
-                bucket["invalid_pre_match_integrity"] += 1
-                snap_has_blocker = True
-            elif score_status == "ambiguous_market_join":
-                workload["ambiguous_market_join"] += 1
-                bucket["ambiguous_market_join"] += 1
-                snap_has_blocker = True
-            else:
-                workload["not_replayable"] += 1
-                bucket["not_replayable"] += 1
-                by_family[fam]["not_replayable"] += 1
-                by_competition[comp]["missing_inputs"] += 1
-
-            if score_status not in ("exact_replay_ready", "score_replay_ready_with_warning"):
-                for rc in reason_codes or [score_status]:
-                    _push_example(
-                        example_store,
-                        rc,
-                        {
-                            "snapshot_id": sid,
-                            "market_key": mk,
-                            "competition_name": comp,
-                            "score_replay_status": score_status,
-                            "performance_evaluation_status": perf_status,
-                        },
+        return _attach_profiles(
+            _blocked_payload(
+                run=run,
+                runtime_rev=runtime_rev,
+                include_probe=include_probe,
+                blockers=[
+                    _issue(
+                        "run_status_unsupported",
+                        f"Stato run non ammesso al preflight: {run.status}",
+                        run_status=run.status,
                     )
+                ],
+            )
+        )
 
-        if snap_has_blocker:
-            by_competition[comp]["blockers"] += 1
-            if len(problematic_snaps) < MAX_PROBLEMATIC_SNAPSHOTS:
-                if not any(p.get("snapshot_id") == sid for p in problematic_snaps):
-                    problematic_snaps.append(
-                        {
-                            "snapshot_id": sid,
-                            "competition_name": comp,
-                            "reason": "snapshot_has_blockers",
+    try:
+        phase = "snapshot_aggregates"
+        _budget_check_runtime(started, phase)
+        aggregates = _load_snapshot_aggregates(db, int(run.id), query_profile)
+
+        if aggregates["snapshots_eligible_core"] <= 0:
+            return _attach_profiles(
+                _blocked_payload(
+                    run=run,
+                    runtime_rev=runtime_rev,
+                    include_probe=include_probe,
+                    blockers=[
+                        _issue(
+                            "zero_eligible_core",
+                            "Nessuno snapshot eligible_core: replay non possibile senza nuova scansione.",
+                        )
+                    ],
+                    extra={
+                        "source_integrity": {
+                            "snapshots_total": aggregates["snapshots_total"],
+                            "snapshots_eligible_core": 0,
+                            "snapshots_excluded": aggregates["snapshots_excluded"],
+                            "exclusions_by_reason": aggregates["exclusions_by_reason"],
                         }
+                    },
+                )
+            )
+
+        phase = "market_counts"
+        _budget_check_runtime(started, phase)
+        supported_rows = _count_supported_market_rows(db, int(run.id), query_profile)
+        unsupported_rows = _count_unsupported_market_rows(db, int(run.id), query_profile)
+
+        if supported_rows > PREFLIGHT_MAX_SUPPORTED_ROWS:
+            resource_profile["resource_budget_exceeded"] = True
+            logger.warning(
+                "purchasability_v3_preflight_budget_exceeded run_id=%s supported_rows=%s",
+                run_id,
+                supported_rows,
+            )
+            raise PreflightResourceBudgetExceeded(
+                "preflight_resource_budget_exceeded",
+                f"Righe mercato supportate ({supported_rows}) oltre il budget "
+                f"({PREFLIGHT_MAX_SUPPORTED_ROWS}).",
+                phase="market_counts",
+                supported_rows=supported_rows,
+                limit=PREFLIGHT_MAX_SUPPORTED_ROWS,
+            )
+
+        phase = "eligible_snap_meta"
+        _budget_check_runtime(started, phase)
+        eligible_meta = _load_eligible_snap_meta(db, int(run.id), query_profile)
+        eligible_n = len(eligible_meta)
+
+        example_store = _example_store()
+        problematic_snaps: list[dict[str, Any]] = []
+        by_market = {mk: _empty_market_bucket() for mk in V3_MARKET_ORDER}
+        by_family = {fam: _empty_family_bucket() for fam in FAMILY_ORDER}
+        by_competition: dict[str, dict[str, Any]] = defaultdict(_empty_competition_bucket)
+
+        workload = {
+            "supported_markets_per_snapshot": 8,
+            "theoretical_evaluations": eligible_n * 8,
+            "market_rows_found": 0,
+            "exact_replay_ready": 0,
+            "ready_with_warning": 0,
+            "gate_only_ready": 0,
+            "not_replayable": 0,
+            "invalid_pre_match_integrity": 0,
+            "ambiguous_market_join": 0,
+            "unsupported_market_rows": unsupported_rows,
+            "family_decisions_theoretical": eligible_n * 3,
+        }
+        quote_quality = {
+            "real": 0,
+            "derived": 0,
+            "unavailable": 0,
+            "inconsistent_flags": 0,
+        }
+        fair_checks = {
+            "fair_sum_tolerance": FAIR_SUM_TOLERANCE,
+            "fair_group_valid": 0,
+            "fair_group_missing": 0,
+            "fair_group_out_of_tolerance": 0,
+            "fair_group_non_finite": 0,
+            "fair_group_out_of_range": 0,
+            "double_chance_derivation_ok": 0,
+            "double_chance_derivation_missing": 0,
+        }
+        performance_coverage = {
+            "real_profit_ready": 0,
+            "synthetic_profit_ready": 0,
+            "result_available_but_profit_missing": 0,
+            "not_applicable": 0,
+        }
+        input_coverage = {
+            "with_edge_pct": 0,
+            "with_vantaggio_prob": 0,
+            "with_prob_cecchino": 0,
+            "with_quota_book": 0,
+            "with_quota_cecchino": 0,
+            "with_prob_book_fair": 0,
+            "with_opposite": 0,
+            "with_family_full": 0,
+        }
+        integrity_counts = {
+            "snapshots_total": aggregates["snapshots_total"],
+            "snapshots_eligible_core": eligible_n,
+            "snapshots_excluded": aggregates["snapshots_excluded"],
+            "exclusions_by_reason": dict(aggregates["exclusions_by_reason"]),
+            "with_pre_match_hash": 0,
+            "with_pre_match_lock": 0,
+            "lock_before_kickoff": 0,
+            "invalid_lock_timestamp": 0,
+            "duplicate_market_keys": 0,
+            "snapshots_with_duplicates": 0,
+        }
+
+        structural_duplicates = False
+        processed_eligible: set[int] = set()
+        current_sid: int | None = None
+        current_rows: list[Any] = []
+        max_held = 0
+        rows_streamed = 0
+
+        phase = "market_stream"
+        for raw_row in _iter_supported_market_rows(db, int(run.id), query_profile):
+            _budget_check_runtime(started, phase)
+            row = _row_to_ns(raw_row)
+            sid = int(row.match_snapshot_id)
+            rows_streamed += 1
+
+            if current_sid is None:
+                current_sid = sid
+            if sid != current_sid:
+                if current_sid in eligible_meta:
+                    dup = _process_eligible_snapshot(
+                        snap=eligible_meta[current_sid],
+                        market_rows=current_rows,
+                        by_market=by_market,
+                        by_family=by_family,
+                        by_competition=by_competition,
+                        workload=workload,
+                        quote_quality=quote_quality,
+                        fair_checks=fair_checks,
+                        performance_coverage=performance_coverage,
+                        input_coverage=input_coverage,
+                        integrity_counts=integrity_counts,
+                        example_store=example_store,
+                        problematic_snaps=problematic_snaps,
                     )
+                    structural_duplicates = structural_duplicates or dup
+                    processed_eligible.add(current_sid)
+                current_rows = []
+                current_sid = sid
 
-        # Unsupported market rows (count only, no V3 evaluations)
-        for mk, lst in keyed.items():
-            if not is_v3_supported_market(mk):
-                workload["unsupported_market_rows"] += len(lst)
+            current_rows.append(row)
+            if len(current_rows) > max_held:
+                max_held = len(current_rows)
+            # Cap difesa: non accumulare oltre i mercati V3 attesi + margine duplicati
+            if len(current_rows) > 20:
+                # Mantieni comunque il gruppo corrente fino al cambio sid,
+                # ma registra il massimo reale tenuto.
+                pass
 
-    # Structural integrity: if almost no hash/lock on eligible → blocker
-    eligible_n = len(eligible)
-    if eligible_n > 0 and hash_present == 0 and lock_present == 0:
-        structural_integrity_absent = True
+        if current_sid is not None and current_sid in eligible_meta and current_sid not in processed_eligible:
+            dup = _process_eligible_snapshot(
+                snap=eligible_meta[current_sid],
+                market_rows=current_rows,
+                by_market=by_market,
+                by_family=by_family,
+                by_competition=by_competition,
+                workload=workload,
+                quote_quality=quote_quality,
+                fair_checks=fair_checks,
+                performance_coverage=performance_coverage,
+                input_coverage=input_coverage,
+                integrity_counts=integrity_counts,
+                example_store=example_store,
+                problematic_snaps=problematic_snaps,
+            )
+            structural_duplicates = structural_duplicates or dup
+            processed_eligible.add(current_sid)
+        current_rows = []
 
-    theoretical = max(1, workload["theoretical_evaluations"])
-    replayable = workload["exact_replay_ready"] + workload["ready_with_warning"]
-    missing_ratio = workload["not_replayable"] / theoretical
-    fair_bad = (
-        fair_checks["fair_group_out_of_tolerance"]
-        + fair_checks["fair_group_non_finite"]
-        + fair_checks["fair_group_out_of_range"]
-    )
-    fair_total = (
-        fair_checks["fair_group_valid"]
-        + fair_checks["fair_group_missing"]
-        + fair_bad
-    )
-    fair_structurally_bad = fair_total > 0 and fair_checks["fair_group_valid"] == 0 and fair_bad > 0
+        # Eligible senza market rows nello stream
+        for sid, snap in eligible_meta.items():
+            if sid in processed_eligible:
+                continue
+            _budget_check_runtime(started, "eligible_without_markets")
+            dup = _process_eligible_snapshot(
+                snap=snap,
+                market_rows=[],
+                by_market=by_market,
+                by_family=by_family,
+                by_competition=by_competition,
+                workload=workload,
+                quote_quality=quote_quality,
+                fair_checks=fair_checks,
+                performance_coverage=performance_coverage,
+                input_coverage=input_coverage,
+                integrity_counts=integrity_counts,
+                example_store=example_store,
+                problematic_snaps=problematic_snaps,
+            )
+            structural_duplicates = structural_duplicates or dup
 
-    quote_total = (
-        quote_quality["real"]
-        + quote_quality["derived"]
-        + quote_quality["unavailable"]
-        + quote_quality["inconsistent_flags"]
-    )
-    real_derived_indistinguishable = (
-        quote_total > 0
-        and quote_quality["real"] == 0
-        and quote_quality["derived"] == 0
-        and quote_quality["inconsistent_flags"] > quote_total * 0.5
-    )
+        resource_profile["market_rows_streamed"] = rows_streamed
+        resource_profile["max_market_rows_held_in_memory"] = max_held
 
-    blockers: list[dict[str, Any]] = []
-    warnings: list[dict[str, Any]] = []
+        hash_present = integrity_counts["with_pre_match_hash"]
+        lock_present = integrity_counts["with_pre_match_lock"]
+        structural_integrity_absent = eligible_n > 0 and hash_present == 0 and lock_present == 0
 
-    if structural_duplicates:
-        blockers.append(
-            _issue(
-                "duplicate_market_keys",
-                "Join MarketResult non deterministico: chiavi mercato duplicate sullo stesso snapshot.",
-                count=integrity_counts["duplicate_market_keys"],
-            )
+        theoretical = max(1, workload["theoretical_evaluations"])
+        replayable = workload["exact_replay_ready"] + workload["ready_with_warning"]
+        missing_ratio = workload["not_replayable"] / theoretical
+        fair_bad = (
+            fair_checks["fair_group_out_of_tolerance"]
+            + fair_checks["fair_group_non_finite"]
+            + fair_checks["fair_group_out_of_range"]
         )
-    if structural_integrity_absent:
-        blockers.append(
-            _issue(
-                "pre_match_integrity_structurally_absent",
-                "Hash e lock pre-match assenti su tutti gli snapshot eleggibili.",
-            )
+        fair_total = (
+            fair_checks["fair_group_valid"]
+            + fair_checks["fair_group_missing"]
+            + fair_bad
         )
-    if missing_ratio >= 0.95 and replayable == 0:
-        blockers.append(
-            _issue(
-                "mandatory_inputs_missing_almost_all",
-                "Input obbligatori mancanti sulla quasi totalità delle valutazioni V3.",
-                not_replayable=workload["not_replayable"],
-                theoretical=workload["theoretical_evaluations"],
-            )
+        fair_structurally_bad = fair_total > 0 and fair_checks["fair_group_valid"] == 0 and fair_bad > 0
+
+        quote_total = (
+            quote_quality["real"]
+            + quote_quality["derived"]
+            + quote_quality["unavailable"]
+            + quote_quality["inconsistent_flags"]
         )
-    if fair_structurally_bad:
-        blockers.append(
-            _issue(
-                "fair_probabilities_structurally_incoherent",
-                "Probabilità fair congelate strutturalmente incoerenti (nessun gruppo valido).",
-            )
-        )
-    if real_derived_indistinguishable:
-        blockers.append(
-            _issue(
-                "real_derived_indistinguishable",
-                "Impossibile distinguere quote reali e derivate in modo affidabile.",
-            )
+        real_derived_indistinguishable = (
+            quote_total > 0
+            and quote_quality["real"] == 0
+            and quote_quality["derived"] == 0
+            and quote_quality["inconsistent_flags"] > quote_total * 0.5
         )
 
-    if is_partial:
-        warnings.append(
-            _issue(
-                "partial_run",
-                "Run parziale: analizzabile ma non rappresentativo della stagione completa.",
+        blockers: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+
+        if structural_duplicates:
+            blockers.append(
+                _issue(
+                    "duplicate_market_keys",
+                    "Join MarketResult non deterministico: chiavi mercato duplicate sullo stesso snapshot.",
+                    count=integrity_counts["duplicate_market_keys"],
+                )
             )
-        )
-    if quote_quality["derived"] > 0:
-        warnings.append(
-            _issue(
-                "derived_quotes_diagnostic_only",
-                "Quote derivate replayabili solo in diagnostica; escluse dal ROI reale.",
-                count=quote_quality["derived"],
+        if structural_integrity_absent:
+            blockers.append(
+                _issue(
+                    "pre_match_integrity_structurally_absent",
+                    "Hash e lock pre-match assenti su tutti gli snapshot eleggibili.",
+                )
             )
-        )
-    if workload["ready_with_warning"] > 0 or workload["not_replayable"] > 0:
-        if not blockers:
+        if missing_ratio >= 0.95 and replayable == 0:
+            blockers.append(
+                _issue(
+                    "mandatory_inputs_missing_almost_all",
+                    "Input obbligatori mancanti sulla quasi totalità delle valutazioni V3.",
+                    not_replayable=workload["not_replayable"],
+                    theoretical=workload["theoretical_evaluations"],
+                )
+            )
+        if fair_structurally_bad:
+            blockers.append(
+                _issue(
+                    "fair_probabilities_structurally_incoherent",
+                    "Probabilità fair congelate strutturalmente incoerenti (nessun gruppo valido).",
+                )
+            )
+        if real_derived_indistinguishable:
+            blockers.append(
+                _issue(
+                    "real_derived_indistinguishable",
+                    "Impossibile distinguere quote reali e derivate in modo affidabile.",
+                )
+            )
+
+        if is_partial:
             warnings.append(
                 _issue(
-                    "incomplete_coverage",
-                    "Copertura replay incompleta su alcuni mercati/snapshot.",
-                    ready_with_warning=workload["ready_with_warning"],
-                    not_replayable=workload["not_replayable"],
+                    "partial_run",
+                    "Run parziale: analizzabile ma non rappresentativo della stagione completa.",
                 )
             )
-    if integrity_counts["with_pre_match_hash"] < eligible_n:
-        warnings.append(
-            _issue(
-                "partial_pre_match_hash",
-                "Alcuni snapshot eleggibili sono senza hash pre-match.",
-                with_hash=integrity_counts["with_pre_match_hash"],
-                eligible=eligible_n,
+        if quote_quality["derived"] > 0:
+            warnings.append(
+                _issue(
+                    "derived_quotes_diagnostic_only",
+                    "Quote derivate replayabili solo in diagnostica; escluse dal ROI reale.",
+                    count=quote_quality["derived"],
+                )
             )
-        )
-    if run.status == STATUS_COMPLETED_WITH_WARNINGS:
-        warnings.append(
-            _issue(
-                "run_completed_with_warnings",
-                "Il run è completed_with_warnings: verificare matches_error prima del replay completo.",
+        if workload["ready_with_warning"] > 0 or workload["not_replayable"] > 0:
+            if not blockers:
+                warnings.append(
+                    _issue(
+                        "incomplete_coverage",
+                        "Copertura replay incompleta su alcuni mercati/snapshot.",
+                        ready_with_warning=workload["ready_with_warning"],
+                        not_replayable=workload["not_replayable"],
+                    )
+                )
+        if integrity_counts["with_pre_match_hash"] < eligible_n:
+            warnings.append(
+                _issue(
+                    "partial_pre_match_hash",
+                    "Alcuni snapshot eleggibili sono senza hash pre-match.",
+                    with_hash=integrity_counts["with_pre_match_hash"],
+                    eligible=eligible_n,
+                )
             )
-        )
+        if run.status == STATUS_COMPLETED_WITH_WARNINGS:
+            warnings.append(
+                _issue(
+                    "run_completed_with_warnings",
+                    "Il run è completed_with_warnings: verificare matches_error prima del replay completo.",
+                )
+            )
 
-    # Probe only if not structurally blocked by duplicates/zero eligible (already handled)
-    probe: dict[str, Any]
-    if blockers and any(
-        b["code"]
-        in (
-            "duplicate_market_keys",
-            "mandatory_inputs_missing_almost_all",
-            "real_derived_indistinguishable",
-        )
-        for b in blockers
-    ):
-        probe = {
-            "probe_is_diagnostic_only": True,
-            "probe_not_a_backtest": True,
-            "probe_snapshot_limit": PROBE_SNAPSHOT_LIMIT,
-            "skipped": True,
-            "reason": "structural_blockers",
-        }
-    else:
-        probe = _run_probe(eligible_snaps=eligible, markets_by_snap=markets_by_snap)
-
-    if blockers:
-        status = STATUS_BLOCKED
-        can_replay = False
-        next_action = "resolve_blockers"
-    elif warnings:
-        status = STATUS_READY_WITH_WARNINGS
-        can_replay = True
-        next_action = "implement_isolated_v3_replay"
-    else:
-        status = STATUS_READY
-        can_replay = True
-        next_action = "implement_isolated_v3_replay"
-
-    # Cap issue examples
-    issue_examples = {
-        k: v[:MAX_EXAMPLES_PER_REASON] for k, v in list(example_store.items())[:40]
-    }
-
-    payload = {
-        "schema_version": PREFLIGHT_SCHEMA_VERSION,
-        "status": status,
-        "generated_at": _utcnow().isoformat(),
-        "run": {
-            "run_id": int(run.id),
-            "season_label": run.season_label,
-            "status": run.status,
-            "run_scope": scope.get("run_scope"),
-            "is_partial_run": is_partial,
-            "not_full_season_report": bool(scope.get("not_full_season_report")),
-            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-            "source_git_commit": run.source_git_commit,
-            "source_revision_status": getattr(run, "source_revision_status", None),
-            "scan_version": run.scan_version,
-        },
-        "formula": {
-            "candidate_version": PURCHASABILITY_V3_CANDIDATE_VERSION,
-            "formula_version": PURCHASABILITY_V3_FORMULA_VERSION,
-            "audit_version": PURCHASABILITY_V3_AUDIT_VERSION,
-            "runtime_git_commit": runtime_rev.get("git_commit"),
-            "runtime_git_commit_source": runtime_rev.get("git_commit_source"),
-            "historical_profile_used": False,
-            "fixed_scales_used": True,
-        },
-        "bookmakers": {
-            "historical": "Bet365",
-            "today_operational": "Betfair",
-            "providers_are_different": True,
-            "bookmaker_parity_status": "different_provider_expected",
-            "formula_provider_dependency": "book_agnostic_with_fair_probability_inputs",
-        },
-        "source_integrity": integrity_counts,
-        "workload": workload,
-        "input_coverage": input_coverage,
-        "by_market": by_market,
-        "by_family": by_family,
-        "by_competition": dict(by_competition),
-        "quote_quality": quote_quality,
-        "fair_probability_checks": fair_checks,
-        "performance_coverage": performance_coverage,
-        "adapter_contract": adapter_contract_payload(),
-        "anti_leakage": {
-            "pre_match_input_fields": list(PRE_MATCH_INPUT_FIELDS),
-            "post_match_performance_fields": list(POST_MATCH_PERFORMANCE_FIELDS),
-            "forbidden_formula_fields": list(FORBIDDEN_FORMULA_FIELDS),
-            "anti_leakage_status": "enforced_in_preflight_contract",
-            "result_fields_passed_to_formula": False,
-            "settlement_fields_passed_to_formula": False,
-        },
-        "probe": probe,
-        "blockers": blockers,
-        "warnings": warnings,
-        "status_rules": {
-            "applied_status": status,
-            "blocked_if": [
-                "run_not_in_completed_or_completed_with_warnings",
-                "zero_eligible_core",
-                "structural_duplicate_market_keys",
-                "structural_pre_match_integrity_absent",
+        phase = "probe"
+        if not include_probe:
+            probe = {
+                "probe_is_diagnostic_only": True,
+                "probe_not_a_backtest": True,
+                "probe_snapshot_limit": PROBE_SNAPSHOT_LIMIT,
+                "skipped": True,
+                "reason": "not_requested",
+            }
+        elif blockers and any(
+            b["code"]
+            in (
+                "duplicate_market_keys",
                 "mandatory_inputs_missing_almost_all",
-                "fair_probabilities_structurally_incoherent",
                 "real_derived_indistinguishable",
-            ],
-            "ready_with_warnings_if": [
-                "replay_possible_with_incomplete_coverage",
-                "partial_run",
-                "derived_quotes_diagnostic_only",
-                "linked_context_absent",
-            ],
-            "ready_if": [
-                "no_blockers",
-                "deterministic_replay",
-                "mandatory_inputs_available",
-            ],
-        },
-        "issue_examples": issue_examples,
-        "problematic_snapshots": problematic_snaps[:MAX_PROBLEMATIC_SNAPSHOTS],
-        "replay_recommendation": {
-            "can_replay_without_full_scan": can_replay,
-            "requires_new_external_data": False,
-            "requires_model_recalculation": False,
-            "requires_database_migration": False,
-            "recommended_next_action": next_action,
-        },
-    }
-    return make_json_safe(payload)
+            )
+            for b in blockers
+        ):
+            probe = {
+                "probe_is_diagnostic_only": True,
+                "probe_not_a_backtest": True,
+                "probe_snapshot_limit": PROBE_SNAPSHOT_LIMIT,
+                "skipped": True,
+                "reason": "structural_blockers",
+            }
+        else:
+            _budget_check_runtime(started, phase)
+            probe = _run_probe(
+                db=db,
+                run_id=int(run.id),
+                eligible_meta=eligible_meta,
+                query_profile=query_profile,
+            )
+            resource_profile["probe_snapshot_count"] = int(probe.get("snapshots_probed") or 0)
+
+        if blockers:
+            status = STATUS_BLOCKED
+            can_replay = False
+            next_action = "resolve_blockers"
+        elif warnings:
+            status = STATUS_READY_WITH_WARNINGS
+            can_replay = True
+            next_action = "implement_isolated_v3_replay"
+        else:
+            status = STATUS_READY
+            can_replay = True
+            next_action = "implement_isolated_v3_replay"
+
+        issue_examples = {
+            k: v[:MAX_EXAMPLES_PER_REASON] for k, v in list(example_store.items())[:40]
+        }
+
+        payload = {
+            "schema_version": PREFLIGHT_SCHEMA_VERSION,
+            "status": status,
+            "generated_at": _utcnow().isoformat(),
+            "run": {
+                "run_id": int(run.id),
+                "season_label": run.season_label,
+                "status": run.status,
+                "run_scope": scope.get("run_scope"),
+                "is_partial_run": is_partial,
+                "not_full_season_report": bool(scope.get("not_full_season_report")),
+                "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+                "source_git_commit": run.source_git_commit,
+                "source_revision_status": getattr(run, "source_revision_status", None),
+                "scan_version": run.scan_version,
+            },
+            "formula": {
+                "candidate_version": PURCHASABILITY_V3_CANDIDATE_VERSION,
+                "formula_version": PURCHASABILITY_V3_FORMULA_VERSION,
+                "audit_version": PURCHASABILITY_V3_AUDIT_VERSION,
+                "runtime_git_commit": runtime_rev.get("git_commit"),
+                "runtime_git_commit_source": runtime_rev.get("git_commit_source"),
+                "historical_profile_used": False,
+                "fixed_scales_used": True,
+            },
+            "bookmakers": {
+                "historical": "Bet365",
+                "today_operational": "Betfair",
+                "providers_are_different": True,
+                "bookmaker_parity_status": "different_provider_expected",
+                "formula_provider_dependency": "book_agnostic_with_fair_probability_inputs",
+            },
+            "source_integrity": integrity_counts,
+            "workload": workload,
+            "input_coverage": input_coverage,
+            "by_market": by_market,
+            "by_family": by_family,
+            "by_competition": dict(by_competition),
+            "quote_quality": quote_quality,
+            "fair_probability_checks": fair_checks,
+            "performance_coverage": performance_coverage,
+            "adapter_contract": adapter_contract_payload(),
+            "anti_leakage": {
+                "pre_match_input_fields": list(PRE_MATCH_INPUT_FIELDS),
+                "post_match_performance_fields": list(POST_MATCH_PERFORMANCE_FIELDS),
+                "forbidden_formula_fields": list(FORBIDDEN_FORMULA_FIELDS),
+                "anti_leakage_status": "enforced_in_preflight_contract",
+                "result_fields_passed_to_formula": False,
+                "settlement_fields_passed_to_formula": False,
+            },
+            "probe": probe,
+            "blockers": blockers,
+            "warnings": warnings,
+            "status_rules": {
+                "applied_status": status,
+                "blocked_if": [
+                    "run_not_in_completed_or_completed_with_warnings",
+                    "zero_eligible_core",
+                    "structural_duplicate_market_keys",
+                    "structural_pre_match_integrity_absent",
+                    "mandatory_inputs_missing_almost_all",
+                    "fair_probabilities_structurally_incoherent",
+                    "real_derived_indistinguishable",
+                    "preflight_resource_budget_exceeded",
+                ],
+                "ready_with_warnings_if": [
+                    "replay_possible_with_incomplete_coverage",
+                    "partial_run",
+                    "derived_quotes_diagnostic_only",
+                    "linked_context_absent",
+                ],
+                "ready_if": [
+                    "no_blockers",
+                    "deterministic_replay",
+                    "mandatory_inputs_available",
+                ],
+            },
+            "issue_examples": issue_examples,
+            "problematic_snapshots": problematic_snaps[:MAX_PROBLEMATIC_SNAPSHOTS],
+            "replay_recommendation": {
+                "can_replay_without_full_scan": can_replay,
+                "requires_new_external_data": False,
+                "requires_model_recalculation": False,
+                "requires_database_migration": False,
+                "recommended_next_action": next_action,
+            },
+        }
+        return _attach_profiles(payload)
+
+    except PreflightResourceBudgetExceeded as exc:
+        resource_profile["resource_budget_exceeded"] = True
+        logger.warning(
+            "purchasability_v3_preflight_budget_exceeded run_id=%s phase=%s",
+            run_id,
+            getattr(exc, "details", {}).get("phase", phase),
+        )
+        return _attach_profiles(
+            _blocked_payload(
+                run=run,
+                runtime_rev=runtime_rev,
+                include_probe=include_probe,
+                blockers=[
+                    _issue(
+                        "preflight_resource_budget_exceeded",
+                        exc.message,
+                        **(exc.details or {}),
+                    )
+                ],
+            )
+        )
 
 
-def run_purchasability_v3_replay_preflight(db: Session, run_id: int) -> dict[str, Any]:
-    """Entry point read-only. Cache in-memory per run completato."""
-    run = db.get(CecchinoLabHistoricalScanRun, run_id)
-    if not run:
-        raise CecchinoLabImportError("run_not_found", "Run non trovato", status_code=404)
-
-    runtime_rev = resolve_code_revision()
-    cache_key = "|".join(
-        [
-            str(int(run_id)),
-            PREFLIGHT_SCHEMA_VERSION,
-            PURCHASABILITY_V3_FORMULA_VERSION,
-            str(runtime_rev.get("git_commit") or "unknown"),
-        ]
+def run_purchasability_v3_replay_preflight(
+    db: Session,
+    run_id: int,
+    *,
+    include_probe: bool = False,
+) -> dict[str, Any]:
+    """Entry point read-only. Cache in-memory distinta per include_probe."""
+    logger.info(
+        "purchasability_v3_preflight_started run_id=%s include_probe=%s",
+        run_id,
+        include_probe,
     )
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        out = dict(cached)
-        out["cache_hit"] = True
-        return out
+    started = time.monotonic()
+    try:
+        run = db.get(CecchinoLabHistoricalScanRun, run_id)
+        if not run:
+            raise CecchinoLabImportError("run_not_found", "Run non trovato", status_code=404)
 
-    result = _compute_preflight(db, run_id)
-    ttl = (
-        CACHE_TTL_COMPLETED_S
-        if run.status in ALLOWED_RUN_STATUSES
-        else CACHE_TTL_BLOCKED_S
-    )
-    result["cache_hit"] = False
-    _cache_set(cache_key, result, ttl)
-    return result
+        runtime_rev = resolve_code_revision()
+        cache_key = "|".join(
+            [
+                str(int(run_id)),
+                PREFLIGHT_SCHEMA_VERSION,
+                PURCHASABILITY_V3_FORMULA_VERSION,
+                str(runtime_rev.get("git_commit") or "unknown"),
+                "probe" if include_probe else "summary",
+            ]
+        )
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            out = dict(cached)
+            out["cache_hit"] = True
+            return out
+
+        result = _compute_preflight(db, run_id, include_probe=include_probe)
+        ttl = (
+            CACHE_TTL_COMPLETED_S
+            if run.status in ALLOWED_RUN_STATUSES
+            else CACHE_TTL_BLOCKED_S
+        )
+        result["cache_hit"] = False
+        _cache_set(cache_key, result, ttl)
+
+        rp = result.get("resource_profile") or {}
+        logger.info(
+            "purchasability_v3_preflight_completed run_id=%s status=%s duration_ms=%s "
+            "market_rows_streamed=%s max_rows_held=%s",
+            run_id,
+            result.get("status"),
+            rp.get("duration_ms"),
+            rp.get("market_rows_streamed"),
+            rp.get("max_market_rows_held_in_memory"),
+        )
+        return result
+    except CecchinoLabImportError:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "purchasability_v3_preflight_failed run_id=%s phase=entry error_type=%s",
+            run_id,
+            type(exc).__name__,
+        )
+        raise
+    finally:
+        _ = started  # duration logged above when successful

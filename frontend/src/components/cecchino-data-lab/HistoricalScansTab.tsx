@@ -597,6 +597,13 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                     >
                       Apri analisi
                     </Link>
+                    <Link
+                      to={`/cecchino-lab/purchasability-replay?run_id=${r.id}`}
+                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                      data-testid={`purchasability-replay-link-${r.id}`}
+                    >
+                      Verifica replay Acquistabilità
+                    </Link>
                     <button
                       type="button"
                       className="underline"

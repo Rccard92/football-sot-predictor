@@ -14,7 +14,6 @@ import { HistoricalRunMatches } from '../components/cecchino-data-lab/historical
 import { HistoricalRunModuleCoveragePanel } from '../components/cecchino-data-lab/historical-run/HistoricalRunModuleCoveragePanel'
 import { HistoricalRunPatterns } from '../components/cecchino-data-lab/historical-run/HistoricalRunPatterns'
 import { HistoricalRunPurchasability } from '../components/cecchino-data-lab/historical-run/HistoricalRunPurchasability'
-import { HistoricalRunPurchasabilityV3ReplayPreflight } from '../components/cecchino-data-lab/historical-run/HistoricalRunPurchasabilityV3ReplayPreflight'
 import { HistoricalRunRatingHeatmap } from '../components/cecchino-data-lab/historical-run/HistoricalRunRatingHeatmap'
 import { HistoricalRunSectionError } from '../components/cecchino-data-lab/historical-run/HistoricalRunSectionError'
 import { HistoricalRunSignalModelsFromDashboard } from '../components/cecchino-data-lab/historical-run/HistoricalRunSignalModels'
@@ -318,12 +317,6 @@ export function CecchinoLabHistoricalRunPage() {
         <Section loading={purch.loading} error={purch.error} title="Acquistabilità" onRetry={() => void loadCore()}>
           {purch.data ? <HistoricalRunPurchasability data={purch.data} /> : null}
         </Section>
-
-        {Number.isFinite(runId) && runId > 0 ? (
-          <div style={{ marginBottom: '1.25rem' }}>
-            <HistoricalRunPurchasabilityV3ReplayPreflight runId={runId} />
-          </div>
-        ) : null}
 
         <Section loading={signals.loading} error={signals.error} title="Segnali" onRetry={() => void loadCore()}>
           {signals.data ? <HistoricalRunSignalModelsFromDashboard data={signals.data} /> : null}

@@ -272,6 +272,13 @@ describe('cecchinoLabApi helpers', () => {
       '/api/cecchino-lab/historical-scans/3/purchasability-v3-replay/preflight',
     )
     expect(path).not.toContain('/admin/')
+    expect(`${path}?include_probe=true`).toContain('include_probe=true')
+  })
+
+  it('purchasability replay standalone route', () => {
+    expect('/cecchino-lab/purchasability-replay?run_id=3').toContain(
+      '/cecchino-lab/purchasability-replay',
+    )
   })
 
   it('null profit/odds format as em dash; zero stays numeric', () => {

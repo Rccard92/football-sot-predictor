@@ -1,5 +1,22 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3A.1 — Preflight resource-safe (2026-07-29)
+
+Incidente Run #3: click preflight → `Failed to fetch` su preflight e sezioni dashboard; processo backend Railway riavviato; nessuna risposta HTTP sul preflight. **Nessuna prova definitiva di OOM**; causa applicativa individuata nel caricamento ORM completo (~6308 snapshot + ~63854 MarketResult) + mappa globale `markets_by_snap` in competizione con la dashboard Run.
+
+Mitigazione 3A.1:
+
+| Voce | Valore |
+|------|--------|
+| Schema | `cecchino_lab_purchasability_v3_replay_preflight_v1` (invariato) |
+| Endpoint | `GET .../preflight?include_probe=false` (default summary) / `include_probe=true` (probe 30) |
+| Strategia | aggregati SQL + streaming colonne scalari (`yield_per=500`); niente full ORM / JSON pesanti |
+| Budget | max 100k righe supportate; max 30s runtime → `blocked` + `preflight_resource_budget_exceeded` |
+| UI | pagina autonoma `/cecchino-lab/purchasability-replay` (link da Storico run); **rimossa** dalla dashboard Run |
+| Cache | chiave include `include_probe` |
+
+Regole business del preflight invariate. **Nessun replay eseguito.** STEP 3B ancora bloccato fino a preflight reale riuscito su Run #3.
+
 ## STEP 3A — Preflight replay Acquistabilità V3 (2026-07-29)
 
 Preflight **read-only** per verificare se Acquistabilità V3 può essere ricalcolata sugli snapshot pre-match già congelati, **senza** nuova scansione, ricalcolo modello/KPI/segnali/Balance/GI, API esterne o scritture DB.
@@ -9,12 +26,12 @@ Preflight **read-only** per verificare se Acquistabilità V3 può essere ricalco
 | Schema | `cecchino_lab_purchasability_v3_replay_preflight_v1` |
 | Servizio | `historical_purchasability_v3_replay_preflight.py` |
 | Endpoint | `GET /api/cecchino-lab/historical-scans/{run_id}/purchasability-v3-replay/preflight` |
-| UI | sezione «Replay Acquistabilità» su `/cecchino-lab/historical-scans/:runId` (solo click manuale «Verifica replay Acquistabilità») |
+| UI (post 3A.1) | `/cecchino-lab/purchasability-replay?run_id=` — summary poi probe opzionale |
 | Universo | snapshot `eligible_core`; 8 mercati V3; escluse conteggiate a parte |
-| Probe | max 30 snapshot (primi/centrali/ultimi 10); invoca V3 in memoria; nessuna persistenza |
-| Cache | in-memory TTL 300s; chiave `run_id|schema|formula|runtime_git` |
+| Probe | solo se `include_probe=true`; max 30 snapshot; nessuna persistenza |
+| Cache | in-memory TTL 300s; chiave `run_id|schema|formula|runtime_git|include_probe` |
 
-**Non implementato in 3A:** replay completo, job, export V3, pulsante Avvia, migration, overwrite Run #3. STEP 3B solo dopo Go sul preflight reale.
+**Non implementato in 3A/3A.1:** replay completo, job, export V3, pulsante Avvia, migration, overwrite Run #3. STEP 3B solo dopo Go sul preflight reale.
 
 Anti-leakage: formula usa solo campi pre-match; `won`/`profit_*`/`result_*`/`settlement_*` solo per copertura performance futura.
 

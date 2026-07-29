@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — harden preflight replay V3 STEP 3A.1 (2026-07-29)
+
+| Voce | Dettaglio |
+|---|---|
+| Causa incidente | Full ORM load preflight su Run #3; restart Railway; no OOM definitivo |
+| Fix | Streaming+aggregati; `include_probe`; pagina `/cecchino-lab/purchasability-replay` |
+| Endpoint | `GET .../preflight?include_probe=false\|true` |
+| Next | STEP 3B solo dopo Go sul preflight reale resource-safe |
+
 ## Cecchino Lab — preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
 
 | Voce | Dettaglio |
@@ -9,7 +18,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Schema | `cecchino_lab_purchasability_v3_replay_preflight_v1` |
 | Endpoint | `GET /api/cecchino-lab/historical-scans/{run_id}/purchasability-v3-replay/preflight` |
 | Scope | Solo Lab read-only; formula V3/V2/V1.1 invariate; nessuna nuova scansione |
-| UI | «Replay Acquistabilità» — click manuale; nessun Avvia replay |
+| UI | Pagina autonoma Replay Acquistabilità (dal 3A.1); nessun Avvia replay |
 | Next | STEP 3B solo dopo Go sul preflight reale |
 
 ## Cecchino Lab — export Acquistabilità storica compatto (2026-07-29)

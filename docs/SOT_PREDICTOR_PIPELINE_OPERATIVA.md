@@ -1,12 +1,20 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — preflight resource-safe STEP 3A.1 (2026-07-29)
+
+1. Da **Storico run** aprire **Verifica replay Acquistabilità** (non dalla dashboard Run).
+2. Route: `/cecchino-lab/purchasability-replay?run_id=3`.
+3. Click **Verifica disponibilità replay** → `GET .../preflight?include_probe=false` (nessuna formula V3).
+4. Solo dopo summary OK: **Verifica formula su 30 snapshot** → `include_probe=true`.
+5. Controllare log Railway: nessun restart; `duration_ms`; `market_rows_streamed`; `max_market_rows_held_in_memory`.
+6. **Non** avviare ancora il replay completo (STEP 3B).
+
 ## Cecchino Lab — preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
 
-1. Aprire run storico `/cecchino-lab/historical-scans/:runId` (es. Run #3).
-2. Nella sezione **Replay Acquistabilità** cliccare **Verifica replay Acquistabilità** (nessuna auto-fetch).
-3. API read-only: `GET /api/cecchino-lab/historical-scans/{id}/purchasability-v3-replay/preflight`.
-4. Interpretare `ready` / `ready_with_warnings` / `blocked` + workload/quote/integrità/performance.
-5. **Non** avviare ancora il replay completo (STEP 3B). Nessuna nuova scansione.
+1. Pagina autonoma Replay Acquistabilità (dal 3A.1; non più nella dashboard Run).
+2. Summary poi probe opzionale; API read-only preflight.
+3. Interpretare `ready` / `ready_with_warnings` / `blocked`.
+4. **Non** avviare ancora il replay completo (STEP 3B). Nessuna nuova scansione.
 
 ## Cecchino Lab — finalize semantics report/dashboard (2026-07-28)
 

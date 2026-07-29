@@ -231,13 +231,162 @@ def _db_with(run, snaps, markets):
 
     db.get.side_effect = get_side_effect
 
+    v3_keys = set(V3_MARKET_ORDER)
+
+    def _supported_markets():
+        return [m for m in markets if str(m.market_key) in v3_keys]
+
+    def _unsupported_markets():
+        return [m for m in markets if str(m.market_key) not in v3_keys]
+
+    def _eligible_snaps():
+        return [s for s in snaps if s.historical_eligibility_status == "eligible_core"]
+
+    def _excluded_snaps():
+        return [s for s in snaps if s.historical_eligibility_status != "eligible_core"]
+
+    def _stmt_meta(stmt):
+        text = ""
+        params: dict = {}
+        try:
+            text = str(stmt).lower()
+        except Exception:
+            text = repr(stmt).lower()
+        try:
+            compiled = stmt.compile()
+            params = dict(getattr(compiled, "params", {}) or {})
+        except Exception:
+            params = {}
+        param_vals = {str(v) for v in params.values()}
+        return text, params, param_vals
+
+    def _from_market(text: str) -> bool:
+        return "historical_market_result" in text or "market_results" in text
+
+    def _from_snap(text: str) -> bool:
+        return "historical_match_snapshot" in text or "match_snapshots" in text
+
+    def _is_count(text: str) -> bool:
+        return "count(" in text
+
+    def execute_side_effect(stmt):
+        from collections import Counter
+
+        result = MagicMock()
+        text, params, param_vals = _stmt_meta(stmt)
+        has_eligible_core = "eligible_core" in param_vals
+        has_group = "group by" in text
+        has_notin = "not in" in text or "notin" in text
+
+        if _is_count(text) and _from_market(text):
+            n = len(_unsupported_markets()) if has_notin else len(_supported_markets())
+            result.scalar.return_value = n
+            result.all.return_value = [(n,)]
+            return result
+
+        if _is_count(text) and _from_snap(text):
+            if has_group:
+                if "eligibility_reason" in text:
+                    c = Counter(
+                        (s.historical_eligibility_reason or "unknown")
+                        for s in _excluded_snaps()
+                    )
+                    result.all.return_value = list(c.items())
+                    result.scalar.return_value = len(_excluded_snaps())
+                    return result
+                if "competition_name" in text:
+                    c = Counter(s.competition_name for s in _eligible_snaps())
+                    result.all.return_value = list(c.items())
+                    result.scalar.return_value = len(_eligible_snaps())
+                    return result
+            n = len(_eligible_snaps()) if has_eligible_core else len(snaps)
+            result.scalar.return_value = n
+            result.all.return_value = [(n,)]
+            return result
+
+        if has_group and _from_snap(text):
+            if "eligibility_reason" in text:
+                c = Counter(
+                    (s.historical_eligibility_reason or "unknown") for s in _excluded_snaps()
+                )
+                result.all.return_value = list(c.items())
+                return result
+            if "competition_name" in text:
+                c = Counter(s.competition_name for s in _eligible_snaps())
+                result.all.return_value = list(c.items())
+                return result
+
+        if _from_snap(text):
+            ordered = sorted(
+                _eligible_snaps(),
+                key=lambda s: (
+                    s.kickoff_at,
+                    int(s.chronological_order or 0),
+                    int(s.id),
+                ),
+            )
+            lean = (
+                "competition_name" in text
+                or "pre_match_payload_sha256" in text
+                or "lab_match_id" in text
+            )
+            if lean:
+                result.all.return_value = ordered
+            else:
+                # Probe id selection — respect LIMIT if present in statement
+                ids = [int(s.id) for s in ordered]
+                if "desc" in text and "limit" in text:
+                    ids = list(reversed(ids))[:10]
+                    result.all.return_value = [(i,) for i in ids]
+                elif "offset" in text:
+                    mid_start = max(0, (len(ordered) // 2) - 5)
+                    result.all.return_value = [(i,) for i in ids[mid_start : mid_start + 10]]
+                elif "limit" in text:
+                    result.all.return_value = [(i,) for i in ids[:10]]
+                else:
+                    result.all.return_value = [(i,) for i in ids]
+            return result
+
+        if _from_market(text):
+            rows_sorted = sorted(
+                _supported_markets(),
+                key=lambda m: (int(m.match_snapshot_id), str(m.market_key), int(m.id)),
+            )
+            snap_ids = {int(s.id) for s in snaps}
+            run_id_val = int(run.id) if run is not None else None
+            int_params = [int(v) for v in params.values() if isinstance(v, int)]
+            snap_filter = [i for i in int_params if i != run_id_val and i in snap_ids]
+            # Expanded IN params may appear as many ints; also collect from list values
+            for v in params.values():
+                if isinstance(v, (list, tuple, set)):
+                    for x in v:
+                        if isinstance(x, int) and x in snap_ids and x != run_id_val:
+                            snap_filter.append(x)
+            if snap_filter:
+                filt = set(snap_filter)
+                rows_sorted = [m for m in rows_sorted if int(m.match_snapshot_id) in filt]
+
+            def yield_per(_n):
+                for m in rows_sorted:
+                    yield m
+
+            result.yield_per = yield_per
+            result.__iter__ = lambda self=result: iter(rows_sorted)
+            result.all.return_value = rows_sorted
+            return result
+
+        result.scalar.return_value = 0
+        result.all.return_value = []
+        result.yield_per = lambda _n: iter([])
+        return result
+
+    db.execute.side_effect = execute_side_effect
+
     def scalars_side_effect(stmt):
         result = MagicMock()
-        text = str(stmt)
-        if "historical_market" in text.lower() or "MarketResult" in text:
-            result.all.return_value = markets
-        else:
-            result.all.return_value = snaps
+        result.all.side_effect = AssertionError(
+            "scalars().all() non consentito nel preflight 3A.1"
+        )
         return result
 
     db.scalars.side_effect = scalars_side_effect
@@ -432,7 +581,10 @@ def test_run_complete_ready_or_warnings():
     assert out["probe"]["probe_snapshot_limit"] == PROBE_SNAPSHOT_LIMIT
     assert out["probe"]["probe_is_diagnostic_only"] is True
     assert out["probe"]["probe_not_a_backtest"] is True
-    assert out["probe"].get("snapshots_probed", 0) <= PROBE_SNAPSHOT_LIMIT
+    assert out["probe"].get("skipped") is True
+    assert out["probe"].get("reason") == "not_requested"
+    assert out["resource_profile"]["full_orm_entities_loaded"] is False
+    assert out["resource_profile"]["strategy"] == "sql_aggregates_and_streaming"
 
 
 def test_partial_run_warning():
@@ -577,12 +729,12 @@ def test_probe_max_30_deterministic():
         markets.extend(_v3_family_markets(i + 1, mid_start=i * 20 + 1))
     run = _run()
     db = _db_with(run, snaps, markets)
-    out = run_purchasability_v3_replay_preflight(db, 1)
+    out = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
     assert out["probe"]["snapshots_probed"] <= PROBE_SNAPSHOT_LIMIT
     ids = out["probe"]["probe_selected_snapshot_ids"]
     assert len(ids) <= PROBE_SNAPSHOT_LIMIT
     clear_purchasability_v3_replay_preflight_cache()
-    out2 = run_purchasability_v3_replay_preflight(db, 1)
+    out2 = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
     assert out2["probe"]["probe_selected_snapshot_ids"] == ids
 
 
@@ -704,3 +856,183 @@ def test_status_with_derived_warnings():
     assert "status_rules" in out
     assert out["status"] == "ready_with_warnings"
     assert any(w["code"] == "derived_quotes_diagnostic_only" for w in out["warnings"])
+
+
+def test_include_probe_default_false_skips_formula(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    called = {"n": 0}
+
+    def boom(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("V3 non deve essere invocata in summary")
+
+    monkeypatch.setattr(
+        "app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight.calculate_purchasability_v3_batch",
+        boom,
+    )
+    out = run_purchasability_v3_replay_preflight(db, 1)
+    assert out["probe"]["skipped"] is True
+    assert out["probe"]["reason"] == "not_requested"
+    assert called["n"] == 0
+
+
+def test_include_probe_true_invokes_formula_max_30(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    calls = {"n": 0}
+
+    real = None
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    real = mod.calculate_purchasability_v3_batch
+
+    def wrapped(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(mod, "calculate_purchasability_v3_batch", wrapped)
+    out = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
+    assert out["probe"].get("skipped") is not True
+    assert calls["n"] <= PROBE_SNAPSHOT_LIMIT
+    assert calls["n"] >= 1
+    assert out["probe"]["snapshots_probed"] <= PROBE_SNAPSHOT_LIMIT
+
+
+def test_cache_distinct_by_include_probe():
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    s1 = run_purchasability_v3_replay_preflight(db, 1, include_probe=False)
+    assert s1["cache_hit"] is False
+    s2 = run_purchasability_v3_replay_preflight(db, 1, include_probe=False)
+    assert s2["cache_hit"] is True
+    p1 = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
+    assert p1["cache_hit"] is False
+    assert p1["probe"].get("skipped") is not True
+    p2 = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
+    assert p2["cache_hit"] is True
+
+
+def test_no_full_orm_select_in_source():
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    src = open(mod.__file__, encoding="utf-8").read()
+    assert "select(CecchinoLabHistoricalMatchSnapshot)" not in src
+    assert "select(CecchinoLabHistoricalMarketResult)" not in src
+    assert "markets_by_snap: dict[int, list[Any]]" not in src
+    assert "PREFLIGHT_STREAM_YIELD_PER" in src
+    assert "stream_results" in src
+    assert "yield_per" in src
+    lean_block = src.split("SNAPSHOT_LEAN_COLS")[1].split(")")[0]
+    market_block = src.split("MARKET_STREAM_COLS")[1].split(")")[0]
+    for heavy in (
+        "input_snapshot_json",
+        "cecchino_output_json",
+        "historical_kpi_json",
+        "result_json",
+        "settlement_summary_json",
+        "signal_sources_json",
+    ):
+        assert heavy not in lean_block
+        assert heavy not in market_block
+
+
+def test_resource_profile_and_max_rows_held():
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    out = run_purchasability_v3_replay_preflight(db, 1)
+    rp = out["resource_profile"]
+    assert rp["full_orm_entities_loaded"] is False
+    assert rp["snapshot_json_fields_loaded"] is False
+    assert rp["market_json_fields_loaded"] is False
+    assert rp["stream_yield_per"] == 500
+    assert rp["max_market_rows_held_in_memory"] <= 20
+    assert rp["market_rows_streamed"] >= 1
+    assert "query_profile" in out
+    assert out["query_profile"]["market_stream_queries"] >= 1
+
+
+def test_budget_rows_exceeded(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    monkeypatch.setattr(mod, "PREFLIGHT_MAX_SUPPORTED_ROWS", 1)
+    out = run_purchasability_v3_replay_preflight(db, 1)
+    assert out["status"] == "blocked"
+    assert any(b["code"] == "preflight_resource_budget_exceeded" for b in out["blockers"])
+    assert out["resource_profile"]["resource_budget_exceeded"] is True
+    assert out["replay_recommendation"]["can_replay_without_full_scan"] is False
+
+
+def test_budget_runtime_exceeded(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    monkeypatch.setattr(mod, "PREFLIGHT_MAX_RUNTIME_SECONDS", 0)
+    out = run_purchasability_v3_replay_preflight(db, 1)
+    assert out["status"] == "blocked"
+    assert any(b["code"] == "preflight_resource_budget_exceeded" for b in out["blockers"])
+
+
+def test_endpoint_unexpected_error_json():
+    app = FastAPI()
+    app.include_router(cecchino_lab.router, prefix="/api")
+
+    def boom_db():
+        raise RuntimeError("simulated")
+
+    app.dependency_overrides[get_db] = boom_db
+    # Force failure inside handler by patching service
+    import app.routes.cecchino_lab as route_mod
+
+    original = route_mod.run_purchasability_v3_replay_preflight
+
+    def raise_exc(*_a, **_k):
+        raise RuntimeError("boom")
+
+    route_mod.run_purchasability_v3_replay_preflight = raise_exc
+    try:
+        snaps, markets = _full_universe()
+        run = _run()
+        db = _db_with(run, snaps, markets)
+        app.dependency_overrides[get_db] = lambda: db
+        client = TestClient(app, raise_server_exceptions=False)
+        r = client.get("/api/cecchino-lab/historical-scans/1/purchasability-v3-replay/preflight")
+        assert r.status_code == 500
+        body = r.json()
+        assert body["status"] == "error"
+        assert body["error"] == "purchasability_v3_preflight_failed"
+        assert "stack" not in body
+        assert "traceback" not in str(body).lower()
+    finally:
+        route_mod.run_purchasability_v3_replay_preflight = original
+
+
+def test_endpoint_include_probe_query_param():
+    app = FastAPI()
+    app.include_router(cecchino_lab.router, prefix="/api")
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app)
+    clear_purchasability_v3_replay_preflight_cache()
+    r = client.get(
+        "/api/cecchino-lab/historical-scans/1/purchasability-v3-replay/preflight"
+    )
+    assert r.status_code == 200
+    assert r.json()["probe"]["reason"] == "not_requested"
+    clear_purchasability_v3_replay_preflight_cache()
+    r2 = client.get(
+        "/api/cecchino-lab/historical-scans/1/purchasability-v3-replay/preflight?include_probe=true"
+    )
+    assert r2.status_code == 200
+    assert r2.json()["probe"].get("invoked_v3_formula") is True

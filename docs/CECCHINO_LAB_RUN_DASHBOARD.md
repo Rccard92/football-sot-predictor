@@ -1,14 +1,12 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
-## STEP 3A — Replay Acquistabilità V3 preflight (2026-07-29)
+## STEP 3A.1 — Preflight fuori dalla dashboard (2026-07-29)
 
-Sulla pagina run, **dopo** la sezione Acquistabilità (export V2 osservazionale), compare «Replay Acquistabilità»:
+Il preflight replay Acquistabilità V3 **non** è più montato su `/cecchino-lab/historical-scans/:runId`. Accesso da **Storico run → Verifica replay Acquistabilità** → `/cecchino-lab/purchasability-replay?run_id=`. La dashboard Run non chiama più l’endpoint preflight e non compete con summary/probe resource-safe.
 
-- Nessuna fetch all’apertura
-- Pulsante **Verifica replay Acquistabilità** → `GET .../purchasability-v3-replay/preflight`
-- Stati: Pronto / Pronto con avvisi / Bloccato
-- Nessun pulsante Avvia replay, polling, download o stima tempi
-- Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`; motore V3 e export V2 invariati
+## STEP 3A — Replay Acquistabilità V3 preflight (2026-07-29) [superato da 3A.1 per UI]
+
+Originariamente sulla pagina run, dopo Acquistabilità (export V2). Dal 3A.1: pagina autonoma; summary `include_probe=false`; probe opzionale; nessun Avvia replay. Schema e regole business invariati; motore V3 e export V2 invariati.
 
 ## Obiettivo
 
