@@ -57,6 +57,7 @@ export function HistoricalKpiActivationsTable({
               <th>Campionato</th>
               <th>Mercato</th>
               <th>Rating</th>
+              <th>Acq. V3</th>
               <th>Fascia</th>
               <th>Quota</th>
               <th>Tipo</th>
@@ -67,7 +68,7 @@ export function HistoricalKpiActivationsTable({
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-[var(--lab-muted)]">
+                <td colSpan={11} className="text-[var(--lab-muted)]">
                   Nessuna attivazione per i filtri correnti.
                 </td>
               </tr>
@@ -85,6 +86,9 @@ export function HistoricalKpiActivationsTable({
                   <td>{row.competition_name ?? '—'}</td>
                   <td>{row.market_label || row.market_key}</td>
                   <td>{row.rating ?? '—'}</td>
+                  <td data-testid="activation-purchasability-score">
+                    {row.purchasability_score != null ? row.purchasability_score : '—'}
+                  </td>
                   <td>{row.rating_bucket ?? '—'}</td>
                   <td>{formatOdds(row.quota_book)}</td>
                   <td>

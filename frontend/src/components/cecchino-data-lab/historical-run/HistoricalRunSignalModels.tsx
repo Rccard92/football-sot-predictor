@@ -17,6 +17,8 @@ type Props = {
   modelOverlapMatrix?: HistoricalSignalOverlapCell[]
   consensusDistribution?: HistoricalSignalConsensusBucket[]
   reconciliation?: HistoricalSignalExportReconciliation | null
+  onModelClick?: (modelKey: string) => void
+  activeModelKey?: string
 }
 
 function fmtPct(v: number | null | undefined): string {
@@ -47,6 +49,8 @@ export function HistoricalRunSignalModels({
   modelOverlapMatrix,
   consensusDistribution,
   reconciliation,
+  onModelClick,
+  activeModelKey,
 }: Props) {
   const option = {
     backgroundColor: 'transparent',
@@ -168,8 +172,13 @@ export function HistoricalRunSignalModels({
             {models.map((m) => (
               <tr
                 key={m.model_key}
+                className={onModelClick ? 'cursor-pointer' : undefined}
+                data-testid={`signals-af-model-row-${m.model_key}`}
+                onClick={onModelClick ? () => onModelClick(m.model_key) : undefined}
                 style={
-                  m.is_current_model ? { background: 'rgba(46,230,255,0.08)' } : undefined
+                  m.is_current_model || activeModelKey === m.model_key
+                    ? { background: 'rgba(46,230,255,0.08)' }
+                    : undefined
                 }
               >
                 <td>

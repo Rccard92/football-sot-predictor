@@ -1,5 +1,21 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 4B — KPI × Acquistabilità V3 + Segnali A–F (2026-08-02)
+
+| Voce | Valore |
+|------|--------|
+| Filtro KPI | `purchasability_min_score` 0–100 inclusivo; null = nessun filtro |
+| Replay | `resolve_official_purchasability_v3_replay` (nessun hardcode ID) |
+| Join | `(match_snapshot_id, market_key)` ↔ `(source_snapshot_id, market_key)` |
+| Mercati V3 | HOME, DRAW, AWAY, OVER_2_5, UNDER_2_5, ONE_X, X_TWO, ONE_TWO |
+| Funnel | base → supported+joined → scored → matched; gate failed ≠ score 0 |
+| Schema KPI | `cecchino_lab_historical_kpi_signals_v2` |
+| Pagina A–F | `/cecchino-lab/historical-scans/{run_id}/signals-af` |
+| Endpoint A–F | `GET …/signals-af/{summary,activations}` |
+| Granularità A–F | opportunità unica (run+snapshot+modello+mercato); celle = diagnostica |
+| Nav Storico | solo Analisi KPI · Segnali A–F · Report (hub non linkato) |
+| Nessuna | migration, scansione, replay, backfill, modifica formule |
+
 ## STEP 4A — Analisi KPI storico resource-safe (2026-08-02)
 
 Backtest del Pannello KPI sulle MarketResult della Run, senza ricalcolo e senza API esterne.

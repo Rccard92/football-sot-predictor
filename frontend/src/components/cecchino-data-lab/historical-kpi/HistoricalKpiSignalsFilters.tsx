@@ -1,4 +1,7 @@
-import type { HistoricalKpiSignalsFilters } from '../../../lib/cecchinoLabApi'
+import type {
+  HistoricalKpiSignalsFilters,
+  PurchasabilityFilterImpact,
+} from '../../../lib/cecchinoLabApi'
 import { marketLabel, RATING_BUCKETS } from './historicalKpiUtils'
 
 type AvailableFilters = {
@@ -24,6 +27,8 @@ const EVALUATION_STATUSES = [
   { value: 'void', label: 'Void' },
 ]
 
+const PURCH_QUICK = [20, 40, 60, 70, 75, 80, 90]
+
 export function HistoricalKpiSignalsFilters({
   filters,
   availableFilters,
@@ -43,6 +48,20 @@ export function HistoricalKpiSignalsFilters({
     onChange({ ...filters, quote_type: qt })
   }
 
+  function setPurchMin(raw: string) {
+    if (!raw.trim()) {
+      onChange({ ...filters, purchasability_min_score: undefined })
+      return
+    }
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return
+    const clamped = Math.max(0, Math.min(100, Math.round(n)))
+    onChange({ ...filters, purchasability_min_score: clamped })
+  }
+
+  const purchValue =
+    filters.purchasability_min_score != null ? String(filters.purchasability_min_score) : ''
+
   return (
     <div
       className="sticky top-0 z-20 rounded-xl border p-3 backdrop-blur"
@@ -50,6 +69,7 @@ export function HistoricalKpiSignalsFilters({
         borderColor: 'var(--lab-border)',
         background: 'rgba(11,22,36,0.92)',
       }}
+      data-testid="historical-kpi-filters"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium text-[var(--lab-cyan)]">Filtri analisi KPI</span>
@@ -117,8 +137,97 @@ export function HistoricalKpiSignalsFilters({
             { value: 'all', label: 'Tutte' },
           ]}
         />
+        <label className="text-[11px] text-[var(--lab-muted)]">
+          Acquistabilità V3 minima
+          <input
+            className="lab-input mt-0.5 w-full text-sm"
+            type="number"
+            min={0}
+            max={100}
+            placeholder="Nessun filtro"
+            value={purchValue}
+            data-testid="purchasability-min-score-input"
+            onChange={(e) => setPurchMin(e.target.value)}
+          />
+        </label>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-[var(--lab-muted)]">Soglie rapide:</span>
+        {PURCH_QUICK.map((n) => (
+          <button
+            key={n}
+            type="button"
+            className="lab-btn-ghost px-2 py-0.5 text-xs"
+            data-testid={`purchasability-quick-${n}`}
+            onClick={() => onChange({ ...filters, purchasability_min_score: n })}
+          >
+            {n}
+          </button>
+        ))}
+        {filters.purchasability_min_score != null ? (
+          <button
+            type="button"
+            className="lab-btn text-xs"
+            data-testid="purchasability-remove-filter"
+            onClick={() => onChange({ ...filters, purchasability_min_score: undefined })}
+          >
+            Rimuovi filtro Acquistabilità
+          </button>
+        ) : null}
       </div>
     </div>
+  )
+}
+
+type ImpactProps = {
+  impact: PurchasabilityFilterImpact
+  unsupportedReason?: string | null
+  message?: string | null
+}
+
+export function HistoricalKpiPurchasabilityImpactCard({
+  impact,
+  unsupportedReason,
+  message,
+}: ImpactProps) {
+  if (!impact.enabled) return null
+  const min = impact.min_score ?? 0
+  return (
+    <section
+      className="lab-card rounded-xl p-4"
+      data-testid="purchasability-impact-card"
+    >
+      <h3 className="text-base font-semibold">Impatto Acquistabilità V3</h3>
+      <p className="mt-1 text-xs text-[var(--lab-muted)]">
+        Il filtro V3 si applica solo ai mercati supportati dalla formula.
+      </p>
+      {unsupportedReason === 'purchasability_v3_market_not_supported' || message ? (
+        <p className="mt-2 text-sm text-[var(--lab-warn)]" data-testid="purchasability-unsupported-warning">
+          {message ||
+            'Il mercato selezionato non è supportato dalla formula Acquistabilità V3.'}
+        </p>
+      ) : null}
+      <div className="mt-3 space-y-1 text-sm">
+        <p>
+          {impact.base_signals_before_filter} segnali prima del filtro
+          <span className="text-[var(--lab-muted)]"> → </span>
+          {impact.v3_supported_and_joined} supportati dalla V3
+          <span className="text-[var(--lab-muted)]"> → </span>
+          {impact.v3_scored} con score disponibile
+          <span className="text-[var(--lab-muted)]"> → </span>
+          {impact.matched_threshold} con Acquistabilità ≥{min}
+        </p>
+        <p className="text-xs text-[var(--lab-muted)]">
+          Percentuale rimasta: {impact.coverage_pct}% · esclusi gate:{' '}
+          {impact.excluded_gate_failed} · non supportati:{' '}
+          {impact.excluded_unsupported_market}
+          {impact.official_replay_id != null
+            ? ` · Replay ID ${impact.official_replay_id}`
+            : ''}
+          {impact.formula_version ? ` · ${impact.formula_version}` : ''}
+        </p>
+      </div>
+    </section>
   )
 }
 

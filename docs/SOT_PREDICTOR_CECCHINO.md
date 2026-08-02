@@ -2,6 +2,10 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — KPI × V3 + Segnali A–F STEP 4B (2026-08-02)
+
+Filtro Acquistabilità V3 minima sull’Analisi KPI storica; pagina autonoma Segnali A–F; navigazione Storico semplificata. Formule e dati storici invariati.
+
 ## Cecchino Lab — Analisi KPI storico STEP 4A (2026-08-02)
 
 | Voce | Valore |

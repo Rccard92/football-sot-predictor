@@ -16,7 +16,6 @@ import { HistoricalRunPatterns } from '../components/cecchino-data-lab/historica
 import { HistoricalRunPurchasability } from '../components/cecchino-data-lab/historical-run/HistoricalRunPurchasability'
 import { HistoricalRunRatingHeatmap } from '../components/cecchino-data-lab/historical-run/HistoricalRunRatingHeatmap'
 import { HistoricalRunSectionError } from '../components/cecchino-data-lab/historical-run/HistoricalRunSectionError'
-import { HistoricalRunSignalModelsFromDashboard } from '../components/cecchino-data-lab/historical-run/HistoricalRunSignalModels'
 import { HistoricalRunSkeleton } from '../components/cecchino-data-lab/historical-run/HistoricalRunSkeleton'
 import { HistoricalRunTimeline } from '../components/cecchino-data-lab/historical-run/HistoricalRunTimeline'
 import { HistoricalRunV1Pulse } from '../components/cecchino-data-lab/historical-run/HistoricalRunV1Pulse'
@@ -30,7 +29,6 @@ import {
   getHistoricalRunDashboardPatterns,
   getHistoricalRunDashboardPurchasability,
   getHistoricalRunDashboardRatings,
-  getHistoricalRunDashboardSignals,
   getHistoricalRunDashboardTimeline,
   getHistoricalRunMatchDetail,
   isHistoricalScanActive,
@@ -48,7 +46,6 @@ import {
   type HistoricalRunPattern,
   type HistoricalRunOfficialPurchasability,
   type HistoricalRunRatingCell,
-  type HistoricalRunSignalsDashboard,
   type HistoricalRunTimelinePoint,
 } from '../lib/cecchinoLabApi'
 
@@ -58,7 +55,6 @@ type ModuleId =
   | 'purchasability'
   | 'markets'
   | 'ratings'
-  | 'signals'
   | 'balance'
   | 'goal_intensity'
   | 'competitions'
@@ -90,7 +86,6 @@ export function CecchinoLabHistoricalRunPage() {
     SectionState<{ bands: string[]; matrix: HistoricalRunRatingCell[]; warning?: string }>
   >(idleSection())
   const [purch, setPurch] = useState<SectionState<HistoricalRunOfficialPurchasability>>(idleSection())
-  const [signals, setSignals] = useState<SectionState<HistoricalRunSignalsDashboard>>(idleSection())
   const [balance, setBalance] = useState<SectionState<HistoricalRunBalanceAnalytics>>(idleSection())
   const [gi, setGi] = useState<SectionState<HistoricalRunGoalIntensityAnalytics>>(idleSection())
   const [comps, setComps] = useState<SectionState<HistoricalRunCompetitionAnalytics[]>>(idleSection())
@@ -188,9 +183,6 @@ export function CecchinoLabHistoricalRunPage() {
           break
         case 'purchasability':
           await load(() => getHistoricalRunDashboardPurchasability(runId, filters), setPurch)
-          break
-        case 'signals':
-          await load(() => getHistoricalRunDashboardSignals(runId, filters), setSignals)
           break
         case 'balance':
           await load(() => getHistoricalRunDashboardBalance(runId, filters), setBalance)
@@ -338,6 +330,26 @@ export function CecchinoLabHistoricalRunPage() {
                   </div>
                 </Link>
 
+                <Link
+                  to={`/cecchino-lab/historical-scans/${runId}/signals-af`}
+                  className="rounded-xl border p-4 transition hover:border-[var(--lab-cyan)]"
+                  style={{ borderColor: 'var(--lab-cyan)', background: 'var(--lab-surface)' }}
+                  data-testid="hub-signals-af-card"
+                >
+                  <div className="text-base font-semibold text-[var(--lab-cyan)]">
+                    Segnali A–F
+                  </div>
+                  <p className="mt-2 text-sm text-[var(--lab-muted)]">
+                    Opportunità uniche, overlap e consenso modelli A–F
+                  </p>
+                  <span className="mt-3 inline-block text-sm font-medium text-[var(--lab-cyan)]">
+                    Apri Segnali A–F →
+                  </span>
+                  <div className="mt-2 text-[11px] text-[var(--lab-muted)]">
+                    Resource-safe · F = modello corrente
+                  </div>
+                </Link>
+
                 <HubModuleCard
                   title="Acquistabilità V3"
                   description="Score ufficiale V3 e performance per mercato"
@@ -349,12 +361,6 @@ export function CecchinoLabHistoricalRunPage() {
                   description="Overview mercati storici Bet365"
                   open={openModules.has('markets')}
                   onToggle={() => toggleModule('markets')}
-                />
-                <HubModuleCard
-                  title="Segnali A–F"
-                  description="Modelli segnale storici"
-                  open={openModules.has('signals')}
-                  onToggle={() => toggleModule('signals')}
                 />
                 <HubModuleCard
                   title="Balance"
@@ -445,17 +451,6 @@ export function CecchinoLabHistoricalRunPage() {
             onRetry={() => void loadModule('purchasability')}
           >
             {purch.data ? <HistoricalRunPurchasability data={purch.data} runId={runId} /> : null}
-          </AccordionSection>
-        ) : null}
-
-        {openModules.has('signals') ? (
-          <AccordionSection
-            title="Segnali"
-            loading={signals.loading}
-            error={signals.error}
-            onRetry={() => void loadModule('signals')}
-          >
-            {signals.data ? <HistoricalRunSignalModelsFromDashboard data={signals.data} /> : null}
           </AccordionSection>
         ) : null}
 

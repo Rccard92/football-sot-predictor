@@ -2570,7 +2570,7 @@ export function getHistoricalRunMatchDetail(
   return requestJson(`/api/cecchino-lab/historical-scans/${runId}/matches/${snapshotId}`)
 }
 
-/* ─── Historical KPI Signals (STEP 4A) ─── */
+/* ─── Historical KPI Signals (STEP 4A/4B) ─── */
 
 export type HistoricalKpiSignalsFilters = {
   competition?: string
@@ -2580,6 +2580,24 @@ export type HistoricalKpiSignalsFilters = {
   selection_key?: string
   evaluation_status?: string
   quote_type?: 'real' | 'derived' | 'all'
+  purchasability_min_score?: number | null
+}
+
+export type PurchasabilityFilterImpact = {
+  enabled: boolean
+  min_score: number | null
+  official_replay_id: number | null
+  formula_version: string | null
+  base_signals_before_filter: number
+  v3_supported_and_joined: number
+  v3_scored: number
+  matched_threshold: number
+  excluded_unsupported_market: number
+  excluded_missing_join: number
+  excluded_gate_failed: number
+  excluded_unavailable: number
+  coverage_pct: number
+  reason?: string
 }
 
 export type HistoricalKpiSignalsOverall = {
@@ -2654,6 +2672,9 @@ export type HistoricalKpiSignalsSummary = {
     full_orm_entities_loaded: boolean
     jsonb_payloads_loaded: boolean
   }
+  purchasability_filter?: PurchasabilityFilterImpact
+  reason?: string
+  message?: string
 }
 
 export type HistoricalKpiTimelinePoint = {
@@ -2691,6 +2712,9 @@ export type HistoricalKpiTimelineResponse = {
   grouping_fallback: string | null
   points: HistoricalKpiTimelinePoint[]
   resource_profile: HistoricalKpiSignalsSummary['resource_profile']
+  purchasability_filter?: PurchasabilityFilterImpact
+  reason?: string
+  message?: string
 }
 
 export type HistoricalKpiActivationRow = {
@@ -2711,6 +2735,12 @@ export type HistoricalKpiActivationRow = {
   profit_units: number | null
   evaluation_status: string | null
   result_reason: string | null
+  purchasability_score?: number | null
+  purchasability_class?: string | null
+  purchasability_gate_status?: string | null
+  purchasability_formula_version?: string | null
+  purchasability_supported?: boolean
+  purchasability_exclusion_reason?: string | null
 }
 
 export type HistoricalKpiActivationsResponse = {
@@ -2722,6 +2752,9 @@ export type HistoricalKpiActivationsResponse = {
   resource_profile: HistoricalKpiSignalsSummary['resource_profile'] & {
     activations_page_size?: number
   }
+  purchasability_filter?: PurchasabilityFilterImpact
+  reason?: string
+  message?: string
 }
 
 export function historicalKpiSignalsFiltersToQuery(
@@ -2775,6 +2808,186 @@ export function getHistoricalKpiSignalActivations(
 ): Promise<HistoricalKpiActivationsResponse> {
   return requestJson(
     `/api/cecchino-lab/historical-scans/${runId}/kpi-signals/activations${historicalKpiSignalsFiltersToQuery(
+      filters,
+      {
+        limit: opts?.limit ?? 50,
+        offset: opts?.offset ?? 0,
+      },
+    )}`,
+    init,
+  )
+}
+
+/* ─── Historical Signals A–F (STEP 4B) ─── */
+
+export type HistoricalSignalsAfFilters = {
+  competition?: string
+  date_from?: string
+  date_to?: string
+  model_key?: string
+  market_key?: string
+  quote_type?: 'real' | 'derived' | 'all'
+  minimum_consensus_models?: number
+  only_current_model_F?: boolean
+}
+
+export type HistoricalSignalsAfModel = {
+  model_key: string
+  model_short_label?: string
+  model_label?: string
+  is_current_model?: boolean
+  opportunity_count?: number
+  model_active_opportunity_count?: number
+  matches_with_signal?: number
+  active_cell_row_count?: number
+  signals_activated?: number
+  average_active_cells_per_opportunity?: number | null
+  average_active_cells?: number | null
+  hit_rate?: number | null
+  real_roi?: number | null
+  real_roi_pct?: number | null
+  synthetic_roi?: number | null
+  synthetic_roi_pct?: number | null
+  real_profit?: number | null
+  synthetic_profit?: number | null
+  overlap_with_current_model_F_count?: number | null
+  overlap_with_current_model_F_pct?: number | null
+  unique_vs_current_model_F_count?: number | null
+  market_best?: string | null
+  market_worst?: string | null
+  [key: string]: string | number | boolean | null | undefined | Record<string, unknown>
+}
+
+export type HistoricalSignalsAfMarket = {
+  model_key: string
+  market_key: string
+  real_roi_pct?: number | null
+  synthetic_roi_pct?: number | null
+  real_quote_count?: number
+  derived_quote_count?: number
+  sample_size?: number
+  [key: string]: string | number | boolean | null | undefined
+}
+
+export type HistoricalSignalsAfSummary = {
+  schema_version: string
+  signal_export_schema_version: string
+  generated_at: string
+  run: {
+    run_id: number
+    season_label: string | null
+    status: string | null
+    scope: string
+    is_partial_run?: boolean | null
+  }
+  filters: HistoricalSignalsAfFilters
+  current_model_key: string
+  performance_granularity: string
+  models: HistoricalSignalsAfModel[]
+  by_market: HistoricalSignalsAfMarket[]
+  model_overlap_matrix: Array<{
+    model_a: string
+    model_b: string
+    intersection_count: number
+    union_count: number
+    jaccard_pct: number | null
+    overlap_a_pct: number | null
+    overlap_b_pct: number | null
+  }>
+  consensus_distribution: Array<Record<string, unknown>>
+  signal_export_reconciliation?: Record<string, unknown>
+  current_model_F_diagnostics?: Record<string, unknown>
+  unique_opportunities: number
+  active_cells: number
+  filtered_opportunity_count: number
+  quote_buckets: { real: number; derived: number; note?: string }
+  concurrent_active_signals: Record<string, number>
+  note: string
+  resource_profile: {
+    strategy: string
+    query_count: number
+    snapshots_loaded: number
+    opportunities_materialized: number
+    full_orm_entities_loaded: boolean
+    full_signals_json_returned: boolean
+  }
+}
+
+export type HistoricalSignalsAfActivation = {
+  opportunity_id: string
+  snapshot_id: number
+  lab_match_id: number
+  competition_name: string | null
+  kickoff_at: string | null
+  home_team: string | null
+  away_team: string | null
+  model_key: string
+  market_key: string | null
+  market_label: string | null
+  active_cell_count: number
+  active_cells: Array<Record<string, unknown>>
+  consensus_model_count: number | null
+  consensus_models: string[] | null
+  quota_book: number | null
+  is_real_book_quote: boolean | null
+  is_derived_quote: boolean | null
+  quote_type: string | null
+  won: boolean | null
+  profit_1u_real: number | null
+  profit_1u_synthetic: number | null
+  evaluation_status: string | null
+  rating: number | null
+}
+
+export type HistoricalSignalsAfActivationsResponse = {
+  items: HistoricalSignalsAfActivation[]
+  total: number
+  limit: number
+  offset: number
+  filters: HistoricalSignalsAfFilters
+  performance_granularity: string
+  note: string
+  resource_profile: HistoricalSignalsAfSummary['resource_profile'] & {
+    activations_page_size?: number
+  }
+}
+
+export function historicalSignalsAfFiltersToQuery(
+  filters: HistoricalSignalsAfFilters,
+  extra?: Record<string, string | number | boolean | undefined>,
+): string {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && String(v).trim() !== '') params.set(k, String(v))
+  }
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) {
+      if (v != null && String(v).trim() !== '') params.set(k, String(v))
+    }
+  }
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export function getHistoricalSignalsAfSummary(
+  runId: number,
+  filters: HistoricalSignalsAfFilters = {},
+  init?: RequestInit,
+): Promise<HistoricalSignalsAfSummary> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/signals-af/summary${historicalSignalsAfFiltersToQuery(filters)}`,
+    init,
+  )
+}
+
+export function getHistoricalSignalsAfActivations(
+  runId: number,
+  filters: HistoricalSignalsAfFilters = {},
+  opts?: { limit?: number; offset?: number },
+  init?: RequestInit,
+): Promise<HistoricalSignalsAfActivationsResponse> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/signals-af/activations${historicalSignalsAfFiltersToQuery(
       filters,
       {
         limit: opts?.limit ?? 50,

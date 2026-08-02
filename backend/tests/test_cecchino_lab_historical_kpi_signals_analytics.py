@@ -649,3 +649,194 @@ def test_api_kpi_signals_routes():
     ):
         r404 = client.get("/api/cecchino-lab/historical-scans/999/kpi-signals/summary")
         assert r404.status_code == 404
+
+# --- STEP 4B: purchasability_min_score ---
+
+
+def test_parse_purchasability_min_score_null_and_valid():
+    f = parse_kpi_signals_filters()
+    assert f['purchasability_min_score'] is None
+    assert parse_kpi_signals_filters(purchasability_min_score=0)['purchasability_min_score'] == 0
+    assert parse_kpi_signals_filters(purchasability_min_score=75)['purchasability_min_score'] == 75
+    assert parse_kpi_signals_filters(purchasability_min_score=100)['purchasability_min_score'] == 100
+
+
+def test_parse_purchasability_min_score_rejects_out_of_range():
+    with pytest.raises(CecchinoLabImportError) as exc:
+        parse_kpi_signals_filters(purchasability_min_score=-1)
+    assert exc.value.code == 'invalid_purchasability_min_score'
+    with pytest.raises(CecchinoLabImportError) as exc2:
+        parse_kpi_signals_filters(purchasability_min_score=101)
+    assert exc2.value.code == 'invalid_purchasability_min_score'
+    with pytest.raises(CecchinoLabImportError):
+        parse_kpi_signals_filters(purchasability_min_score='x')
+
+
+def test_apply_purchasability_filter_funnel_and_threshold():
+    from app.services.cecchino_data_lab.historical_kpi_signals_analytics import (
+        apply_purchasability_min_score_filter,
+    )
+
+    rows = [
+        _lean_row(source_snapshot_id=1, market_key='HOME', rating=100),
+        _lean_row(source_snapshot_id=2, market_key='HOME', rating=100),
+        _lean_row(source_snapshot_id=3, market_key='HOME', rating=100),
+        _lean_row(source_snapshot_id=4, market_key='OVER_1_5', rating=100),
+        _lean_row(source_snapshot_id=5, market_key='HOME', rating=100),
+        _lean_row(source_snapshot_id=6, market_key='HOME', rating=100),
+    ]
+    v3_index = {
+        (1, 'HOME'): {'score': 80, 'score_class': 'high', 'gate_status': 'passed', 'calculation_status': 'ok'},
+        (2, 'HOME'): {'score': 70, 'score_class': 'mid', 'gate_status': 'passed', 'calculation_status': 'ok'},
+        (3, 'HOME'): {'score': None, 'score_class': None, 'gate_status': 'failed_gate', 'calculation_status': 'ok'},
+        (5, 'HOME'): {'score': None, 'score_class': None, 'gate_status': 'passed', 'calculation_status': 'unavailable'},
+        # 6 missing join
+    }
+    matched, funnel = apply_purchasability_min_score_filter(
+        rows,
+        min_score=75,
+        v3_index=v3_index,
+        official_replay_id=42,
+        formula_version='cecchino_purchasability_v3_fixed_discount_v1',
+    )
+    assert funnel['enabled'] is True
+    assert funnel['min_score'] == 75
+    assert funnel['official_replay_id'] == 42
+    assert funnel['base_signals_before_filter'] == 6
+    assert funnel['excluded_unsupported_market'] == 1
+    assert funnel['excluded_missing_join'] == 1
+    assert funnel['excluded_gate_failed'] == 1
+    assert funnel['excluded_unavailable'] == 1
+    assert funnel['v3_supported_and_joined'] == 4
+    assert funnel['v3_scored'] == 2
+    assert funnel['matched_threshold'] == 1
+    assert len(matched) == 1
+    assert matched[0]['_purchasability_v3']['score'] == 80
+
+
+def test_apply_purchasability_threshold_0_and_100():
+    from app.services.cecchino_data_lab.historical_kpi_signals_analytics import (
+        apply_purchasability_min_score_filter,
+    )
+
+    rows = [_lean_row(source_snapshot_id=1, market_key='HOME')]
+    v3 = {(1, 'HOME'): {'score': 0, 'gate_status': 'passed', 'calculation_status': 'ok', 'score_class': 'low'}}
+    m0, f0 = apply_purchasability_min_score_filter(rows, min_score=0, v3_index=v3, official_replay_id=1, formula_version='f')
+    assert f0['matched_threshold'] == 1
+    m100, f100 = apply_purchasability_min_score_filter(rows, min_score=100, v3_index=v3, official_replay_id=1, formula_version='f')
+    assert f100['matched_threshold'] == 0
+    assert f100['v3_scored'] == 1
+
+
+def test_summary_unsupported_market_empty_reason():
+    run = _run()
+    db = MagicMock()
+    db.get.return_value = run
+    filters = parse_kpi_signals_filters(selection_key='OVER_1_5', purchasability_min_score=75)
+    out = get_kpi_signals_summary(db, 3, filters)
+    assert out['reason'] == 'purchasability_v3_market_not_supported'
+    assert out['overall']['real']['signals_count'] == 0
+    assert out['purchasability_filter']['enabled'] is True
+    assert not db.add.called
+
+
+def test_summary_with_v3_filter_uses_resolver_not_hardcoded_id():
+    run = _run()
+    replay = SimpleNamespace(
+        id=99,
+        formula_version='cecchino_purchasability_v3_fixed_discount_v1',
+        completed_at=datetime(2022, 6, 2, tzinfo=timezone.utc),
+    )
+    rows = [
+        _lean_row(source_snapshot_id=1, market_key='HOME', rating=100, profit_1u_real=1.0, won=True),
+        _lean_row(source_snapshot_id=2, market_key='HOME', rating=100, profit_1u_real=-1.0, won=False),
+    ]
+    db = MagicMock()
+    db.get.return_value = run
+    filters = parse_kpi_signals_filters(rating_bucket='100', purchasability_min_score=75)
+
+    with patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.resolve_official_purchasability_v3_replay',
+        return_value=replay,
+    ) as resolve_mock, patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.load_v3_result_index',
+        return_value={
+            (1, 'HOME'): {'score': 90, 'gate_status': 'passed', 'calculation_status': 'ok', 'score_class': 'high'},
+            (2, 'HOME'): {'score': 40, 'gate_status': 'passed', 'calculation_status': 'ok', 'score_class': 'low'},
+        },
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics._fetch_lean_rows',
+        side_effect=[(rows, 1), (rows, 1)],
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics._fetch_diagnostics',
+        return_value=({'rows_scanned': 2, 'eligible_rows': 2}, 1),
+    ):
+        out = get_kpi_signals_summary(db, 3, filters)
+
+    resolve_mock.assert_called_once_with(db, 3)
+    assert out['purchasability_filter']['official_replay_id'] == 99
+    assert out['purchasability_filter']['base_signals_before_filter'] == 2
+    assert out['purchasability_filter']['matched_threshold'] == 1
+    assert out['overall']['real']['signals_count'] == 1
+    assert out['overall']['real']['profit_units'] == 1.0
+    assert not db.commit.called
+
+
+def test_activations_include_v3_fields_when_filter_active():
+    run = _run()
+    replay = SimpleNamespace(id=7, formula_version='formula_v1', completed_at=None)
+    rows = [_lean_row(source_snapshot_id=1, market_key='HOME', rating=100)]
+    db = MagicMock()
+    db.get.return_value = run
+    filters = parse_kpi_signals_filters(purchasability_min_score=50)
+
+    with patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.resolve_official_purchasability_v3_replay',
+        return_value=replay,
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.load_v3_result_index',
+        return_value={(1, 'HOME'): {'score': 60, 'gate_status': 'passed', 'calculation_status': 'ok', 'score_class': 'mid'}},
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics._fetch_lean_rows',
+        return_value=(rows, 1),
+    ):
+        out = get_kpi_signal_activations(db, 3, filters, limit=10, offset=0)
+
+    assert out['total'] == 1
+    assert out['items'][0]['purchasability_score'] == 60
+    assert out['items'][0]['purchasability_gate_status'] == 'passed'
+    assert out['items'][0]['purchasability_supported'] is True
+
+
+def test_cache_key_includes_purchasability_meta():
+    run = _run()
+    replay = SimpleNamespace(id=5, formula_version='fv', completed_at=datetime(2022, 1, 1, tzinfo=timezone.utc))
+    rows = [_lean_row()]
+    db = MagicMock()
+    db.get.return_value = run
+    call_count = {'n': 0}
+
+    def fetch_side(*_a, **_k):
+        call_count['n'] += 1
+        return rows, 1
+
+    with patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.resolve_official_purchasability_v3_replay',
+        return_value=replay,
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics.load_v3_result_index',
+        return_value={(1, 'HOME'): {'score': 80, 'gate_status': 'passed', 'calculation_status': 'ok', 'score_class': 'h'}},
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics._fetch_lean_rows',
+        side_effect=fetch_side,
+    ), patch(
+        'app.services.cecchino_data_lab.historical_kpi_signals_analytics._fetch_diagnostics',
+        return_value=({'rows_scanned': 1}, 1),
+    ):
+        f75 = parse_kpi_signals_filters(purchasability_min_score=75)
+        get_kpi_signals_summary(db, 3, f75)
+        get_kpi_signals_summary(db, 3, f75)
+        assert call_count['n'] == 2  # universe + filtered once (cache hit second)
+        f80 = parse_kpi_signals_filters(purchasability_min_score=80)
+        get_kpi_signals_summary(db, 3, f80)
+        assert call_count['n'] == 4  # cache miss on different threshold

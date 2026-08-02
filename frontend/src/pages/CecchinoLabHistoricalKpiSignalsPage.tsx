@@ -7,7 +7,7 @@ import { HistoricalKpiEmptyState } from '../components/cecchino-data-lab/histori
 import { HistoricalKpiHeatmap } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiHeatmap'
 import { HistoricalKpiMetricRibbon } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiMetricRibbon'
 import { HistoricalKpiRatingBucketCarousel } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiRatingBucketCarousel'
-import { HistoricalKpiSignalsFilters as HistoricalKpiSignalsFiltersBar } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiSignalsFilters'
+import { HistoricalKpiSignalsFilters as HistoricalKpiSignalsFiltersBar, HistoricalKpiPurchasabilityImpactCard } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiSignalsFilters'
 import { HistoricalKpiSignalsHeader } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiSignalsHeader'
 import { HistoricalKpiSkeleton } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiSkeleton'
 import { HistoricalKpiTimeline } from '../components/cecchino-data-lab/historical-kpi/HistoricalKpiTimeline'
@@ -37,6 +37,15 @@ function parseFiltersFromSearch(search: string): HistoricalKpiSignalsFilters {
   const quote_type: HistoricalKpiSignalsFilters['quote_type'] =
     quoteRaw === 'derived' || quoteRaw === 'all' ? quoteRaw : 'real'
 
+  const purchRaw = params.get('purchasability_min_score')
+  let purchasability_min_score: number | undefined
+  if (purchRaw != null && purchRaw !== '') {
+    const n = Number(purchRaw)
+    if (Number.isFinite(n) && n >= 0 && n <= 100) {
+      purchasability_min_score = Math.round(n)
+    }
+  }
+
   return {
     competition: params.get('competition') || undefined,
     date_from: params.get('date_from') || undefined,
@@ -45,6 +54,7 @@ function parseFiltersFromSearch(search: string): HistoricalKpiSignalsFilters {
     selection_key: params.get('selection_key') || undefined,
     evaluation_status: params.get('evaluation_status') || undefined,
     quote_type,
+    purchasability_min_score,
   }
 }
 
@@ -253,6 +263,14 @@ export function CecchinoLabHistoricalKpiSignalsPage() {
           onRefresh={handleRefresh}
           onReset={handleReset}
         />
+
+        {summary.data?.purchasability_filter?.enabled ? (
+          <HistoricalKpiPurchasabilityImpactCard
+            impact={summary.data.purchasability_filter}
+            unsupportedReason={summary.data.reason}
+            message={summary.data.message}
+          />
+        ) : null}
 
         {summary.loading && summary.data ? <HistoricalKpiSkeleton rows={1} /> : null}
 

@@ -76,6 +76,11 @@ from app.services.cecchino_data_lab.historical_kpi_signals_analytics import (
     get_kpi_signals_timeline,
     parse_kpi_signals_filters,
 )
+from app.services.cecchino_data_lab.historical_signals_af_analytics import (
+    get_signals_af_activations,
+    get_signals_af_summary,
+    parse_signals_af_filters,
+)
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export import (
     build_purchasability_v3_replay_report_response,
 )
@@ -1345,18 +1350,20 @@ def historical_kpi_signals_summary(
     selection_key: str | None = None,
     evaluation_status: str | None = None,
     quote_type: str | None = "real",
+    purchasability_min_score: int | None = None,
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    filters = parse_kpi_signals_filters(
-        competition=competition,
-        date_from=date_from,
-        date_to=date_to,
-        rating_bucket=rating_bucket,
-        selection_key=selection_key,
-        evaluation_status=evaluation_status,
-        quote_type=quote_type,
-    )
     try:
+        filters = parse_kpi_signals_filters(
+            competition=competition,
+            date_from=date_from,
+            date_to=date_to,
+            rating_bucket=rating_bucket,
+            selection_key=selection_key,
+            evaluation_status=evaluation_status,
+            quote_type=quote_type,
+            purchasability_min_score=purchasability_min_score,
+        )
         return JSONResponse(
             content=jsonable_encoder(get_kpi_signals_summary(db, run_id, filters))
         )
@@ -1374,19 +1381,21 @@ def historical_kpi_signals_timeline(
     selection_key: str | None = None,
     evaluation_status: str | None = None,
     quote_type: str | None = "real",
+    purchasability_min_score: int | None = None,
     group_by: str = "date",
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    filters = parse_kpi_signals_filters(
-        competition=competition,
-        date_from=date_from,
-        date_to=date_to,
-        rating_bucket=rating_bucket,
-        selection_key=selection_key,
-        evaluation_status=evaluation_status,
-        quote_type=quote_type,
-    )
     try:
+        filters = parse_kpi_signals_filters(
+            competition=competition,
+            date_from=date_from,
+            date_to=date_to,
+            rating_bucket=rating_bucket,
+            selection_key=selection_key,
+            evaluation_status=evaluation_status,
+            quote_type=quote_type,
+            purchasability_min_score=purchasability_min_score,
+        )
         return JSONResponse(
             content=jsonable_encoder(
                 get_kpi_signals_timeline(db, run_id, filters, group_by=group_by)
@@ -1406,23 +1415,93 @@ def historical_kpi_signals_activations(
     selection_key: str | None = None,
     evaluation_status: str | None = None,
     quote_type: str | None = "real",
+    purchasability_min_score: int | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    filters = parse_kpi_signals_filters(
-        competition=competition,
-        date_from=date_from,
-        date_to=date_to,
-        rating_bucket=rating_bucket,
-        selection_key=selection_key,
-        evaluation_status=evaluation_status,
-        quote_type=quote_type,
-    )
     try:
+        filters = parse_kpi_signals_filters(
+            competition=competition,
+            date_from=date_from,
+            date_to=date_to,
+            rating_bucket=rating_bucket,
+            selection_key=selection_key,
+            evaluation_status=evaluation_status,
+            quote_type=quote_type,
+            purchasability_min_score=purchasability_min_score,
+        )
         return JSONResponse(
             content=jsonable_encoder(
                 get_kpi_signal_activations(
+                    db, run_id, filters, limit=limit, offset=offset
+                )
+            )
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/signals-af/summary")
+def historical_signals_af_summary(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    model_key: str | None = None,
+    market_key: str | None = None,
+    quote_type: str | None = "real",
+    minimum_consensus_models: int | None = None,
+    only_current_model_F: bool = False,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        filters = parse_signals_af_filters(
+            competition=competition,
+            date_from=date_from,
+            date_to=date_to,
+            model_key=model_key,
+            market_key=market_key,
+            quote_type=quote_type,
+            minimum_consensus_models=minimum_consensus_models,
+            only_current_model_F=only_current_model_F,
+        )
+        return JSONResponse(
+            content=jsonable_encoder(get_signals_af_summary(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/signals-af/activations")
+def historical_signals_af_activations(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    model_key: str | None = None,
+    market_key: str | None = None,
+    quote_type: str | None = "real",
+    minimum_consensus_models: int | None = None,
+    only_current_model_F: bool = False,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        filters = parse_signals_af_filters(
+            competition=competition,
+            date_from=date_from,
+            date_to=date_to,
+            model_key=model_key,
+            market_key=market_key,
+            quote_type=quote_type,
+            minimum_consensus_models=minimum_consensus_models,
+            only_current_model_F=only_current_model_F,
+        )
+        return JSONResponse(
+            content=jsonable_encoder(
+                get_signals_af_activations(
                     db, run_id, filters, limit=limit, offset=offset
                 )
             )

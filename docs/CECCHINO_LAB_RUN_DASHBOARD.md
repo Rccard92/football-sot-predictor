@@ -1,5 +1,17 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 4B — Filtro V3 su KPI + pagina Segnali A–F (2026-08-02)
+
+- Analisi KPI: filtro **Acquistabilità V3 minima** con funnel di copertura; aggregati ricalcolati sul sottoinsieme.
+- Pagina autonoma Segnali A–F (non monta l’hub); opportunità vs celle; F = modello corrente.
+- Tab Scansioni storiche: CTA semplificate (Analisi KPI · Segnali A–F · Report). Hub raggiungibile solo via URL.
+
+| Voce | Valore |
+|------|--------|
+| Route A–F | `/cecchino-lab/historical-scans/:runId/signals-af` |
+| Schema A–F | `cecchino_lab_historical_signals_af_v1` |
+| Schema KPI | `cecchino_lab_historical_kpi_signals_v2` |
+
 ## STEP 4A — Hub resource-safe + Analisi KPI storico (2026-08-02)
 
 **Causa crash:** la pagina Run caricava overview + `Promise.all` di 8 moduli + lazy timeline/pattern/esclusioni dopo 400 ms, saturando Railway.

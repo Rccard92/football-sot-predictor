@@ -609,39 +609,27 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   </td>
                   <td>{r.matches_eligible_core}</td>
                   <td className="space-x-3 whitespace-nowrap">
-                    <Link
-                      to={`/cecchino-lab/historical-scans/${r.id}`}
-                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                    >
-                      Apri analisi
-                    </Link>
-                    <Link
-                      to={`/cecchino-lab/historical-scans/${r.id}/kpi-signals`}
-                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                      data-testid={`historical-kpi-link-${r.id}`}
-                    >
-                      Analisi KPI
-                    </Link>
-                    <Link
-                      to={`/cecchino-lab/purchasability-replay?run_id=${r.id}`}
-                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                      data-testid={`purchasability-replay-link-${r.id}`}
-                    >
-                      Verifica replay Acquistabilità
-                    </Link>
-                    <button
-                      type="button"
-                      className="underline"
-                      onClick={() => setActiveRun(r)}
-                    >
-                      Dettaglio
-                    </button>
-                    {r.status.startsWith('completed') && (
+                    {r.status.startsWith('completed') ? (
                       <>
+                        <Link
+                          to={`/cecchino-lab/historical-scans/${r.id}/kpi-signals`}
+                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                          data-testid={`historical-kpi-link-${r.id}`}
+                        >
+                          Analisi KPI
+                        </Link>
+                        <Link
+                          to={`/cecchino-lab/historical-scans/${r.id}/signals-af`}
+                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                          data-testid={`historical-signals-af-link-${r.id}`}
+                        >
+                          Segnali A–F
+                        </Link>
                         {' · '}
                         <button
                           type="button"
                           className="underline"
+                          data-testid={`historical-report-link-${r.id}`}
                           onClick={() => {
                             setActiveRun(r)
                             setReportOpen(true)
@@ -650,7 +638,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                           Report
                         </button>
                       </>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}

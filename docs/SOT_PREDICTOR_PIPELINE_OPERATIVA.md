@@ -1,5 +1,11 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — KPI × V3 + Segnali A–F STEP 4B (2026-08-02)
+
+1. Analisi KPI: query `purchasability_min_score` → resolver replay ufficiale → join V3 → funnel + aggregati filtrati.
+2. Segnali A–F: `GET …/signals-af/summary|activations` (opportunità uniche, paginate).
+3. Tab Storico: Analisi KPI · Segnali A–F · Report (hub non linkato dalla UI ordinaria).
+
 ## Cecchino Lab — Analisi KPI storico STEP 4A (2026-08-02)
 
 1. Aprire hub Run (`Apri analisi`): Network deve mostrare solo overview.

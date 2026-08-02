@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Combine historical kpi with purchasability v3 (STEP 4B) (2026-08-02)
+
+- Perché: filtrare i segnali KPI storici per soglia Acquistabilità V3 e analizzare A–F senza saturare la hub.
+- Cosa: filtro `purchasability_min_score` + funnel; pagina autonoma Segnali A–F resource-safe; navigazione Storico semplificata.
+- Cosa non fa: nessuna migration; formule V3/A–F/Rating; Run #3; Replay ID 1; 36488 risultati invariati; nessuna scansione/replay.
+
 ## Feat — Add resource safe historical kpi analysis (STEP 4A) (2026-08-02)
 
 - Perché: «Apri analisi» caricava tutti i moduli dashboard in parallelo e saturava Railway.

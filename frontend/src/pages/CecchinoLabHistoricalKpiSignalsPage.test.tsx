@@ -314,6 +314,79 @@ describe('CecchinoLabHistoricalKpiSignalsPage', () => {
       expect(screen.getByText('100')).toBeTruthy()
     })
   })
+
+  it('mostra filtro Acquistabilità e default disattivato', async () => {
+    renderKpi()
+    await waitFor(() => expect(screen.getByTestId('purchasability-min-score-input')).toBeTruthy())
+    expect(apiMock.getHistoricalKpiSignalsSummary.mock.calls[0][1].purchasability_min_score).toBeUndefined()
+    expect(screen.queryByTestId('purchasability-impact-card')).toBeNull()
+  })
+
+  it('applica soglia 75 e mostra funnel', async () => {
+    apiMock.getHistoricalKpiSignalsSummary.mockResolvedValue(
+      baseSummary({
+        filters: { quote_type: 'real', purchasability_min_score: 75 },
+        purchasability_filter: {
+          enabled: true,
+          min_score: 75,
+          official_replay_id: 1,
+          formula_version: 'cecchino_purchasability_v3_fixed_discount_v1',
+          base_signals_before_filter: 50,
+          v3_supported_and_joined: 38,
+          v3_scored: 31,
+          matched_threshold: 12,
+          excluded_unsupported_market: 8,
+          excluded_missing_join: 2,
+          excluded_gate_failed: 5,
+          excluded_unavailable: 2,
+          coverage_pct: 24,
+        },
+      }),
+    )
+    renderKpi('/cecchino-lab/historical-scans/3/kpi-signals?purchasability_min_score=75')
+    await waitFor(() => expect(screen.getByTestId('purchasability-impact-card')).toBeTruthy())
+    expect(screen.getByText(/50 segnali prima del filtro/i)).toBeTruthy()
+    expect(screen.getByText(/12 con Acquistabilità ≥75/i)).toBeTruthy()
+    expect(screen.getByText(/esclusi gate:\s*5/i)).toBeTruthy()
+  })
+
+  it('valori rapidi e rimozione filtro', async () => {
+    renderKpi()
+    await waitFor(() => expect(screen.getByTestId('purchasability-quick-75')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('purchasability-quick-75'))
+    await waitFor(() => {
+      const last = apiMock.getHistoricalKpiSignalsSummary.mock.calls.at(-1)?.[1]
+      expect(last?.purchasability_min_score).toBe(75)
+    })
+  })
+
+  it('warning mercato unsupported', async () => {
+    apiMock.getHistoricalKpiSignalsSummary.mockResolvedValue(
+      baseSummary({
+        reason: 'purchasability_v3_market_not_supported',
+        message: 'Il mercato selezionato non è supportato dalla formula Acquistabilità V3.',
+        purchasability_filter: {
+          enabled: true,
+          min_score: 75,
+          official_replay_id: null,
+          formula_version: null,
+          base_signals_before_filter: 0,
+          v3_supported_and_joined: 0,
+          v3_scored: 0,
+          matched_threshold: 0,
+          excluded_unsupported_market: 0,
+          excluded_missing_join: 0,
+          excluded_gate_failed: 0,
+          excluded_unavailable: 0,
+          coverage_pct: 0,
+        },
+      }),
+    )
+    renderKpi(
+      '/cecchino-lab/historical-scans/3/kpi-signals?selection_key=OVER_1_5&purchasability_min_score=75',
+    )
+    await waitFor(() => expect(screen.getByTestId('purchasability-unsupported-warning')).toBeTruthy())
+  })
 })
 
 describe('CecchinoLabHistoricalRunPage hub resource-safe', () => {
@@ -343,6 +416,7 @@ describe('CecchinoLabHistoricalRunPage hub resource-safe', () => {
     expect(apiMock.getHistoricalRunDashboardExclusions).not.toHaveBeenCalled()
     expect(apiMock.listHistoricalRunMatches).not.toHaveBeenCalled()
     expect(screen.getByTestId('hub-kpi-card')).toBeTruthy()
+    expect(screen.getByTestId('hub-signals-af-card')).toBeTruthy()
   })
 
   it('carica un modulo solo dopo click', async () => {

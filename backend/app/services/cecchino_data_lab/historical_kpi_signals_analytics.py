@@ -1,6 +1,7 @@
-"""Analytics read-only sui segnali KPI storici Cecchino Lab (STEP 4A).
+"""Analytics read-only sui segnali KPI storici Cecchino Lab (STEP 4A/4B).
 
 Nessuna scrittura DB, nessun ricalcolo Rating/KPI, nessun full ORM load.
+Filtro analitico Acquistabilità V3: join su replay ufficiale, nessuna formula V3.
 """
 
 from __future__ import annotations
@@ -24,12 +25,25 @@ from app.models.cecchino_lab_historical_match_snapshot import (
     CecchinoLabHistoricalMatchSnapshot,
 )
 from app.models.cecchino_lab_historical_scan_run import CecchinoLabHistoricalScanRun
+from app.models.cecchino_lab_purchasability_v3_replay_result import (
+    CecchinoLabPurchasabilityV3ReplayResult,
+)
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS
+from app.services.cecchino.cecchino_purchasability_v3_opposition import (
+    SUPPORTED_V3_MARKETS,
+)
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_analytics import (
+    classify_calc_bucket,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
+    resolve_official_purchasability_v3_replay,
+)
 from app.services.cecchino_data_lab.historical_scan_service import run_to_dict
 
-HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION = "cecchino_lab_historical_kpi_signals_v1"
+HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION = "cecchino_lab_historical_kpi_signals_v2"
+REASON_V3_MARKET_NOT_SUPPORTED = "purchasability_v3_market_not_supported"
 ANALYTICS_CACHE_TTL_S = 300
 CACHE_MAX_ENTRIES = 64
 CACHE_KIND_SUMMARY = "summary"
@@ -158,6 +172,7 @@ def _cache_key(
     completed_at: Any,
     filters: dict[str, Any],
     group_by: str | None = None,
+    purchasability_cache_meta: dict[str, Any] | None = None,
 ) -> str:
     payload = json.dumps(filters, sort_keys=True, default=str)
     parts = [
@@ -167,6 +182,8 @@ def _cache_key(
         _iso(completed_at) or "",
         payload,
     ]
+    if purchasability_cache_meta:
+        parts.append(json.dumps(purchasability_cache_meta, sort_keys=True, default=str))
     if group_by is not None:
         parts.append(str(group_by))
     return "|".join(parts)
@@ -208,6 +225,28 @@ def sort_markets(keys: list[str] | set[str]) -> list[str]:
     return sorted(set(keys), key=_sort_key)
 
 
+def _parse_purchasability_min_score(raw: Any) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise CecchinoLabImportError(
+            "invalid_purchasability_min_score",
+            "purchasability_min_score deve essere un intero 0–100 oppure null.",
+            status_code=400,
+            details={"value": raw},
+        ) from exc
+    if value < 0 or value > 100:
+        raise CecchinoLabImportError(
+            "invalid_purchasability_min_score",
+            "purchasability_min_score deve essere compreso tra 0 e 100.",
+            status_code=400,
+            details={"value": value},
+        )
+    return value
+
+
 def parse_kpi_signals_filters(**kwargs: Any) -> dict[str, Any]:
     quote_type = str(kwargs.get("quote_type") or "real").strip().lower()
     if quote_type not in ("real", "derived", "all"):
@@ -220,7 +259,153 @@ def parse_kpi_signals_filters(**kwargs: Any) -> dict[str, Any]:
         "selection_key": (kwargs.get("selection_key") or None),
         "evaluation_status": (kwargs.get("evaluation_status") or None),
         "quote_type": quote_type,
+        "purchasability_min_score": _parse_purchasability_min_score(
+            kwargs.get("purchasability_min_score")
+        ),
     }
+
+
+def load_v3_result_index(
+    db: Session, replay_run_id: int
+) -> dict[tuple[int, str], dict[str, Any]]:
+    """Indice (source_snapshot_id, market_key) → campi V3 scalari."""
+    R = CecchinoLabPurchasabilityV3ReplayResult
+    rows = db.execute(
+        select(
+            R.source_snapshot_id,
+            R.market_key,
+            R.score,
+            R.score_class,
+            R.gate_status,
+            R.calculation_status,
+        ).where(R.replay_run_id == int(replay_run_id))
+    ).all()
+    out: dict[tuple[int, str], dict[str, Any]] = {}
+    for snap_id, market_key, score, score_class, gate_status, calculation_status in rows:
+        out[(int(snap_id), str(market_key))] = {
+            "score": _i(score),
+            "score_class": score_class,
+            "gate_status": gate_status,
+            "calculation_status": calculation_status,
+        }
+    return out
+
+
+def _v3_row_is_scored(v3: dict[str, Any] | None) -> bool:
+    if not v3:
+        return False
+    return (
+        v3.get("score") is not None
+        and str(v3.get("gate_status") or "") == "passed"
+        and str(v3.get("calculation_status") or "") != "error"
+    )
+
+
+def _empty_purchasability_filter(
+    *,
+    enabled: bool,
+    min_score: int | None,
+    official_replay_id: int | None = None,
+    formula_version: str | None = None,
+    base_signals: int = 0,
+) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "min_score": min_score,
+        "official_replay_id": official_replay_id,
+        "formula_version": formula_version,
+        "base_signals_before_filter": base_signals,
+        "v3_supported_and_joined": 0,
+        "v3_scored": 0,
+        "matched_threshold": 0,
+        "excluded_unsupported_market": 0,
+        "excluded_missing_join": 0,
+        "excluded_gate_failed": 0,
+        "excluded_unavailable": 0,
+        "coverage_pct": 0.0,
+    }
+
+
+def apply_purchasability_min_score_filter(
+    rows: list[dict[str, Any]],
+    *,
+    min_score: int,
+    v3_index: dict[tuple[int, str], dict[str, Any]],
+    official_replay_id: int,
+    formula_version: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Filtra lean rows per soglia V3 inclusiva; restituisce (matched, funnel)."""
+    base = len(rows)
+    funnel = _empty_purchasability_filter(
+        enabled=True,
+        min_score=min_score,
+        official_replay_id=official_replay_id,
+        formula_version=formula_version,
+        base_signals=base,
+    )
+    matched: list[dict[str, Any]] = []
+    for row in rows:
+        mk = str(row.get("market_key") or "")
+        snap_id = int(row.get("source_snapshot_id") or 0)
+        if mk not in SUPPORTED_V3_MARKETS:
+            funnel["excluded_unsupported_market"] += 1
+            continue
+        v3 = v3_index.get((snap_id, mk))
+        if v3 is None:
+            funnel["excluded_missing_join"] += 1
+            continue
+        funnel["v3_supported_and_joined"] += 1
+        bucket = classify_calc_bucket(v3)
+        if bucket == "gate_failed":
+            funnel["excluded_gate_failed"] += 1
+            continue
+        if not _v3_row_is_scored(v3):
+            funnel["excluded_unavailable"] += 1
+            continue
+        funnel["v3_scored"] += 1
+        score = int(v3["score"])
+        if score < min_score:
+            continue
+        enriched = dict(row)
+        enriched["_purchasability_v3"] = {
+            "score": score,
+            "score_class": v3.get("score_class"),
+            "gate_status": v3.get("gate_status"),
+            "formula_version": formula_version,
+            "supported": True,
+            "exclusion_reason": None,
+        }
+        matched.append(enriched)
+        funnel["matched_threshold"] += 1
+
+    if base > 0:
+        funnel["coverage_pct"] = round(
+            funnel["matched_threshold"] / base * 100.0, 2
+        )
+    else:
+        funnel["coverage_pct"] = 0.0
+    return matched, funnel
+
+
+def _selection_unsupported_by_v3(filters: dict[str, Any]) -> bool:
+    sel = filters.get("selection_key")
+    if not sel:
+        return False
+    return str(sel) not in SUPPORTED_V3_MARKETS
+
+
+def _apply_resolved_purchasability(
+    rows: list[dict[str, Any]],
+    ctx: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    replay = ctx["_replay"]
+    return apply_purchasability_min_score_filter(
+        rows,
+        min_score=int(ctx["_min_score"]),
+        v3_index=ctx["_v3_index"],
+        official_replay_id=int(replay.id),
+        formula_version=getattr(replay, "formula_version", None),
+    )
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -681,6 +866,8 @@ def compute_summary_from_lean_rows(
     query_count: int = 0,
     diagnostics: dict[str, Any] | None = None,
     available_filters: dict[str, Any] | None = None,
+    purchasability_filter: dict[str, Any] | None = None,
+    empty_reason: str | None = None,
 ) -> dict[str, Any]:
     quote_type = filters.get("quote_type") or "real"
     if available_filters is None:
@@ -695,7 +882,7 @@ def compute_summary_from_lean_rows(
             "performance_synthetic_ready": 0,
         }
 
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
         "generated_at": _utcnow().isoformat(),
         "run": _run_block(run),
@@ -713,6 +900,15 @@ def compute_summary_from_lean_rows(
             "jsonb_payloads_loaded": False,
         },
     }
+    if purchasability_filter is not None:
+        payload["purchasability_filter"] = purchasability_filter
+    if empty_reason:
+        payload["reason"] = empty_reason
+        payload["message"] = (
+            "Il mercato selezionato non è supportato dalla formula Acquistabilità V3."
+            if empty_reason == REASON_V3_MARKET_NOT_SUPPORTED
+            else empty_reason
+        )
     return _json_safe(payload)
 
 
@@ -937,7 +1133,7 @@ def _activation_item(row: dict[str, Any], quote_type_filter: str) -> dict[str, A
         profit_units = _f(row.get("profit_1u_real") if is_real else row.get("profit_1u_synthetic"))
 
     mk = str(row.get("market_key") or "")
-    return {
+    item: dict[str, Any] = {
         "source_snapshot_id": int(row.get("source_snapshot_id") or 0),
         "lab_match_id": int(row.get("lab_match_id") or 0),
         "competition_name": row.get("competition_name"),
@@ -956,17 +1152,58 @@ def _activation_item(row: dict[str, Any], quote_type_filter: str) -> dict[str, A
         "evaluation_status": row.get("evaluation_status"),
         "result_reason": row.get("result_reason"),
     }
+    v3 = row.get("_purchasability_v3")
+    if isinstance(v3, dict):
+        item["purchasability_score"] = v3.get("score")
+        item["purchasability_class"] = v3.get("score_class")
+        item["purchasability_gate_status"] = v3.get("gate_status")
+        item["purchasability_formula_version"] = v3.get("formula_version")
+        item["purchasability_supported"] = bool(v3.get("supported"))
+        item["purchasability_exclusion_reason"] = v3.get("exclusion_reason")
+    return item
 
 
 def get_kpi_signals_summary(
     db: Session, run_id: int, filters: dict[str, Any]
 ) -> dict[str, Any]:
     run = _get_run(db, int(run_id))
+    min_score = filters.get("purchasability_min_score")
+
+    if min_score is not None and _selection_unsupported_by_v3(filters):
+        funnel = _empty_purchasability_filter(
+            enabled=True, min_score=int(min_score), base_signals=0
+        )
+        funnel["reason"] = REASON_V3_MARKET_NOT_SUPPORTED
+        return compute_summary_from_lean_rows(
+            run,
+            [],
+            filters,
+            purchasability_filter=funnel,
+            empty_reason=REASON_V3_MARKET_NOT_SUPPORTED,
+        )
+
+    purch_ctx: dict[str, Any] | None = None
+    cache_meta: dict[str, Any] | None = None
+    if min_score is not None:
+        replay = resolve_official_purchasability_v3_replay(db, int(run_id))
+        cache_meta = {
+            "purchasability_min_score": int(min_score),
+            "official_replay_id": int(replay.id),
+            "formula_version": getattr(replay, "formula_version", None),
+            "replay_completed_at": _iso(getattr(replay, "completed_at", None)),
+        }
+        purch_ctx = {
+            "_v3_index": load_v3_result_index(db, int(replay.id)),
+            "_replay": replay,
+            "_min_score": int(min_score),
+        }
+
     cache_key = _cache_key(
         run_id=int(run_id),
         kind=CACHE_KIND_SUMMARY,
         completed_at=getattr(run, "completed_at", None),
         filters=filters,
+        purchasability_cache_meta=cache_meta,
     )
     cached = _cache_get(cache_key)
     if cached is not None:
@@ -984,6 +1221,11 @@ def get_kpi_signals_summary(
     diagnostics, qc = _fetch_diagnostics(db, int(run_id), filters)
     query_count += qc
 
+    purchasability_filter = None
+    if purch_ctx is not None:
+        rows, purchasability_filter = _apply_resolved_purchasability(rows, purch_ctx)
+        query_count += 1
+
     payload = compute_summary_from_lean_rows(
         run,
         rows,
@@ -991,6 +1233,7 @@ def get_kpi_signals_summary(
         query_count=query_count,
         diagnostics=diagnostics,
         available_filters=available_filters,
+        purchasability_filter=purchasability_filter,
     )
     _cache_set(cache_key, payload)
     return payload
@@ -1007,18 +1250,68 @@ def get_kpi_signals_timeline(
     if normalized_group not in ("date", "week", "matchday"):
         normalized_group = "date"
 
+    min_score = filters.get("purchasability_min_score")
+    if min_score is not None and _selection_unsupported_by_v3(filters):
+        return _json_safe(
+            {
+                "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
+                "generated_at": _utcnow().isoformat(),
+                "run": _run_block(run),
+                "filters": dict(filters),
+                "group_by": normalized_group,
+                "points": [],
+                "reason": REASON_V3_MARKET_NOT_SUPPORTED,
+                "message": (
+                    "Il mercato selezionato non è supportato dalla formula "
+                    "Acquistabilità V3."
+                ),
+                "purchasability_filter": _empty_purchasability_filter(
+                    enabled=True, min_score=int(min_score), base_signals=0
+                ),
+                "resource_profile": {
+                    "strategy": "sql_aggregates",
+                    "query_count": 0,
+                    "rows_materialized": 0,
+                    "full_orm_entities_loaded": False,
+                    "jsonb_payloads_loaded": False,
+                },
+            }
+        )
+
+    purch_ctx: dict[str, Any] | None = None
+    cache_meta: dict[str, Any] | None = None
+    if min_score is not None:
+        replay = resolve_official_purchasability_v3_replay(db, int(run_id))
+        cache_meta = {
+            "purchasability_min_score": int(min_score),
+            "official_replay_id": int(replay.id),
+            "formula_version": getattr(replay, "formula_version", None),
+            "replay_completed_at": _iso(getattr(replay, "completed_at", None)),
+        }
+        purch_ctx = {
+            "_v3_index": load_v3_result_index(db, int(replay.id)),
+            "_replay": replay,
+            "_min_score": int(min_score),
+        }
+
     cache_key = _cache_key(
         run_id=int(run_id),
         kind=CACHE_KIND_TIMELINE,
         completed_at=getattr(run, "completed_at", None),
         filters=filters,
         group_by=normalized_group,
+        purchasability_cache_meta=cache_meta,
     )
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
     rows, query_count = _fetch_lean_rows(db, int(run_id), filters, for_universe_only=False)
+    purchasability_filter = None
+    if purch_ctx is not None:
+        rows, purchasability_filter = _apply_resolved_purchasability(rows, purch_ctx)
+        query_count += 1
+
     payload = compute_timeline_from_lean_rows(
         run,
         rows,
@@ -1026,6 +1319,8 @@ def get_kpi_signals_timeline(
         group_by=normalized_group,
         query_count=query_count,
     )
+    if purchasability_filter is not None:
+        payload["purchasability_filter"] = purchasability_filter
     _cache_set(cache_key, payload)
     return payload
 
@@ -1041,9 +1336,50 @@ def get_kpi_signal_activations(
     lim = max(1, min(int(limit or 50), 100))
     off = max(0, int(offset or 0))
 
+    min_score = filters.get("purchasability_min_score")
+    if min_score is not None and _selection_unsupported_by_v3(filters):
+        return _json_safe(
+            {
+                "items": [],
+                "total": 0,
+                "limit": lim,
+                "offset": off,
+                "filters": dict(filters),
+                "reason": REASON_V3_MARKET_NOT_SUPPORTED,
+                "message": (
+                    "Il mercato selezionato non è supportato dalla formula "
+                    "Acquistabilità V3."
+                ),
+                "purchasability_filter": _empty_purchasability_filter(
+                    enabled=True, min_score=int(min_score), base_signals=0
+                ),
+                "resource_profile": {
+                    "strategy": "sql_aggregates",
+                    "query_count": 0,
+                    "rows_materialized": 0,
+                    "full_orm_entities_loaded": False,
+                    "jsonb_payloads_loaded": False,
+                    "activations_page_size": lim,
+                },
+            }
+        )
+
     query_count = 0
     rows, qc = _fetch_lean_rows(db, int(run_id), filters, for_universe_only=False)
     query_count += qc
+
+    purchasability_filter = None
+    if min_score is not None:
+        replay = resolve_official_purchasability_v3_replay(db, int(run_id))
+        v3_index = load_v3_result_index(db, int(replay.id))
+        query_count += 1
+        rows, purchasability_filter = apply_purchasability_min_score_filter(
+            rows,
+            min_score=int(min_score),
+            v3_index=v3_index,
+            official_replay_id=int(replay.id),
+            formula_version=getattr(replay, "formula_version", None),
+        )
 
     quote_type = filters.get("quote_type") or "real"
     sorted_rows = sorted(rows, key=_market_sort_key)
@@ -1051,7 +1387,7 @@ def get_kpi_signal_activations(
     page_rows = sorted_rows[off : off + lim]
     items = [_activation_item(r, quote_type) for r in page_rows]
 
-    payload = {
+    payload: dict[str, Any] = {
         "items": items,
         "total": total,
         "limit": lim,
@@ -1066,4 +1402,6 @@ def get_kpi_signal_activations(
             "activations_page_size": lim,
         },
     }
+    if purchasability_filter is not None:
+        payload["purchasability_filter"] = purchasability_filter
     return _json_safe(payload)

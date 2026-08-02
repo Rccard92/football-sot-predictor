@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Combine historical KPI with purchasability V3 STEP 4B (2026-08-02)
+
+Filtro Acquistabilità V3 minima sull’Analisi KPI storica (funnel copertura, gate failed ≠ 0); pagina autonoma Segnali A–F; CTA Storico: Analisi KPI · Segnali A–F · Report. Nessuna migration/scansione/replay; formule e Run #3 invariate.
+
 ## Feat — Hub resource-safe + Analisi KPI storico STEP 4A (2026-08-02)
 
 Hub Run: solo overview al mount; moduli on-demand. Pagina autonoma Analisi KPI storico (fasce Rating, heatmap, timeline, attivazioni paginate). Schema `cecchino_lab_historical_kpi_signals_v1`. Read-only SQL scalare; V3/Replay/Run #3/KPI operativa invariati; nessuna migration/scansione/replay.
