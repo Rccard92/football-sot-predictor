@@ -1,5 +1,25 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3C.1 — Analytics ed export Replay Acquistabilità V3 (2026-08-02)
+
+Replay ID 1 su Run #3 (2021/2022) completato con warning: 4561 snapshot, 36488 risultati, 13534 scored, 22950 gate failed, 4 unavailable, 22801 quote reali, 13683 derivate, 0 errori.
+
+| Voce | Valore |
+|------|--------|
+| Analytics schema | `cecchino_lab_purchasability_v3_analytics_v1` |
+| Export schema | `cecchino_lab_purchasability_v3_export_v1` |
+| Endpoint analytics | `GET /api/cecchino-lab/purchasability-v3-replays/{id}/analytics` (lazy) |
+| Endpoint report | `GET …/report?mode=analysis\|full_archive` (StreamingResponse) |
+| Sorgente | solo `CecchinoLabPurchasabilityV3ReplayRun` + `…ReplayResult` |
+| Formula | `formula_recomputed=false` — nessun ricalcolo |
+| Universi | ALL / SCORED / GATE_FAILED / UNAVAILABLE / REAL_PERF / SYNTHETIC_PERF |
+| Gate failed | non mappato a score 0 / fascia 0–19 |
+| Family decisions | diagnostiche in-memory; no migration |
+| UI | sezione Analisi Replay V3 su `/cecchino-lab/purchasability-replay` |
+| Invariato | report V2, Sintesi ChatGPT, Dettaglio Acquistabilità, formula, schema DB |
+
+**STEP 3C.2 (successivo):** collegare V3 a Sintesi/Dettaglio; mantenere V2 come legacy tecnico.
+
 ## STEP 3B.1.2 — Paginazione transaction-safe replay V3 (2026-08-02)
 
 Incidente sul primo replay reale (Replay ID 1): dopo il primo batch (100 snapshot / 800 risultati persistiti) PostgreSQL ha invalidato il named/server-side cursor (`named cursor isn't valid anymore`) perché il worker faceva `commit` a cursore ancora aperto (`stream_results` + `yield_per`).

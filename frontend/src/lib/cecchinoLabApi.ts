@@ -2182,6 +2182,153 @@ export function resumePurchasabilityV3Replay(
   return postJson(`/api/admin/cecchino-lab/purchasability-v3-replays/${replayId}/resume`)
 }
 
+export type HistoricalPurchasabilityV3ReplayPerformanceBucket = {
+  stake_count: number
+  profit_units: number | null
+  roi_pct: number | null
+  wins?: number
+  losses?: number
+  hit_rate_pct?: number | null
+  average_odds?: number | null
+  technical_aggregate_only?: boolean
+  do_not_interpret_as_strategy?: boolean
+  diagnostic_only?: boolean
+  exclude_from_real_roi?: boolean
+  not_a_real_bet365_quote?: boolean
+}
+
+export type HistoricalPurchasabilityV3ReplayReconciliation = {
+  status: 'ok' | 'failed' | string
+  all_evaluations?: number
+  buckets?: Record<string, number>
+  quote_buckets?: {
+    real?: number
+    derived?: number
+    unavailable?: number
+  }
+  checks?: Array<{ code: string; ok: boolean; detail?: unknown }>
+}
+
+export type HistoricalPurchasabilityV3ReplayMarketAnalytics = {
+  evaluations_total: number
+  scored: number
+  gate_failed: number
+  unavailable: number
+  real_quote?: number
+  derived_quote?: number
+  quote_type?: string
+  performance_real?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  performance_synthetic?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  not_a_real_bet365_quote?: boolean
+  exclude_from_real_roi?: boolean
+}
+
+export type HistoricalPurchasabilityV3ReplayPenaltyAnalytics = {
+  descriptive_observational_analysis?: boolean
+  fields?: Record<
+    string,
+    {
+      count_available?: number
+      count_applied?: number
+      application_rate?: number | null
+      mean?: number | null
+      median?: number | null
+    }
+  >
+  total_penalty_bands?: Record<string, number>
+}
+
+export type HistoricalPurchasabilityV3ReplayAnalytics = {
+  schema_version: string
+  status: 'ready' | 'ready_with_warnings' | 'blocked' | string
+  generated_at?: string
+  replay?: {
+    replay_id?: number
+    source_scan_run_id?: number
+    status?: string
+    formula_version?: string
+    replay_schema_version?: string
+  }
+  universes?: {
+    ALL_EVALUATIONS?: number
+    SCORED_EVALUATIONS?: number
+    GATE_FAILED_EVALUATIONS?: number
+    UNAVAILABLE_EVALUATIONS?: number
+    REAL_PERFORMANCE_UNIVERSE?: number
+    SYNTHETIC_PERFORMANCE_UNIVERSE?: number
+  }
+  reconciliation?: HistoricalPurchasabilityV3ReplayReconciliation
+  performance_real?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  performance_synthetic?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  by_market?: Record<string, HistoricalPurchasabilityV3ReplayMarketAnalytics>
+  penalties?: HistoricalPurchasabilityV3ReplayPenaltyAnalytics
+  warnings?: string[]
+  blockers?: Array<{ code: string; message: string }>
+  metadata?: {
+    formula_recomputed?: boolean
+    analytics_reads_persisted_replay?: boolean
+    source_replay_id?: number
+    source_replay_immutable?: boolean
+    report_valid?: boolean
+  }
+  resource_profile?: {
+    strategy?: string
+    rows_read?: number
+    formula_recomputed?: boolean
+    duration_ms?: number
+  }
+}
+
+export type PurchasabilityV3ReplayReportMode = 'analysis' | 'full_archive'
+
+export function getPurchasabilityV3ReplayAnalytics(
+  replayId: number,
+): Promise<HistoricalPurchasabilityV3ReplayAnalytics> {
+  return requestJson(`/api/cecchino-lab/purchasability-v3-replays/${replayId}/analytics`)
+}
+
+export async function downloadPurchasabilityV3ReplayReport(
+  replayId: number,
+  mode: PurchasabilityV3ReplayReportMode = 'analysis',
+): Promise<void> {
+  const base = getApiBase()
+  const params = new URLSearchParams()
+  params.set('mode', mode)
+  const res = await fetch(
+    `${base}/api/cecchino-lab/purchasability-v3-replays/${replayId}/report?${params.toString()}`,
+  )
+  if (!res.ok) {
+    let message = `Download report V3 fallito (${res.status})`
+    try {
+      const body = (await res.json()) as { detail?: string; message?: string }
+      message = body?.detail || body?.message || message
+    } catch {
+      /* ignore */
+    }
+    if (res.status === 409) {
+      message =
+        'Il replay deve essere completato prima di generare analytics o report.'
+    }
+    throw new AdminHttpError(res.status, message, null)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/.exec(cd)
+  const fallback =
+    mode === 'full_archive'
+      ? `cecchino-purchasability-v3-replay-${replayId}-full.zip`
+      : `cecchino-purchasability-v3-replay-${replayId}-analysis.zip`
+  const filename = match?.[1] || fallback
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function getHistoricalRunDashboardSignals(
   runId: number,
   filters: HistoricalRunFilters = {},

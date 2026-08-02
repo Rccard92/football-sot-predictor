@@ -67,6 +67,12 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_service 
     resume_purchasability_v3_replay,
     start_purchasability_v3_replay,
 )
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_analytics import (
+    get_purchasability_v3_replay_analytics,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export import (
+    build_purchasability_v3_replay_report_response,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -944,6 +950,42 @@ def purchasability_v3_replay_resume(
             },
         )
     return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@router.get("/purchasability-v3-replays/{replay_id}/analytics")
+def purchasability_v3_replay_analytics(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Analytics read-only lazy — non calcolate nella GET status replay."""
+    try:
+        result = get_purchasability_v3_replay_analytics(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/purchasability-v3-replays/{replay_id}/report")
+def purchasability_v3_replay_report(
+    replay_id: int,
+    mode: str = Query("analysis"),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Export ZIP autonomo V3 (analysis | full_archive)."""
+    try:
+        return build_purchasability_v3_replay_report_response(
+            db, replay_id, mode=mode
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 @router.get("/historical-scans/{run_id}/dashboard/signals")

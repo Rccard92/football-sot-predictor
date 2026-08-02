@@ -1,5 +1,9 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3C.1 — Analytics Replay V3 (fuori dashboard Run) (2026-08-02)
+
+Dashboard Run e menu report storico (**Sintesi per ChatGPT**, **Dettaglio Acquistabilità**) **invariati**. Analytics/export V3 solo su `/cecchino-lab/purchasability-replay` (lazy + download analysis/full). STEP 3C.2 collegherà V3 al menu report.
+
 ## STEP 3B.1.2 — Paginazione transaction-safe (2026-08-02)
 
 Dashboard Run invariata. Worker: keyset per snapshot id (niente named cursor tra commit); UI progress mostra Non applicabili / Non classificati + messaggio failed recuperabile. **Riprendere Replay ID 1** dopo deploy (non nuovo start).

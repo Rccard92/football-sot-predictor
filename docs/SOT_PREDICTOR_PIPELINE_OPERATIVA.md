@@ -1,5 +1,15 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — analytics/export V3 STEP 3C.1 (2026-08-02)
+
+1. Deploy codice (**nessuna** migration; head resta `20260802120000`).
+2. Aprire Replay Acquistabilità; verificare Replay ID 1 ancora `completed_with_warnings`, 36488 risultati, 0 errori.
+3. Click manuale **Genera riepilogo analytics** (nessuna fetch automatica).
+4. Verificare riconciliazione: 36488 / 13534 scored / 22950 gate / 4 unavailable / 22801 real / 13683 derived.
+5. Download **Scarica report V3 per ChatGPT** (`mode=analysis`).
+6. Non usare ancora il vecchio Dettaglio Acquistabilità V2 per l’analisi V3.
+7. Dopo analisi ZIP → STEP 3C.2.
+
 ## Cecchino Lab — pagination transaction-safe STEP 3B.1.2 (2026-08-02)
 
 1. Deploy codice (**nessuna** nuova migration; head resta `20260802120000`).

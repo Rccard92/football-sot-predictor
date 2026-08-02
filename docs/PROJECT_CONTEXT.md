@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Analytics/export Replay Acquistabilità V3 STEP 3C.1 (2026-08-02)
+
+Analytics read-only + ZIP autonomo sui risultati persistiti (Replay ID 1, Run #3, 36488 valutazioni). Schema `…_analytics_v1` / `…_export_v1`. Endpoint `…/purchasability-v3-replays/{id}/analytics` e `…/report`. Formula non ricalcolata; universi separati; gate failed ≠ score 0; real/synthetic separati; family decisions diagnostiche. Report storico V2 / menu Sintesi / Dettaglio Acquistabilità **invariati**. Next = STEP 3C.2 (sostituzione report dashboard).
+
 ## Fix — Paginazione transaction-safe replay V3 STEP 3B.1.2 (2026-08-02)
 
 Named cursor invalidato dopo commit batch 1 (Replay ID 1). Keyset per snapshot id; gate_failed aggregato corretto; UI contatori + messaggio recuperabile. Formula/schema/migration/Run #3/800 righe **invariati**. Ripresa Replay ID 1 post-deploy (non nuovo start).

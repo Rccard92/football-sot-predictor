@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add purchasability v3 replay analytics (STEP 3C.1) (2026-08-02)
+
+- Perché: analizzare in modo riproducibile i 36488 risultati del Replay ID 1 senza ricalcolare la formula e senza toccare il report V2.
+- Cosa: servizio analytics read-only (universi, ROI real/synthetic, gate, penalità, family decisions, stabilità, V2/V3 diagnostico); export ZIP analysis/full; endpoint + UI lazy sulla pagina Replay; test BE/FE.
+- Cosa non fa: nessuna migration; formula/Replay/Run invariati; menu Sintesi/Dettaglio Acquistabilità ancora V2. Next = STEP 3C.2.
+
 ## Fix — Make purchasability replay pagination transaction safe (STEP 3B.1.2) (2026-08-02)
 
 - Perché: il primo replay reale (Replay ID 1) falliva al secondo batch con `named cursor isn't valid anymore` (commit durante server-side cursor).

@@ -12,6 +12,8 @@ const apiMock = vi.hoisted(() => ({
   getPurchasabilityV3Replay: vi.fn(),
   cancelPurchasabilityV3Replay: vi.fn(),
   resumePurchasabilityV3Replay: vi.fn(),
+  getPurchasabilityV3ReplayAnalytics: vi.fn(),
+  downloadPurchasabilityV3ReplayReport: vi.fn(),
 }))
 
 vi.mock('../lib/cecchinoLabApi', async () => {
@@ -26,6 +28,8 @@ vi.mock('../lib/cecchinoLabApi', async () => {
     getPurchasabilityV3Replay: apiMock.getPurchasabilityV3Replay,
     cancelPurchasabilityV3Replay: apiMock.cancelPurchasabilityV3Replay,
     resumePurchasabilityV3Replay: apiMock.resumePurchasabilityV3Replay,
+    getPurchasabilityV3ReplayAnalytics: apiMock.getPurchasabilityV3ReplayAnalytics,
+    downloadPurchasabilityV3ReplayReport: apiMock.downloadPurchasabilityV3ReplayReport,
   }
 })
 
@@ -442,6 +446,8 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
     apiMock.getPurchasabilityV3Replay.mockReset()
     apiMock.cancelPurchasabilityV3Replay.mockReset()
     apiMock.resumePurchasabilityV3Replay.mockReset()
+    apiMock.getPurchasabilityV3ReplayAnalytics.mockReset()
+    apiMock.downloadPurchasabilityV3ReplayReport.mockReset()
     apiMock.listHistoricalScans.mockResolvedValue(sampleRuns)
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
@@ -739,5 +745,237 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
     renderPage()
     await waitFor(() => expect(apiMock.listHistoricalScans).toHaveBeenCalled())
     expect(apiMock.startPurchasabilityV3Replay).not.toHaveBeenCalled()
+  })
+})
+
+describe('CecchinoLabPurchasabilityReplayPage STEP 3C.1 analytics', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+    apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
+    apiMock.listHistoricalScans.mockReset()
+    apiMock.startPurchasabilityV3Replay.mockReset()
+    apiMock.getPurchasabilityV3Replay.mockReset()
+    apiMock.cancelPurchasabilityV3Replay.mockReset()
+    apiMock.resumePurchasabilityV3Replay.mockReset()
+    apiMock.getPurchasabilityV3ReplayAnalytics.mockReset()
+    apiMock.downloadPurchasabilityV3ReplayReport.mockReset()
+    apiMock.downloadPurchasabilityV3ReplayReport.mockResolvedValue(undefined)
+    apiMock.listHistoricalScans.mockResolvedValue(sampleRuns)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  function renderPage(path = '/cecchino-lab/purchasability-replay?run_id=3') {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route
+            path="/cecchino-lab/purchasability-replay"
+            element={<CecchinoLabPurchasabilityReplayPage />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  async function mountCompletedReplay(status: 'completed' | 'completed_with_warnings' = 'completed') {
+    apiMock.getHistoricalPurchasabilityV3ReplayPreflight
+      .mockResolvedValueOnce(basePreflight())
+      .mockResolvedValueOnce(goPreflight())
+    apiMock.startPurchasabilityV3Replay.mockResolvedValue({
+      id: 1,
+      source_scan_run_id: 3,
+      status,
+      effective_status: status,
+      snapshots_total: 2,
+      snapshots_processed: 2,
+      evaluations_total: 16,
+      evaluations_processed: 16,
+      results_persisted: 16,
+      progress_pct: 100,
+      scored_count: 10,
+      gate_failed_count: 5,
+      unavailable_count: 1,
+      error_count: 0,
+      can_cancel: false,
+      can_resume: false,
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('verify-purchasability-v3-replay')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('verify-purchasability-v3-replay'))
+    await waitFor(() => expect(screen.getByTestId('verify-purchasability-v3-probe')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('verify-purchasability-v3-probe'))
+    await waitFor(() => expect(screen.getByTestId('start-purchasability-v3-replay')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('start-purchasability-v3-replay'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-checkbox'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-submit'))
+    await waitFor(() => expect(screen.getByTestId('purchasability-v3-replay-progress')).toBeTruthy())
+  }
+
+  const sampleAnalytics = {
+    schema_version: 'cecchino_lab_purchasability_v3_analytics_v1',
+    status: 'ready' as const,
+    universes: {
+      ALL_EVALUATIONS: 16,
+      SCORED_EVALUATIONS: 10,
+      GATE_FAILED_EVALUATIONS: 5,
+      UNAVAILABLE_EVALUATIONS: 1,
+    },
+    reconciliation: {
+      status: 'ok',
+      quote_buckets: { real: 10, derived: 5, unavailable: 1 },
+    },
+    performance_real: { stake_count: 8, profit_units: 1.5, roi_pct: 18.75 },
+    performance_synthetic: {
+      stake_count: 4,
+      profit_units: -0.5,
+      roi_pct: -12.5,
+      diagnostic_only: true,
+    },
+    by_market: {
+      HOME: {
+        evaluations_total: 2,
+        scored: 2,
+        gate_failed: 0,
+        unavailable: 0,
+        performance_real: { stake_count: 2, profit_units: 1, roi_pct: 50 },
+      },
+      DRAW: {
+        evaluations_total: 2,
+        scored: 1,
+        gate_failed: 1,
+        unavailable: 0,
+        performance_real: { stake_count: 1, profit_units: null, roi_pct: null },
+      },
+      AWAY: {
+        evaluations_total: 2,
+        scored: 1,
+        gate_failed: 1,
+        unavailable: 0,
+        performance_real: { stake_count: 1, profit_units: -1, roi_pct: -100 },
+      },
+      OVER_2_5: {
+        evaluations_total: 2,
+        scored: 2,
+        gate_failed: 0,
+        unavailable: 0,
+        performance_real: { stake_count: 2, profit_units: 0.5, roi_pct: 25 },
+      },
+      UNDER_2_5: {
+        evaluations_total: 2,
+        scored: 1,
+        gate_failed: 1,
+        unavailable: 0,
+        performance_real: { stake_count: 1, profit_units: -1, roi_pct: -100 },
+      },
+      ONE_X: {
+        evaluations_total: 2,
+        scored: 2,
+        gate_failed: 0,
+        unavailable: 0,
+        not_a_real_bet365_quote: true,
+        exclude_from_real_roi: true,
+        performance_synthetic: { stake_count: 2, profit_units: 0.2, roi_pct: 10 },
+      },
+      X_TWO: {
+        evaluations_total: 2,
+        scored: 1,
+        gate_failed: 0,
+        unavailable: 1,
+        not_a_real_bet365_quote: true,
+        performance_synthetic: { stake_count: 1, profit_units: -1, roi_pct: -100 },
+      },
+      ONE_TWO: {
+        evaluations_total: 2,
+        scored: 0,
+        gate_failed: 2,
+        unavailable: 0,
+        not_a_real_bet365_quote: true,
+        performance_synthetic: { stake_count: 0, profit_units: null, roi_pct: null },
+      },
+    },
+    warnings: [],
+    blockers: [],
+    metadata: { formula_recomputed: false, report_valid: true },
+  }
+
+  it('sezione analytics assente per replay running', async () => {
+    apiMock.getHistoricalPurchasabilityV3ReplayPreflight
+      .mockResolvedValueOnce(basePreflight())
+      .mockResolvedValueOnce(goPreflight())
+    apiMock.startPurchasabilityV3Replay.mockResolvedValue({
+      id: 99,
+      source_scan_run_id: 3,
+      status: 'running',
+      effective_status: 'running',
+      progress_pct: 10,
+      can_cancel: true,
+      can_resume: false,
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('verify-purchasability-v3-replay')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('verify-purchasability-v3-replay'))
+    await waitFor(() => expect(screen.getByTestId('verify-purchasability-v3-probe')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('verify-purchasability-v3-probe'))
+    await waitFor(() => expect(screen.getByTestId('start-purchasability-v3-replay')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('start-purchasability-v3-replay'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-checkbox'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-submit'))
+    await waitFor(() => expect(screen.getByTestId('purchasability-v3-replay-progress')).toBeTruthy())
+    expect(screen.queryByTestId('purchasability-v3-replay-analytics')).toBeNull()
+    expect(apiMock.getPurchasabilityV3ReplayAnalytics).not.toHaveBeenCalled()
+  })
+
+  it('presente per completed senza fetch automatica; genera e download', async () => {
+    await mountCompletedReplay('completed')
+    expect(screen.getByTestId('purchasability-v3-replay-analytics')).toBeTruthy()
+    expect(screen.getByTestId('purchasability-v3-replay-export')).toBeTruthy()
+    expect(apiMock.getPurchasabilityV3ReplayAnalytics).not.toHaveBeenCalled()
+
+    apiMock.getPurchasabilityV3ReplayAnalytics.mockResolvedValue(sampleAnalytics)
+    fireEvent.click(screen.getByTestId('generate-v3-analytics'))
+    await waitFor(() => expect(apiMock.getPurchasabilityV3ReplayAnalytics).toHaveBeenCalledWith(1))
+    await waitFor(() => expect(screen.getByTestId('v3-analytics-result')).toBeTruthy())
+    expect(screen.getByTestId('v3-analytics-status').textContent).toMatch(/ready/)
+    expect(screen.getByTestId('v3-roi-real').textContent).toMatch(/18\.75/)
+    expect(screen.getByTestId('v3-roi-synthetic').textContent).toMatch(/sintetica/)
+    expect(screen.getByTestId('v3-market-row-HOME')).toBeTruthy()
+    expect(screen.getByTestId('v3-market-row-ONE_X').textContent).toMatch(/derivata|sint/i)
+
+    fireEvent.click(screen.getByTestId('download-v3-analysis'))
+    await waitFor(() =>
+      expect(apiMock.downloadPurchasabilityV3ReplayReport).toHaveBeenCalledWith(1, 'analysis'),
+    )
+    expect(screen.getByTestId('download-v3-analysis').textContent).toMatch(/consigliato/i)
+    fireEvent.click(screen.getByTestId('download-v3-full-archive'))
+    await waitFor(() =>
+      expect(apiMock.downloadPurchasabilityV3ReplayReport).toHaveBeenCalledWith(1, 'full_archive'),
+    )
+  })
+
+  it('presente per completed_with_warnings e mostra blocked', async () => {
+    await mountCompletedReplay('completed_with_warnings')
+    expect(screen.getByTestId('purchasability-v3-replay-analytics')).toBeTruthy()
+    apiMock.getPurchasabilityV3ReplayAnalytics.mockResolvedValue({
+      ...sampleAnalytics,
+      status: 'blocked',
+      blockers: [{ code: 'x', message: 'riconciliazione fallita' }],
+      metadata: { formula_recomputed: false, report_valid: false },
+    })
+    fireEvent.click(screen.getByTestId('generate-v3-analytics'))
+    await waitFor(() => expect(screen.getByTestId('v3-analytics-blockers')).toBeTruthy())
+    expect(screen.getByTestId('v3-analytics-status').textContent).toMatch(/blocked/)
+  })
+
+  it('mostra errore leggibile senza Failed to fetch grezzo', async () => {
+    await mountCompletedReplay('completed')
+    apiMock.getPurchasabilityV3ReplayAnalytics.mockRejectedValue(new Error('Failed to fetch'))
+    fireEvent.click(screen.getByTestId('generate-v3-analytics'))
+    await waitFor(() => expect(screen.getByTestId('v3-analytics-error')).toBeTruthy())
+    expect(screen.getByTestId('v3-analytics-error').textContent).toMatch(/rete/i)
+    expect(screen.getByTestId('v3-analytics-error').textContent).not.toBe('Failed to fetch')
   })
 })

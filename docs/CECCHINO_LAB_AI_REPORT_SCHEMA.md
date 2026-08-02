@@ -5,6 +5,17 @@ Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation
 Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
 Versione export Acquistabilità: `cecchino_lab_purchasability_export_v1` (`purchasability_export_schema_version`)
 
+## STEP 3C.1 — Export Replay Acquistabilità V3 (autonomo)
+
+Schema analytics: `cecchino_lab_purchasability_v3_analytics_v1`
+Schema export: `cecchino_lab_purchasability_v3_export_v1`
+
+ZIP dedicato al replay V3 (`mode=analysis` consigliato per ChatGPT; `full_archive` opzionale). **Non** sostituisce ancora `purchasability_compact.jsonl` / Sintesi / Dettaglio Acquistabilità del report storico V2 (STEP 3C.2).
+
+File primari analysis: `summary.json`, `reconciliation.json`, `replay_results_compact.jsonl`, `family_decisions.jsonl`, `AI_INSTRUCTIONS.md`, `ANALYSIS_CHECKLIST.md`, ...
+Full: + `replay_results_full.jsonl`.
+Flag: `formula_recomputed=false`, `performance_real_and_synthetic_separated=true`.
+
 ## STEP 3A — Preflight replay V3 (non è un export report)
 
 Il preflight `cecchino_lab_purchasability_v3_replay_preflight_v1` **non** entra nello ZIP report AI e **non** modifica `purchasability_compact.jsonl` / export V2. Serve solo a certificare la riusabilità degli input congelati prima di STEP 3B (replay isolato). Anti-leakage: risultati/settlement fuori dalla formula.

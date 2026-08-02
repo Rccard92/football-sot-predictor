@@ -3,8 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import {
   cancelPurchasabilityV3Replay,
+  downloadPurchasabilityV3ReplayReport,
   getHistoricalPurchasabilityV3ReplayPreflight,
   getPurchasabilityV3Replay,
+  getPurchasabilityV3ReplayAnalytics,
   historicalScanScopeLabel,
   historicalScanStatusLabel,
   isPurchasabilityV3ReplayActive,
@@ -15,6 +17,7 @@ import {
   PURCHASABILITY_V3_REPLAY_POLL_MS,
   resumePurchasabilityV3Replay,
   startPurchasabilityV3Replay,
+  type HistoricalPurchasabilityV3ReplayAnalytics,
   type HistoricalPurchasabilityV3ReplayPreflight,
   type HistoricalScanRun,
   type PurchasabilityV3ReplayRun,
@@ -98,7 +101,226 @@ function formatPreflightError(err: unknown): string {
 
 function formatReplayError(err: unknown): string {
   if (!(err instanceof Error)) return 'Errore replay'
-  return err.message || 'Errore replay'
+  const msg = err.message || ''
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return `Errore di rete durante il replay. ${msg}`
+  }
+  return msg || 'Errore replay'
+}
+
+function formatAnalyticsError(err: unknown): string {
+  if (!(err instanceof Error)) return 'Errore analytics'
+  const msg = err.message || ''
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return 'Errore di rete durante il caricamento analytics.'
+  }
+  if (/completato prima di generare/i.test(msg) || /409/.test(msg)) {
+    return 'Il replay deve essere completato prima di generare analytics o report.'
+  }
+  if (/blocked|riconciliazione/i.test(msg)) {
+    return msg
+  }
+  return msg || 'Errore analytics'
+}
+
+function formatRoi(roi: number | null | undefined): string {
+  if (roi === null || roi === undefined) return '—'
+  return `${roi.toFixed(2)}%`
+}
+
+function formatProfit(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  return v.toFixed(2)
+}
+
+function isReplayCompletedForAnalytics(status: string): boolean {
+  return status === 'completed' || status === 'completed_with_warnings'
+}
+
+function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun }) {
+  const [analytics, setAnalytics] = useState<HistoricalPurchasabilityV3ReplayAnalytics | null>(
+    null,
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [downloadBusy, setDownloadBusy] = useState<'analysis' | 'full_archive' | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const onGenerate = () => {
+    setLoading(true)
+    setError(null)
+    void getPurchasabilityV3ReplayAnalytics(replay.id)
+      .then((data) => setAnalytics(data))
+      .catch((err) => setError(formatAnalyticsError(err)))
+      .finally(() => setLoading(false))
+  }
+
+  const onDownload = (mode: 'analysis' | 'full_archive') => {
+    setDownloadBusy(mode)
+    setDownloadError(null)
+    void downloadPurchasabilityV3ReplayReport(replay.id, mode)
+      .catch((err) => setDownloadError(formatAnalyticsError(err)))
+      .finally(() => setDownloadBusy(null))
+  }
+
+  const universes = analytics?.universes
+  const recon = analytics?.reconciliation
+  const markets = analytics?.by_market || {}
+
+  return (
+    <section
+      className="lab-card mt-4 rounded-xl p-4"
+      data-testid="purchasability-v3-replay-analytics"
+    >
+      <h3 className="text-base font-semibold">Analisi Replay V3</h3>
+      <p className="mt-1 text-sm" style={{ color: 'var(--lab-muted)' }}>
+        Riepilogo read-only sui risultati persistiti. Nessun ricalcolo formula. Caricamento
+        manuale.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="lab-btn lab-btn-primary rounded-md px-3 py-2 text-sm"
+          data-testid="generate-v3-analytics"
+          disabled={loading}
+          onClick={onGenerate}
+        >
+          {loading ? 'Generazione…' : 'Genera riepilogo analytics'}
+        </button>
+      </div>
+
+      {error ? (
+        <p data-testid="v3-analytics-error" className="mt-3 text-sm" style={{ color: 'var(--lab-err)' }}>
+          {error}
+        </p>
+      ) : null}
+
+      {loading ? (
+        <p data-testid="v3-analytics-loading" className="mt-3 text-sm">
+          Caricamento analytics…
+        </p>
+      ) : null}
+
+      {analytics ? (
+        <div className="mt-4 space-y-3" data-testid="v3-analytics-result">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span
+              className={`lab-badge ${statusBadgeClass(analytics.status)}`}
+              data-testid="v3-analytics-status"
+            >
+              {analytics.status}
+            </span>
+            <span data-testid="v3-recon-status">
+              Riconciliazione: {recon?.status || '—'}
+            </span>
+          </div>
+          <div
+            className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3"
+            data-testid="v3-analytics-summary"
+          >
+            <div>Righe: {universes?.ALL_EVALUATIONS ?? '—'}</div>
+            <div>Scored: {universes?.SCORED_EVALUATIONS ?? '—'}</div>
+            <div>Gate falliti: {universes?.GATE_FAILED_EVALUATIONS ?? '—'}</div>
+            <div>Unavailable: {universes?.UNAVAILABLE_EVALUATIONS ?? '—'}</div>
+            <div>Quote reali: {recon?.quote_buckets?.real ?? '—'}</div>
+            <div>Quote derivate: {recon?.quote_buckets?.derived ?? '—'}</div>
+            <div>
+              Performance reale ROI:{' '}
+              <span data-testid="v3-roi-real">
+                {formatRoi(analytics.performance_real?.roi_pct)}
+              </span>
+            </div>
+            <div>
+              Performance sintetica ROI:{' '}
+              <span data-testid="v3-roi-synthetic">
+                {formatRoi(analytics.performance_synthetic?.roi_pct)} (sintetica)
+              </span>
+            </div>
+          </div>
+
+          {(analytics.warnings?.length || 0) > 0 ? (
+            <div data-testid="v3-analytics-warnings" className="text-sm" style={{ color: 'var(--lab-warn)' }}>
+              Warning: {analytics.warnings?.join(', ')}
+            </div>
+          ) : null}
+          {(analytics.blockers?.length || 0) > 0 ? (
+            <div data-testid="v3-analytics-blockers" className="text-sm" style={{ color: 'var(--lab-err)' }}>
+              Blocker: {analytics.blockers?.map((b) => b.message).join('; ')}
+              {analytics.status === 'blocked' ? ' — report non dichiarato valido' : ''}
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto" data-testid="v3-analytics-markets-table">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="py-1 pr-2">Mercato</th>
+                  <th className="py-1 pr-2">Score</th>
+                  <th className="py-1 pr-2">Gate falliti</th>
+                  <th className="py-1 pr-2">Quota</th>
+                  <th className="py-1 pr-2">Stake</th>
+                  <th className="py-1 pr-2">Profitto</th>
+                  <th className="py-1 pr-2">ROI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MARKET_ORDER.map((mk) => {
+                  const m = markets[mk]
+                  if (!m) return null
+                  const derived = Boolean(m.not_a_real_bet365_quote || m.exclude_from_real_roi)
+                  const perf = derived ? m.performance_synthetic : m.performance_real
+                  return (
+                    <tr key={mk} data-testid={`v3-market-row-${mk}`}>
+                      <td className="py-1 pr-2 font-medium">{mk}</td>
+                      <td className="py-1 pr-2">{m.scored}</td>
+                      <td className="py-1 pr-2">{m.gate_failed}</td>
+                      <td className="py-1 pr-2">{derived ? 'derivata' : 'reale'}</td>
+                      <td className="py-1 pr-2">{perf?.stake_count ?? 0}</td>
+                      <td className="py-1 pr-2">{formatProfit(perf?.profit_units)}</td>
+                      <td className="py-1 pr-2">
+                        {formatRoi(perf?.roi_pct)}
+                        {derived ? ' (sint.)' : ''}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 space-y-2" data-testid="purchasability-v3-replay-export">
+        <button
+          type="button"
+          className="lab-btn lab-btn-primary rounded-md px-3 py-2 text-sm"
+          data-testid="download-v3-analysis"
+          disabled={downloadBusy !== null}
+          onClick={() => onDownload('analysis')}
+        >
+          {downloadBusy === 'analysis'
+            ? 'Download…'
+            : 'Scarica report V3 per ChatGPT (consigliato)'}
+        </button>
+        <div>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-3 py-2 text-sm"
+            data-testid="download-v3-full-archive"
+            disabled={downloadBusy !== null}
+            onClick={() => onDownload('full_archive')}
+          >
+            {downloadBusy === 'full_archive' ? 'Download…' : 'Scarica archivio tecnico V3'}
+          </button>
+        </div>
+        {downloadError ? (
+          <p data-testid="v3-download-error" className="text-sm" style={{ color: 'var(--lab-err)' }}>
+            {downloadError}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  )
 }
 
 function probeExpectedReturnedMatch(
@@ -1004,6 +1226,13 @@ export function CecchinoLabPurchasabilityReplayPage() {
             onCancel={() => void onCancelReplay()}
             onResume={() => void onResumeReplay()}
           />
+        ) : null}
+
+        {replay &&
+        isReplayCompletedForAnalytics(
+          String(replay.effective_status || replay.status),
+        ) ? (
+          <ReplayAnalyticsSection replay={replay} />
         ) : null}
 
         {confirmOpen && data && selectedRun ? (
