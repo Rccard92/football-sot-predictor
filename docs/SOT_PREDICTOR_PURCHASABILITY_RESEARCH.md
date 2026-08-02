@@ -84,6 +84,14 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Anti-leakage: whitelist formula; performance collegata dopo score; una riga per valutazione teorica (anche unavailable).
 - UI: Avvia + modal + progressione/polling. **Nessun avvio reale Run #3.** STEP 3C = analytics/export.
 
+### STEP 3B.1.1 — Harden worker (2026-08-02)
+
+- Motivazione: eliminare 1 query MarketResult per snapshot e il recount Python a ogni batch/heartbeat.
+- Batch 100 snapshot; 1 market query/batch; contatori incrementali; riconciliazione SQL solo resume/fine/cancel.
+- Nessun troncamento silenzioso dei duplicati; fail controllato `ambiguous_market_join`.
+- `summary_json.resource_profile` (batch, query, formula invocations, max memory).
+- **Nessun replay reale ancora avviato.** Next = STEP 3B.2.
+
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)

@@ -1,11 +1,19 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — harden worker replay V3 STEP 3B.1.1 (2026-08-02)
+
+1. Deploy codice worker ottimizzato (**nessuna** nuova migration; head resta `20260802120000`).
+2. Aprire `/cecchino-lab/purchasability-replay?run_id=3`.
+3. Nuovo preflight summary + probe 30 snapshot; verificare CTA **Avvia replay Acquistabilità**.
+4. **Non** avviare ancora il replay reale (STEP 3B.2).
+5. In progressione (dopo 3B.2): controllare `resource_profile` (batch, query mercati, max memoria).
+
 ## Cecchino Lab — job replay V3 STEP 3B.1 (2026-08-02)
 
 1. Deploy migration `20260802120000` (solo nuove tabelle replay).
 2. Aprire `/cecchino-lab/purchasability-replay?run_id=3`.
 3. Eseguire summary + probe (come 3A.2); verificare CTA **Avvia replay Acquistabilità**.
-4. **Non** cliccare ancora Avvia (STEP 3B.2 = avvio controllato + monitoraggio).
+4. Worker hardenato in 3B.1.1; **Non** cliccare ancora Avvia (STEP 3B.2 = avvio controllato + monitoraggio).
 5. STEP 3C (dopo 3B.2): analytics/export V3, ROI reale vs sintetico.
 
 ## Cecchino Lab — preflight integrità storica STEP 3A.2 (2026-08-02)

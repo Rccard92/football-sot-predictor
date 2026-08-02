@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Perf — Optimize purchasability V3 replay worker (STEP 3B.1.1) (2026-08-02)
+
+- Perché: il worker 3B.1 faceva 1 query MarketResult per snapshot e un recount Python completo a ogni batch/heartbeat — inefficiente prima dell’avvio reale Run #3.
+- Cosa: batch 100 snapshot; 1 market query/batch; contatori incrementali; riconciliazione SQL solo resume/fine/cancel; nessun troncamento duplicati; `summary_json.resource_profile`; UI progress mostra diagnostica.
+- Cosa non fa: nessun replay reale; nessuna migration; formula V3/V2/V1.1, schema, preflight, endpoint e Run #3 invariati. Next = STEP 3B.2.
+
 ## Feat — Add purchasability V3 replay job (STEP 3B.1) (2026-08-02)
 
 - Perché: preparare un replay V3 isolato e persistente senza toccare il Run storico, dopo Go di preflight+probe.

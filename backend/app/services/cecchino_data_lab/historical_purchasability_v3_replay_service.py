@@ -1,7 +1,8 @@
-"""Job persistente di replay Acquistabilità V3 isolato (STEP 3B.1).
+"""Job persistente di replay Acquistabilità V3 isolato (STEP 3B.1 / 3B.1.1).
 
 Non modifica Run storico / snapshot / MarketResult.
 Invoca la formula V3 in sola lettura.
+Worker batch: 1 query mercati per gruppo di snapshot, contatori incrementali.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, Iterator
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -770,9 +771,27 @@ def _iter_eligible_snapshots(db: Session, run_id: int) -> Iterator[SimpleNamespa
         yield _row_to_ns(row)
 
 
+def _iter_eligible_snapshot_batches(
+    db: Session,
+    source_run_id: int,
+    batch_size: int = REPLAY_BATCH_SNAPSHOTS,
+) -> Iterator[list[SimpleNamespace]]:
+    """Streaming a batch: massimo ``batch_size`` snapshot lean per gruppo."""
+    size = max(1, int(batch_size))
+    batch: list[SimpleNamespace] = []
+    for snap in _iter_eligible_snapshots(db, source_run_id):
+        batch.append(snap)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 def _load_markets_for_snapshots(
     db: Session, run_id: int, snapshot_ids: list[int]
 ) -> dict[int, list[SimpleNamespace]]:
+    """Carica tutte le righe mercati supportati (nessun troncamento silenzioso)."""
     if not snapshot_ids:
         return {}
     stmt = (
@@ -792,9 +811,50 @@ def _load_markets_for_snapshots(
     for row in db.execute(stmt).all():
         ns = _row_to_ns(row)
         sid = int(ns.match_snapshot_id)
-        if sid in out and len(out[sid]) < len(V3_MARKET_ORDER):
+        if sid in out:
             out[sid].append(ns)
     return out
+
+
+def _empty_resource_profile() -> dict[str, Any]:
+    return {
+        "replay_batch_snapshots": REPLAY_BATCH_SNAPSHOTS,
+        "snapshot_batches_processed": 0,
+        "market_batch_queries": 0,
+        "formula_invocations": 0,
+        "max_snapshots_held_in_memory": 0,
+        "max_market_rows_held_in_memory": 0,
+        "count_reconciliations": 0,
+        "incremental_counter_updates": 0,
+        "duration_ms": None,
+        "completed_at": None,
+    }
+
+
+def _get_resource_profile(replay: CecchinoLabPurchasabilityV3ReplayRun) -> dict[str, Any]:
+    summary = dict(replay.summary_json or {})
+    rp = dict(summary.get("resource_profile") or {})
+    base = _empty_resource_profile()
+    base.update(rp)
+    return base
+
+
+def _set_resource_profile(
+    replay: CecchinoLabPurchasabilityV3ReplayRun, profile: dict[str, Any]
+) -> None:
+    summary = dict(replay.summary_json or {})
+    summary["resource_profile"] = profile
+    replay.summary_json = summary
+
+
+def _progress_pct_incremental(evaluations_processed: int, evaluations_total: int) -> Decimal:
+    """Progress durante il job: mai 100% prima di reconcile finale + invarianti."""
+    total = int(evaluations_total or 0) or 1
+    processed = max(0, int(evaluations_processed or 0))
+    raw = round(100.0 * processed / total, 1)
+    if processed >= total:
+        return Decimal("99.9")
+    return Decimal(str(min(99.9, raw)))
 
 
 def _penalty_points(item: dict[str, Any], key: str) -> Decimal | None:
@@ -1018,6 +1078,16 @@ def _process_snapshot(
         else:
             by_mk[mk] = m
 
+    if duplicates:
+        raise ReplayWorkerError(
+            "ambiguous_market_join",
+            "Join mercato ambiguo: market_key duplicati nello snapshot",
+            details={
+                "snapshot_id": int(getattr(snap, "id", 0) or 0),
+                "duplicate_market_keys": sorted(duplicates),
+            },
+        )
+
     from app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight import (
         evaluate_historical_integrity_policy,
     )
@@ -1040,7 +1110,7 @@ def _process_snapshot(
             by_mk=by_mk,
             integrity=integrity,
             integrity_reasons=integrity_reasons,
-            duplicate=mk in duplicates,
+            duplicate=False,
         )
 
     # Panel solo per mercati presenti e replayable (o gate/warning)
@@ -1101,33 +1171,18 @@ def _process_snapshot(
     return results
 
 
-def _recompute_counts_from_db(db: Session, replay: CecchinoLabPurchasabilityV3ReplayRun) -> None:
-    """Ricalcola conteggi dai risultati persistiti (coerente dopo resume)."""
-    rows = db.execute(
-        select(
-            CecchinoLabPurchasabilityV3ReplayResult.calculation_status,
-            CecchinoLabPurchasabilityV3ReplayResult.gate_status,
-            CecchinoLabPurchasabilityV3ReplayResult.score,
-            CecchinoLabPurchasabilityV3ReplayResult.quote_quality,
-            CecchinoLabPurchasabilityV3ReplayResult.performance_evaluation_status,
-            CecchinoLabPurchasabilityV3ReplayResult.source_snapshot_id,
-        ).where(CecchinoLabPurchasabilityV3ReplayResult.replay_run_id == int(replay.id))
-    ).all()
-
+def summarize_result_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Delta contatori puro da righe risultato di un batch (senza I/O)."""
     scored = gate_failed = unavailable = not_applicable = error = unclassified = 0
     real_q = derived_q = unavail_q = 0
     real_perf = synth_perf = miss_perf = 0
     snaps: set[int] = set()
 
-    for calc, gate, score, qq, perf, sid in rows:
-        snaps.add(int(sid))
-        bucket = _classify_calc_bucket(
-            {
-                "calculation_status": calc,
-                "gate_status": gate,
-                "score": score,
-            }
-        )
+    for row in rows:
+        sid = row.get("source_snapshot_id")
+        if sid is not None:
+            snaps.add(int(sid))
+        bucket = _classify_calc_bucket(row)
         if bucket == "scored":
             scored += 1
         elif bucket == "gate_failed":
@@ -1141,6 +1196,7 @@ def _recompute_counts_from_db(db: Session, replay: CecchinoLabPurchasabilityV3Re
         else:
             unclassified += 1
 
+        qq = row.get("quote_quality")
         if qq == "real":
             real_q += 1
         elif qq == "derived":
@@ -1148,32 +1204,194 @@ def _recompute_counts_from_db(db: Session, replay: CecchinoLabPurchasabilityV3Re
         else:
             unavail_q += 1
 
+        perf = row.get("performance_evaluation_status")
         if perf == "real_profit_ready":
             real_perf += 1
         elif perf == "synthetic_profit_ready":
             synth_perf += 1
-        elif perf in ("result_available_but_profit_missing", "not_applicable", None):
-            miss_perf += 1
         else:
             miss_perf += 1
 
-    replay.results_persisted = len(rows)
-    replay.evaluations_processed = len(rows)
-    replay.snapshots_processed = len(snaps)
-    replay.scored_count = scored
-    replay.gate_failed_count = gate_failed
-    replay.unavailable_count = unavailable
-    replay.not_applicable_count = not_applicable
-    replay.error_count = error
-    replay.unclassified_count = unclassified
-    replay.real_quote_count = real_q
-    replay.derived_quote_count = derived_q
-    replay.unavailable_quote_count = unavail_q
-    replay.real_performance_ready_count = real_perf
-    replay.synthetic_performance_ready_count = synth_perf
-    replay.performance_missing_count = miss_perf
-    total = int(replay.evaluations_total or 0) or 1
-    replay.progress_pct = Decimal(str(round(100.0 * len(rows) / total, 1)))
+    return {
+        "snapshots_processed": len(snaps),
+        "evaluations_processed": len(rows),
+        "results_persisted": len(rows),
+        "scored_count": scored,
+        "gate_failed_count": gate_failed,
+        "unavailable_count": unavailable,
+        "not_applicable_count": not_applicable,
+        "error_count": error,
+        "unclassified_count": unclassified,
+        "real_quote_count": real_q,
+        "derived_quote_count": derived_q,
+        "unavailable_quote_count": unavail_q,
+        "real_performance_ready_count": real_perf,
+        "synthetic_performance_ready_count": synth_perf,
+        "performance_missing_count": miss_perf,
+    }
+
+
+def _apply_counter_deltas(
+    replay: CecchinoLabPurchasabilityV3ReplayRun, delta: dict[str, int]
+) -> None:
+    replay.snapshots_processed = int(replay.snapshots_processed or 0) + int(
+        delta.get("snapshots_processed") or 0
+    )
+    replay.evaluations_processed = int(replay.evaluations_processed or 0) + int(
+        delta.get("evaluations_processed") or 0
+    )
+    replay.results_persisted = int(replay.results_persisted or 0) + int(
+        delta.get("results_persisted") or 0
+    )
+    replay.scored_count = int(replay.scored_count or 0) + int(delta.get("scored_count") or 0)
+    replay.gate_failed_count = int(replay.gate_failed_count or 0) + int(
+        delta.get("gate_failed_count") or 0
+    )
+    replay.unavailable_count = int(replay.unavailable_count or 0) + int(
+        delta.get("unavailable_count") or 0
+    )
+    replay.not_applicable_count = int(replay.not_applicable_count or 0) + int(
+        delta.get("not_applicable_count") or 0
+    )
+    replay.error_count = int(replay.error_count or 0) + int(delta.get("error_count") or 0)
+    replay.unclassified_count = int(replay.unclassified_count or 0) + int(
+        delta.get("unclassified_count") or 0
+    )
+    replay.real_quote_count = int(replay.real_quote_count or 0) + int(
+        delta.get("real_quote_count") or 0
+    )
+    replay.derived_quote_count = int(replay.derived_quote_count or 0) + int(
+        delta.get("derived_quote_count") or 0
+    )
+    replay.unavailable_quote_count = int(replay.unavailable_quote_count or 0) + int(
+        delta.get("unavailable_quote_count") or 0
+    )
+    replay.real_performance_ready_count = int(replay.real_performance_ready_count or 0) + int(
+        delta.get("real_performance_ready_count") or 0
+    )
+    replay.synthetic_performance_ready_count = int(
+        replay.synthetic_performance_ready_count or 0
+    ) + int(delta.get("synthetic_performance_ready_count") or 0)
+    replay.performance_missing_count = int(replay.performance_missing_count or 0) + int(
+        delta.get("performance_missing_count") or 0
+    )
+    replay.progress_pct = _progress_pct_incremental(
+        int(replay.evaluations_processed or 0),
+        int(replay.evaluations_total or 0),
+    )
+
+
+def _calc_bucket_sql_expr():
+    """Espressione SQL equivalente a ``_classify_calc_bucket``."""
+    R = CecchinoLabPurchasabilityV3ReplayResult
+    calc = R.calculation_status
+    gate = R.gate_status
+    score = R.score
+    return case(
+        (calc.in_(("source_not_replayable", "unavailable")), "unavailable"),
+        (calc == "not_applicable", "not_applicable"),
+        (calc == "error", "error"),
+        (
+            (gate.isnot(None))
+            & (gate != "")
+            & (gate != "passed")
+            & (score.is_(None)),
+            "gate_failed",
+        ),
+        (score.isnot(None), "scored"),
+        (calc.in_(("available", "partial")), "unavailable"),
+        else_="unclassified",
+    )
+
+
+def _reconcile_counts_from_db(db: Session, replay: CecchinoLabPurchasabilityV3ReplayRun) -> None:
+    """Riconciliazione aggregata SQL (nessun carico di tutte le row in Python)."""
+    R = CecchinoLabPurchasabilityV3ReplayResult
+    bucket = _calc_bucket_sql_expr()
+    qq = R.quote_quality
+    perf = R.performance_evaluation_status
+
+    stmt = select(
+        func.count().label("total"),
+        func.count(func.distinct(R.source_snapshot_id)).label("snaps"),
+        func.coalesce(func.sum(case((bucket == "scored", 1), else_=0)), 0).label("scored"),
+        func.coalesce(func.sum(case((bucket == "gate_failed", 1), else_=0)), 0).label(
+            "gate_failed"
+        ),
+        func.coalesce(func.sum(case((bucket == "unavailable", 1), else_=0)), 0).label(
+            "unavailable"
+        ),
+        func.coalesce(func.sum(case((bucket == "not_applicable", 1), else_=0)), 0).label(
+            "not_applicable"
+        ),
+        func.coalesce(func.sum(case((bucket == "error", 1), else_=0)), 0).label("error"),
+        func.coalesce(func.sum(case((bucket == "unclassified", 1), else_=0)), 0).label(
+            "unclassified"
+        ),
+        func.coalesce(func.sum(case((qq == "real", 1), else_=0)), 0).label("real_q"),
+        func.coalesce(func.sum(case((qq == "derived", 1), else_=0)), 0).label("derived_q"),
+        func.coalesce(
+            func.sum(
+                case(
+                    ((qq.is_(None)) | (~qq.in_(("real", "derived"))), 1),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("unavail_q"),
+        func.coalesce(
+            func.sum(case((perf == "real_profit_ready", 1), else_=0)), 0
+        ).label("real_perf"),
+        func.coalesce(
+            func.sum(case((perf == "synthetic_profit_ready", 1), else_=0)), 0
+        ).label("synth_perf"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (perf.is_(None))
+                        | (
+                            ~perf.in_(
+                                ("real_profit_ready", "synthetic_profit_ready")
+                            )
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("miss_perf"),
+    ).where(R.replay_run_id == int(replay.id))
+
+    row = db.execute(stmt).one()
+    total = int(row.total or 0)
+    replay.results_persisted = total
+    replay.evaluations_processed = total
+    replay.snapshots_processed = int(row.snaps or 0)
+    replay.scored_count = int(row.scored or 0)
+    replay.gate_failed_count = int(row.gate_failed or 0)
+    replay.unavailable_count = int(row.unavailable or 0)
+    replay.not_applicable_count = int(row.not_applicable or 0)
+    replay.error_count = int(row.error or 0)
+    replay.unclassified_count = int(row.unclassified or 0)
+    replay.real_quote_count = int(row.real_q or 0)
+    replay.derived_quote_count = int(row.derived_q or 0)
+    replay.unavailable_quote_count = int(row.unavail_q or 0)
+    replay.real_performance_ready_count = int(row.real_perf or 0)
+    replay.synthetic_performance_ready_count = int(row.synth_perf or 0)
+    replay.performance_missing_count = int(row.miss_perf or 0)
+    replay.progress_pct = _progress_pct_incremental(
+        total, int(replay.evaluations_total or 0)
+    )
+
+    profile = _get_resource_profile(replay)
+    profile["count_reconciliations"] = int(profile.get("count_reconciliations") or 0) + 1
+    _set_resource_profile(replay, profile)
+
+
+# Alias retrocompatibile per test/import esistenti
+_recompute_counts_from_db = _reconcile_counts_from_db
 
 
 def _final_invariants_ok(replay: CecchinoLabPurchasabilityV3ReplayRun) -> tuple[bool, list[str]]:
@@ -1206,10 +1424,29 @@ def _final_invariants_ok(replay: CecchinoLabPurchasabilityV3ReplayRun) -> tuple[
     return len(errors) == 0, errors
 
 
+def _mark_cancelled(
+    db: Session, replay: CecchinoLabPurchasabilityV3ReplayRun, *, reconcile: bool
+) -> None:
+    if reconcile:
+        _reconcile_counts_from_db(db, replay)
+    replay.status = STATUS_CANCELLED
+    replay.completed_at = _utcnow()
+    profile = _get_resource_profile(replay)
+    profile["completed_at"] = replay.completed_at.isoformat()
+    _set_resource_profile(replay, profile)
+    db.commit()
+
+
 def execute_purchasability_v3_replay(replay_id: int) -> None:
     db = SessionLocal()
-    last_heartbeat = 0.0
     formula_calls = [0]
+    started_mono = time.monotonic()
+    last_cancel_check = 0.0
+    market_queries = 0
+    batches_processed = 0
+    incremental_updates = 0
+    max_snaps_mem = 0
+    max_market_rows_mem = 0
     try:
         replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
         if not replay:
@@ -1223,94 +1460,160 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
         replay.status = STATUS_RUNNING
         replay.started_at = replay.started_at or _utcnow()
         replay.heartbeat_at = _utcnow()
+        if not (replay.summary_json or {}).get("resource_profile"):
+            _set_resource_profile(replay, _empty_resource_profile())
         db.commit()
 
         done_ids = _load_done_snapshot_ids(db, replay_id)
-        batch_rows: list[dict[str, Any]] = []
-        batch_snap_count = 0
+        is_resume = int(replay.resume_count or 0) > 0 or bool(done_ids)
+        if is_resume:
+            _reconcile_counts_from_db(db, replay)
+            db.commit()
+
         source_run_id = int(replay.source_scan_run_id)
 
-        for snap in _iter_eligible_snapshots(db, source_run_id):
+        for snap_batch in _iter_eligible_snapshot_batches(
+            db, source_run_id, REPLAY_BATCH_SNAPSHOTS
+        ):
             if _is_cancelled(db, replay_id):
                 replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
                 if replay:
-                    replay.status = STATUS_CANCELLED
+                    _mark_cancelled(db, replay, reconcile=True)
+                return
+            last_cancel_check = time.monotonic()
+
+            pending = [s for s in snap_batch if int(s.id) not in done_ids]
+            if not pending:
+                continue
+
+            max_snaps_mem = max(max_snaps_mem, len(pending))
+            batch_ids = [int(s.id) for s in pending]
+            markets_map = _load_markets_for_snapshots(db, source_run_id, batch_ids)
+            market_queries += 1
+            market_rows_held = sum(len(v) for v in markets_map.values())
+            max_market_rows_mem = max(max_market_rows_mem, market_rows_held)
+
+            replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+            if not replay:
+                return
+
+            batch_rows: list[dict[str, Any]] = []
+            last_snap: SimpleNamespace | None = None
+            try:
+                for snap in pending:
+                    now = time.monotonic()
+                    if (now - last_cancel_check) >= REPLAY_HEARTBEAT_SECONDS:
+                        if _is_cancelled(db, replay_id):
+                            db.rollback()
+                            replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+                            if replay:
+                                _mark_cancelled(db, replay, reconcile=True)
+                            return
+                        last_cancel_check = now
+                        replay.heartbeat_at = _utcnow()
+
+                    sid = int(snap.id)
+                    markets = markets_map.get(sid, [])
+                    replay.current_snapshot_id = sid
+                    replay.current_chronological_order = getattr(
+                        snap, "chronological_order", None
+                    )
+                    replay.current_competition = getattr(snap, "competition_name", None)
+                    rows = _process_snapshot(
+                        replay=replay,
+                        snap=snap,
+                        markets=markets,
+                        formula_call_counter=formula_calls,
+                    )
+                    batch_rows.extend(rows)
+                    last_snap = snap
+            except ReplayWorkerError as exc:
+                db.rollback()
+                replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+                if replay:
+                    replay.status = STATUS_FAILED
+                    replay.error_json = {
+                        "error": exc.code,
+                        "message": exc.message,
+                        "details": exc.details,
+                        "snapshot_id": (exc.details or {}).get("snapshot_id"),
+                    }
                     replay.completed_at = _utcnow()
-                    _recompute_counts_from_db(db, replay)
+                    try:
+                        _reconcile_counts_from_db(db, replay)
+                    except Exception:
+                        logger.exception(
+                            "purchasability_v3_replay_reconcile_after_error replay_id=%s",
+                            replay_id,
+                        )
                     db.commit()
                 return
 
-            sid = int(snap.id)
-            if sid in done_ids:
-                continue
-
-            # Carica mercati per questo snapshot (max 8)
-            markets_map = _load_markets_for_snapshots(db, source_run_id, [sid])
-            markets = markets_map.get(sid, [])[: len(V3_MARKET_ORDER)]
-
-            replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
-            if not replay:
-                return
-            replay.current_snapshot_id = sid
-            replay.current_chronological_order = getattr(snap, "chronological_order", None)
-            replay.current_competition = getattr(snap, "competition_name", None)
-
+            # Batch atomico: upsert + contatori incrementali + heartbeat + commit
             try:
-                rows = _process_snapshot(
-                    replay=replay,
-                    snap=snap,
-                    markets=markets,
-                    formula_call_counter=formula_calls,
-                )
-            except ReplayWorkerError as exc:
-                replay.status = STATUS_FAILED
-                replay.error_json = {
-                    "error": exc.code,
-                    "message": exc.message,
-                    "details": exc.details,
-                    "snapshot_id": sid,
-                }
-                replay.completed_at = _utcnow()
-                db.commit()
-                return
-
-            batch_rows.extend(rows)
-            batch_snap_count += 1
-            done_ids.add(sid)
-
-            now = time.monotonic()
-            if (
-                batch_snap_count >= REPLAY_BATCH_SNAPSHOTS
-                or (now - last_heartbeat) >= REPLAY_HEARTBEAT_SECONDS
-            ):
                 _upsert_results(db, batch_rows)
-                batch_rows = []
-                batch_snap_count = 0
-                _recompute_counts_from_db(db, replay)
-                replay.heartbeat_at = _utcnow()
-                last_heartbeat = now
-                db.commit()
+                delta = summarize_result_rows(batch_rows)
+                _apply_counter_deltas(replay, delta)
+                incremental_updates += 1
+                for sid in batch_ids:
+                    done_ids.add(sid)
 
-        if batch_rows:
-            replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
-            if not replay:
+                batches_processed += 1
+                profile = _get_resource_profile(replay)
+                profile["snapshot_batches_processed"] = batches_processed
+                profile["market_batch_queries"] = market_queries
+                profile["formula_invocations"] = formula_calls[0]
+                profile["max_snapshots_held_in_memory"] = max_snaps_mem
+                profile["max_market_rows_held_in_memory"] = max_market_rows_mem
+                profile["incremental_counter_updates"] = incremental_updates
+                profile["replay_batch_snapshots"] = REPLAY_BATCH_SNAPSHOTS
+                _set_resource_profile(replay, profile)
+
+                if last_snap is not None:
+                    replay.current_snapshot_id = int(last_snap.id)
+                    replay.current_chronological_order = getattr(
+                        last_snap, "chronological_order", None
+                    )
+                    replay.current_competition = getattr(
+                        last_snap, "competition_name", None
+                    )
+                replay.heartbeat_at = _utcnow()
+                db.commit()
+            except Exception:
+                db.rollback()
+                replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+                if replay:
+                    replay.status = STATUS_FAILED
+                    replay.error_json = {
+                        "error": "batch_persist_failed",
+                        "message": "Fallimento persistenza batch atomico",
+                    }
+                    replay.completed_at = _utcnow()
+                    try:
+                        _reconcile_counts_from_db(db, replay)
+                    except Exception:
+                        pass
+                    db.commit()
+                raise
+
+            # libera mappa mercati del batch
+            del markets_map
+            batch_rows = []
+
+            if _is_cancelled(db, replay_id):
+                replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+                if replay:
+                    _mark_cancelled(db, replay, reconcile=True)
                 return
-            _upsert_results(db, batch_rows)
-            _recompute_counts_from_db(db, replay)
-            replay.heartbeat_at = _utcnow()
-            db.commit()
 
         replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
         if not replay:
             return
         if _is_cancelled(db, replay_id):
-            replay.status = STATUS_CANCELLED
-            replay.completed_at = _utcnow()
-            _recompute_counts_from_db(db, replay)
-            db.commit()
+            _mark_cancelled(db, replay, reconcile=True)
             return
 
-        _recompute_counts_from_db(db, replay)
+        _reconcile_counts_from_db(db, replay)
         ok, inv_errors = _final_invariants_ok(replay)
         if not ok:
             replay.status = STATUS_FAILED
@@ -1334,19 +1637,35 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
         )
         replay.completed_at = _utcnow()
         replay.progress_pct = Decimal("100.0")
-        replay.summary_json = {
-            **(replay.summary_json or {}),
-            "formula_invocations": formula_calls[0],
-            "final_status": replay.status,
-            "invariants_ok": True,
-        }
+        duration_ms = int((time.monotonic() - started_mono) * 1000)
+        profile = _get_resource_profile(replay)
+        profile["snapshot_batches_processed"] = batches_processed
+        profile["market_batch_queries"] = market_queries
+        profile["formula_invocations"] = formula_calls[0]
+        profile["max_snapshots_held_in_memory"] = max_snaps_mem
+        profile["max_market_rows_held_in_memory"] = max_market_rows_mem
+        profile["incremental_counter_updates"] = incremental_updates
+        profile["replay_batch_snapshots"] = REPLAY_BATCH_SNAPSHOTS
+        profile["duration_ms"] = duration_ms
+        profile["completed_at"] = replay.completed_at.isoformat()
+        summary = dict(replay.summary_json or {})
+        summary["resource_profile"] = profile
+        summary["formula_invocations"] = formula_calls[0]
+        summary["final_status"] = replay.status
+        summary["invariants_ok"] = True
+        replay.summary_json = summary
         replay.error_json = None
         db.commit()
     except Exception as exc:
         logger.exception("purchasability_v3_replay_failed replay_id=%s", replay_id)
         try:
             replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
-            if replay:
+            if replay and replay.status not in (
+                STATUS_FAILED,
+                STATUS_CANCELLED,
+                STATUS_COMPLETED,
+                STATUS_COMPLETED_WITH_WARNINGS,
+            ):
                 replay.status = STATUS_FAILED
                 replay.error_json = {
                     "error": "replay_worker_exception",

@@ -492,6 +492,41 @@ function ReplayProgressCard({
           Heartbeat: {replay.heartbeat_at ? replay.heartbeat_at.slice(0, 19) : '—'}
         </div>
       </div>
+      {(() => {
+        const rp = (replay.summary?.resource_profile || {}) as Record<string, unknown>
+        const hasRp =
+          rp.snapshot_batches_processed != null ||
+          rp.market_batch_queries != null ||
+          rp.formula_invocations != null ||
+          rp.max_market_rows_held_in_memory != null
+        if (!hasRp) return null
+        return (
+          <div
+            data-testid="replay-resource-profile"
+            style={{
+              marginTop: '0.75rem',
+              fontSize: '0.85rem',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))',
+              gap: '0.35rem',
+              opacity: 0.9,
+            }}
+          >
+            <div data-testid="replay-rp-batches">
+              Batch processati: {String(rp.snapshot_batches_processed ?? '—')}
+            </div>
+            <div data-testid="replay-rp-market-queries">
+              Query mercati: {String(rp.market_batch_queries ?? '—')}
+            </div>
+            <div data-testid="replay-rp-formula">
+              Formula invocations: {String(rp.formula_invocations ?? '—')}
+            </div>
+            <div data-testid="replay-rp-max-market-rows">
+              Max righe mercato in memoria: {String(rp.max_market_rows_held_in_memory ?? '—')}
+            </div>
+          </div>
+        )
+      })()}
       <div
         data-testid="replay-progress-bar"
         style={{

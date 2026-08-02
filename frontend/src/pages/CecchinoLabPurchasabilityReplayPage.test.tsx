@@ -525,6 +525,46 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
     expect(screen.queryByTestId('purchasability-v3-replay-export')).toBeNull()
   })
 
+  it('mostra resource_profile del job in progressione senza cambiare CTA/modal', async () => {
+    await reachGoState()
+    apiMock.startPurchasabilityV3Replay.mockResolvedValue({
+      id: 42,
+      source_scan_run_id: 3,
+      status: 'running',
+      effective_status: 'running',
+      snapshots_total: 100,
+      snapshots_processed: 50,
+      evaluations_total: 800,
+      evaluations_processed: 400,
+      results_persisted: 400,
+      progress_pct: 50,
+      scored_count: 300,
+      gate_failed_count: 50,
+      unavailable_count: 50,
+      error_count: 0,
+      can_cancel: true,
+      can_resume: false,
+      heartbeat_at: '2026-08-02T11:00:00Z',
+      summary: {
+        resource_profile: {
+          snapshot_batches_processed: 1,
+          market_batch_queries: 1,
+          formula_invocations: 50,
+          max_market_rows_held_in_memory: 400,
+        },
+      },
+    })
+    fireEvent.click(screen.getByTestId('start-purchasability-v3-replay'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-checkbox'))
+    fireEvent.click(screen.getByTestId('start-replay-confirm-submit'))
+    await waitFor(() => expect(screen.getByTestId('replay-resource-profile')).toBeTruthy())
+    expect(screen.getByTestId('replay-rp-batches').textContent).toMatch(/1/)
+    expect(screen.getByTestId('replay-rp-market-queries').textContent).toMatch(/1/)
+    expect(screen.getByTestId('replay-rp-formula').textContent).toMatch(/50/)
+    expect(screen.getByTestId('replay-rp-max-market-rows').textContent).toMatch(/400/)
+    expect(screen.getByTestId('start-purchasability-v3-replay')).toBeTruthy()
+  })
+
   it('polls while active and stops on completed; cancel and resume', async () => {
     await reachGoState()
     apiMock.startPurchasabilityV3Replay.mockResolvedValue({

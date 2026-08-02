@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Perf — Worker replay Acquistabilità V3 STEP 3B.1.1 (2026-08-02)
+
+Harden worker: 1 market query per batch di 100 snapshot; contatori incrementali; riconciliazione SQL solo resume/fine/cancel; `resource_profile` in summary. Formula/schema/migration/preflight/Run #3 **invariati**. **Nessun replay reale** (STEP 3B.2).
+
 ## Feat — Job replay Acquistabilità V3 isolato STEP 3B.1 (2026-08-02)
 
 Tabelle isolate + worker persistente (start/status/cancel/resume), idempotenza, batch resource-safe, anti-leakage, UI conferma+progressione. Formula V3/V2/V1.1, scan storico, export V2, Run #3 **invariati**. **Nessun replay reale avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.

@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — harden worker replay V3 STEP 3B.1.1 (2026-08-02)
+
+| Voce | Dettaglio |
+|---|---|
+| Batch | 100 snapshot; 1 query MarketResult per batch |
+| Contatori | incrementali; reconcile SQL solo resume/fine/cancel |
+| Diagnostica | `summary_json.resource_profile` |
+| Next | STEP 3B.2 = avvio controllato Run #3; STEP 3C = analytics/export |
+
 ## Cecchino Lab — job replay Acquistabilità V3 STEP 3B.1 (2026-08-02)
 
 | Voce | Dettaglio |

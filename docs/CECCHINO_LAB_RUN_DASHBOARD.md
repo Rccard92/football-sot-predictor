@@ -1,5 +1,9 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3B.1.1 — Harden worker replay V3 (2026-08-02)
+
+Dashboard Run invariata. Worker ottimizzato (batch mercati, contatori incrementali, resource_profile in progressione UI). **Nessun replay reale ancora avviato** (STEP 3B.2).
+
 ## STEP 3B.1 — Job replay V3 (2026-08-02)
 
 La dashboard Run **non** esegue il replay. Job isolato + UI su `/cecchino-lab/purchasability-replay`. Tabelle dedicate; Run storico immutabile. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.

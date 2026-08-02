@@ -1,5 +1,21 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3B.1.1 — Harden worker replay V3 (2026-08-02)
+
+Ottimizzazione resource-safe del worker **prima** dell’avvio reale. Formula, schema, migration, preflight, endpoint e semantica cancel/resume **invariati**.
+
+| Voce | Valore |
+|------|--------|
+| Batch snapshot | `REPLAY_BATCH_SNAPSHOTS = 100` via `_iter_eligible_snapshot_batches` |
+| Market query | 1 `_load_markets_for_snapshots` per batch (~46 per Run #3, non 4561) |
+| Contatori | incrementali (`summarize_result_rows`); no full recount a ogni heartbeat |
+| Riconciliazione SQL | `_reconcile_counts_from_db` solo a inizio resume / fine job / cancel |
+| Memoria | max ≤100 snapshot e ≤800 righe mercato per batch |
+| Duplicati | nessun troncamento silenzioso; `ambiguous_market_join` → fail controllato |
+| Diagnostica | `summary_json.resource_profile` (batch, query, formula invocations, max memory) |
+
+**Nessun replay reale ancora avviato.** Next: STEP 3B.2 = avvio controllato Run #3; STEP 3C = analytics/export.
+
 ## STEP 3B.1 — Job replay Acquistabilità V3 isolato (2026-08-02)
 
 Infrastruttura persistente per replay V3 **separato** dal Run storico. Non modifica snapshot, MarketResult né Run #3.
@@ -17,7 +33,7 @@ Infrastruttura persistente per replay V3 **separato** dal Run storico. Non modif
 | Idempotenza | chiave deterministica; completed/active riusati; nessun `force_new` |
 | Anti-leakage | panel whitelist; performance collegata **dopo** lo score; 1 riga per valutazione teorica |
 
-UI: CTA **Avvia replay Acquistabilità** sulla pagina autonoma (dopo preflight+probe Go), modal di conferma, progressione/polling, cancel/resume. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
+UI: CTA **Avvia replay Acquistabilità** sulla pagina autonoma (dopo preflight+probe Go), modal di conferma, progressione/polling, cancel/resume. Worker hardenato in STEP 3B.1.1. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
 
 ## STEP 3A.2 — Semantica integrità storica preflight (2026-08-02)
 
