@@ -1,12 +1,28 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3B.1.2 — Paginazione transaction-safe replay V3 (2026-08-02)
+
+Incidente sul primo replay reale (Replay ID 1): dopo il primo batch (100 snapshot / 800 risultati persistiti) PostgreSQL ha invalidato il named/server-side cursor (`named cursor isn't valid anymore`) perché il worker faceva `commit` a cursore ancora aperto (`stream_results` + `yield_per`).
+
+| Voce | Valore |
+|------|--------|
+| Causa | commit per-batch durante Result streaming |
+| Fix | keyset pagination `id > :after` + `.all()`; nessun `stream_results`/`yield_per` nel loop worker |
+| Strategia | `snapshot_pagination_strategy: keyset_by_snapshot_id` (`formula_order_independent: true`) |
+| Resume | stesso Replay ID 1; `done_ids` + reconcile; nessuna perdita delle 800 righe |
+| Contatori | gate_failed ha priorità su `calculation_status=not_applicable` della formula |
+| Error code rete | `snapshot_pagination_cursor_invalidated` (recoverable) |
+| Invariato | formula V3, schema, migration, preflight, Run #3, snapshot, MarketResult |
+
+**Nessun nuovo start / nessuna scansione durante il fix.** Dopo deploy: Riprendi Replay ID 1 (non «Avvia replay»).
+
 ## STEP 3B.1.1 — Harden worker replay V3 (2026-08-02)
 
 Ottimizzazione resource-safe del worker **prima** dell’avvio reale. Formula, schema, migration, preflight, endpoint e semantica cancel/resume **invariati**.
 
 | Voce | Valore |
 |------|--------|
-| Batch snapshot | `REPLAY_BATCH_SNAPSHOTS = 100` via `_iter_eligible_snapshot_batches` |
+| Batch snapshot | `REPLAY_BATCH_SNAPSHOTS = 100` via keyset `_fetch_next_eligible_snapshot_batch` (ex streaming, sostituito in 3B.1.2) |
 | Market query | 1 `_load_markets_for_snapshots` per batch (~46 per Run #3, non 4561) |
 | Contatori | incrementali (`summarize_result_rows`); no full recount a ogni heartbeat |
 | Riconciliazione SQL | `_reconcile_counts_from_db` solo a inizio resume / fine job / cancel |
@@ -14,7 +30,7 @@ Ottimizzazione resource-safe del worker **prima** dell’avvio reale. Formula, s
 | Duplicati | nessun troncamento silenzioso; `ambiguous_market_join` → fail controllato |
 | Diagnostica | `summary_json.resource_profile` (batch, query, formula invocations, max memory) |
 
-**Nessun replay reale ancora avviato.** Next: STEP 3B.2 = avvio controllato Run #3; STEP 3C = analytics/export.
+Worker aggiornato in STEP 3B.1.2 (keyset commit-safe). Replay reale avviato poi fallito al batch 1 → ripresa post-fix.
 
 ## STEP 3B.1 — Job replay Acquistabilità V3 isolato (2026-08-02)
 

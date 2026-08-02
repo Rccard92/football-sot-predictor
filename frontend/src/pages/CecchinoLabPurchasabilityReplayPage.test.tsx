@@ -649,7 +649,12 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
       effective_status: 'failed',
       can_cancel: false,
       can_resume: true,
-      error: { message: 'Errore leggibile test' },
+      error: {
+        error: 'snapshot_pagination_cursor_invalidated',
+        message: 'named cursor isn\'t valid anymore',
+        phase: 'snapshot_batch_pagination',
+        recoverable: true,
+      },
       reused_existing: true,
       progress_pct: 10,
       snapshots_total: 8,
@@ -657,18 +662,32 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
       evaluations_total: 64,
       evaluations_processed: 8,
       results_persisted: 8,
-      scored_count: 0,
-      gate_failed_count: 0,
+      scored_count: 3,
+      gate_failed_count: 4,
       unavailable_count: 0,
-      error_count: 1,
+      not_applicable_count: 0,
+      unclassified_count: 1,
+      error_count: 0,
     })
     // reopen flow via start reuse
     fireEvent.click(screen.getByTestId('start-purchasability-v3-replay'))
     fireEvent.click(screen.getByTestId('start-replay-confirm-checkbox'))
     fireEvent.click(screen.getByTestId('start-replay-confirm-submit'))
     await waitFor(() => expect(screen.getByTestId('replay-reused')).toBeTruthy())
-    expect(screen.getByTestId('replay-error').textContent).toMatch(/Errore leggibile/)
+    expect(screen.getByTestId('replay-error-recoverable').textContent).toMatch(
+      /interrotto dopo un batch già salvato/i,
+    )
+    expect(screen.getByTestId('replay-error-details')).toBeTruthy()
+    expect(screen.getByTestId('replay-error-details').textContent).toMatch(
+      /snapshot_pagination_cursor_invalidated/,
+    )
     expect(screen.getByTestId('resume-purchasability-v3-replay')).toBeTruthy()
+    expect(screen.getByTestId('replay-not-applicable').textContent).toMatch(/Non applicabili/)
+    expect(screen.getByTestId('replay-unclassified').textContent).toMatch(/Non classificati/)
+    expect(screen.getByTestId('replay-classified-persisted').textContent).toMatch(
+      /Classificati: 8 \/ Persistiti/,
+    )
+    expect(screen.queryByTestId('replay-counts-mismatch')).toBeNull()
 
     apiMock.resumePurchasabilityV3Replay.mockResolvedValue({
       id: 6,

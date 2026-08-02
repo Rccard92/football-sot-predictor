@@ -1,8 +1,9 @@
-"""Job persistente di replay Acquistabilità V3 isolato (STEP 3B.1 / 3B.1.1).
+"""Job persistente di replay Acquistabilità V3 isolato (STEP 3B.1 / 3B.1.1 / 3B.1.2).
 
 Non modifica Run storico / snapshot / MarketResult.
 Invoca la formula V3 in sola lettura.
-Worker batch: 1 query mercati per gruppo di snapshot, contatori incrementali.
+Worker batch: keyset pagination per snapshot id (transaction-safe),
+1 query mercati per gruppo di snapshot, contatori incrementali.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -750,42 +751,53 @@ def _load_done_snapshot_ids(db: Session, replay_id: int) -> set[int]:
     return {int(sid) for sid, cnt in rows if int(cnt) >= expected}
 
 
-def _iter_eligible_snapshots(db: Session, run_id: int) -> Iterator[SimpleNamespace]:
+def _fetch_next_eligible_snapshot_batch(
+    db: Session,
+    source_run_id: int,
+    after_snapshot_id: int | None,
+    batch_size: int = REPLAY_BATCH_SNAPSHOTS,
+) -> list[SimpleNamespace]:
+    """Keyset pagination transaction-safe: materializza fino a ``batch_size`` snapshot.
+
+    Nessun server-side cursor / stream_results / yield_per: il Result viene
+    consumato interamente con ``.all()`` prima di qualsiasi commit successivo.
+    Ordine per ``id ASC`` ammesso perché V3 è order-independent (scale fisse,
+    nessuno stato cumulativo tra snapshot).
+    """
+    size = max(1, min(int(batch_size), REPLAY_BATCH_SNAPSHOTS))
+    after_id = int(after_snapshot_id or 0)
     stmt = (
         select(*SNAPSHOT_LEAN_COLS)
         .where(
-            CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
-            CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status == ELIGIBLE_CORE,
+            CecchinoLabHistoricalMatchSnapshot.run_id == source_run_id,
+            CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status
+            == ELIGIBLE_CORE,
+            CecchinoLabHistoricalMatchSnapshot.id > after_id,
         )
-        .order_by(
-            CecchinoLabHistoricalMatchSnapshot.kickoff_at.asc().nulls_last(),
-            CecchinoLabHistoricalMatchSnapshot.chronological_order.asc().nulls_last(),
-            CecchinoLabHistoricalMatchSnapshot.id.asc(),
-        )
-        .execution_options(stream_results=True, yield_per=REPLAY_BATCH_SNAPSHOTS)
+        .order_by(CecchinoLabHistoricalMatchSnapshot.id.asc())
+        .limit(size)
     )
-    result = db.execute(stmt)
-    yield_per = getattr(result, "yield_per", None)
-    iterator = yield_per(REPLAY_BATCH_SNAPSHOTS) if callable(yield_per) else iter(result)
-    for row in iterator:
-        yield _row_to_ns(row)
+    rows = db.execute(stmt).all()
+    return [_row_to_ns(row) for row in rows]
 
 
-def _iter_eligible_snapshot_batches(
-    db: Session,
-    source_run_id: int,
-    batch_size: int = REPLAY_BATCH_SNAPSHOTS,
-) -> Iterator[list[SimpleNamespace]]:
-    """Streaming a batch: massimo ``batch_size`` snapshot lean per gruppo."""
-    size = max(1, int(batch_size))
-    batch: list[SimpleNamespace] = []
-    for snap in _iter_eligible_snapshots(db, source_run_id):
-        batch.append(snap)
-        if len(batch) >= size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
+def _is_named_cursor_invalidated_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "named cursor isn't valid anymore" in msg or "named cursor is no longer valid" in msg
+
+
+def _cursor_invalidated_error_json(exc: BaseException) -> dict[str, Any]:
+    return {
+        "error": "snapshot_pagination_cursor_invalidated",
+        "message": (
+            "Il replay si è interrotto dopo un batch già salvato. "
+            "I risultati persistiti sono conservati e il replay può essere ripreso "
+            "dopo la correzione tecnica."
+        ),
+        "phase": "snapshot_batch_pagination",
+        "recoverable": True,
+        "details": {"original_message": str(exc)[:500]},
+    }
 
 
 def _load_markets_for_snapshots(
@@ -820,12 +832,21 @@ def _empty_resource_profile() -> dict[str, Any]:
     return {
         "replay_batch_snapshots": REPLAY_BATCH_SNAPSHOTS,
         "snapshot_batches_processed": 0,
+        "snapshot_batch_queries": 0,
         "market_batch_queries": 0,
         "formula_invocations": 0,
         "max_snapshots_held_in_memory": 0,
         "max_market_rows_held_in_memory": 0,
         "count_reconciliations": 0,
         "incremental_counter_updates": 0,
+        "snapshot_pagination_strategy": "keyset_by_snapshot_id",
+        "formula_order_independent": True,
+        "source_run_immutable": True,
+        "last_snapshot_id_read": 0,
+        "resume_from_results_persisted": 0,
+        "resume_from_snapshots_completed": 0,
+        "resume_skipped_completed_snapshots": 0,
+        "resume_attempt_number": 0,
         "duration_ms": None,
         "completed_at": None,
     }
@@ -1019,21 +1040,21 @@ def _build_result_row(
 
 
 def _classify_calc_bucket(row: dict[str, Any]) -> str:
+    """Classificazione aggregata: gate ha priorità su not_applicable della formula."""
     status = str(row.get("calculation_status") or "")
     gate = str(row.get("gate_status") or "")
-    if status == "source_not_replayable" or status == "unavailable":
-        return "unavailable"
-    if status == "not_applicable":
-        return "not_applicable"
+    score = row.get("score")
     if status == "error":
         return "error"
-    if gate and gate != "passed" and row.get("score") is None:
+    if status == "source_not_replayable" or status == "unavailable":
+        return "unavailable"
+    if gate and gate != "passed" and score is None:
         return "gate_failed"
-    if row.get("score") is not None:
+    if score is not None:
         return "scored"
+    if status == "not_applicable":
+        return "not_applicable"
     if status == "available" or status == "partial":
-        if row.get("score") is not None:
-            return "scored"
         return "unavailable"
     return "unclassified"
 
@@ -1288,9 +1309,8 @@ def _calc_bucket_sql_expr():
     gate = R.gate_status
     score = R.score
     return case(
-        (calc.in_(("source_not_replayable", "unavailable")), "unavailable"),
-        (calc == "not_applicable", "not_applicable"),
         (calc == "error", "error"),
+        (calc.in_(("source_not_replayable", "unavailable")), "unavailable"),
         (
             (gate.isnot(None))
             & (gate != "")
@@ -1299,6 +1319,7 @@ def _calc_bucket_sql_expr():
             "gate_failed",
         ),
         (score.isnot(None), "scored"),
+        (calc == "not_applicable", "not_applicable"),
         (calc.in_(("available", "partial")), "unavailable"),
         else_="unclassified",
     )
@@ -1443,10 +1464,13 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
     started_mono = time.monotonic()
     last_cancel_check = 0.0
     market_queries = 0
+    snapshot_batch_queries = 0
     batches_processed = 0
     incremental_updates = 0
     max_snaps_mem = 0
     max_market_rows_mem = 0
+    last_snapshot_id = 0
+    resume_skipped = 0
     try:
         replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
         if not replay:
@@ -1468,13 +1492,32 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
         is_resume = int(replay.resume_count or 0) > 0 or bool(done_ids)
         if is_resume:
             _reconcile_counts_from_db(db, replay)
+            profile = _get_resource_profile(replay)
+            profile["resume_from_results_persisted"] = int(replay.results_persisted or 0)
+            profile["resume_from_snapshots_completed"] = len(done_ids)
+            profile["resume_attempt_number"] = int(replay.resume_count or 0)
+            profile["snapshot_pagination_strategy"] = "keyset_by_snapshot_id"
+            profile["formula_order_independent"] = True
+            profile["source_run_immutable"] = True
+            _set_resource_profile(replay, profile)
             db.commit()
 
         source_run_id = int(replay.source_scan_run_id)
 
-        for snap_batch in _iter_eligible_snapshot_batches(
-            db, source_run_id, REPLAY_BATCH_SNAPSHOTS
-        ):
+        while True:
+            snap_batch = _fetch_next_eligible_snapshot_batch(
+                db,
+                source_run_id,
+                after_snapshot_id=last_snapshot_id,
+                batch_size=REPLAY_BATCH_SNAPSHOTS,
+            )
+            snapshot_batch_queries += 1
+            if not snap_batch:
+                break
+
+            # Avanza sempre il cursore keyset (anche se batch già done) per evitare loop.
+            last_snapshot_id = int(snap_batch[-1].id)
+
             if _is_cancelled(db, replay_id):
                 replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
                 if replay:
@@ -1484,6 +1527,17 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
 
             pending = [s for s in snap_batch if int(s.id) not in done_ids]
             if not pending:
+                resume_skipped += len(snap_batch)
+                replay = db.get(CecchinoLabPurchasabilityV3ReplayRun, replay_id)
+                if replay:
+                    profile = _get_resource_profile(replay)
+                    profile["last_snapshot_id_read"] = last_snapshot_id
+                    profile["snapshot_batch_queries"] = snapshot_batch_queries
+                    profile["resume_skipped_completed_snapshots"] = resume_skipped
+                    profile["snapshot_pagination_strategy"] = "keyset_by_snapshot_id"
+                    _set_resource_profile(replay, profile)
+                    replay.heartbeat_at = _utcnow()
+                    db.commit()
                 continue
 
             max_snaps_mem = max(max_snaps_mem, len(pending))
@@ -1561,12 +1615,18 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
                 batches_processed += 1
                 profile = _get_resource_profile(replay)
                 profile["snapshot_batches_processed"] = batches_processed
+                profile["snapshot_batch_queries"] = snapshot_batch_queries
                 profile["market_batch_queries"] = market_queries
                 profile["formula_invocations"] = formula_calls[0]
                 profile["max_snapshots_held_in_memory"] = max_snaps_mem
                 profile["max_market_rows_held_in_memory"] = max_market_rows_mem
                 profile["incremental_counter_updates"] = incremental_updates
                 profile["replay_batch_snapshots"] = REPLAY_BATCH_SNAPSHOTS
+                profile["last_snapshot_id_read"] = last_snapshot_id
+                profile["snapshot_pagination_strategy"] = "keyset_by_snapshot_id"
+                profile["formula_order_independent"] = True
+                profile["source_run_immutable"] = True
+                profile["resume_skipped_completed_snapshots"] = resume_skipped
                 _set_resource_profile(replay, profile)
 
                 if last_snap is not None:
@@ -1640,12 +1700,18 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
         duration_ms = int((time.monotonic() - started_mono) * 1000)
         profile = _get_resource_profile(replay)
         profile["snapshot_batches_processed"] = batches_processed
+        profile["snapshot_batch_queries"] = snapshot_batch_queries
         profile["market_batch_queries"] = market_queries
         profile["formula_invocations"] = formula_calls[0]
         profile["max_snapshots_held_in_memory"] = max_snaps_mem
         profile["max_market_rows_held_in_memory"] = max_market_rows_mem
         profile["incremental_counter_updates"] = incremental_updates
         profile["replay_batch_snapshots"] = REPLAY_BATCH_SNAPSHOTS
+        profile["last_snapshot_id_read"] = last_snapshot_id
+        profile["snapshot_pagination_strategy"] = "keyset_by_snapshot_id"
+        profile["formula_order_independent"] = True
+        profile["source_run_immutable"] = True
+        profile["resume_skipped_completed_snapshots"] = resume_skipped
         profile["duration_ms"] = duration_ms
         profile["completed_at"] = replay.completed_at.isoformat()
         summary = dict(replay.summary_json or {})
@@ -1667,10 +1733,13 @@ def execute_purchasability_v3_replay(replay_id: int) -> None:
                 STATUS_COMPLETED_WITH_WARNINGS,
             ):
                 replay.status = STATUS_FAILED
-                replay.error_json = {
-                    "error": "replay_worker_exception",
-                    "message": str(exc)[:500],
-                }
+                if _is_named_cursor_invalidated_error(exc):
+                    replay.error_json = _cursor_invalidated_error_json(exc)
+                else:
+                    replay.error_json = {
+                        "error": "replay_worker_exception",
+                        "message": str(exc)[:500],
+                    }
                 replay.completed_at = _utcnow()
                 db.commit()
         except Exception:

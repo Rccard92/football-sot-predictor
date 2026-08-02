@@ -1,12 +1,16 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3B.1.2 — Paginazione transaction-safe (2026-08-02)
+
+Dashboard Run invariata. Worker: keyset per snapshot id (niente named cursor tra commit); UI progress mostra Non applicabili / Non classificati + messaggio failed recuperabile. **Riprendere Replay ID 1** dopo deploy (non nuovo start).
+
 ## STEP 3B.1.1 — Harden worker replay V3 (2026-08-02)
 
-Dashboard Run invariata. Worker ottimizzato (batch mercati, contatori incrementali, resource_profile in progressione UI). **Nessun replay reale ancora avviato** (STEP 3B.2).
+Dashboard Run invariata. Worker ottimizzato (batch mercati, contatori incrementali, resource_profile in progressione UI). Aggiornato in 3B.1.2 per commit-safe pagination.
 
 ## STEP 3B.1 — Job replay V3 (2026-08-02)
 
-La dashboard Run **non** esegue il replay. Job isolato + UI su `/cecchino-lab/purchasability-replay`. Tabelle dedicate; Run storico immutabile. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
+La dashboard Run **non** esegue il replay. Job isolato + UI su `/cecchino-lab/purchasability-replay`. Tabelle dedicate; Run storico immutabile. Replay reale avviato (Replay ID 1) e interrotto al batch 1 — ripresa post-3B.1.2. Analytics/export V3 = STEP 3C.
 
 ## STEP 3A.2 — Integrità storica preflight (2026-08-02)
 

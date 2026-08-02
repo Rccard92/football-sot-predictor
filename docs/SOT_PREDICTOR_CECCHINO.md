@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — pagination transaction-safe replay V3 STEP 3B.1.2 (2026-08-02)
+
+| Voce | Dettaglio |
+|---|---|
+| Incidente | named cursor invalidato dopo commit del primo batch (Replay ID 1) |
+| Fix | keyset `id ASC` + `.all()`; niente `stream_results`/`yield_per` nel worker |
+| Contatori | gate_failed prima di not_applicable aggregato |
+| Resume | stesso Replay ID 1; 800 risultati preservati |
+| Invariato | formula V3, schema, migration, Run #3 |
+| Next | Riprendi Replay ID 1 post-deploy; STEP 3C = analytics/export |
+
 ## Cecchino Lab — harden worker replay V3 STEP 3B.1.1 (2026-08-02)
 
 | Voce | Dettaglio |
@@ -9,7 +20,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Batch | 100 snapshot; 1 query MarketResult per batch |
 | Contatori | incrementali; reconcile SQL solo resume/fine/cancel |
 | Diagnostica | `summary_json.resource_profile` |
-| Next | STEP 3B.2 = avvio controllato Run #3; STEP 3C = analytics/export |
+| Next | superato da 3B.1.2 (keyset commit-safe); poi completamento Replay ID 1 |
 
 ## Cecchino Lab — job replay Acquistabilità V3 STEP 3B.1 (2026-08-02)
 

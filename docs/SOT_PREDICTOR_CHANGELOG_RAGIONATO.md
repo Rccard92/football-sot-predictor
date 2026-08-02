@@ -1,10 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Make purchasability replay pagination transaction safe (STEP 3B.1.2) (2026-08-02)
+
+- Perché: il primo replay reale (Replay ID 1) falliva al secondo batch con `named cursor isn't valid anymore` (commit durante server-side cursor).
+- Cosa: keyset pagination per snapshot id; rimozione stream_results/yield_per dal worker; gate_failed aggregato prima di not_applicable; UI contatori + messaggio failed recuperabile; resource_profile esteso.
+- Cosa non fa: nessuna migration; formula V3 invariata; nessun nuovo replay; 800 risultati e Replay ID 1 preservati. Next = ripresa Replay ID 1 post-deploy, poi STEP 3C.
+
 ## Perf — Optimize purchasability V3 replay worker (STEP 3B.1.1) (2026-08-02)
 
 - Perché: il worker 3B.1 faceva 1 query MarketResult per snapshot e un recount Python completo a ogni batch/heartbeat — inefficiente prima dell’avvio reale Run #3.
 - Cosa: batch 100 snapshot; 1 market query/batch; contatori incrementali; riconciliazione SQL solo resume/fine/cancel; nessun troncamento duplicati; `summary_json.resource_profile`; UI progress mostra diagnostica.
-- Cosa non fa: nessun replay reale; nessuna migration; formula V3/V2/V1.1, schema, preflight, endpoint e Run #3 invariati. Next = STEP 3B.2.
+- Cosa non fa: nessuna migration; formula V3/V2/V1.1, schema, preflight, endpoint e Run #3 invariati. Streaming snapshot corretto in 3B.1.2.
 
 ## Feat — Add purchasability V3 replay job (STEP 3B.1) (2026-08-02)
 

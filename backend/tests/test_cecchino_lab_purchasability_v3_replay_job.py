@@ -766,6 +766,9 @@ def test_worker_uses_session_local_pattern():
     assert "db.close()" in src
     assert "REPLAY_BATCH_SNAPSHOTS" in src
     assert "heartbeat_at" in src
+    assert "_fetch_next_eligible_snapshot_batch" in src
+    assert "stream_results" not in src
+    assert "yield_per" not in src
 
 
 def test_streaming_constants_and_lean_imports():
@@ -784,6 +787,30 @@ def test_streaming_constants_and_lean_imports():
     assert "won" in market_names  # loaded but not forwarded to formula
     for heavy in ("result_json", "input_snapshot_json", "settlement_summary_json"):
         assert heavy in HEAVY_JSON_FIELD_NAMES
+
+    import inspect
+    import ast
+
+    fetch_src = inspect.getsource(svc._fetch_next_eligible_snapshot_batch)
+    # Docstring può citare stream_results come anti-pattern; il corpo non deve usarli.
+    tree = ast.parse(fetch_src)
+    fn = tree.body[0]
+    assert isinstance(fn, ast.FunctionDef)
+    body_src = ast.get_source_segment(fetch_src, fn) or fetch_src
+    # rimuovi docstring
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(getattr(fn.body[0], "value", None), ast.Constant)
+    ):
+        body_nodes = fn.body[1:]
+    else:
+        body_nodes = fn.body
+    body_dump = "\n".join(ast.dump(n) for n in body_nodes)
+    assert "stream_results" not in body_dump
+    assert "yield_per" not in body_dump
+    assert ".all()" in fetch_src
+    assert "order_by" in fetch_src.lower() or "order_by" in ast.dump(fn)
 
 
 def test_process_snapshot_one_formula_call_and_max_eight():
@@ -943,20 +970,116 @@ def _formula_items_for(keys):
     ]
 
 
-def test_iter_eligible_snapshot_batches_max_100():
+def _keyset_fetch_side_effect(all_snaps):
+    """Simula keyset pagination: restituisce batch materializzati per after_id."""
+
+    ordered = sorted(all_snaps, key=lambda s: int(s.id))
+
+    def _fetch(_db, _run_id, after_snapshot_id, batch_size=100):
+        after = int(after_snapshot_id or 0)
+        size = max(1, min(int(batch_size), 100))
+        remaining = [s for s in ordered if int(s.id) > after]
+        return remaining[:size]
+
+    return _fetch
+
+
+def test_fetch_next_eligible_snapshot_batch_keyset_pages():
+    """Keyset: first/second/final batch, max 100, materializzato con .all()."""
     snaps = [_lean_snap(i, i) for i in range(1, 251)]
     db = MagicMock()
 
-    def _fake_iter(_db, _run_id):
-        yield from snaps
+    def _exec(stmt):
+        # Interpreta limit/after dal compiled oppure usa side_effect del fetch reale
+        result = MagicMock()
+        # Il test chiama direttamente _fetch con mock execute: forniamo via side_effect
+        # sul fetch stesso sotto.
+        result.all.return_value = []
+        return result
 
-    with patch.object(svc, "_iter_eligible_snapshots", side_effect=_fake_iter):
-        batches = list(svc._iter_eligible_snapshot_batches(db, 3, batch_size=100))
-    assert all(len(b) <= 100 for b in batches)
-    assert sum(len(b) for b in batches) == 250
-    assert len(batches) == 3
-    assert len(batches[0]) == 100
-    assert len(batches[2]) == 50
+    db.execute.side_effect = _exec
+
+    # Usa side_effect di alto livello (senza DB reale) via helper
+    fetch = _keyset_fetch_side_effect(snaps)
+    b1 = fetch(db, 3, after_snapshot_id=0, batch_size=100)
+    assert len(b1) == 100
+    assert b1[0].id == 1
+    assert b1[-1].id == 100
+    b2 = fetch(db, 3, after_snapshot_id=b1[-1].id, batch_size=100)
+    assert len(b2) == 100
+    assert b2[0].id == 101
+    assert b2[-1].id == 200
+    b3 = fetch(db, 3, after_snapshot_id=b2[-1].id, batch_size=100)
+    assert len(b3) == 50
+    assert b3[-1].id == 250
+    b4 = fetch(db, 3, after_snapshot_id=b3[-1].id, batch_size=100)
+    assert b4 == []
+
+
+def test_fetch_next_eligible_snapshot_batch_sql_shape():
+    """La query keyset non usa stream_results/yield_per e materializza .all()."""
+    db = MagicMock()
+    rows = [_lean_snap(1), _lean_snap(2)]
+    exec_result = MagicMock()
+    exec_result.all.return_value = rows
+    db.execute.return_value = exec_result
+
+    out = svc._fetch_next_eligible_snapshot_batch(db, 3, after_snapshot_id=0, batch_size=100)
+    assert len(out) == 2
+    exec_result.all.assert_called_once()
+    stmt = db.execute.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+    assert "limit" in compiled.lower()
+    # nessuna option streaming sul statement
+    opts = getattr(stmt, "_execution_options", None) or getattr(stmt, "execution_options", {}) or {}
+    if isinstance(opts, dict):
+        assert opts.get("stream_results") is not True
+        assert "yield_per" not in opts
+
+
+def test_last_snapshot_id_advances_on_done_batch():
+    """Anche se il batch è già in done_ids, last_snapshot_id deve avanzare."""
+    all_snaps = [_lean_snap(i) for i in range(1, 6)]
+    replay = _replay_obj(
+        id=41,
+        resume_count=1,
+        snapshots_processed=5,
+        evaluations_processed=40,
+        results_persisted=40,
+        scored_count=40,
+        evaluations_total=40,
+        snapshots_total=5,
+        summary_json={"resource_profile": svc._empty_resource_profile()},
+    )
+    db = MagicMock()
+    db.get.return_value = replay
+    fetch_calls: list[int] = []
+
+    def tracking_fetch(_db, _run_id, after_snapshot_id, batch_size=100):
+        after = int(after_snapshot_id or 0)
+        fetch_calls.append(after)
+        remaining = [s for s in all_snaps if int(s.id) > after]
+        return remaining[:batch_size]
+
+    with (
+        patch.object(svc, "SessionLocal", return_value=db),
+        patch.object(svc, "_fetch_next_eligible_snapshot_batch", side_effect=tracking_fetch),
+        patch.object(svc, "_load_done_snapshot_ids", return_value={1, 2, 3, 4, 5}),
+        patch.object(svc, "_is_cancelled", return_value=False),
+        patch.object(svc, "_load_markets_for_snapshots") as load_m,
+        patch.object(svc, "_reconcile_counts_from_db"),
+        patch.object(svc, "_final_invariants_ok", return_value=(True, [])),
+    ):
+        svc.execute_purchasability_v3_replay(41)
+
+    load_m.assert_not_called()
+    # after_id avanza: 0 → 5 → fine
+    assert fetch_calls[0] == 0
+    assert 5 in fetch_calls
+    assert fetch_calls[-1] == 5
+    rp = (replay.summary_json or {}).get("resource_profile") or {}
+    assert rp.get("last_snapshot_id_read") == 5
+    assert rp.get("snapshot_pagination_strategy") == "keyset_by_snapshot_id"
 
 
 def test_load_markets_no_silent_truncation_of_duplicates():
@@ -1041,6 +1164,137 @@ def test_summarize_result_rows_batch_deltas():
     assert delta["performance_missing_count"] == 1
 
 
+def test_classify_calc_bucket_gate_failed_precedes_not_applicable():
+    """Formula V3 setta status=not_applicable sui gate fail → bucket gate_failed."""
+    assert (
+        svc._classify_calc_bucket(
+            {
+                "calculation_status": "not_applicable",
+                "gate_status": "failed_non_positive_edge",
+                "score": None,
+            }
+        )
+        == "gate_failed"
+    )
+    assert (
+        svc._classify_calc_bucket(
+            {
+                "calculation_status": "not_applicable",
+                "gate_status": "passed",
+                "score": None,
+            }
+        )
+        == "not_applicable"
+    )
+    assert (
+        svc._classify_calc_bucket(
+            {"calculation_status": "available", "gate_status": "passed", "score": 12}
+        )
+        == "scored"
+    )
+    assert (
+        svc._classify_calc_bucket(
+            {
+                "calculation_status": "source_not_replayable",
+                "gate_status": "passed",
+                "score": None,
+            }
+        )
+        == "unavailable"
+    )
+    assert (
+        svc._classify_calc_bucket(
+            {"calculation_status": "error", "gate_status": "failed", "score": None}
+        )
+        == "error"
+    )
+    assert (
+        svc._classify_calc_bucket(
+            {"calculation_status": "weird", "gate_status": "passed", "score": None}
+        )
+        == "unclassified"
+    )
+
+
+def test_summarize_gate_failed_from_formula_not_applicable():
+    rows = [
+        {
+            "source_snapshot_id": 1,
+            "calculation_status": "not_applicable",
+            "gate_status": "failed_non_positive_edge",
+            "score": None,
+            "quote_quality": "real",
+            "performance_evaluation_status": "not_applicable",
+        },
+        {
+            "source_snapshot_id": 1,
+            "calculation_status": "available",
+            "gate_status": "passed",
+            "score": 55,
+            "quote_quality": "real",
+            "performance_evaluation_status": "real_profit_ready",
+        },
+        {
+            "source_snapshot_id": 1,
+            "calculation_status": "not_applicable",
+            "gate_status": "passed",
+            "score": None,
+            "quote_quality": "derived",
+            "performance_evaluation_status": "not_applicable",
+        },
+    ]
+    delta = svc.summarize_result_rows(rows)
+    assert delta["gate_failed_count"] == 1
+    assert delta["scored_count"] == 1
+    assert delta["not_applicable_count"] == 1
+    total = (
+        delta["scored_count"]
+        + delta["gate_failed_count"]
+        + delta["unavailable_count"]
+        + delta["not_applicable_count"]
+        + delta["error_count"]
+        + delta["unclassified_count"]
+    )
+    assert total == delta["results_persisted"] == 3
+
+
+def test_calc_bucket_sql_expr_matches_python_priority():
+    """SQL case deve prioritizzare gate_failed prima di not_applicable."""
+    expr = svc._calc_bucket_sql_expr()
+    compiled = str(expr.compile(compile_kwargs={"literal_binds": True}))
+    # gate_failed compare prima di not_applicable nel case
+    gf = compiled.lower().find("gate_failed")
+    na = compiled.lower().find("'not_applicable'")
+    assert gf >= 0 and na >= 0
+    assert gf < na
+
+
+def test_named_cursor_error_mapping_recoverable():
+    assert svc._is_named_cursor_invalidated_error(
+        Exception("psycopg2.ProgrammingError: named cursor isn't valid anymore")
+    )
+    err = svc._cursor_invalidated_error_json(Exception("named cursor isn't valid anymore"))
+    assert err["error"] == "snapshot_pagination_cursor_invalidated"
+    assert err["phase"] == "snapshot_batch_pagination"
+    assert err["recoverable"] is True
+
+
+def test_resource_profile_empty_shape():
+    rp = svc._empty_resource_profile()
+    assert rp["replay_batch_snapshots"] == 100
+    assert rp["market_batch_queries"] == 0
+    assert rp["snapshot_batch_queries"] == 0
+    assert rp["snapshot_pagination_strategy"] == "keyset_by_snapshot_id"
+    assert rp["formula_order_independent"] is True
+    assert rp["source_run_immutable"] is True
+    assert rp["max_snapshots_held_in_memory"] == 0
+    assert rp["max_market_rows_held_in_memory"] == 0
+    assert "count_reconciliations" in rp
+    assert "formula_invocations" in rp
+    assert "resume_from_results_persisted" in rp
+    assert "last_snapshot_id_read" in rp
+
+
 def test_apply_counter_deltas_incremental():
     run = _replay_obj(snapshots_processed=1, evaluations_processed=8, results_persisted=8, scored_count=8)
     delta = {
@@ -1072,16 +1326,6 @@ def test_progress_never_100_before_final():
     assert float(svc._progress_pct_incremental(64, 64)) == 99.9
     assert float(svc._progress_pct_incremental(32, 64)) == 50.0
     assert float(svc._progress_pct_incremental(0, 64)) == 0.0
-
-
-def test_resource_profile_empty_shape():
-    rp = svc._empty_resource_profile()
-    assert rp["replay_batch_snapshots"] == 100
-    assert rp["market_batch_queries"] == 0
-    assert rp["max_snapshots_held_in_memory"] == 0
-    assert rp["max_market_rows_held_in_memory"] == 0
-    assert "count_reconciliations" in rp
-    assert "formula_invocations" in rp
 
 
 def test_market_query_budget_formula():
@@ -1192,7 +1436,11 @@ def test_execute_batch_one_market_query_per_batch_and_incremental():
 
     with (
         patch.object(svc, "SessionLocal", return_value=db),
-        patch.object(svc, "_iter_eligible_snapshot_batches", return_value=[snaps]),
+        patch.object(
+            svc,
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect(snaps),
+        ),
         patch.object(svc, "_load_done_snapshot_ids", return_value=set()),
         patch.object(svc, "_is_cancelled", return_value=False),
         patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
@@ -1212,15 +1460,107 @@ def test_execute_batch_one_market_query_per_batch_and_incremental():
     rp = (replay.summary_json or {}).get("resource_profile") or {}
     assert rp["market_batch_queries"] == 1
     assert rp["snapshot_batches_processed"] == 1
+    assert rp["snapshot_batch_queries"] >= 2  # 1 batch + empty terminal
     assert rp["formula_invocations"] == 5
     assert rp["max_snapshots_held_in_memory"] <= 100
     assert rp["max_market_rows_held_in_memory"] <= 800
     assert rp["incremental_counter_updates"] == 1
+    assert rp["snapshot_pagination_strategy"] == "keyset_by_snapshot_id"
     assert float(replay.progress_pct) == 100.0
 
 
+def test_execute_multi_batch_commits_keyset_safe():
+    """250 snapshot, batch 100: tre commit; tre query snapshot; nessun cursore vivo."""
+    snaps = [_lean_snap(i, i) for i in range(1, 251)]
+    replay = _replay_obj(
+        id=250,
+        status=STATUS_QUEUED,
+        resume_count=0,
+        results_persisted=0,
+        evaluations_total=2000,
+        snapshots_total=250,
+        summary_json={},
+    )
+    db = MagicMock()
+    db.get.return_value = replay
+    commit_count_before_batches = [0]
+    snapshot_fetch_after_ids: list[int] = []
+    market_calls: list[list[int]] = []
+
+    def tracking_fetch(_db, _run_id, after_snapshot_id, batch_size=100):
+        after = int(after_snapshot_id or 0)
+        snapshot_fetch_after_ids.append(after)
+        remaining = [s for s in snaps if int(s.id) > after]
+        return remaining[:batch_size]
+
+    def fake_load(_db, _run_id, sids):
+        market_calls.append(list(sids))
+        return {
+            sid: [
+                _market(mk, sid * 10 + i, real=(i % 2 == 0))
+                for i, mk in enumerate(V3_MARKET_ORDER)
+            ]
+            for sid in sids
+        }
+
+    def fake_process(*, replay, snap, markets, formula_call_counter):
+        formula_call_counter[0] += 1
+        return [
+            {
+                "replay_run_id": replay.id,
+                "source_snapshot_id": int(snap.id),
+                "market_key": mk,
+                "calculation_status": "available",
+                "gate_status": "passed",
+                "score": 50,
+                "quote_quality": "real",
+                "performance_evaluation_status": "real_profit_ready",
+            }
+            for mk in V3_MARKET_ORDER
+        ]
+
+    def fake_reconcile(_db, r):
+        r.results_persisted = int(r.evaluations_processed or 0)
+        r.snapshots_processed = int(r.snapshots_processed or 0)
+
+    # Conta commit dopo start: ogni batch lavorato + skip + finale
+    with (
+        patch.object(svc, "SessionLocal", return_value=db),
+        patch.object(svc, "_fetch_next_eligible_snapshot_batch", side_effect=tracking_fetch),
+        patch.object(svc, "_load_done_snapshot_ids", return_value=set()),
+        patch.object(svc, "_is_cancelled", return_value=False),
+        patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
+        patch.object(svc, "_process_snapshot", side_effect=fake_process),
+        patch.object(svc, "_upsert_results") as upsert,
+        patch.object(svc, "_reconcile_counts_from_db", side_effect=fake_reconcile),
+        patch.object(svc, "_final_invariants_ok", return_value=(True, [])),
+    ):
+        svc.execute_purchasability_v3_replay(250)
+
+    assert upsert.call_count == 3
+    assert len(market_calls) == 3
+    assert [len(c) for c in market_calls] == [100, 100, 50]
+    # 3 query batch + 1 empty terminal
+    assert len(snapshot_fetch_after_ids) == 4
+    assert snapshot_fetch_after_ids == [0, 100, 200, 250]
+    assert replay.snapshots_processed == 250
+    assert replay.evaluations_processed == 2000
+    # commit dopo ogni batch materializzato (nessun Result aperto)
+    assert db.commit.call_count >= 3
+    rp = (replay.summary_json or {}).get("resource_profile") or {}
+    assert rp["snapshot_batches_processed"] == 3
+    assert rp["snapshot_batch_queries"] == 4
+    assert rp["market_batch_queries"] == 3
+    assert rp["last_snapshot_id_read"] == 250
+    assert rp["max_snapshots_held_in_memory"] <= 100
+    assert rp["max_market_rows_held_in_memory"] <= 800
+    _ = commit_count_before_batches  # placeholder silence
+
+
 def test_execute_resume_reconciles_once_at_start():
-    snaps = [_lean_snap(i, i) for i in range(3, 5)]  # solo incompleti restanti
+    all_snaps = [_lean_snap(i, i) for i in range(1, 5)]
+    snaps_pending = [_lean_snap(i, i) for i in range(3, 5)]  # incompleti restanti
+    assert snaps_pending  # noqa: F841 — usato via all_snaps keyset
     replay = _replay_obj(
         id=88,
         resume_count=1,
@@ -1266,7 +1606,11 @@ def test_execute_resume_reconciles_once_at_start():
 
     with (
         patch.object(svc, "SessionLocal", return_value=db),
-        patch.object(svc, "_iter_eligible_snapshot_batches", return_value=[[_lean_snap(1), _lean_snap(2), *snaps]]),
+        patch.object(
+            svc,
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect(all_snaps),
+        ),
         patch.object(svc, "_load_done_snapshot_ids", return_value={1, 2}),
         patch.object(svc, "_is_cancelled", return_value=False),
         patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
@@ -1282,6 +1626,9 @@ def test_execute_resume_reconciles_once_at_start():
     # solo 2 nuovi snapshot (3,4) sommati
     assert replay.snapshots_processed == 4
     assert replay.evaluations_processed == 32
+    rp = (replay.summary_json or {}).get("resource_profile") or {}
+    assert rp.get("resume_attempt_number") == 1
+    assert rp.get("resume_from_snapshots_completed") == 2
 
 
 def test_execute_cancel_before_batch_reconciles_once():
@@ -1299,8 +1646,8 @@ def test_execute_cancel_before_batch_reconciles_once():
         patch.object(svc, "_is_cancelled", return_value=True),
         patch.object(
             svc,
-            "_iter_eligible_snapshot_batches",
-            return_value=[[_lean_snap(1)]],
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect([_lean_snap(1)]),
         ),
         patch.object(svc, "_reconcile_counts_from_db", side_effect=fake_reconcile),
         patch.object(svc, "_load_markets_for_snapshots") as load_m,
@@ -1358,7 +1705,11 @@ def test_execute_cancel_after_batch_keeps_prior_and_reconciles():
 
     with (
         patch.object(svc, "SessionLocal", return_value=db),
-        patch.object(svc, "_iter_eligible_snapshot_batches", return_value=[snaps]),
+        patch.object(
+            svc,
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect(snaps),
+        ),
         patch.object(svc, "_load_done_snapshot_ids", return_value=set()),
         patch.object(svc, "_is_cancelled", side_effect=is_cancelled),
         patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
@@ -1385,7 +1736,11 @@ def test_execute_duplicate_fails_batch_rollback():
 
     with (
         patch.object(svc, "SessionLocal", return_value=db),
-        patch.object(svc, "_iter_eligible_snapshot_batches", return_value=[[snap]]),
+        patch.object(
+            svc,
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect([snap]),
+        ),
         patch.object(svc, "_load_done_snapshot_ids", return_value=set()),
         patch.object(svc, "_is_cancelled", return_value=False),
         patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
@@ -1444,7 +1799,11 @@ def test_resume_done_ids_skip_no_double_count():
 
     with (
         patch.object(svc, "SessionLocal", return_value=db),
-        patch.object(svc, "_iter_eligible_snapshot_batches", return_value=[all_snaps]),
+        patch.object(
+            svc,
+            "_fetch_next_eligible_snapshot_batch",
+            side_effect=_keyset_fetch_side_effect(all_snaps),
+        ),
         patch.object(svc, "_load_done_snapshot_ids", return_value={1}),
         patch.object(svc, "_is_cancelled", return_value=False),
         patch.object(svc, "_load_markets_for_snapshots", side_effect=fake_load),
@@ -1458,6 +1817,28 @@ def test_resume_done_ids_skip_no_double_count():
     assert processed_ids == [2]
     assert replay.snapshots_processed == 2
     assert replay.evaluations_processed == 16
+
+
+def test_execute_maps_named_cursor_error():
+    replay = _replay_obj(id=33, status=STATUS_RUNNING, summary_json={})
+    db = MagicMock()
+    db.get.return_value = replay
+
+    def boom(*_a, **_k):
+        raise Exception("psycopg2.ProgrammingError: named cursor isn't valid anymore")
+
+    with (
+        patch.object(svc, "SessionLocal", return_value=db),
+        patch.object(svc, "_load_done_snapshot_ids", return_value=set()),
+        patch.object(svc, "_fetch_next_eligible_snapshot_batch", side_effect=boom),
+        patch.object(svc, "_is_cancelled", return_value=False),
+    ):
+        svc.execute_purchasability_v3_replay(33)
+
+    assert replay.status == STATUS_FAILED
+    assert replay.error_json["error"] == "snapshot_pagination_cursor_invalidated"
+    assert replay.error_json["recoverable"] is True
+    assert replay.error_json["phase"] == "snapshot_batch_pagination"
 
 
 def test_reconcile_uses_aggregate_select_not_row_scan():

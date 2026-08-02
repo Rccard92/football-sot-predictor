@@ -484,7 +484,43 @@ function ReplayProgressCard({
         <div data-testid="replay-scored">Score: {replay.scored_count ?? 0}</div>
         <div data-testid="replay-gate-failed">Gate falliti: {replay.gate_failed_count ?? 0}</div>
         <div data-testid="replay-unavailable">Non disponibili: {replay.unavailable_count ?? 0}</div>
+        <div data-testid="replay-not-applicable">
+          Non applicabili: {replay.not_applicable_count ?? 0}
+        </div>
         <div data-testid="replay-errors">Errori: {replay.error_count ?? 0}</div>
+        <div data-testid="replay-unclassified">
+          Non classificati: {replay.unclassified_count ?? 0}
+        </div>
+        {(() => {
+          const scored = Number(replay.scored_count ?? 0)
+          const gateFailed = Number(replay.gate_failed_count ?? 0)
+          const unavailable = Number(replay.unavailable_count ?? 0)
+          const notApplicable = Number(replay.not_applicable_count ?? 0)
+          const errors = Number(replay.error_count ?? 0)
+          const unclassified = Number(replay.unclassified_count ?? 0)
+          const classified =
+            scored + gateFailed + unavailable + notApplicable + errors + unclassified
+          const persisted = Number(replay.results_persisted ?? 0)
+          const mismatch = classified !== persisted
+          return (
+            <div
+              data-testid="replay-classified-persisted"
+              style={
+                mismatch
+                  ? { color: 'var(--lab-err)', fontWeight: 600 }
+                  : undefined
+              }
+            >
+              Classificati: {classified} / Persistiti
+              {mismatch ? (
+                <span data-testid="replay-counts-mismatch">
+                  {' '}
+                  — Conteggi replay non riconciliati
+                </span>
+              ) : null}
+            </div>
+          )
+        })()}
         <div data-testid="replay-competition">
           Competizione: {replay.current_competition || '—'}
         </div>
@@ -574,10 +610,42 @@ function ReplayProgressCard({
           Replay esistente riutilizzato (idempotenza).
         </p>
       ) : null}
-      {replay.error?.message ? (
-        <p data-testid="replay-error" style={{ color: 'var(--lab-err)', marginTop: '0.5rem' }}>
-          {replay.error.message}
-        </p>
+      {eff === 'failed' || replay.error ? (
+        <div data-testid="replay-error" style={{ marginTop: '0.5rem' }}>
+          {(eff === 'failed' || replay.error?.recoverable) && (
+            <p style={{ color: 'var(--lab-err)', margin: 0 }} data-testid="replay-error-recoverable">
+              Il replay si è interrotto dopo un batch già salvato. I risultati persistiti sono
+              conservati e il replay può essere ripreso dopo la correzione tecnica.
+            </p>
+          )}
+          {replay.error ? (
+            <details data-testid="replay-error-details" style={{ marginTop: '0.35rem' }}>
+              <summary>Dettaglio tecnico</summary>
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '0.8rem',
+                  marginTop: '0.35rem',
+                  opacity: 0.9,
+                }}
+              >
+                {[
+                  replay.error.error ? `code: ${replay.error.error}` : null,
+                  replay.error.phase ? `phase: ${replay.error.phase}` : null,
+                  replay.error.recoverable != null
+                    ? `recoverable: ${String(replay.error.recoverable)}`
+                    : null,
+                  replay.error.message || null,
+                  replay.error.details != null
+                    ? `details: ${JSON.stringify(replay.error.details)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join('\n')}
+              </pre>
+            </details>
+          ) : null}
+        </div>
       ) : null}
     </section>
   )

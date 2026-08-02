@@ -1,12 +1,22 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — pagination transaction-safe STEP 3B.1.2 (2026-08-02)
+
+1. Deploy codice (**nessuna** nuova migration; head resta `20260802120000`).
+2. **Non** premere «Avvia replay».
+3. Aprire Replay ID 1 (Fallito/Riprendibile): verificare 100 snapshot / 800 persistiti.
+4. Premere **Riprendi replay**.
+5. Monitorare: stato queued/running; progressione >100 snapshot; nessun `named cursor isn't valid anymore`.
+6. Dopo ≥3 batch: snapshot >300, risultati >2400, zero duplicati.
+7. A completamento: 4561/4561 snapshot, 36488/36488 risultati; poi STEP 3C.
+
 ## Cecchino Lab — harden worker replay V3 STEP 3B.1.1 (2026-08-02)
 
 1. Deploy codice worker ottimizzato (**nessuna** nuova migration; head resta `20260802120000`).
 2. Aprire `/cecchino-lab/purchasability-replay?run_id=3`.
 3. Nuovo preflight summary + probe 30 snapshot; verificare CTA **Avvia replay Acquistabilità**.
-4. **Non** avviare ancora il replay reale (STEP 3B.2).
-5. In progressione (dopo 3B.2): controllare `resource_profile` (batch, query mercati, max memoria).
+4. Superato da 3B.1.2: ripresa Replay ID 1 (non nuovo start).
+5. In progressione: controllare `resource_profile` (batch, query mercati, max memoria, keyset).
 
 ## Cecchino Lab — job replay V3 STEP 3B.1 (2026-08-02)
 

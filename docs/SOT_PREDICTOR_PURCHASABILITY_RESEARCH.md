@@ -82,7 +82,7 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Tabelle `cecchino_lab_purchasability_v3_replay_runs` / `…_results`; schema `…_replay_v1`; engine `…_replay_engine_v1`.
 - Start con preflight server-side + conferma; idempotenza; batch 100; cancel/resume; heartbeat/interrupted.
 - Anti-leakage: whitelist formula; performance collegata dopo score; una riga per valutazione teorica (anche unavailable).
-- UI: Avvia + modal + progressione/polling. **Nessun avvio reale Run #3.** STEP 3C = analytics/export.
+- UI: Avvia + modal + progressione/polling. Replay reale avviato come Replay ID 1; interrotto al batch 1 (vedi 3B.1.2). STEP 3C = analytics/export.
 
 ### STEP 3B.1.1 — Harden worker (2026-08-02)
 
@@ -90,7 +90,14 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Batch 100 snapshot; 1 market query/batch; contatori incrementali; riconciliazione SQL solo resume/fine/cancel.
 - Nessun troncamento silenzioso dei duplicati; fail controllato `ambiguous_market_join`.
 - `summary_json.resource_profile` (batch, query, formula invocations, max memory).
-- **Nessun replay reale ancora avviato.** Next = STEP 3B.2.
+- Streaming snapshot sostituito in 3B.1.2 (commit-safe keyset).
+
+### STEP 3B.1.2 — Paginazione transaction-safe (2026-08-02)
+
+- Incidente Replay ID 1: `named cursor isn't valid anymore` dopo commit del primo batch (100 snap / 800 risultati OK, nessuna perdita dati).
+- Causa: `stream_results`/`yield_per` aperti durante `db.commit()` per-batch.
+- Fix: keyset `id > after` + `.all()`; `formula_order_independent`; gate_failed aggregato prima di not_applicable.
+- Resume stesso Replay ID 1 post-deploy (non nuovo start). Formula/schema/Run #3 invariati. Next = completamento replay, poi STEP 3C.
 
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 

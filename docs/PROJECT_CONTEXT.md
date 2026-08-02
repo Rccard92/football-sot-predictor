@@ -2,9 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Paginazione transaction-safe replay V3 STEP 3B.1.2 (2026-08-02)
+
+Named cursor invalidato dopo commit batch 1 (Replay ID 1). Keyset per snapshot id; gate_failed aggregato corretto; UI contatori + messaggio recuperabile. Formula/schema/migration/Run #3/800 righe **invariati**. Ripresa Replay ID 1 post-deploy (non nuovo start).
+
 ## Perf — Worker replay Acquistabilità V3 STEP 3B.1.1 (2026-08-02)
 
-Harden worker: 1 market query per batch di 100 snapshot; contatori incrementali; riconciliazione SQL solo resume/fine/cancel; `resource_profile` in summary. Formula/schema/migration/preflight/Run #3 **invariati**. **Nessun replay reale** (STEP 3B.2).
+Harden worker: 1 market query per batch di 100 snapshot; contatori incrementali; riconciliazione SQL solo resume/fine/cancel; `resource_profile` in summary. Formula/schema/migration/preflight/Run #3 **invariati**. Streaming snapshot sostituito in 3B.1.2.
 
 ## Feat — Job replay Acquistabilità V3 isolato STEP 3B.1 (2026-08-02)
 

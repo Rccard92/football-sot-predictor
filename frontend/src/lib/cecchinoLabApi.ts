@@ -2129,7 +2129,13 @@ export type PurchasabilityV3ReplayRun = {
   attempt_count?: number
   idempotency_key?: string
   summary?: Record<string, unknown> | null
-  error?: { error?: string; message?: string; details?: unknown } | null
+  error?: {
+    error?: string
+    message?: string
+    details?: unknown
+    phase?: string
+    recoverable?: boolean
+  } | null
   can_cancel?: boolean
   can_resume?: boolean
   reused_existing?: boolean
