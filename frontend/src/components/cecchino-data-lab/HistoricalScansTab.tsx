@@ -7,7 +7,9 @@ import {
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
   LAB_SEASON_OPTIONS,
   cancelHistoricalScan,
+  downloadHistoricalRunOfficialPurchasabilityReport,
   downloadHistoricalScanReport,
+  formatHistoricalDownloadError,
   getHistoricalScan,
   historicalScanScopeLabel,
   historicalScanStatusLabel,
@@ -29,6 +31,7 @@ const REPORT_MENU: Array<{
   mode: HistoricalReportMode
   module?: HistoricalReportModule
   label: string
+  description?: string
   recommended?: boolean
   needsCompetition?: boolean
   sizeWarning?: boolean
@@ -38,7 +41,12 @@ const REPORT_MENU: Array<{
   { mode: 'module', module: 'signals', label: 'Dettaglio Segnali A–F' },
   { mode: 'module', module: 'balance', label: 'Dettaglio Balance / Equilibrio' },
   { mode: 'module', module: 'goal_intensity', label: 'Dettaglio Intensità Goal' },
-  { mode: 'module', module: 'purchasability', label: 'Dettaglio Acquistabilità' },
+  {
+    mode: 'module',
+    module: 'purchasability',
+    label: 'Dettaglio Acquistabilità',
+    description: 'Acquistabilità V3 ricostruita dal replay storico completato.',
+  },
   { mode: 'module', module: 'markets', label: 'Dettaglio mercati' },
   {
     mode: 'full_archive',
@@ -180,15 +188,19 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     }
     setDownloadBusy(true)
     try {
-      await downloadHistoricalScanReport(activeRun.id, {
-        mode,
-        module,
-        competition: needsCompetition ? reportCompetition : undefined,
-      })
+      if (mode === 'module' && module === 'purchasability') {
+        await downloadHistoricalRunOfficialPurchasabilityReport(activeRun.id, 'analysis')
+      } else {
+        await downloadHistoricalScanReport(activeRun.id, {
+          mode,
+          module,
+          competition: needsCompetition ? reportCompetition : undefined,
+        })
+      }
       toast.success(`Download avviato: ${mode}`)
       setReportOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Download fallito')
+      toast.error(formatHistoricalDownloadError(e))
     } finally {
       setDownloadBusy(false)
     }
@@ -538,6 +550,12 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                           >
                             {item.label}
                             {item.recommended ? ' ★' : ''}
+                            {item.module === 'purchasability' ? (
+                              <span className="mt-0.5 block text-[11px] text-[var(--lab-muted)]">
+                                V3 · Replay
+                                {item.description ? ` — ${item.description}` : ''}
+                              </span>
+                            ) : null}
                             {item.sizeWarning ? (
                               <span className="mt-0.5 block text-[11px] text-amber-200">
                                 Archivio tecnico completo — non necessario per la prima analisi

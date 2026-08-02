@@ -1,4 +1,4 @@
-"""Analytics read-only sui risultati persistiti del Replay Acquistabilità V3 (STEP 3C.1).
+"""Analytics read-only sui risultati persistiti del Replay Acquistabilità V3 (STEP 3C.2).
 
 Nessun ricalcolo formula, nessuna scrittura DB, nessun full ORM load.
 """
@@ -17,9 +17,6 @@ from typing import Any, Iterator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, load_only
 
-from app.models.cecchino_lab_historical_match_snapshot import (
-    CecchinoLabHistoricalMatchSnapshot,
-)
 from app.models.cecchino_lab_purchasability_v3_replay_result import (
     CecchinoLabPurchasabilityV3ReplayResult,
 )
@@ -28,12 +25,12 @@ from app.models.cecchino_lab_purchasability_v3_replay_run import (
     CecchinoLabPurchasabilityV3ReplayRun,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
-from app.services.cecchino_data_lab.historical_analytics_agg import (
-    classify_purchasability_gate,
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
+    LEGACY_PURCHASABILITY_FALLBACK_ALLOWED,
 )
 
 PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION = (
-    "cecchino_lab_purchasability_v3_analytics_v1"
+    "cecchino_lab_purchasability_v3_analytics_v2"
 )
 ANALYTICS_CACHE_TTL_S = 300
 CACHE_KIND_SUMMARY = "summary"
@@ -45,7 +42,6 @@ REPLAY_NOT_COMPLETED_MSG = (
 )
 CI_MIN_SAMPLE = 30
 KEYSET_BATCH = 500
-V2_SNAPSHOT_BATCH = 100
 
 V3_MARKET_ORDER: tuple[str, ...] = (
     "HOME",
@@ -832,143 +828,12 @@ def _empty_perf_bucket() -> dict[str, Any]:
     return build_performance_stats([], profit_field="profit_1u_real")
 
 
-def _v2_band(score: Any, gate_status: str) -> str | None:
-    if gate_status != "accepted":
-        return None
-    return score_band_for(score)
-
-
-def _normalize_v2_state(gate_status: str, score: Any) -> str:
-    if gate_status == "accepted" and score is not None:
-        return "scored"
-    if gate_status in (
-        "rejected",
-        "gate_rejected",
-        "failed",
-        "blocked",
-        "not_passed",
-    ) or (gate_status and gate_status != "accepted" and score is None):
-        return "gate"
-    if score is None:
-        return "unavailable"
-    return "scored"
-
-
-def _normalize_v3_state(row: dict[str, Any]) -> str:
-    bucket = classify_calc_bucket(row)
-    if bucket == "scored":
-        return "scored"
-    if bucket == "gate_failed":
-        return "gate"
-    if bucket == "unavailable":
-        return "unavailable"
-    return bucket
-
-
-def _build_v2_v3_comparison(
-    rows: list[dict[str, Any]],
-    v2_markets_by_snapshot: dict[int, list[dict[str, Any]]] | None,
-) -> dict[str, Any]:
-    v2_index: dict[tuple[int, str], dict[str, Any]] = {}
-    if v2_markets_by_snapshot:
-        for sid, markets in v2_markets_by_snapshot.items():
-            for mk_row in markets:
-                if not isinstance(mk_row, dict):
-                    continue
-                mk = str(mk_row.get("market_key") or "")
-                if not mk:
-                    continue
-                gate_info = classify_purchasability_gate(mk_row)
-                v2_index[(int(sid), mk)] = {
-                    "gate_status": gate_info.get("gate_status"),
-                    "score": mk_row.get("score"),
-                    "score_class": mk_row.get("class"),
-                }
-
-    transitions: dict[str, int] = defaultdict(int)
-    deltas: list[float] = []
-    joined = 0
-    missing_v2 = 0
-    missing_v3 = 0
-    v3_keys = {(int(r["source_snapshot_id"]), str(r["market_key"])) for r in rows}
-    for key in v2_index:
-        if key not in v3_keys:
-            missing_v3 += 1
-
-    for r in rows:
-        key = (int(r["source_snapshot_id"]), str(r["market_key"]))
-        v2 = v2_index.get(key)
-        if v2 is None:
-            missing_v2 += 1
-            transitions["unavailable"] += 1
-            continue
-        joined += 1
-        v2_state = _normalize_v2_state(str(v2.get("gate_status") or ""), v2.get("score"))
-        v3_state = _normalize_v3_state(r)
-        if v2_state == "gate" and v3_state == "gate":
-            transitions["gate_to_gate"] += 1
-        elif v2_state == "gate" and v3_state == "scored":
-            transitions["gate_to_score"] += 1
-        elif v2_state == "scored" and v3_state == "gate":
-            transitions["score_to_gate"] += 1
-        elif v2_state == "scored" and v3_state == "scored":
-            b2 = score_band_for(v2.get("score"))
-            b3 = score_band_for(r.get("score"))
-            if b2 and b3:
-                i2 = SCORE_BANDS.index(b2) if b2 in SCORE_BANDS else -1
-                i3 = SCORE_BANDS.index(b3) if b3 in SCORE_BANDS else -1
-                if i3 > i2:
-                    transitions["score_band_up"] += 1
-                elif i3 < i2:
-                    transitions["score_band_down"] += 1
-                else:
-                    transitions["stable_band"] += 1
-            else:
-                transitions["stable_band"] += 1
-            s2 = _f(v2.get("score"))
-            s3 = _f(r.get("score"))
-            if s2 is not None and s3 is not None:
-                deltas.append(s3 - s2)
-        else:
-            transitions["unavailable"] += 1
-
-    corr = None
-    if len(deltas) >= 2:
-        # correlazione descrittiva: usiamo solo delta mean come proxy semplice
-        corr = {
-            "delta_score_n": len(deltas),
-            "delta_score_mean": round(statistics.fmean(deltas), 6),
-            "delta_score_median": round(_median(deltas) or 0, 6),
-            "note": "descriptive_only_not_pearson",
-        }
-
-    return {
-        "diagnostic_only": True,
-        "formula_recomputed": False,
-        "join_coverage": {
-            "joined": joined,
-            "missing_v2": missing_v2,
-            "missing_v3": missing_v3,
-            "v3_rows": len(rows),
-            "v2_entries": len(v2_index),
-        },
-        "transition_matrix": dict(transitions),
-        "score_correlation_descriptive": corr,
-        "warning": (
-            "Non dichiarare V3 migliore soltanto perché produce score diversi. "
-            "Confronto diagnostico read-only."
-        ),
-    }
-
-
 def compute_analytics_from_lean_rows(
     *,
     replay: Any,
     rows: list[dict[str, Any]],
-    v2_markets_by_snapshot: dict[int, list[dict[str, Any]]] | None = None,
     duration_ms: int = 0,
     snapshot_batches: int = 0,
-    v2_snapshot_batches: int = 0,
     max_rows_held_in_memory: int | None = None,
 ) -> dict[str, Any]:
     meta = _replay_meta(replay)
@@ -1718,9 +1583,12 @@ def compute_analytics_from_lean_rows(
         "family_decisions_rows": family_decisions,
         "temporal_stability": temporal_stability,
         "competition_stability": competition_stability,
-        "v2_v3_comparison": _build_v2_v3_comparison(rows, v2_markets_by_snapshot),
         "warnings": warnings,
         "blockers": blockers,
+        "legacy_purchasability_read": False,
+        "official_purchasability_source": "replay_v3",
+        "legacy_fallback_allowed": False,
+        "legacy_fallback_used": False,
         "resource_profile": {
             "strategy": "sql_aggregates_and_keyset_streaming",
             "rows_read": all_n,
@@ -1728,7 +1596,6 @@ def compute_analytics_from_lean_rows(
             "max_rows_held_in_memory": max_rows_held_in_memory
             if max_rows_held_in_memory is not None
             else all_n,
-            "v2_snapshot_batches": v2_snapshot_batches,
             "duration_ms": duration_ms,
             "formula_recomputed": False,
         },
@@ -1739,33 +1606,13 @@ def compute_analytics_from_lean_rows(
             "source_replay_immutable": True,
             "performance_real_and_synthetic_separated": True,
             "report_valid": status in ("ready", "ready_with_warnings"),
+            "legacy_purchasability_read": False,
+            "official_purchasability_source": "replay_v3",
+            "legacy_fallback_allowed": LEGACY_PURCHASABILITY_FALLBACK_ALLOWED,
+            "legacy_fallback_used": False,
         },
     }
     return _json_safe(payload)
-
-
-def _load_v2_markets_batched(
-    db: Session, *, scan_run_id: int, snapshot_ids: list[int]
-) -> tuple[dict[int, list[dict[str, Any]]], int]:
-    out: dict[int, list[dict[str, Any]]] = {}
-    batches = 0
-    S = CecchinoLabHistoricalMatchSnapshot
-    for i in range(0, len(snapshot_ids), V2_SNAPSHOT_BATCH):
-        chunk = snapshot_ids[i : i + V2_SNAPSHOT_BATCH]
-        batches += 1
-        stmt = (
-            select(S.id, S.purchasability_compatibility_json)
-            .where(S.run_id == int(scan_run_id))
-            .where(S.id.in_(chunk))
-        )
-        for sid, purch in db.execute(stmt).all():
-            payload = purch if isinstance(purch, dict) else {}
-            markets = payload.get("markets") or []
-            if isinstance(markets, list):
-                out[int(sid)] = [m for m in markets if isinstance(m, dict)]
-            else:
-                out[int(sid)] = []
-    return out, batches
 
 
 def get_purchasability_v3_replay_analytics(
@@ -1786,20 +1633,15 @@ def get_purchasability_v3_replay_analytics(
     t0 = time.monotonic()
     rows = list(iter_lean_replay_result_rows(db, int(replay_id)))
     snap_ids = sorted({int(r["source_snapshot_id"]) for r in rows})
-    snapshot_batches = (len(snap_ids) + KEYSET_BATCH - 1) // KEYSET_BATCH if snap_ids else 0
-    v2_map, v2_batches = _load_v2_markets_batched(
-        db,
-        scan_run_id=int(replay.source_scan_run_id),
-        snapshot_ids=snap_ids,
+    snapshot_batches = (
+        (len(snap_ids) + KEYSET_BATCH - 1) // KEYSET_BATCH if snap_ids else 0
     )
     duration_ms = int((time.monotonic() - t0) * 1000)
     payload = compute_analytics_from_lean_rows(
         replay=replay,
         rows=rows,
-        v2_markets_by_snapshot=v2_map,
         duration_ms=duration_ms,
         snapshot_batches=snapshot_batches,
-        v2_snapshot_batches=v2_batches,
         max_rows_held_in_memory=len(rows),
     )
     _cache_set(key, payload)

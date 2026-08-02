@@ -45,7 +45,6 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     balance_pillars as _balance_pillars,
     build_combined_patterns as _build_combined_patterns,
     build_patterns_top as _build_patterns_top,
-    build_purchasability_by_market as _build_purchasability_by_market,
     build_rating_by_market as _build_rating_by_market,
     bump_bucket_from_market as _bump_bucket_from_market,
     bump_pattern as _bump_pattern,
@@ -56,7 +55,6 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     pattern_status as _pattern_status,
     quote_count_reconciliation as _quote_count_reconciliation,
     quote_quality_of_market as _quote_quality_of_market,
-    purchasability_band_report as _purchasability_band_report,
     rating_band as _rating_band,
     signal_meta as _signal_meta,
     structural_class as _structural_class,
@@ -69,15 +67,20 @@ from app.services.cecchino_data_lab.historical_signal_export import (
     collect_all_opportunities,
     public_opportunity_row,
 )
-from app.services.cecchino_data_lab.historical_purchasability_export import (
-    PURCHASABILITY_EXPORT_SCHEMA_VERSION,
-    OBSERVATIONAL_WARNING as PURCH_OBSERVATIONAL_WARNING,
-    build_decision_rows,
-    build_purchasability_drift,
-    build_purchasability_export_summary,
-    build_purchasability_profiles,
-    collect_compact_evaluations,
-    purchasability_manifest_fields,
+from app.services.cecchino_data_lab.historical_purchasability_v3_official import (
+    build_official_purchasability_section,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_analytics import (
+    PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export import (
+    PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION,
+    write_purchasability_v3_replay_report_zip,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
+    LEGACY_PURCHASABILITY_FALLBACK_ALLOWED,
+    resolve_official_purchasability_v3_replay,
+    try_resolve_official_purchasability_v3_replay,
 )
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 
@@ -118,21 +121,21 @@ AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab
 22. Confronta i modelli sullo **stesso mercato**; non mescolare HOME/DRAW/AWAY/Over/Under in un unico ROI.
 23. F è il modello **corrente**, non automaticamente il migliore.
 24. Non modificare pesi o formule basandosi su una sola stagione.
-25. Acquistabilità: file primario `purchasability_compact.jsonl` (1 riga = snapshot×mercato). Distingui `gate_status` da `final_score` e da `diagnostic_ungated_score`.
-26. Score 0 con gate rejected ≠ fascia «Molto Bassa»: etichetta «Bloccato dal gate». `final_score` è sempre il valore persistito (formula_recomputed=false).
-27. `purchasability_decisions.jsonl` = scelta relativa diagnostica per famiglia (1X2 / Goal 2.5 / DC sintetica); non è una strategia produttiva.
-28. `purchasability_drift.json` e profili deduplicati: sola lettura metadati congelati; non ricalcolare normalizzazione.
+25. Acquistabilità ufficiale = **solo V3** dal replay storico (`official_purchasability_source=replay_v3`). Non usare V1.1/V2 né `purchasability_compatibility_json`.
+26. Gate failed ≠ score 0. `formula_recomputed=false`. Quote reali e sintetiche restano separate.
+27. Se `purchasability.status=unavailable` → replay V3 assente; non inventare score legacy.
+28. `module=purchasability` scarica l'export V3 ufficiale (`cecchino-run-{id}-purchasability-v3.zip`).
 
 Cecchino Today operativo resta su **Betfair** e non è modificato da questo report.
 """
 
 SCHEMA_MD = """# Schema report AI Cecchino Lab (v4)
 
-- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`; `signal_export_schema_version`; `purchasability_export_schema_version`; `performance_granularity=signal_opportunity`; `legacy_cell_file=signal_models.jsonl`
-- `summary.json` / `eligible_analysis`: `rating_by_market`, `purchasability_by_market` (primarie); `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic` (diagnostiche); `quote_reconciliation`; `purchasability_export`
+- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`; `signal_export_schema_version`; `purchasability_v3_*_schema_version`; `legacy_purchasability_excluded=true`; `performance_granularity=signal_opportunity`; `legacy_cell_file=signal_models.jsonl`
+- `summary.json` / `eligible_analysis`: `rating_by_market` primaria; Acquistabilità in `purchasability` (solo V3 replay); `quote_reconciliation`
 - Segnali: `signal_opportunities.jsonl` (canonico, 1 riga/opportunità); `signal_models.jsonl` (legacy, 1 riga/cella, `do_not_sum_as_independent_opportunities=true`)
-- Acquistabilità modulo: `purchasability_compact.jsonl` (canonico), `purchasability_decisions.jsonl`, `purchasability_drift.json`, `purchasability_profiles.jsonl`; `purchasability.jsonl` full solo in `full_archive`
-- Gate: `gate_status` / `score_zero_semantics` / `diagnostic_ungated_score` (read-only da phase_1×phase_2); bande numeriche solo su `gate_status=accepted`
+- Acquistabilità ufficiale: sezione `purchasability` V3; `module=purchasability` = ZIP export V3; archivio esclude campi compatibility legacy
+- Gate V3: gate failed ≠ score 0; nessun confronto V1.1/V2
 - `signal_export_reconciliation`, `market_join_diagnostics`, `model_overlap_matrix`, `consensus_distribution`, `current_model_F_diagnostics`
 - Profit/ROI/medie odds = `null` se quote_count della tipologia = 0
 - Fascia Rating `100` esclusiva
@@ -166,7 +169,6 @@ def _match_compact_row(s: CecchinoLabHistoricalMatchSnapshot) -> dict[str, Any]:
     bal_class, _ = _structural_class(bal.get("structural_summary") if bal else None)
     gi = _as_dict(s.goal_intensity_compatibility_json)
     pillars = _as_dict(gi.get("pillars"))
-    purch = _as_dict(s.purchasability_compatibility_json)
     sigs = _as_dict(s.signals_json)
     models = _as_dict(sigs.get("models"))
     af_counts = {
@@ -200,54 +202,10 @@ def _match_compact_row(s: CecchinoLabHistoricalMatchSnapshot) -> dict[str, Any]:
             for k, v in pillars.items()
         },
         "goal_intensity_execution": gi.get("execution_status"),
-        "purchasability_execution": purch.get("execution_status"),
         "signal_active_counts_A_F": af_counts,
         "result_after_lock": s.result_json,
         "pre_match_payload_sha256": s.pre_match_payload_sha256,
     }
-
-
-def _purchasability_compact_rows(
-    s: CecchinoLabHistoricalMatchSnapshot,
-    markets_by_snap: dict[int, list[CecchinoLabHistoricalMarketResult]],
-) -> list[dict[str, Any]]:
-    purch = _as_dict(s.purchasability_compatibility_json)
-    bal = _as_dict(s.balance_v5_json)
-    bal_class, _ = _structural_class(bal.get("structural_summary") if bal else None)
-    gi = _as_dict(s.goal_intensity_compatibility_json)
-    m_by_key = {m.market_key: m for m in markets_by_snap.get(int(s.id), [])}
-    rows: list[dict[str, Any]] = []
-    for mk_row in purch.get("markets") or []:
-        if not isinstance(mk_row, dict):
-            continue
-        mk = mk_row.get("market_key")
-        m = m_by_key.get(mk)
-        rows.append(
-            {
-                "lab_match_id": int(s.lab_match_id),
-                "competition_name": s.competition_name,
-                "market_key": mk,
-                "score": mk_row.get("score"),
-                "class": mk_row.get("class"),
-                "rating": mk_row.get("rating"),
-                "edge_pct": mk_row.get("edge_pct"),
-                "vantaggio_prob": mk_row.get("vantaggio_prob"),
-                "quote_quality": mk_row.get("quote_quality"),
-                "signal_active": bool(m.signal_active) if m else None,
-                "balance_class": bal_class,
-                "goal_intensity_execution": gi.get("execution_status"),
-                "won": m.won if m else None,
-                "real_profit_1u": (
-                    float(m.profit_1u_real) if m and m.profit_1u_real is not None else None
-                ),
-                "synthetic_profit_1u": (
-                    float(m.profit_1u_synthetic)
-                    if m and m.profit_1u_synthetic is not None
-                    else None
-                ),
-            }
-        )
-    return rows
 
 
 def _scope_tag(run_scope: str, is_partial: bool) -> str:
@@ -409,6 +367,20 @@ def write_historical_report_zip(
                 f"module non supportato: {module}",
                 status_code=400,
             )
+        if module_norm == "purchasability":
+            run = db.get(CecchinoLabHistoricalScanRun, run_id)
+            if not run:
+                raise CecchinoLabImportError(
+                    "run_not_found", "Run non trovato", status_code=404
+                )
+            replay = resolve_official_purchasability_v3_replay(db, int(run_id))
+            return write_purchasability_v3_replay_report_zip(
+                db,
+                int(replay.id),
+                dest,
+                mode="analysis",
+                filename_override=f"cecchino-run-{int(run_id)}-purchasability-v3.zip",
+            )
 
     run = db.get(CecchinoLabHistoricalScanRun, run_id)
     if not run:
@@ -474,11 +446,8 @@ def write_historical_report_zip(
         for s in eligible_snaps
         if _as_dict(s.goal_intensity_compatibility_json).get("execution_status") == "computed"
     )
-    purch_computed = sum(
-        1
-        for s in eligible_snaps
-        if _as_dict(s.purchasability_compatibility_json).get("execution_status") == "computed"
-    )
+    # Acquistabilità ufficiale = replay V3 (nessuna lettura compatibility JSON)
+    purch_computed = 0
 
     generator_rev = resolve_code_revision()
     manifest = {
@@ -504,7 +473,13 @@ def write_historical_report_zip(
         "report_generator_revision_status": generator_rev.get("revision_status"),
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
-        "purchasability_export_schema_version": PURCHASABILITY_EXPORT_SCHEMA_VERSION,
+        "purchasability_v3_analytics_schema_version": PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION,
+        "purchasability_v3_export_schema_version": PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION,
+        "official_purchasability_version": "V3",
+        "official_purchasability_source": "replay_v3",
+        "legacy_purchasability_excluded": True,
+        "legacy_purchasability_read": False,
+        "legacy_fallback_allowed": LEGACY_PURCHASABILITY_FALLBACK_ALLOWED,
         "current_model_key": SIGNAL_CURRENT_MODEL_KEY,
         "performance_granularity": "signal_opportunity",
         "legacy_cell_file": "signal_models.jsonl",
@@ -529,7 +504,7 @@ def write_historical_report_zip(
             "balance_v5": "imported_pure",
             "signals_matrix": "imported_pure_models_A_F",
             "goal_intensity": "historical_partial_v1",
-            "purchasability": "historical_bet365_progressive_v1",
+            "purchasability": "replay_v3_official",
         },
         "competitions_included": competitions,
         "datasets_included": datasets,
@@ -575,7 +550,7 @@ def write_historical_report_zip(
         ],
         "modules_parity": {
             "goal_intensity": "partial",
-            "purchasability": "historical_bet365_v2",
+            "purchasability": "replay_v3_official",
             "signal_models": "F_equals_current",
         },
         "operational_today_bookmaker": "Betfair",
@@ -586,6 +561,7 @@ def write_historical_report_zip(
 
     # --- reuse aggregation body via internal call ---
     return _finalize_report_zip(
+        db=db,
         dest=dest,
         filename=filename,
         mode_norm=mode_norm,
@@ -611,6 +587,7 @@ def write_historical_report_zip(
 
 def _finalize_report_zip(
     *,
+    db: Session,
     dest: BinaryIO,
     filename: str,
     mode_norm: str,
@@ -640,23 +617,9 @@ def _finalize_report_zip(
     )
     signal_models_summary = build_signal_models_summary(signal_opportunities)
 
-    # Acquistabilità export compatto (read-only, nessuna formula ricalcolata)
-    purch_evaluations = collect_compact_evaluations(
-        run_id=int(run.id),
-        snaps=eligible_snaps,
-        markets=eligible_markets,
-    )
-    purch_decisions = build_decision_rows(purch_evaluations)
-    purch_drift = build_purchasability_drift(purch_evaluations)
-    purch_profiles = build_purchasability_profiles(
-        snaps=eligible_snaps, evaluations=purch_evaluations
-    )
-    purch_export_summary = build_purchasability_export_summary(
-        evaluations=purch_evaluations,
-        decisions=purch_decisions,
-        drift=purch_drift,
-        profiles=purch_profiles,
-    )
+    # Acquistabilità ufficiale V3 (nessun fallback legacy)
+    purch_official = build_official_purchasability_section(db, int(run.id))
+    purch_replay = try_resolve_official_purchasability_v3_replay(db, int(run.id))
 
     eligibility: dict[str, int] = defaultdict(int)
     for s in snaps:
@@ -685,15 +648,17 @@ def _finalize_report_zip(
             "note": "Pilastri storici con ECDF progressivo Lab; non dichiarare V5 completo",
         },
         "purchasability": {
-            "inputs_available": sum(
-                1
-                for s in eligible_snaps
-                if _compat_flag(s.purchasability_compatibility_json, "inputs_available")
-            ),
-            "scores_computed": purch_computed,
-            "parity_status": "historical_bet365_v2",
-            "betfair_operational_profile_applied": False,
-            "note": "Indice storico Bet365 progressivo; osservazionale",
+            "official_version": "V3",
+            "source_type": "historical_replay",
+            "status": purch_official.get("status"),
+            "replay_id": purch_official.get("replay_id"),
+            "results_persisted": purch_official.get("results_persisted"),
+            "scored": purch_official.get("scored"),
+            "gate_failed": purch_official.get("gate_failed"),
+            "unavailable": purch_official.get("unavailable"),
+            "parity_status": "replay_v3_official",
+            "legacy_purchasability_read": False,
+            "note": "Acquistabilità ufficiale = replay V3; nessun fallback V1.1/V2",
         },
         "signal_models": {
             "models": list(CECCHINO_WEIGHT_MODEL_KEYS),
@@ -810,43 +775,16 @@ def _finalize_report_zip(
         else:
             _bump_bucket_from_market(coverage_counters["with_unavailable_quote"], m, comp)
 
-    # Aggregazioni Acquistabilità / Intensità / modelli A–F (stessa bump della dashboard)
-    purch_band_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
-    purch_decile_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
+    # Intensità / modelli A–F (Acquistabilità ufficiale è separata via replay V3)
     gi_class_buckets: dict[str, dict[str, dict[str, Any]]] = defaultdict(
         lambda: defaultdict(_agg_bucket)
     )
-
-    def _purch_decile(score: Any) -> str | None:
-        if score is None:
-            return None
-        try:
-            s = float(score)
-        except (TypeError, ValueError):
-            return None
-        if s >= 100:
-            return "100"
-        bucket = int(s // 10) * 10
-        return f"{bucket}-{bucket + 9}"
 
     for m in eligible_markets:
         s = snap_by_id.get(int(m.match_snapshot_id))
         if not s:
             continue
         comp = s.competition_name
-        purch = _as_dict(s.purchasability_compatibility_json)
-        for mk_row in purch.get("markets") or []:
-            if not isinstance(mk_row, dict):
-                continue
-            if mk_row.get("market_key") != m.market_key:
-                continue
-            band = _purchasability_band_report(mk_row.get("score"))
-            if band and band != "no_purch":
-                _bump_bucket_from_market(purch_band_buckets[band], m, comp)
-            dec = _purch_decile(mk_row.get("score"))
-            if dec:
-                _bump_bucket_from_market(purch_decile_buckets[dec], m, comp)
-
         gi = _as_dict(s.goal_intensity_compatibility_json)
         for pillar_name, pblock in _as_dict(gi.get("pillars")).items():
             ck = _as_dict(pblock).get("class") or _as_dict(pblock).get("class_key")
@@ -889,7 +827,6 @@ def _finalize_report_zip(
     )
 
     rating_by_market = _build_rating_by_market(eligible_markets, snap_by_id)
-    purch_by_market = _build_purchasability_by_market(eligible_markets, snap_by_id)
 
     eligible_analysis = {
         "note": (
@@ -904,7 +841,6 @@ def _finalize_report_zip(
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "quote_reconciliation": universe_recon,
         "rating_by_market": rating_by_market,
-        "purchasability_by_market": purch_by_market,
         "aggregations": {
             dim: {k: _finalize_bucket(v) for k, v in sorted(inner.items())}
             for dim, inner in buckets.items()
@@ -912,15 +848,6 @@ def _finalize_report_zip(
         "rating_global_distribution_diagnostic": {
             k: _finalize_bucket(v)
             for k, v in sorted((buckets.get("rating_band") or {}).items())
-        },
-        "purchasability_global_distribution_diagnostic": {
-            k: _finalize_bucket(v) for k, v in sorted(purch_band_buckets.items())
-        },
-        "purchasability_bands": {
-            k: _finalize_bucket(v) for k, v in sorted(purch_band_buckets.items())
-        },
-        "purchasability_deciles": {
-            k: _finalize_bucket(v) for k, v in sorted(purch_decile_buckets.items())
         },
         "goal_intensity_pillar_classes": {
             pillar: {k: _finalize_bucket(v) for k, v in sorted(inner.items())}
@@ -1017,8 +944,7 @@ def _finalize_report_zip(
         "excluded_diagnostics": excluded_diagnostics,
         "errors": errors_section,
         "data_coverage": data_coverage,
-        "purchasability_export": purch_export_summary,
-        "purchasability_observational_warning": PURCH_OBSERVATIONAL_WARNING,
+        "purchasability": purch_official,
     }
 
     patterns = _build_combined_patterns(
@@ -1082,7 +1008,13 @@ def _finalize_report_zip(
                     "signals": s.signals_json,
                     "balance_v5": s.balance_v5_json,
                     "goal_intensity_compatibility": s.goal_intensity_compatibility_json,
-                    "purchasability_compatibility": s.purchasability_compatibility_json,
+                    "purchasability": {
+                        "official_version": "V3",
+                        "source_type": "historical_replay",
+                        "replay_id": purch_official.get("replay_id"),
+                        "status": purch_official.get("status"),
+                        "legacy_purchasability_excluded": True,
+                    },
                     "quote_availability": _as_dict(s.module_availability_json),
                     "pre_match_payload_sha256": s.pre_match_payload_sha256,
                     "pre_match_locked_at": (
@@ -1229,106 +1161,16 @@ def _finalize_report_zip(
                     default=str,
                 )
 
-        def _iter_purch_full() -> Iterator[str]:
-            for s in eligible_snaps:
-                purch = _as_dict(s.purchasability_compatibility_json)
-                bal = _as_dict(s.balance_v5_json)
-                bal_class, _ = _structural_class(bal.get("structural_summary") if bal else None)
-                m_by_key = {m.market_key: m for m in markets_by_snap.get(int(s.id), [])}
-                for mk_row in purch.get("markets") or []:
-                    if not isinstance(mk_row, dict):
-                        continue
-                    mk = mk_row.get("market_key")
-                    m = m_by_key.get(mk)
-                    yield json.dumps(
-                        {
-                            "run_id": int(run.id),
-                            "lab_match_id": int(s.lab_match_id),
-                            "competition_name": s.competition_name,
-                            "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
-                            "market_key": mk,
-                            "score": mk_row.get("score"),
-                            "class": mk_row.get("class"),
-                            "status": mk_row.get("status"),
-                            "phase_1": mk_row.get("phase_1"),
-                            "phase_2": mk_row.get("phase_2"),
-                            "components": mk_row.get("components"),
-                            "quote_quality": mk_row.get("quote_quality"),
-                            "normalization_profile_version": mk_row.get(
-                                "normalization_profile_version"
-                            ),
-                            "normalization_profile_hash": mk_row.get(
-                                "normalization_profile_hash"
-                            ),
-                            "normalization_sample_size": mk_row.get(
-                                "normalization_sample_size"
-                            ),
-                            "rating": mk_row.get("rating"),
-                            "edge_pct": mk_row.get("edge_pct"),
-                            "vantaggio_prob": mk_row.get("vantaggio_prob"),
-                            "signal_active": bool(m.signal_active) if m else None,
-                            "balance_class": bal_class,
-                            "won": m.won if m else None,
-                            "real_profit_1u": (
-                                float(m.profit_1u_real)
-                                if m and m.profit_1u_real is not None
-                                else None
-                            ),
-                            "synthetic_profit_1u": (
-                                float(m.profit_1u_synthetic)
-                                if m and m.profit_1u_synthetic is not None
-                                else None
-                            ),
-                            "parity_status": mk_row.get("parity_status"),
-                            "formula_version": mk_row.get("formula_version"),
-                        },
-                        ensure_ascii=False,
-                        default=str,
-                    )
-
-        def _iter_purch_compact() -> Iterator[str]:
-            for row in purch_evaluations:
-                yield json.dumps(row, ensure_ascii=False, default=str)
-
-        def _iter_purch_decisions() -> Iterator[str]:
-            for row in purch_decisions:
-                yield json.dumps(row, ensure_ascii=False, default=str)
-
-        def _iter_purch_profiles() -> Iterator[str]:
-            for row in purch_profiles:
-                yield json.dumps(row, ensure_ascii=False, default=str)
-
-        def _write_purchasability_export_files(*, include_legacy_full: bool) -> None:
-            line_counts["purchasability_compact.jsonl"] = _write_jsonl_to_zip(
-                zf, "purchasability_compact.jsonl", _iter_purch_compact()
-            )
-            line_counts["purchasability_decisions.jsonl"] = _write_jsonl_to_zip(
-                zf, "purchasability_decisions.jsonl", _iter_purch_decisions()
-            )
-            line_counts["purchasability_profiles.jsonl"] = _write_jsonl_to_zip(
-                zf, "purchasability_profiles.jsonl", _iter_purch_profiles()
-            )
-            _put_json("purchasability_drift.json", purch_drift)
-            if include_legacy_full:
-                line_counts["purchasability.jsonl"] = _write_jsonl_to_zip(
-                    zf, "purchasability.jsonl", _iter_purch_full()
-                )
-            manifest.update(
-                purchasability_manifest_fields(
-                    include_legacy_full=include_legacy_full,
-                    line_counts={
-                        k: line_counts[k]
-                        for k in (
-                            "purchasability_compact.jsonl",
-                            "purchasability_decisions.jsonl",
-                            "purchasability_profiles.jsonl",
-                            "purchasability.jsonl",
-                        )
-                        if k in line_counts
-                    },
-                    unique_profiles=len(purch_profiles),
-                )
-            )
+        def _write_official_purchasability_files() -> None:
+            _put_json("purchasability_v3_summary.json", purch_official)
+            manifest["purchasability_v3_replay_id"] = purch_official.get("replay_id")
+            manifest["legacy_purchasability_excluded"] = True
+            manifest["legacy_purchasability_read"] = False
+            manifest["legacy_fallback_allowed"] = LEGACY_PURCHASABILITY_FALLBACK_ALLOWED
+            manifest["official_purchasability_version"] = "V3"
+            manifest["official_source_type"] = "historical_replay"
+            if purch_replay is not None:
+                line_counts["purchasability_v3_summary.json"] = 1
 
         def _iter_balance() -> Iterator[str]:
             for s in eligible_snaps:
@@ -1350,7 +1192,7 @@ def _finalize_report_zip(
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
-            _write_purchasability_export_files(include_legacy_full=True)
+            _write_official_purchasability_files()
             line_counts["balance.jsonl"] = _write_jsonl_to_zip(zf, "balance.jsonl", _iter_balance())
         elif mode_norm == "competition":
             line_counts["matches_compact.jsonl"] = _write_jsonl_to_zip(
@@ -1361,7 +1203,7 @@ def _finalize_report_zip(
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
-            _write_purchasability_export_files(include_legacy_full=False)
+            _write_official_purchasability_files()
         elif mode_norm == "module":
             if module_norm == "markets":
                 line_counts["markets.jsonl"] = _write_jsonl_to_zip(
@@ -1374,7 +1216,7 @@ def _finalize_report_zip(
                     zf, "goal_intensity.jsonl", _iter_goal_intensity()
                 )
             elif module_norm == "purchasability":
-                _write_purchasability_export_files(include_legacy_full=False)
+                _write_official_purchasability_files()
             elif module_norm == "balance":
                 line_counts["balance.jsonl"] = _write_jsonl_to_zip(
                     zf, "balance.jsonl", _iter_balance()

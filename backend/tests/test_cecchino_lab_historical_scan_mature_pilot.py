@@ -290,7 +290,11 @@ def test_competition_report_filtered():
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
         assert "matches_compact.jsonl" in names
-        assert "purchasability_compact.jsonl" in names
+        assert "purchasability_v3_summary.json" in names
+        assert "purchasability_compact.jsonl" not in names
+        purch = json.loads(zf.read("purchasability_v3_summary.json"))
+        assert purch["official_purchasability_version"] == "V3" or purch.get("official_version") == "V3"
+        assert purch.get("legacy_purchasability_read") is False
         compact = zf.read("matches_compact.jsonl").decode().strip().splitlines()
         comps = {json.loads(line)["competition_name"] for line in compact}
         assert comps == {"Serie A"}
@@ -344,9 +348,22 @@ def test_full_archive_available_and_legacy_exportable():
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
         assert "matches.jsonl" in names
-        assert "purchasability.jsonl" in names
+        assert "purchasability.jsonl" not in names
+        assert "purchasability_compact.jsonl" not in names
+        assert "purchasability_v3_summary.json" in names
         assert "patterns.json" in names
         assert "report_index.json" in names
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest.get("legacy_purchasability_excluded") is True
+        assert manifest.get("official_purchasability_version") == "V3"
+        matches = [
+            json.loads(x)
+            for x in zf.read("matches.jsonl").decode().splitlines()
+            if x
+        ]
+        assert matches
+        assert "purchasability_compatibility" not in matches[0]
+        assert matches[0].get("purchasability", {}).get("legacy_purchasability_excluded") is True
 
 
 def test_patterns_top_deterministic():
@@ -446,9 +463,13 @@ def test_v2_1_manifest_dual_revision_and_markets_identity():
     assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_3"
     ea = summary["eligible_analysis"]
     assert "rating_by_market" in ea
-    assert "purchasability_by_market" in ea
+    assert "purchasability_by_market" not in ea
     assert "rating_global_distribution_diagnostic" in ea
-    assert "purchasability_global_distribution_diagnostic" in ea
+    assert "purchasability_global_distribution_diagnostic" not in ea
+    purch = summary["purchasability"]
+    assert purch.get("official_version") == "V3" or purch.get("official_purchasability_version") == "V3"
+    assert purch.get("legacy_fallback_used") is False
+    assert manifest.get("legacy_purchasability_excluded") is True
     assert row["run_id"] == 7
     assert row["snapshot_id"] == 1
     assert row["lab_match_id"] == 100

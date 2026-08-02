@@ -282,7 +282,7 @@ def _clear_cache():
 
 
 def test_schema_version_and_message_constants():
-    assert PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION == "cecchino_lab_purchasability_v3_analytics_v1"
+    assert PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION == "cecchino_lab_purchasability_v3_analytics_v2"
     assert REPLAY_NOT_COMPLETED_MSG == (
         "Il replay deve essere completato prima di generare analytics o report."
     )
@@ -632,7 +632,7 @@ def test_compute_analytics_metadata_and_resource_profile():
     rows = _mixed_universe()
     replay = _replay_from_rows(rows)
     out = compute_analytics_from_lean_rows(
-        replay=replay, rows=rows, duration_ms=42, snapshot_batches=1, v2_snapshot_batches=0
+        replay=replay, rows=rows, duration_ms=42, snapshot_batches=1
     )
     meta = out["metadata"]
     assert meta["formula_recomputed"] is False
@@ -882,51 +882,17 @@ def test_compute_analytics_temporal_and_competition_stability_present():
             assert entry["sample_flag"] == "insufficient"  # 1 sola riga per mercato
 
 
-def test_compute_analytics_v2_v3_comparison_structure_without_v2_data():
+def test_compute_analytics_no_v2_v3_comparison_and_legacy_flags():
     rows = _mixed_universe()
     replay = _replay_from_rows(rows)
-    out = compute_analytics_from_lean_rows(replay=replay, rows=rows, v2_markets_by_snapshot=None)
-    cmp = out["v2_v3_comparison"]
-    assert cmp["diagnostic_only"] is True
-    assert cmp["formula_recomputed"] is False
-    assert cmp["join_coverage"]["v2_entries"] == 0
-    assert cmp["join_coverage"]["missing_v2"] == len(rows)
-    assert cmp["transition_matrix"] == {"unavailable": len(rows)}
-    assert "Non dichiarare V3 migliore" in cmp["warning"]
-
-
-def test_compute_analytics_v2_v3_comparison_transitions():
-    rows = [
-        _scored_row(source_snapshot_id=1, market_key="HOME", score=85),
-        _gate_failed_row(source_snapshot_id=2, market_key="HOME"),
-    ]
-    replay = _replay_from_rows(rows)
-    v2_map = {
-        1: [
-            {
-                "market_key": "HOME",
-                "status": "available",
-                "score": 40,
-                "positive_value_gate": {"status": "passed", "reason_codes": []},
-                "class": "bassa",
-            }
-        ],
-        2: [
-            {
-                "market_key": "HOME",
-                "status": "available",
-                "score": None,
-                "positive_value_gate": {"status": "failed", "reason_codes": ["no_positive_edge"]},
-            }
-        ],
-    }
-    out = compute_analytics_from_lean_rows(replay=replay, rows=rows, v2_markets_by_snapshot=v2_map)
-    cmp = out["v2_v3_comparison"]
-    assert cmp["join_coverage"]["joined"] == 2
-    assert cmp["join_coverage"]["missing_v2"] == 0
-    assert cmp["transition_matrix"]["gate_to_gate"] == 1
-    # V2 score 40 (banda 40-59) -> V3 score 85 (banda 80-89): salita di banda
-    assert cmp["transition_matrix"]["score_band_up"] == 1
+    out = compute_analytics_from_lean_rows(replay=replay, rows=rows)
+    assert "v2_v3_comparison" not in out
+    assert out["legacy_purchasability_read"] is False
+    assert out["official_purchasability_source"] == "replay_v3"
+    assert out["legacy_fallback_allowed"] is False
+    assert out["legacy_fallback_used"] is False
+    assert out["metadata"]["legacy_purchasability_read"] is False
+    assert out["metadata"]["formula_recomputed"] is False
 
 
 # ---------------------------------------------------------------------------

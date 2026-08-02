@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Make purchasability v3 official for historical runs (STEP 3C.2) (2026-08-02)
+
+- Perché: i percorsi ufficiali della Run storica leggevano ancora Acquistabilità V2 dagli snapshot.
+- Cosa: resolver V3 ufficiale; cutover dashboard/report/sintesi/archivio; analytics/export v2 senza V2; nessun fallback legacy.
+- Cosa non fa: nessuna migration; formula/Replay ID 1 / 36488 / Run #3 / snapshot invariati; nessuna nuova scansione o replay.
+
 ## Feat — Add purchasability v3 replay analytics (STEP 3C.1) (2026-08-02)
 
 - Perché: analizzare in modo riproducibile i 36488 risultati del Replay ID 1 senza ricalcolare la formula e senza toccare il report V2.

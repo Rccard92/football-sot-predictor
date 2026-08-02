@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Acquistabilità V3 ufficiale per Run storiche STEP 3C.2 (2026-08-02)
+
+Resolver read-only `resolve_official_purchasability_v3_replay` (nessun hardcode Replay ID). Analytics `…_analytics_v2` / export `…_export_v2` senza confronto V2. Dashboard, Sintesi ChatGPT, Dettaglio Acquistabilità e archivio ufficiale usano solo V3. Fallback legacy disabilitato. V1.1/V2 conservati fisicamente ma non letti. Formula/Replay/Run/snapshot/MarketResult invariati; nessuna migration/scansione/replay.
+
 ## Feat — Analytics/export Replay Acquistabilità V3 STEP 3C.1 (2026-08-02)
 
 Analytics read-only + ZIP autonomo sui risultati persistiti (Replay ID 1, Run #3, 36488 valutazioni). Schema `…_analytics_v1` / `…_export_v1`. Endpoint `…/purchasability-v3-replays/{id}/analytics` e `…/report`. Formula non ricalcolata; universi separati; gate failed ≠ score 0; real/synthetic separati; family decisions diagnostiche. Report storico V2 / menu Sintesi / Dettaglio Acquistabilità **invariati**. Next = STEP 3C.2 (sostituzione report dashboard).

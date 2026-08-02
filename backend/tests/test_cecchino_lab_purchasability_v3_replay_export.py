@@ -286,11 +286,11 @@ def _patch_resolve_code_revision(monkeypatch):
 
 
 def test_export_schema_version_constant():
-    assert PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION == "cecchino_lab_purchasability_v3_export_v1"
+    assert PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION == "cecchino_lab_purchasability_v3_export_v2"
 
 
-def test_ai_instructions_contains_all_15_rules():
-    for n in range(1, 16):
+def test_ai_instructions_contains_all_16_rules():
+    for n in range(1, 17):
         assert f"{n}. " in AI_INSTRUCTIONS_MD, f"regola {n} mancante in AI_INSTRUCTIONS_MD"
 
 
@@ -301,7 +301,8 @@ def test_ai_instructions_key_rules_content():
     assert "not_a_real_bet365_quote" in AI_INSTRUCTIONS_MD
     assert "diagnostic_family_selection" in AI_INSTRUCTIONS_MD
     assert "technical_aggregate_only" in AI_INSTRUCTIONS_MD
-    assert "v2_v3_comparison.diagnostic_only" in AI_INSTRUCTIONS_MD
+    assert "esclusivamente Acquistabilità V3" in AI_INSTRUCTIONS_MD or "esclusivamente" in AI_INSTRUCTIONS_MD
+    assert "v2_v3_comparison" not in AI_INSTRUCTIONS_MD
     assert "2022/2023" in AI_INSTRUCTIONS_MD
 
 
@@ -375,7 +376,6 @@ _EXPECTED_JSON_FILES = (
     "family_decisions_summary.json",
     "temporal_stability.json",
     "competition_stability_summary.json",
-    "v2_v3_comparison.json",
     "manifest.json",
     "report_index.json",
 )
@@ -455,6 +455,12 @@ def test_manifest_json_fields():
     assert manifest["performance_real_and_synthetic_separated"] is True
     assert manifest["export_validity"] == "valid"
     assert manifest["no_old_v2_primary_file"] is True
+    assert manifest["official_purchasability_version"] == "V3"
+    assert manifest["official_source_type"] == "historical_replay"
+    assert manifest["source_replay_id"] == 1
+    assert manifest["legacy_purchasability_included"] is False
+    assert manifest["legacy_purchasability_read"] is False
+    assert manifest["legacy_fallback_allowed"] is False
     assert isinstance(manifest["file_row_counts"], dict)
     assert manifest["file_row_counts"]["replay_results_compact.jsonl"] == len(rows)
     for name in _EXPECTED_MD_FILES:
@@ -694,7 +700,9 @@ def test_build_response_analysis_mode_headers(monkeypatch):
 
     db = _db_with_replay(SimpleNamespace(id=1, status="completed"))
 
-    def fake_write(db_, replay_id, dest, *, mode="analysis", analytics=None, lean_rows=None):
+    def fake_write(
+        db_, replay_id, dest, *, mode="analysis", analytics=None, lean_rows=None, filename_override=None
+    ):
         dest.write(b"PK-fake-zip-bytes")
         return f"fake-{replay_id}-{mode}.zip", 17
 
@@ -733,7 +741,9 @@ def test_build_response_full_archive_warning_header_ascii(monkeypatch):
 
     db = _db_with_replay(SimpleNamespace(id=1, status="completed"))
 
-    def fake_write(db_, replay_id, dest, *, mode="analysis", analytics=None, lean_rows=None):
+    def fake_write(
+        db_, replay_id, dest, *, mode="analysis", analytics=None, lean_rows=None, filename_override=None
+    ):
         dest.write(b"PK-fake-zip-bytes")
         return f"fake-{replay_id}-{mode}.zip", 17
 

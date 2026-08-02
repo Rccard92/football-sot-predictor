@@ -1,8 +1,12 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3C.2 — Acquistabilità V3 ufficiale (2026-08-02)
+
+Sezione **Acquistabilità** della dashboard Run: solo replay V3 ufficiale (resolver). Mostra Replay ID, stato, formula, scored/gate/unavailable, quote real/derived, ROI separati, riconciliazione. Se replay assente: «Acquistabilità V3 non disponibile» + CTA verso pagina Replay. Menu **Dettaglio Acquistabilità** e **Sintesi per ChatGPT** usano solo V3. Nessun fallback V1.1/V2. Endpoint: `GET …/dashboard/purchasability`, `GET …/purchasability`, `GET …/purchasability/report`.
+
 ## STEP 3C.1 — Analytics Replay V3 (fuori dashboard Run) (2026-08-02)
 
-Dashboard Run e menu report storico (**Sintesi per ChatGPT**, **Dettaglio Acquistabilità**) **invariati**. Analytics/export V3 solo su `/cecchino-lab/purchasability-replay` (lazy + download analysis/full). STEP 3C.2 collegherà V3 al menu report.
+Analytics/export V3 su `/cecchino-lab/purchasability-replay` (lazy + download analysis/full). **STEP 3C.2** ha collegato V3 a dashboard e menu report ufficiali.
 
 ## STEP 3B.1.2 — Paginazione transaction-safe (2026-08-02)
 

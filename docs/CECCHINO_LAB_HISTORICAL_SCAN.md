@@ -1,13 +1,33 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3C.2 — Acquistabilità V3 ufficiale per Run storiche (2026-08-02)
+
+V3 è l’**unica sorgente ufficiale** di Acquistabilità per le Run che possiedono un replay V3 completato e compatibile (resolver read-only, nessun hardcode di Replay ID).
+
+| Voce | Valore |
+|------|--------|
+| Resolver | `resolve_official_purchasability_v3_replay(db, source_scan_run_id)` |
+| Analytics schema | `cecchino_lab_purchasability_v3_analytics_v2` (niente `v2_v3_comparison`) |
+| Export schema | `cecchino_lab_purchasability_v3_export_v2` |
+| Dashboard Run | sezione Acquistabilità → replay V3 ufficiale |
+| Dettaglio Acquistabilità | ZIP V3 (`cecchino-run-{id}-purchasability-v3.zip`) |
+| Sintesi ChatGPT | sezione `purchasability` solo V3; se assente → `status=unavailable` |
+| Archivio ufficiale | `legacy_purchasability_excluded=true` (nessuna serializzazione V1.1/V2) |
+| Endpoint Run-centric | `GET …/historical-scans/{run_id}/purchasability` (+ `/report`) |
+| Fallback legacy | **disabilitato** (`LEGACY_PURCHASABILITY_FALLBACK_ALLOWED=false`) |
+| Dati | V1.1/V2 restano nel DB fisicamente; percorsi ufficiali non li leggono |
+| Invariato | formula V3, Replay ID 1, 36488 risultati, Run #3, snapshot, MarketResult, nessuna migration |
+
+Run #3 risolve attualmente Replay ID 1 perché è l’unico replay compatibile completato (selezione dinamica, non hardcodata).
+
 ## STEP 3C.1 — Analytics ed export Replay Acquistabilità V3 (2026-08-02)
 
 Replay ID 1 su Run #3 (2021/2022) completato con warning: 4561 snapshot, 36488 risultati, 13534 scored, 22950 gate failed, 4 unavailable, 22801 quote reali, 13683 derivate, 0 errori.
 
 | Voce | Valore |
 |------|--------|
-| Analytics schema | `cecchino_lab_purchasability_v3_analytics_v1` |
-| Export schema | `cecchino_lab_purchasability_v3_export_v1` |
+| Analytics schema | `cecchino_lab_purchasability_v3_analytics_v1` → **superseded by v2 in 3C.2** |
+| Export schema | `cecchino_lab_purchasability_v3_export_v1` → **superseded by v2 in 3C.2** |
 | Endpoint analytics | `GET /api/cecchino-lab/purchasability-v3-replays/{id}/analytics` (lazy) |
 | Endpoint report | `GET …/report?mode=analysis\|full_archive` (StreamingResponse) |
 | Sorgente | solo `CecchinoLabPurchasabilityV3ReplayRun` + `…ReplayResult` |
@@ -16,9 +36,9 @@ Replay ID 1 su Run #3 (2021/2022) completato con warning: 4561 snapshot, 36488 r
 | Gate failed | non mappato a score 0 / fascia 0–19 |
 | Family decisions | diagnostiche in-memory; no migration |
 | UI | sezione Analisi Replay V3 su `/cecchino-lab/purchasability-replay` |
-| Invariato | report V2, Sintesi ChatGPT, Dettaglio Acquistabilità, formula, schema DB |
+| Post-3C.2 | percorsi ufficiali Run usano V3; V2 solo conservazione tecnica |
 
-**STEP 3C.2 (successivo):** collegare V3 a Sintesi/Dettaglio; mantenere V2 come legacy tecnico.
+**STEP 3C.2:** completato — V3 unica Acquistabilità ufficiale; nessun fallback legacy.
 
 ## STEP 3B.1.2 — Paginazione transaction-safe replay V3 (2026-08-02)
 

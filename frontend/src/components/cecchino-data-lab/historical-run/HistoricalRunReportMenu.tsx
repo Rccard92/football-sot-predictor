@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   HISTORICAL_RUN_REPORT_MENU,
+  downloadHistoricalRunOfficialPurchasabilityReport,
   downloadHistoricalScanReport,
+  formatHistoricalDownloadError,
   type HistoricalReportMode,
   type HistoricalReportModule,
 } from '../../../lib/cecchinoLabApi'
@@ -29,15 +31,19 @@ export function HistoricalRunReportMenu({ runId, competitions = [], disabled }: 
     }
     setBusy(true)
     try {
-      await downloadHistoricalScanReport(runId, {
-        mode,
-        module,
-        competition: needsCompetition ? competition : undefined,
-      })
+      if (mode === 'module' && module === 'purchasability') {
+        await downloadHistoricalRunOfficialPurchasabilityReport(runId, 'analysis')
+      } else {
+        await downloadHistoricalScanReport(runId, {
+          mode,
+          module,
+          competition: needsCompetition ? competition : undefined,
+        })
+      }
       toast.success('Download avviato')
       setOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Download fallito')
+      toast.error(formatHistoricalDownloadError(e))
     } finally {
       setBusy(false)
     }
@@ -90,6 +96,17 @@ export function HistoricalRunReportMenu({ runId, competitions = [], disabled }: 
                 >
                   {item.label}
                   {item.recommended ? ' ★' : ''}
+                  {item.module === 'purchasability' ? (
+                    <span className="mt-0.5 block text-[11px] text-[var(--lab-muted)]">
+                      V3 · Replay
+                      {item.description ? ` — ${item.description}` : ''}
+                    </span>
+                  ) : null}
+                  {item.description && item.module !== 'purchasability' ? (
+                    <span className="mt-0.5 block text-[11px] text-[var(--lab-muted)]">
+                      {item.description}
+                    </span>
+                  ) : null}
                   {item.sizeWarning ? (
                     <span className="mt-0.5 block text-[11px] text-amber-200">
                       Archivio tecnico — può essere molto grande.

@@ -259,6 +259,32 @@ describe('cecchinoLabApi helpers', () => {
     expect(HISTORICAL_RUN_REPORT_MENU.some((i) => i.mode === 'full_archive')).toBe(true)
   })
 
+  it('report menu has single official purchasability V3 entry without V1.1/V2', () => {
+    const purchItems = HISTORICAL_RUN_REPORT_MENU.filter((i) => i.module === 'purchasability')
+    expect(purchItems).toHaveLength(1)
+    expect(purchItems[0]?.label).toBe('Dettaglio Acquistabilità')
+    expect(purchItems[0]?.description).toContain('Acquistabilità V3')
+    const labels = HISTORICAL_RUN_REPORT_MENU.map((i) => i.label).join(' ')
+    expect(labels).not.toMatch(/V1\.1/)
+    expect(labels).not.toMatch(/V2/)
+    const descriptions = HISTORICAL_RUN_REPORT_MENU.map((i) => i.description || '').join(' ')
+    expect(descriptions).not.toMatch(/V1\.1/)
+    expect(descriptions).not.toMatch(/\bV2\b/)
+  })
+
+  it('official purchasability run-centric endpoints', () => {
+    const runId = 3
+    expect(`/api/cecchino-lab/historical-scans/${runId}/purchasability`).toBe(
+      '/api/cecchino-lab/historical-scans/3/purchasability',
+    )
+    expect(`/api/cecchino-lab/historical-scans/${runId}/purchasability/report`).toBe(
+      '/api/cecchino-lab/historical-scans/3/purchasability/report',
+    )
+    expect(`/api/cecchino-lab/historical-scans/${runId}/dashboard/purchasability`).toBe(
+      '/api/cecchino-lab/historical-scans/3/dashboard/purchasability',
+    )
+  })
+
   it('historical run analysis route pattern', () => {
     const runId = 42
     const path = `/cecchino-lab/historical-scans/${runId}`

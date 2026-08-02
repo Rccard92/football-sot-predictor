@@ -1,4 +1,4 @@
-"""Export ZIP autonomo Replay Acquistabilità V3 (STEP 3C.1).
+"""Export ZIP autonomo Replay Acquistabilità V3 (STEP 3C.2) — unica sorgente ufficiale.
 
 Read-only, streaming, nessun ricalcolo formula, nessun dump ZIP intero in RAM.
 """
@@ -30,36 +30,42 @@ from app.services.cecchino_data_lab.revision_resolve import resolve_code_revisio
 
 logger = logging.getLogger(__name__)
 
-PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION = "cecchino_lab_purchasability_v3_export_v1"
+PURCHASABILITY_V3_EXPORT_SCHEMA_VERSION = "cecchino_lab_purchasability_v3_export_v2"
 SPOOL_MAX_SIZE = 8 * 1024 * 1024
 REPORT_CHUNK_SIZE = 64 * 1024
 EXPORT_MODES = frozenset({"analysis", "full_archive"})
 
 AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report Replay Acquistabilità V3
 
-1. Usa **V3** (questo report) come formula oggetto dell'analisi, non V2.
-2. Non ricalcolare la formula: tutti i valori sono persistiti (`formula_recomputed=false`).
-3. Gate failed **non** equivale a score 0: non inserire i gate falliti nella fascia «Molto Bassa» / 0–19.
-4. Analizza score e ROI **entro lo stesso mercato**; non confrontare HOME 90 con OVER_2_5 90 senza indicare il mercato.
-5. ROI reale (`profit_1u_real`) e ROI sintetico (`profit_1u_synthetic`) sono **separati**; non mescolarli.
-6. Le doppie chance (ONE_X / X_TWO / ONE_TWO) **non** sono quote Bet365 reali (`not_a_real_bet365_quote=true`).
-7. `family_decisions` sono **diagnostiche** (`diagnostic_family_selection=true`), non una strategia operativa.
-8. Non sommare mercati indipendenti come un'unica strategia.
-9. Non considerare il technical aggregate una strategia (`technical_aggregate_only=true`).
-10. Distingui value_score, quality_score e penalità; non affermare causalità.
-11. Verifica stabilità temporale (prima/seconda metà **per campionato**) e per competition.
-12. Considera numerosità e intervalli di confidenza (CI null se campione insufficiente).
-13. Non cambiare soglie operative sulla base di una sola stagione.
-14. Confronta V2/V3 soltanto in modo diagnostico (`v2_v3_comparison.diagnostic_only=true`).
-15. La stagione 2022/2023 non è ancora stata usata per validazione.
+1. Usa **esclusivamente Acquistabilità V3** (questo report). Non cercare V1.1 o V2.
+2. Non confrontare con indici Acquistabilità precedenti.
+3. La sorgente ufficiale è il **replay V3 persistito** (`official_source_type=historical_replay`).
+4. Non ricalcolare la formula: tutti i valori sono persistiti (`formula_recomputed=false`).
+5. Gate failed **non** equivale a score 0: non inserire i gate falliti nella fascia «Molto Bassa» / 0–19.
+6. Analizza score e ROI **entro lo stesso mercato**; non confrontare HOME 90 con OVER_2_5 90 senza indicare il mercato.
+7. ROI reale (`profit_1u_real`) e ROI sintetico (`profit_1u_synthetic`) sono **separati**; non mescolarli.
+8. Le doppie chance (ONE_X / X_TWO / ONE_TWO) **non** sono quote Bet365 reali (`not_a_real_bet365_quote=true`).
+9. `family_decisions` sono **diagnostiche** (`diagnostic_family_selection=true`), non una strategia operativa.
+10. Non sommare mercati indipendenti come un'unica strategia.
+11. Non considerare il technical aggregate una strategia (`technical_aggregate_only=true`).
+12. Distingui value_score, quality_score e penalità; non affermare causalità.
+13. Verifica stabilità temporale (prima/seconda metà **per campionato**) e per competition.
+14. Considera numerosità e intervalli di confidenza (CI null se campione insufficiente).
+15. Non cambiare soglie operative sulla base di una sola stagione.
+16. La stagione 2022/2023 non è ancora stata usata per validazione.
 
 Leggi prima `report_index.json`, `manifest.json`, `SCHEMA.md` e `ANALYSIS_CHECKLIST.md`.
 """
 
 SCHEMA_MD = """# Schema export Replay Acquistabilità V3
 
-- `analytics_schema_version`: cecchino_lab_purchasability_v3_analytics_v1
-- `export_schema_version`: cecchino_lab_purchasability_v3_export_v1
+- `analytics_schema_version`: cecchino_lab_purchasability_v3_analytics_v2
+- `export_schema_version`: cecchino_lab_purchasability_v3_export_v2
+- `official_purchasability_version`: V3
+- `official_source_type`: historical_replay
+- `legacy_purchasability_included`: false
+- `legacy_purchasability_read`: false
+- `legacy_fallback_allowed`: false
 - Universi: ALL / SCORED / GATE_FAILED / UNAVAILABLE / REAL_PERFORMANCE / SYNTHETIC_PERFORMANCE
 - Gate failed ≠ score 0
 - ROI = profit_units / stake_count × 100; stake 0 → null
@@ -69,21 +75,26 @@ SCHEMA_MD = """# Schema export Replay Acquistabilità V3
 - `replay_results_compact.jsonl`: 1 riga per valutazione persistita
 - `replay_results_full.jsonl`: solo mode full_archive
 - `formula_recomputed=false` sempre
+- Nessun file V1.1/V2 / compatibility / confronto legacy
 """
 
 README_MD = """# Report Replay Acquistabilità V3
 
-Export autonomo dei risultati del replay V3 (non sostituisce ancora il report storico V2).
+Export ufficiale Acquistabilità V3 dal replay storico completato.
+Unica sorgente ufficiale per le Run che possiedono un replay V3 compatibile.
+Non include V1.1, V2, né confronti legacy.
 
 Modalità:
 - **analysis** (consigliata per ChatGPT): riepiloghi + compact JSONL + family decisions
 - **full_archive**: analysis + audit verbose (`replay_results_full.jsonl`)
 
 Nessun ricalcolo formula. Nessuna modifica a Run storico / Replay / MarketResult.
+Nessun fallback verso indici Acquistabilità legacy.
 """
 
 ANALYSIS_CHECKLIST_MD = """# Checklist analisi V3
 
+- [ ] Usare esclusivamente Acquistabilità V3 (nessun V1.1/V2)
 - [ ] Riconciliazione (all = scored + gate_failed + unavailable + …)
 - [ ] Distribuzione gate e reason codes
 - [ ] Score per mercato
@@ -96,11 +107,8 @@ ANALYSIS_CHECKLIST_MD = """# Checklist analisi V3
 - [ ] Stabilità per campionato e sample flags
 - [ ] Quote reali
 - [ ] Quote derivate (sintetiche)
-- [ ] Confronto V2/V3 diagnostico
 - [ ] Concentrazione del profitto
-- [ ] Intervalli di confidenza
-- [ ] Candidati da validare
-- [ ] Anomalie / blockers
+- [ ] Manifest: official_purchasability_version=V3, legacy_*=false, formula_recomputed=false
 """
 
 
@@ -196,6 +204,7 @@ def write_purchasability_v3_replay_report_zip(
     mode: str = "analysis",
     analytics: dict[str, Any] | None = None,
     lean_rows: list[dict[str, Any]] | None = None,
+    filename_override: str | None = None,
 ) -> tuple[str, int]:
     mode_norm = (mode or "analysis").strip().lower()
     if mode_norm not in EXPORT_MODES:
@@ -217,7 +226,7 @@ def write_purchasability_v3_replay_report_zip(
     diagnostic_failed = analytics_status == "blocked" or recon_status == "failed"
 
     generator_rev = resolve_code_revision()
-    filename = (
+    filename = filename_override or (
         f"cecchino-purchasability-v3-replay-{int(replay_id)}-"
         f"{'full' if mode_norm == 'full_archive' else 'analysis'}.zip"
     )
@@ -285,6 +294,12 @@ def write_purchasability_v3_replay_report_zip(
             "blockers": analytics.get("blockers") or [],
             "files": [],
             "file_row_counts": file_row_counts,
+            "official_purchasability_version": "V3",
+            "official_source_type": "historical_replay",
+            "source_replay_id": int(replay_id),
+            "legacy_purchasability_included": False,
+            "legacy_purchasability_read": False,
+            "legacy_fallback_allowed": False,
             "no_old_v2_primary_file": True,
         }
 
@@ -316,8 +331,6 @@ def write_purchasability_v3_replay_report_zip(
                 "markets": list((analytics.get("competition_stability") or {}).keys()),
             },
         )
-        _add("v2_v3_comparison.json", analytics.get("v2_v3_comparison") or {})
-
         _add_jsonl("by_market.jsonl", _by_market_jsonl_rows(analytics))
         _add_jsonl("by_score_band.jsonl", _by_score_band_jsonl(analytics))
         _add_jsonl("by_threshold.jsonl", _by_threshold_jsonl(analytics))
@@ -364,6 +377,7 @@ def build_purchasability_v3_replay_report_zip_bytes(
     mode: str = "analysis",
     analytics: dict[str, Any] | None = None,
     lean_rows: list[dict[str, Any]] | None = None,
+    filename_override: str | None = None,
 ) -> tuple[str, bytes]:
     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
     try:
@@ -374,6 +388,7 @@ def build_purchasability_v3_replay_report_zip_bytes(
             mode=mode,
             analytics=analytics,
             lean_rows=lean_rows,
+            filename_override=filename_override,
         )
         spool.seek(0)
         data = spool.read()
@@ -393,6 +408,7 @@ def build_purchasability_v3_replay_report_response(
     replay_id: int,
     *,
     mode: str = "analysis",
+    filename_override: str | None = None,
 ) -> StreamingResponse:
     mode_norm = (mode or "analysis").strip().lower()
     if mode_norm not in EXPORT_MODES:
@@ -407,7 +423,11 @@ def build_purchasability_v3_replay_report_response(
     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
     try:
         filename, size = write_purchasability_v3_replay_report_zip(
-            db, replay_id, spool, mode=mode_norm
+            db,
+            replay_id,
+            spool,
+            mode=mode_norm,
+            filename_override=filename_override,
         )
     except Exception:
         spool.close()

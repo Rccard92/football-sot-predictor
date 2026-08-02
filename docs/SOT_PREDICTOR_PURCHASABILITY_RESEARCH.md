@@ -2,9 +2,13 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## STEP 3C.2 — V3 ufficiale (2026-08-02)
+
+Acquistabilità V3 è l’unica sorgente ufficiale per Run con replay V3 compatibile. Nessun confronto V2/V3 negli analytics ufficiali. Nessun fallback legacy. Dati V1.1/V2 restano nel DB solo per conservazione/rollback tecnico.
+
 ## STEP 3C.1 — Analytics Replay V3 (2026-08-02)
 
-Replay ID 1 completato su stagione 2021/2022 (Run #3). Analytics/export V3 read-only sui risultati persistiti: score bands, threshold, gate, penalità, Value/Quality, family decisions diagnostiche, stabilità temporale per campionato, confronto V2/V3 diagnostico. Quote reali e derivate separate. Report storico V2 invariato fino a STEP 3C.2. Stagione 2022/2023 non ancora usata per validazione soglie.
+Replay ID 1 completato su stagione 2021/2022 (Run #3). Analytics/export V3 read-only sui risultati persistiti: score bands, threshold, gate, penalità, Value/Quality, family decisions diagnostiche, stabilità temporale per campionato. (Il confronto V2/V3 diagnostico di 3C.1 è stato rimosso in 3C.2.) Quote reali e derivate separate. Stagione 2022/2023 non ancora usata per validazione soglie.
 
 ## Affidabilità storica vs Acquistabilità (FASE 1/5)
 

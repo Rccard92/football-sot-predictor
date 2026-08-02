@@ -46,7 +46,7 @@ import {
   type HistoricalRunMatchDetail as MatchDetail,
   type HistoricalRunMatchRow,
   type HistoricalRunPattern,
-  type HistoricalRunPurchasabilityAnalytics,
+  type HistoricalRunOfficialPurchasability,
   type HistoricalRunRatingCell,
   type HistoricalRunSignalsDashboard,
   type HistoricalRunTimelinePoint,
@@ -72,7 +72,7 @@ export function CecchinoLabHistoricalRunPage() {
   const [ratings, setRatings] = useState<
     SectionState<{ bands: string[]; matrix: HistoricalRunRatingCell[]; warning?: string }>
   >(emptySection())
-  const [purch, setPurch] = useState<SectionState<HistoricalRunPurchasabilityAnalytics>>(emptySection())
+  const [purch, setPurch] = useState<SectionState<HistoricalRunOfficialPurchasability>>(emptySection())
   const [signals, setSignals] = useState<SectionState<HistoricalRunSignalsDashboard>>(emptySection())
   const [balance, setBalance] = useState<SectionState<HistoricalRunBalanceAnalytics>>(emptySection())
   const [gi, setGi] = useState<SectionState<HistoricalRunGoalIntensityAnalytics>>(emptySection())
@@ -314,8 +314,13 @@ export function CecchinoLabHistoricalRunPage() {
           ) : null}
         </Section>
 
-        <Section loading={purch.loading} error={purch.error} title="Acquistabilità" onRetry={() => void loadCore()}>
-          {purch.data ? <HistoricalRunPurchasability data={purch.data} /> : null}
+        <Section
+          loading={purch.loading}
+          error={purch.error}
+          title="Acquistabilità V3"
+          onRetry={() => void loadCore()}
+        >
+          {purch.data ? <HistoricalRunPurchasability data={purch.data} runId={runId} /> : null}
         </Section>
 
         <Section loading={signals.loading} error={signals.error} title="Segnali" onRetry={() => void loadCore()}>

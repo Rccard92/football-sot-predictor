@@ -40,7 +40,6 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     GI_PILLAR_LABELS,
     GI_PILLARS,
     MIN_COMBO_SAMPLE,
-    PURCH_BANDS_DASHBOARD,
     RATING_BANDS_DASHBOARD,
     agg_bucket,
     as_dict,
@@ -66,13 +65,14 @@ from app.services.cecchino_data_lab.historical_signal_export import (
     build_signal_models_summary,
     collect_all_opportunities,
 )
-from app.services.cecchino_data_lab.historical_purchasability_export import (
-    OBSERVATIONAL_WARNING as PURCH_OBSERVATIONAL_WARNING,
-    PURCHASABILITY_EXPORT_SCHEMA_VERSION,
-    build_dashboard_purchasability_views,
-    build_decision_rows,
-    build_purchasability_drift,
-    collect_compact_evaluations,
+from app.services.cecchino_data_lab.historical_purchasability_v3_official import (
+    build_official_dashboard_purchasability,
+    build_official_match_purchasability,
+    load_official_v3_purch_score_index,
+    resolve_v3_purch_band_score_index,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
+    try_resolve_official_purchasability_v3_replay,
 )
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
@@ -240,14 +240,6 @@ def _snap_in_date_range(s: CecchinoLabHistoricalMatchSnapshot, filters: dict[str
     return True
 
 
-def _purch_score_for_market(snap: CecchinoLabHistoricalMatchSnapshot, market_key: str) -> Any:
-    purch = as_dict(snap.purchasability_compatibility_json)
-    for mk_row in purch.get("markets") or []:
-        if isinstance(mk_row, dict) and mk_row.get("market_key") == market_key:
-            return mk_row.get("score")
-    return None
-
-
 def _module_obs_status(payload: dict[str, Any] | None, *, status_keys: tuple[str, ...]) -> str:
     data = as_dict(payload)
     if not data:
@@ -288,7 +280,6 @@ def _load_snapshots_lean(db: Session, run_id: int) -> list[CecchinoLabHistorical
                     CecchinoLabHistoricalMatchSnapshot.signals_json,
                     CecchinoLabHistoricalMatchSnapshot.balance_v5_json,
                     CecchinoLabHistoricalMatchSnapshot.goal_intensity_compatibility_json,
-                    CecchinoLabHistoricalMatchSnapshot.purchasability_compatibility_json,
                     CecchinoLabHistoricalMatchSnapshot.quote_sources_json,
                     CecchinoLabHistoricalMatchSnapshot.result_json,
                     CecchinoLabHistoricalMatchSnapshot.settlement_summary_json,
@@ -340,11 +331,7 @@ def _snap_passes_module_filters(
         st = gi.get("execution_status") or gi.get("observation_status") or "unavailable"
         if st != filters["goal_intensity_status"]:
             return False
-    if filters.get("purchasability_status"):
-        purch = as_dict(s.purchasability_compatibility_json)
-        st = purch.get("execution_status") or purch.get("observation_status") or "unavailable"
-        if st != filters["purchasability_status"]:
-            return False
+    # purchasability_status legacy V2: non letto. Filtro ignorato (nessun fallback).
     return True
 
 
@@ -352,6 +339,8 @@ def _market_passes_filters(
     m: CecchinoLabHistoricalMarketResult,
     s: CecchinoLabHistoricalMatchSnapshot | None,
     filters: dict[str, Any],
+    *,
+    v3_purch_scores: dict[tuple[int, str], Any] | None = None,
 ) -> bool:
     if filters.get("market_key") and m.market_key != filters["market_key"]:
         return False
@@ -364,8 +353,9 @@ def _market_passes_filters(
     if filters.get("signal_active") is not None:
         if bool(m.signal_active) != bool(filters["signal_active"]):
             return False
-    if filters.get("purchasability_band") and s is not None:
-        score = _purch_score_for_market(s, m.market_key)
+    # Banda Acquistabilità: solo score V3 ufficiali. Se replay assente → ignora filtro.
+    if filters.get("purchasability_band") and v3_purch_scores is not None and s is not None:
+        score = v3_purch_scores.get((int(s.id), str(m.market_key)))
         if purchasability_band_dashboard(score) != filters["purchasability_band"]:
             return False
     if filters.get("signal_model") and s is not None:
@@ -395,6 +385,8 @@ def _market_passes_filters(
 
 
 def _partition_universe(
+    db: Session,
+    run_id: int,
     snaps: list[CecchinoLabHistoricalMatchSnapshot],
     markets: list[CecchinoLabHistoricalMarketResult],
     filters: dict[str, Any],
@@ -425,6 +417,8 @@ def _partition_universe(
             s for s in filtered_snaps if s.historical_eligibility_status == elig
         ]
 
+    v3_purch_scores = resolve_v3_purch_band_score_index(db, run_id, filters)
+
     allowed_ids = {int(s.id) for s in filtered_snaps}
     filtered_markets: list[CecchinoLabHistoricalMarketResult] = []
     for m in markets:
@@ -432,7 +426,7 @@ def _partition_universe(
         if sid not in allowed_ids:
             continue
         s = snap_by_id.get(sid)
-        if not _market_passes_filters(m, s, filters):
+        if not _market_passes_filters(m, s, filters, v3_purch_scores=v3_purch_scores):
             continue
         filtered_markets.append(m)
     return filtered_snaps, filtered_markets, snap_by_id
@@ -464,7 +458,7 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
 
         real_n = sum(1 for m in perf_markets if m.is_real_book_quote)
@@ -692,19 +686,10 @@ def _compute_module_coverage(
                 )
             )
         ),
-        "purchasability": cov(
-            lambda s: (
-                "complete"
-                if as_dict(s.purchasability_compatibility_json).get("execution_status")
-                == "computed"
-                or as_dict(s.purchasability_compatibility_json).get("markets")
-                else (
-                    "partial"
-                    if s.purchasability_compatibility_json
-                    else "unavailable"
-                )
-            )
-        ),
+        "purchasability": {
+            "note": "coverage ufficiale via replay V3 (vedi sezione Acquistabilità)",
+            "legacy_purchasability_read": False,
+        },
     }
 
 
@@ -713,7 +698,7 @@ def dashboard_markets(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         _, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
 
         rows: list[dict[str, Any]] = []
@@ -804,7 +789,7 @@ def dashboard_ratings(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         _, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
         cells: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
         for m in perf_markets:
@@ -864,112 +849,9 @@ def dashboard_ratings(db: Session, run_id: int, filters: dict[str, Any]) -> dict
 
 
 def dashboard_purchasability(db: Session, run_id: int, filters: dict[str, Any]) -> dict[str, Any]:
-    def compute(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
-        snaps = _load_snapshots_lean(db, run_id)
-        markets = _load_markets(db, run_id)
-        perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
-        )
-
-        by_band: dict[str, dict[str, Any]] = defaultdict(agg_bucket)
-        by_market_band: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
-        by_comp_band: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
-        rating_x_purch: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
-
-        complete = partial = unavailable = 0
-        for s in perf_snaps:
-            purch = as_dict(s.purchasability_compatibility_json)
-            st = purch.get("execution_status") or purch.get("observation_status")
-            if st == "computed" or purch.get("markets"):
-                complete += 1
-            elif purch:
-                partial += 1
-            else:
-                unavailable += 1
-
-        for m in perf_markets:
-            s = snap_by_id.get(int(m.match_snapshot_id))
-            if not s:
-                continue
-            band = purchasability_band_dashboard(_purch_score_for_market(s, m.market_key))
-            rb = rating_band_dashboard(m.rating)
-            comp = s.competition_name or "unknown"
-            bump_bucket_from_market(by_band[band], m, comp)
-            bump_bucket_from_market(by_market_band[(m.market_key, band)], m, comp)
-            bump_bucket_from_market(by_comp_band[(comp, band)], m, comp)
-            bump_bucket_from_market(rating_x_purch[(rb, band)], m, comp)
-
-        def fin_map(src: dict) -> list[dict[str, Any]]:
-            out = []
-            for key, b in sorted(src.items(), key=lambda x: str(x[0])):
-                fb = finalize_bucket(b)
-                if isinstance(key, tuple):
-                    row = {"keys": list(key), **fb}
-                else:
-                    row = {"band": key, **fb}
-                out.append(row)
-            return out
-
-        # Export-backed views (gate / decisioni / drift) — read-only
-        evaluations = collect_compact_evaluations(
-            run_id=int(run.id),
-            snaps=perf_snaps,
-            markets=perf_markets,
-        )
-        decisions = build_decision_rows(evaluations)
-        drift = build_purchasability_drift(evaluations)
-        views = build_dashboard_purchasability_views(
-            evaluations=evaluations,
-            decisions=decisions,
-            drift=drift,
-        )
-
-        return {
-            "run_id": int(run.id),
-            "is_provisional": _is_provisional(run),
-            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
-            "purchasability_export_schema_version": PURCHASABILITY_EXPORT_SCHEMA_VERSION,
-            "filters": filters,
-            "bands": list(PURCH_BANDS_DASHBOARD),
-            "distribution": {
-                band: finalize_bucket(by_band.get(band, agg_bucket()))
-                for band in PURCH_BANDS_DASHBOARD
-            },
-            "distribution_role": "diagnostic_coverage_counts",
-            "by_market": fin_map(by_market_band),
-            "primary_view": "market_x_purchasability_band",
-            "by_competition": fin_map(by_comp_band),
-            "rating_x_purchasability": fin_map(rating_x_purch),
-            "complete_count": complete,
-            "partial_count": partial,
-            "unavailable_count": unavailable,
-            "profile_sample_size": len(perf_snaps),
-            "execution_status": (
-                "complete" if complete and not unavailable and not partial else "partial"
-            ),
-            "observation_status": "observational_only",
-            "warning": (
-                "I mercati sono valutazioni indipendenti. "
-                "Le performance delle fasce sono confrontabili principalmente "
-                "all'interno dello stesso mercato."
-            ),
-            "note": (
-                "Vista primaria: mercato × fascia Acquistabilità. "
-                "La distribuzione globale è diagnostica (coverage/conteggi), "
-                "non un ROI universale. Profit null se quote_count=0."
-            ),
-            "observational_warning": PURCH_OBSERVATIONAL_WARNING,
-            "scores_by_market": views["scores_by_market"],
-            "gate": views["gate"],
-            "decisions_by_group": views["decisions_by_group"],
-            "drift": views["drift"],
-            "evaluations_total": len(evaluations),
-            "decisions_total": len(decisions),
-            "formula_recomputed": False,
-            "run_snapshot_modified": False,
-        }
-
-    return _cached_or_compute(db, run_id, "purchasability", filters, compute)
+    """Dashboard Acquistabilità: solo replay V3 ufficiale via resolver (mai V2)."""
+    _get_run(db, run_id)
+    return build_official_dashboard_purchasability(db, run_id, filters=filters)
 
 
 def dashboard_signals(db: Session, run_id: int, filters: dict[str, Any]) -> dict[str, Any]:
@@ -977,7 +859,7 @@ def dashboard_signals(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
 
         opportunities = collect_all_opportunities(
@@ -1084,7 +966,7 @@ def dashboard_balance(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
         markets_by_snap: dict[int, list[CecchinoLabHistoricalMarketResult]] = defaultdict(list)
         for m in perf_markets:
@@ -1221,7 +1103,7 @@ def dashboard_goal_intensity(db: Session, run_id: int, filters: dict[str, Any]) 
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
         markets_by_snap: dict[int, list[CecchinoLabHistoricalMarketResult]] = defaultdict(list)
         for m in perf_markets:
@@ -1367,11 +1249,17 @@ def dashboard_competitions(db: Session, run_id: int, filters: dict[str, Any]) ->
             ]
         snap_by_id = {int(s.id): s for s in filtered_snaps}
         allowed = set(snap_by_id)
+        v3_purch_scores = resolve_v3_purch_band_score_index(db, run_id, filters)
         filtered_markets = [
             m
             for m in markets
             if int(m.match_snapshot_id) in allowed
-            and _market_passes_filters(m, snap_by_id.get(int(m.match_snapshot_id)), filters)
+            and _market_passes_filters(
+                m,
+                snap_by_id.get(int(m.match_snapshot_id)),
+                filters,
+                v3_purch_scores=v3_purch_scores,
+            )
         ]
 
         by_comp: dict[str, list[CecchinoLabHistoricalMatchSnapshot]] = defaultdict(list)
@@ -1467,8 +1355,12 @@ def dashboard_timeline(
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
+        v3_tl_scores = None
+        _tl_replay = try_resolve_official_purchasability_v3_replay(db, run_id)
+        if _tl_replay is not None:
+            v3_tl_scores = load_official_v3_purch_score_index(db, int(_tl_replay.id))
         # Timeline include anche esclusi per conteggi processed/excluded
         timeline_snaps = [s for s in snaps if _snap_passes_module_filters(s, filters)]
         if filters.get("competition"):
@@ -1532,15 +1424,17 @@ def dashboard_timeline(
                 bump_bucket_from_market(b, m, None)
             fb = finalize_bucket(b)
             ratings = [m.rating for m in mkts if m.rating is not None]
-            purch_scores = []
-            for s in eligible:
-                purch = as_dict(s.purchasability_compatibility_json)
-                for row in purch.get("markets") or []:
-                    if isinstance(row, dict) and row.get("score") is not None:
-                        try:
-                            purch_scores.append(float(row["score"]))
-                        except (TypeError, ValueError):
-                            pass
+            purch_scores: list[float] = []
+            # Media Acquistabilità timeline: solo se indice V3 già risolto nel closure
+            if v3_tl_scores is not None:
+                for s in eligible:
+                    for m in markets_by_snap.get(int(s.id), []):
+                        sc = v3_tl_scores.get((int(s.id), str(m.market_key)))
+                        if sc is not None:
+                            try:
+                                purch_scores.append(float(sc))
+                            except (TypeError, ValueError):
+                                pass
             bal_cov = sum(1 for s in eligible if s.balance_v5_json)
             gi_cov = sum(
                 1
@@ -1598,7 +1492,7 @@ def dashboard_patterns(db: Session, run_id: int, filters: dict[str, Any]) -> dic
         snaps = _load_snapshots_lean(db, run_id)
         markets = _load_markets(db, run_id)
         _, perf_markets, snap_by_id = _partition_universe(
-            snaps, markets, filters, for_performance=True
+            db, run_id, snaps, markets, filters, for_performance=True
         )
         raw = build_combined_patterns(perf_markets, snap_by_id)
         grouped = group_patterns_for_dashboard(raw)
@@ -1716,6 +1610,7 @@ def list_dashboard_matches(
 
     # Per explorer: eligibility_status dal filtro (default eligible_core, ma può essere all)
     elig_filter = filters.get("eligibility_status")
+    v3_purch_scores = resolve_v3_purch_band_score_index(db, run_id, filters)
     rows = []
     for s in snaps:
         if not _snap_passes_module_filters(s, filters):
@@ -1726,7 +1621,10 @@ def list_dashboard_matches(
         mkts = markets_by_snap.get(int(s.id), [])
         # market-level filters: keep snap if any market matches (or no market filter)
         if filters.get("market_key") or filters.get("rating_band") or filters.get("quote_quality") or filters.get("signal_active") is not None or filters.get("purchasability_band") or filters.get("signal_model"):
-            if not any(_market_passes_filters(m, s, filters) for m in mkts) and mkts:
+            if not any(
+                _market_passes_filters(m, s, filters, v3_purch_scores=v3_purch_scores)
+                for m in mkts
+            ) and mkts:
                 # if no markets and filters require markets, skip eligible with no markets
                 if any(
                     filters.get(k)
@@ -1756,7 +1654,6 @@ def list_dashboard_matches(
         bal = as_dict(s.balance_v5_json)
         bal_class, _ = structural_class(bal.get("structural_summary") if bal else None)
         gi = as_dict(s.goal_intensity_compatibility_json)
-        purch = as_dict(s.purchasability_compatibility_json)
         won = [m.market_key for m in mkts if m.won is True]
         lost = [m.market_key for m in mkts if m.won is False]
         real_n = sum(1 for m in mkts if m.is_real_book_quote)
@@ -1781,8 +1678,10 @@ def list_dashboard_matches(
                 "highest_rating_market": highest,
                 "highest_rating": highest_rating,
                 "purchasability_summary": {
-                    "execution_status": purch.get("execution_status"),
-                    "markets_count": len(as_list(purch.get("markets"))),
+                    "official_version": "V3",
+                    "source_type": "historical_replay",
+                    "legacy_purchasability_read": False,
+                    "note": "Dettaglio Acquistabilità V3 nella sezione dedicata / match purchasability",
                 },
                 "active_signal_models": active_models,
                 "balance_class": bal_class,
@@ -1877,7 +1776,9 @@ def get_dashboard_match_detail(db: Session, run_id: int, snapshot_id: int) -> di
             "signal_models": as_dict(snap.signals_json),
             "balance": as_dict(snap.balance_v5_json),
             "goal_intensity": as_dict(snap.goal_intensity_compatibility_json),
-            "purchasability": as_dict(snap.purchasability_compatibility_json),
+            "purchasability": build_official_match_purchasability(
+                db, run_id, snapshot_id
+            ),
             "quote_sources": as_dict(snap.quote_sources_json),
             "module_availability": as_dict(snap.module_availability_json),
             "pre_match_hash": snap.pre_match_payload_sha256,

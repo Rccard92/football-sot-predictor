@@ -404,6 +404,9 @@ def test_ratings_purchasability_signals_balance_gi():
     ), patch(
         "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
         return_value=markets,
+    ), patch(
+        "app.services.cecchino_data_lab.historical_purchasability_v3_official.try_resolve_official_purchasability_v3_replay",
+        return_value=None,
     ):
         ratings = dashboard_ratings(db, 1, filters)
         purch = dashboard_purchasability(db, 1, filters)
@@ -411,7 +414,10 @@ def test_ratings_purchasability_signals_balance_gi():
         bal = dashboard_balance(db, 1, filters)
         gi = dashboard_goal_intensity(db, 1, filters)
     assert any(c["rating_band"] == "70-79" for c in ratings["matrix"])
-    assert purch["observation_status"] == "observational_only"
+    assert purch["status"] == "unavailable"
+    assert purch["official_purchasability_source"] == "replay_v3"
+    assert purch["legacy_purchasability_read"] is False
+    assert purch["legacy_fallback_used"] is False
     assert any(m["is_current_model"] for m in signals["models"] if m["model_key"] == "F")
     assert len(bal["pillars"]) == 4
     assert any(p["observation_status"] in ("complete", "partial") for p in bal["pillars"])
@@ -455,6 +461,9 @@ def test_filters_cumulative_and_match_pagination_detail():
     ), patch(
         "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
         return_value=markets,
+    ), patch(
+        "app.services.cecchino_data_lab.historical_purchasability_v3_official.try_resolve_official_purchasability_v3_replay",
+        return_value=None,
     ):
         mk = dashboard_markets(db, 1, filters)
         lst = list_dashboard_matches(db, 1, parse_dashboard_filters(eligibility_status="all"), limit=2, offset=0)
@@ -467,6 +476,10 @@ def test_filters_cumulative_and_match_pagination_detail():
     assert detail["result_after_lock"]["label"] == "Risultato collegato dopo il blocco"
     assert detail["prematch"]["cecchino_final"]
     assert detail["result_after_lock"]["settlement"]
+    purch = detail["prematch"]["purchasability"]
+    assert purch["status"] == "unavailable"
+    assert purch["legacy_purchasability_read"] is False
+    assert "markets" not in purch or purch.get("reason") == "purchasability_v3_replay_not_available"
 
 
 def test_run_not_found_failed_cancelled_cache():
@@ -889,6 +902,9 @@ def test_v2_1_by_market_helpers_and_overview_revisions():
     ), patch(
         "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
         return_value=markets,
+    ), patch(
+        "app.services.cecchino_data_lab.historical_purchasability_v3_official.try_resolve_official_purchasability_v3_replay",
+        return_value=None,
     ):
         out = dashboard_overview(db, 1, parse_dashboard_filters())
         rat = dashboard_ratings(db, 1, parse_dashboard_filters())
@@ -902,8 +918,9 @@ def test_v2_1_by_market_helpers_and_overview_revisions():
     assert rat["primary_view"] == "market_x_rating_band"
     assert "indipendenti" in (rat.get("warning") or "")
     assert any(c["rating_band"] == "100" for c in rat["matrix"])
-    assert purch["primary_view"] == "market_x_purchasability_band"
-    assert purch["distribution_role"] == "diagnostic_coverage_counts"
-    assert "by_market" in purch
+    assert purch["status"] == "unavailable"
+    assert purch["official_version"] == "V3"
+    assert purch["legacy_fallback_allowed"] is False
+    assert "by_market" not in purch or purch.get("reason")
     assert not getattr(db, "add").called
     assert not getattr(db, "commit").called

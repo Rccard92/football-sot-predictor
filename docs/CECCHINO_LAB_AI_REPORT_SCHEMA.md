@@ -3,14 +3,22 @@
 Versione schema: `cecchino_lab_ai_report_v4`
 Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation_version`)
 Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
-Versione export Acquistabilità: `cecchino_lab_purchasability_export_v1` (`purchasability_export_schema_version`)
+Acquistabilità ufficiale: **V3 replay** (`cecchino_lab_purchasability_v3_analytics_v2` / `…_export_v2`)
+Export V2 Lab (`cecchino_lab_purchasability_export_v1`): legacy tecnico isolato, non usato dai percorsi ufficiali
+
+## STEP 3C.2 — V3 unica Acquistabilità ufficiale (2026-08-02)
+
+- `module=purchasability` → ZIP V3 ufficiale (`cecchino-run-{run_id}-purchasability-v3.zip`)
+- `ai_summary.purchasability` → summary/analytics V3 + metadata replay; se assente → `status=unavailable`
+- competition / full_archive: `legacy_purchasability_excluded=true`; nessun `purchasability_compact.jsonl` V2
+- Istruzioni AI: usare esclusivamente V3; non cercare V1.1/V2; gate failed ≠ score 0
 
 ## STEP 3C.1 — Export Replay Acquistabilità V3 (autonomo)
 
-Schema analytics: `cecchino_lab_purchasability_v3_analytics_v1`
-Schema export: `cecchino_lab_purchasability_v3_export_v1`
+Schema analytics: `cecchino_lab_purchasability_v3_analytics_v1` → **v2 in 3C.2**
+Schema export: `cecchino_lab_purchasability_v3_export_v1` → **v2 in 3C.2**
 
-ZIP dedicato al replay V3 (`mode=analysis` consigliato per ChatGPT; `full_archive` opzionale). **Non** sostituisce ancora `purchasability_compact.jsonl` / Sintesi / Dettaglio Acquistabilità del report storico V2 (STEP 3C.2).
+ZIP dedicato al replay V3 (`mode=analysis` consigliato per ChatGPT; `full_archive` opzionale). Dal STEP 3C.2 è la sorgente ufficiale anche per Sintesi/Dettaglio Run.
 
 File primari analysis: `summary.json`, `reconciliation.json`, `replay_results_compact.jsonl`, `family_decisions.jsonl`, `AI_INSTRUCTIONS.md`, `ANALYSIS_CHECKLIST.md`, ...
 Full: + `replay_results_full.jsonl`.

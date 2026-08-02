@@ -73,6 +73,9 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_analytic
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export import (
     build_purchasability_v3_replay_report_response,
 )
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
+    resolve_official_purchasability_v3_replay,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -798,6 +801,47 @@ def historical_run_dashboard_purchasability(
         )
     except CecchinoLabImportError as exc:
         return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/purchasability")
+def historical_run_purchasability(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Acquistabilità V3 ufficiale per Run (resolve + analytics). 409 se replay assente."""
+    try:
+        replay = resolve_official_purchasability_v3_replay(db, run_id)
+        result = get_purchasability_v3_replay_analytics(db, int(replay.id))
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans/{run_id}/purchasability/report")
+def historical_run_purchasability_report(
+    run_id: int,
+    mode: str = Query("analysis"),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Export ZIP Acquistabilità V3 ufficiale per Run. 409 se replay assente."""
+    try:
+        replay = resolve_official_purchasability_v3_replay(db, run_id)
+        return build_purchasability_v3_replay_report_response(
+            db,
+            int(replay.id),
+            mode=mode,
+            filename_override=f"cecchino-run-{run_id}-purchasability-v3.zip",
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 @router.get("/historical-scans/{run_id}/purchasability-v3-replay/preflight")

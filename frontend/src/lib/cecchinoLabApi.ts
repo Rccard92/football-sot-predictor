@@ -910,6 +910,43 @@ export function getHistoricalScanSummary(runId: number): Promise<Record<string, 
   return requestJson(`/api/cecchino-lab/historical-scans/${runId}/summary`)
 }
 
+async function readHttpErrorMessage(res: Response, fallback: string): Promise<string> {
+  let message = fallback
+  try {
+    const body = (await res.json()) as {
+      detail?: string | { message?: string; detail?: string }
+      message?: string
+    }
+    if (typeof body?.detail === 'string') {
+      message = body.detail
+    } else if (body?.detail && typeof body.detail === 'object') {
+      message =
+        (typeof body.detail.message === 'string' && body.detail.message) ||
+        (typeof body.detail.detail === 'string' && body.detail.detail) ||
+        message
+    } else if (typeof body?.message === 'string') {
+      message = body.message
+    }
+  } catch {
+    /* ignore non-JSON bodies */
+  }
+  return message
+}
+
+export function formatHistoricalDownloadError(err: unknown, fallback = 'Download fallito'): string {
+  if (err instanceof AdminHttpError) {
+    if (err.status === 409) {
+      return (
+        err.message ||
+        'Acquistabilità V3 non disponibile: completa il replay prima di scaricare il report.'
+      )
+    }
+    return err.message || fallback
+  }
+  if (err instanceof Error && err.message) return err.message
+  return fallback
+}
+
 export async function downloadHistoricalScanReport(
   runId: number,
   options?: {
@@ -918,6 +955,10 @@ export async function downloadHistoricalScanReport(
     module?: HistoricalReportModule
   },
 ): Promise<void> {
+  if (options?.mode === 'module' && options.module === 'purchasability') {
+    await downloadHistoricalRunOfficialPurchasabilityReport(runId, 'analysis')
+    return
+  }
   const base = getApiBase()
   const params = new URLSearchParams()
   params.set('mode', options?.mode ?? 'ai_summary')
@@ -927,7 +968,11 @@ export async function downloadHistoricalScanReport(
     `${base}/api/cecchino-lab/historical-scans/${runId}/report?${params.toString()}`,
   )
   if (!res.ok) {
-    throw new AdminHttpError(res.status, `Download report fallito (${res.status})`, null)
+    const message = await readHttpErrorMessage(
+      res,
+      `Download report fallito (${res.status})`,
+    )
+    throw new AdminHttpError(res.status, message, null)
   }
   const blob = await res.blob()
   const cd = res.headers.get('Content-Disposition') || ''
@@ -1839,7 +1884,7 @@ export function getHistoricalRunDashboardRatings(
 export function getHistoricalRunDashboardPurchasability(
   runId: number,
   filters: HistoricalRunFilters = {},
-): Promise<HistoricalRunPurchasabilityAnalytics> {
+): Promise<HistoricalRunOfficialPurchasability> {
   return dashboardGet(
     `/api/cecchino-lab/historical-scans/${runId}/dashboard/purchasability`,
     filters,
@@ -2281,6 +2326,98 @@ export type HistoricalPurchasabilityV3ReplayAnalytics = {
 
 export type PurchasabilityV3ReplayReportMode = 'analysis' | 'full_archive'
 
+/** Metadati ufficiali Acquistabilità V3 (dashboard / sezione Run). */
+export type HistoricalRunOfficialPurchasabilityMetadata = {
+  official_version: 'V3'
+  official_purchasability_version?: 'V3' | string
+  source_type: 'historical_replay'
+  official_purchasability_source?: 'replay_v3' | string
+  replay_id: number | null
+  replay_status?: string | null
+  formula_version?: string | null
+  replay_engine_version?: string | null
+  replay_schema_version?: string | null
+  candidate_version?: string | null
+  analytics_schema_version?: string | null
+  export_schema_version?: string | null
+  legacy_purchasability_read?: false
+  legacy_fallback_allowed?: boolean
+  legacy_fallback_used: false
+  formula_recomputed?: false | boolean
+  analytics?: HistoricalPurchasabilityV3ReplayAnalytics | null
+  analytics_metadata?: Record<string, unknown> | null
+}
+
+export type HistoricalRunOfficialPurchasabilityCta = {
+  label: string
+  path: string
+}
+
+/** Payload ufficiale dashboard Acquistabilità V3 (ready o unavailable). */
+export type HistoricalRunOfficialPurchasability = HistoricalRunOfficialPurchasabilityMetadata & {
+  status: 'ready' | 'ready_with_warnings' | 'blocked' | 'unavailable' | string
+  run_id?: number
+  source_scan_run_id?: number
+  filters?: HistoricalRunFilters | Record<string, unknown>
+  message?: string
+  reason?: string
+  cta?: HistoricalRunOfficialPurchasabilityCta
+  results_persisted?: number
+  evaluations_total?: number
+  scored?: number
+  gate_failed?: number
+  unavailable?: number
+  real_quote_count?: number
+  derived_quote_count?: number
+  reconciliation?: HistoricalPurchasabilityV3ReplayReconciliation
+  reconciliation_status?: string | null
+  universes?: HistoricalPurchasabilityV3ReplayAnalytics['universes']
+  score_distribution?: unknown
+  gate_analysis?: unknown
+  performance_real?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  performance_synthetic?: HistoricalPurchasabilityV3ReplayPerformanceBucket
+  by_market?: Record<string, Record<string, unknown>>
+  family_decisions?: unknown
+}
+
+/** Endpoint run-centric: analytics V3 ufficiale (409 se replay assente). */
+export function getHistoricalRunOfficialPurchasability(
+  runId: number,
+): Promise<HistoricalPurchasabilityV3ReplayAnalytics> {
+  return requestJson(`/api/cecchino-lab/historical-scans/${runId}/purchasability`)
+}
+
+export async function downloadHistoricalRunOfficialPurchasabilityReport(
+  runId: number,
+  mode: PurchasabilityV3ReplayReportMode = 'analysis',
+): Promise<void> {
+  const base = getApiBase()
+  const params = new URLSearchParams()
+  params.set('mode', mode)
+  const res = await fetch(
+    `${base}/api/cecchino-lab/historical-scans/${runId}/purchasability/report?${params.toString()}`,
+  )
+  if (!res.ok) {
+    const message = await readHttpErrorMessage(
+      res,
+      `Download report Acquistabilità V3 fallito (${res.status})`,
+    )
+    throw new AdminHttpError(res.status, message, null)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/.exec(cd)
+  const filename = match?.[1] || `cecchino-run-${runId}-purchasability-v3.zip`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function getPurchasabilityV3ReplayAnalytics(
   replayId: number,
 ): Promise<HistoricalPurchasabilityV3ReplayAnalytics> {
@@ -2437,6 +2574,7 @@ export const HISTORICAL_RUN_REPORT_MENU: Array<{
   mode: HistoricalReportMode
   module?: HistoricalReportModule
   label: string
+  description?: string
   recommended?: boolean
   needsCompetition?: boolean
   sizeWarning?: boolean
@@ -2446,7 +2584,12 @@ export const HISTORICAL_RUN_REPORT_MENU: Array<{
   { mode: 'module', module: 'signals', label: 'Dettaglio Segnali A–F' },
   { mode: 'module', module: 'balance', label: 'Dettaglio Balance / Equilibrio' },
   { mode: 'module', module: 'goal_intensity', label: 'Dettaglio Intensità Goal' },
-  { mode: 'module', module: 'purchasability', label: 'Dettaglio Acquistabilità' },
+  {
+    mode: 'module',
+    module: 'purchasability',
+    label: 'Dettaglio Acquistabilità',
+    description: 'Acquistabilità V3 ricostruita dal replay storico completato.',
+  },
   { mode: 'module', module: 'markets', label: 'Dettaglio mercati' },
   {
     mode: 'full_archive',
