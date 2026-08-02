@@ -2570,6 +2570,221 @@ export function getHistoricalRunMatchDetail(
   return requestJson(`/api/cecchino-lab/historical-scans/${runId}/matches/${snapshotId}`)
 }
 
+/* ─── Historical KPI Signals (STEP 4A) ─── */
+
+export type HistoricalKpiSignalsFilters = {
+  competition?: string
+  date_from?: string
+  date_to?: string
+  rating_bucket?: string
+  selection_key?: string
+  evaluation_status?: string
+  quote_type?: 'real' | 'derived' | 'all'
+}
+
+export type HistoricalKpiSignalsOverall = {
+  signals_count: number
+  evaluated_count: number
+  wins: number
+  losses: number
+  pending_or_unsettled: number
+  void_or_zero_profit: number
+  win_rate_pct: number | null
+  average_odds_played: number | null
+  average_odds_won: number | null
+  average_odds_void: number | null
+  stake_count: number
+  profit_units: number | null
+  roi_pct: number | null
+}
+
+export type HistoricalKpiRatingBucket = HistoricalKpiSignalsOverall & {
+  rating_bucket: string
+  quote_type: string
+  status: string
+}
+
+export type HistoricalKpiHeatmapCell = HistoricalKpiSignalsOverall & {
+  rating_bucket: string
+  selection_key: string
+  quote_type: string
+  sample_class: string
+  average_odds?: number | null
+}
+
+export type HistoricalKpiSignalsSummary = {
+  schema_version: string
+  generated_at: string
+  run: {
+    run_id: number
+    season_label: string
+    status: string
+    scope: string
+    is_partial_run?: boolean
+  }
+  filters: HistoricalKpiSignalsFilters
+  available_filters: {
+    competitions: string[]
+    selection_keys: string[]
+    date_min: string | null
+    date_max: string | null
+  }
+  overall: {
+    real: HistoricalKpiSignalsOverall | null
+    synthetic: HistoricalKpiSignalsOverall | null
+  }
+  by_rating_bucket: HistoricalKpiRatingBucket[]
+  heatmap: {
+    rating_buckets: string[]
+    selection_keys: string[]
+    cells: HistoricalKpiHeatmapCell[]
+  }
+  diagnostics: {
+    rows_scanned: number
+    rating_null: number
+    rating_below_50: number
+    eligible_rows: number
+    performance_real_ready: number
+    performance_synthetic_ready: number
+  }
+  resource_profile: {
+    strategy: string
+    query_count: number
+    rows_materialized: number
+    full_orm_entities_loaded: boolean
+    jsonb_payloads_loaded: boolean
+  }
+}
+
+export type HistoricalKpiTimelinePoint = {
+  group_key: string
+  group_label: string
+  date_from: string | null
+  date_to: string | null
+  signals_count?: number
+  evaluated_count?: number
+  wins?: number
+  losses?: number
+  win_rate_pct?: number | null
+  profit_units?: number | null
+  roi_pct?: number | null
+  stake_count?: number
+  cumulative_profit_units?:
+    | number
+    | null
+    | { real: number | null; synthetic: number | null }
+  cumulative_roi_pct?: number | null | { real: number | null; synthetic: number | null }
+  real?: HistoricalKpiSignalsOverall
+  synthetic?: HistoricalKpiSignalsOverall
+  by_rating_bucket?: Array<
+    HistoricalKpiSignalsOverall & { rating_bucket: string; quote_type: string }
+  >
+}
+
+export type HistoricalKpiTimelineResponse = {
+  schema_version: string
+  generated_at: string
+  run: HistoricalKpiSignalsSummary['run']
+  filters: HistoricalKpiSignalsFilters
+  group_by: string
+  effective_group_by: string
+  grouping_fallback: string | null
+  points: HistoricalKpiTimelinePoint[]
+  resource_profile: HistoricalKpiSignalsSummary['resource_profile']
+}
+
+export type HistoricalKpiActivationRow = {
+  source_snapshot_id: number
+  lab_match_id: number
+  competition_name: string | null
+  kickoff_at: string | null
+  matchday_label: string | null
+  home_team: string | null
+  away_team: string | null
+  market_key: string
+  market_label: string
+  rating: number | null
+  rating_bucket: string | null
+  quote_type: string
+  quota_book: number | null
+  won: boolean | null
+  profit_units: number | null
+  evaluation_status: string | null
+  result_reason: string | null
+}
+
+export type HistoricalKpiActivationsResponse = {
+  items: HistoricalKpiActivationRow[]
+  total: number
+  limit: number
+  offset: number
+  filters: HistoricalKpiSignalsFilters
+  resource_profile: HistoricalKpiSignalsSummary['resource_profile'] & {
+    activations_page_size?: number
+  }
+}
+
+export function historicalKpiSignalsFiltersToQuery(
+  filters: HistoricalKpiSignalsFilters,
+  extra?: Record<string, string | number | undefined>,
+): string {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && String(v).trim() !== '') params.set(k, String(v))
+  }
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) {
+      if (v != null && String(v).trim() !== '') params.set(k, String(v))
+    }
+  }
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export function getHistoricalKpiSignalsSummary(
+  runId: number,
+  filters: HistoricalKpiSignalsFilters = {},
+  init?: RequestInit,
+): Promise<HistoricalKpiSignalsSummary> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/kpi-signals/summary${historicalKpiSignalsFiltersToQuery(filters)}`,
+    init,
+  )
+}
+
+export function getHistoricalKpiSignalsTimeline(
+  runId: number,
+  filters: HistoricalKpiSignalsFilters = {},
+  groupBy: string = 'date',
+  init?: RequestInit,
+): Promise<HistoricalKpiTimelineResponse> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/kpi-signals/timeline${historicalKpiSignalsFiltersToQuery(
+      filters,
+      { group_by: groupBy },
+    )}`,
+    init,
+  )
+}
+
+export function getHistoricalKpiSignalActivations(
+  runId: number,
+  filters: HistoricalKpiSignalsFilters = {},
+  opts?: { limit?: number; offset?: number },
+  init?: RequestInit,
+): Promise<HistoricalKpiActivationsResponse> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/kpi-signals/activations${historicalKpiSignalsFiltersToQuery(
+      filters,
+      {
+        limit: opts?.limit ?? 50,
+        offset: opts?.offset ?? 0,
+      },
+    )}`,
+    init,
+  )
+}
+
 export const HISTORICAL_RUN_REPORT_MENU: Array<{
   mode: HistoricalReportMode
   module?: HistoricalReportModule

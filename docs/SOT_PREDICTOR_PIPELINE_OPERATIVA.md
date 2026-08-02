@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — Analisi KPI storico STEP 4A (2026-08-02)
+
+1. Aprire hub Run (`Apri analisi`): Network deve mostrare solo overview.
+2. Aprire **Analisi KPI** (o card hub): summary → timeline → activations limit 50.
+3. Filtri quote real (default); fasce Rating; heatmap; fallback timeline per data.
+4. Verificare Railway: nessun restart / Failed to fetch da caricamento massivo.
+5. Next STEP 4B: ranking combinazioni, confronto campionati, export CSV.
+
 ## Cecchino Lab — V3 ufficiale STEP 3C.2 (2026-08-02)
 
 1. Deploy codice (**nessuna** migration; head resta `20260802120000`).

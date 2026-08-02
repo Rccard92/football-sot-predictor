@@ -696,10 +696,10 @@ export class AdminHttpError extends Error {
   }
 }
 
-export async function requestJson<T>(path: string): Promise<T> {
+export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getApiBase()
   const p = path.startsWith('/') ? path : `/${path}`
-  const res = await fetch(`${base}${p}`)
+  const res = await fetch(`${base}${p}`, init)
 
   const ct = res.headers.get('content-type') ?? ''
   let body: unknown = null

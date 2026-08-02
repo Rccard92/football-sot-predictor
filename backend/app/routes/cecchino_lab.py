@@ -70,6 +70,12 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_service 
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_analytics import (
     get_purchasability_v3_replay_analytics,
 )
+from app.services.cecchino_data_lab.historical_kpi_signals_analytics import (
+    get_kpi_signal_activations,
+    get_kpi_signals_summary,
+    get_kpi_signals_timeline,
+    parse_kpi_signals_filters,
+)
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export import (
     build_purchasability_v3_replay_report_response,
 )
@@ -1324,6 +1330,102 @@ def historical_run_dashboard_exclusions(
     try:
         return JSONResponse(
             content=jsonable_encoder(dashboard_exclusions(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/kpi-signals/summary")
+def historical_kpi_signals_summary(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    rating_bucket: str | None = None,
+    selection_key: str | None = None,
+    evaluation_status: str | None = None,
+    quote_type: str | None = "real",
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = parse_kpi_signals_filters(
+        competition=competition,
+        date_from=date_from,
+        date_to=date_to,
+        rating_bucket=rating_bucket,
+        selection_key=selection_key,
+        evaluation_status=evaluation_status,
+        quote_type=quote_type,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(get_kpi_signals_summary(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/kpi-signals/timeline")
+def historical_kpi_signals_timeline(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    rating_bucket: str | None = None,
+    selection_key: str | None = None,
+    evaluation_status: str | None = None,
+    quote_type: str | None = "real",
+    group_by: str = "date",
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = parse_kpi_signals_filters(
+        competition=competition,
+        date_from=date_from,
+        date_to=date_to,
+        rating_bucket=rating_bucket,
+        selection_key=selection_key,
+        evaluation_status=evaluation_status,
+        quote_type=quote_type,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(
+                get_kpi_signals_timeline(db, run_id, filters, group_by=group_by)
+            )
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/kpi-signals/activations")
+def historical_kpi_signals_activations(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    rating_bucket: str | None = None,
+    selection_key: str | None = None,
+    evaluation_status: str | None = None,
+    quote_type: str | None = "real",
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = parse_kpi_signals_filters(
+        competition=competition,
+        date_from=date_from,
+        date_to=date_to,
+        rating_bucket=rating_bucket,
+        selection_key=selection_key,
+        evaluation_status=evaluation_status,
+        quote_type=quote_type,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(
+                get_kpi_signal_activations(
+                    db, run_id, filters, limit=limit, offset=offset
+                )
+            )
         )
     except CecchinoLabImportError as exc:
         return _dashboard_error(exc)

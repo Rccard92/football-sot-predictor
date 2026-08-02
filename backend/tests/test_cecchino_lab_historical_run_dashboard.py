@@ -28,6 +28,10 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     purchasability_band_dashboard,
     rating_band_dashboard,
 )
+from app.services.cecchino_data_lab.historical_kpi_signals_analytics import (
+    HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
+    parse_kpi_signals_filters,
+)
 from app.services.cecchino_data_lab.historical_run_analytics_service import (
     clear_dashboard_cache,
     dashboard_balance,
@@ -756,6 +760,47 @@ def test_cross_competition_stability_categories():
         overall_real_roi=-1.0,
     )
     assert stab2["cross_competition_stability"] in ("inconsistent", "concentrated", "insufficient_evidence")
+
+
+def test_kpi_signals_endpoints_exist_and_isolated():
+    """Endpoint KPI segnali storici separati dal dashboard overview."""
+    assert parse_kpi_signals_filters()["quote_type"] == "real"
+
+    app = FastAPI()
+    app.include_router(cecchino_lab.router, prefix="/api")
+    db = MagicMock()
+
+    def override():
+        yield db
+
+    app.dependency_overrides[get_db] = override
+    client = TestClient(app)
+
+    minimal_kpi = {
+        "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
+        "run": {"run_id": 3, "status": "completed"},
+        "overall": {"real": {"signals_count": 0}},
+        "filters": {},
+    }
+    with patch(
+        "app.routes.cecchino_lab.get_kpi_signals_summary",
+        return_value=minimal_kpi,
+    ) as kpi_mock:
+        res = client.get("/api/cecchino-lab/historical-scans/3/kpi-signals/summary")
+        assert res.status_code == 200
+        assert res.json()["schema_version"] == HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION
+        kpi_mock.assert_called_once()
+
+    with patch(
+        "app.routes.cecchino_lab.dashboard_overview",
+        return_value={"run": {"run_id": 3}, "kpis": {}, "filters": {}},
+    ) as overview_mock, patch(
+        "app.routes.cecchino_lab.get_kpi_signals_summary",
+    ) as kpi_mock:
+        res_ov = client.get("/api/cecchino-lab/historical-scans/3/dashboard/overview")
+        assert res_ov.status_code == 200
+        overview_mock.assert_called_once()
+        kpi_mock.assert_not_called()
 
 
 def test_api_endpoints_read_only():

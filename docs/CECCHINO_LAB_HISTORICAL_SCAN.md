@@ -1,5 +1,22 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 4A — Analisi KPI storico resource-safe (2026-08-02)
+
+Backtest del Pannello KPI sulle MarketResult della Run, senza ricalcolo e senza API esterne.
+
+| Voce | Valore |
+|------|--------|
+| Servizio | `historical_kpi_signals_analytics.py` |
+| Schema | `cecchino_lab_historical_kpi_signals_v1` |
+| Hub Run | solo overview al mount; moduli on-demand |
+| Pagina | `/cecchino-lab/historical-scans/{run_id}/kpi-signals` |
+| Universo | eligible_core, rating ≥ 50; &lt;50 solo diagnostics |
+| Metriche | allineate a Segnali KPI operativi (quota void = 1/win rate) |
+| Heatmap | Pronostico × Rating, sample_class visuale |
+| Timeline | per data/settimana; matchday non disponibile → fallback data |
+| Resource | select scalari, no full ORM, no JSONB snapshot |
+| Nessuna | migration, scansione, replay, backfill, modifica V3 |
+
 ## STEP 3C.2 — Acquistabilità V3 ufficiale per Run storiche (2026-08-02)
 
 V3 è l’**unica sorgente ufficiale** di Acquistabilità per le Run che possiedono un replay V3 completato e compatibile (resolver read-only, nessun hardcode di Replay ID).

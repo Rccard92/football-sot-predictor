@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add resource safe historical kpi analysis (STEP 4A) (2026-08-02)
+
+- Perché: «Apri analisi» caricava tutti i moduli dashboard in parallelo e saturava Railway.
+- Cosa: hub Run solo overview; pagina Analisi KPI storico con summary/timeline/activations resource-safe; fasce Rating; heatmap; quote real/derived separate.
+- Cosa non fa: nessuna migration; formula V3 / Replay ID 1 / Run #3 / pagina Segnali KPI operativa invariati.
+
 ## Feat — Make purchasability v3 official for historical runs (STEP 3C.2) (2026-08-02)
 
 - Perché: i percorsi ufficiali della Run storica leggevano ancora Acquistabilità V2 dagli snapshot.

@@ -23,6 +23,7 @@ import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoLabHistoricalRunPage } from './pages/CecchinoLabHistoricalRunPage'
+import { CecchinoLabHistoricalKpiSignalsPage } from './pages/CecchinoLabHistoricalKpiSignalsPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
@@ -36,6 +37,10 @@ export default function App() {
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
+          <Route
+            path="/cecchino-lab/historical-scans/:runId/kpi-signals"
+            element={<CecchinoLabHistoricalKpiSignalsPage />}
+          />
           <Route
             path="/cecchino-lab/historical-scans/:runId"
             element={<CecchinoLabHistoricalRunPage />}

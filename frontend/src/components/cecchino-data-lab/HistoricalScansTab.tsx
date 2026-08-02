@@ -616,6 +616,13 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                       Apri analisi
                     </Link>
                     <Link
+                      to={`/cecchino-lab/historical-scans/${r.id}/kpi-signals`}
+                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                      data-testid={`historical-kpi-link-${r.id}`}
+                    >
+                      Analisi KPI
+                    </Link>
+                    <Link
                       to={`/cecchino-lab/purchasability-replay?run_id=${r.id}`}
                       className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
                       data-testid={`purchasability-replay-link-${r.id}`}

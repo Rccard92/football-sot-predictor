@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Hub resource-safe + Analisi KPI storico STEP 4A (2026-08-02)
+
+Hub Run: solo overview al mount; moduli on-demand. Pagina autonoma Analisi KPI storico (fasce Rating, heatmap, timeline, attivazioni paginate). Schema `cecchino_lab_historical_kpi_signals_v1`. Read-only SQL scalare; V3/Replay/Run #3/KPI operativa invariati; nessuna migration/scansione/replay.
+
 ## Feat — Acquistabilità V3 ufficiale per Run storiche STEP 3C.2 (2026-08-02)
 
 Resolver read-only `resolve_official_purchasability_v3_replay` (nessun hardcode Replay ID). Analytics `…_analytics_v2` / export `…_export_v2` senza confronto V2. Dashboard, Sintesi ChatGPT, Dettaglio Acquistabilità e archivio ufficiale usano solo V3. Fallback legacy disabilitato. V1.1/V2 conservati fisicamente ma non letti. Formula/Replay/Run/snapshot/MarketResult invariati; nessuna migration/scansione/replay.
