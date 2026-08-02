@@ -60,6 +60,13 @@ from app.services.cecchino_data_lab.historical_run_analytics_service import (
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight import (
     run_purchasability_v3_replay_preflight,
 )
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_service import (
+    cancel_purchasability_v3_replay,
+    get_purchasability_v3_replay,
+    list_purchasability_v3_replays,
+    resume_purchasability_v3_replay,
+    start_purchasability_v3_replay,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -823,6 +830,120 @@ def historical_purchasability_v3_replay_preflight(
             },
         )
     return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/historical-scans/{run_id}/purchasability-v3-replays")
+def purchasability_v3_replay_start(
+    run_id: int,
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia replay Acquistabilità V3 isolato (STEP 3B.1). Non modifica il Run storico."""
+    try:
+        result = start_purchasability_v3_replay(
+            db,
+            run_id,
+            confirmed=bool((body or {}).get("confirmed") is True),
+            expected_formula_version=(body or {}).get("expected_formula_version"),
+            expected_preflight_schema_version=(body or {}).get(
+                "expected_preflight_schema_version"
+            ),
+            expected_integrity_policy_version=(body or {}).get(
+                "expected_integrity_policy_version"
+            ),
+            background=True,
+        )
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@router.get("/purchasability-v3-replays/{replay_id}")
+def purchasability_v3_replay_status(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_purchasability_v3_replay(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans/{run_id}/purchasability-v3-replays")
+def purchasability_v3_replay_list(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = list_purchasability_v3_replays(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder({"items": result}))
+
+
+@admin_router.post("/purchasability-v3-replays/{replay_id}/cancel")
+def purchasability_v3_replay_cancel(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = cancel_purchasability_v3_replay(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/purchasability-v3-replays/{replay_id}/resume")
+def purchasability_v3_replay_resume(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = resume_purchasability_v3_replay(db, replay_id, background=True)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
 
 
 @router.get("/historical-scans/{run_id}/dashboard/signals")

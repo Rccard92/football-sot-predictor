@@ -1,5 +1,24 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3B.1 — Job replay Acquistabilità V3 isolato (2026-08-02)
+
+Infrastruttura persistente per replay V3 **separato** dal Run storico. Non modifica snapshot, MarketResult né Run #3.
+
+| Voce | Valore |
+|------|--------|
+| Schema replay | `cecchino_lab_purchasability_v3_replay_v1` |
+| Engine | `cecchino_lab_purchasability_v3_replay_engine_v1` |
+| Tabelle | `cecchino_lab_purchasability_v3_replay_runs`, `…_replay_results` |
+| Migration | `20260802120000` (solo nuove tabelle + indici) |
+| Start | `POST /api/admin/cecchino-lab/historical-scans/{run_id}/purchasability-v3-replays` (`confirmed: true` + versioni attese) |
+| Status / list | `GET …/purchasability-v3-replays/{id}`, `GET …/historical-scans/{run_id}/purchasability-v3-replays` |
+| Cancel / resume | `POST …/cancel`, `POST …/resume` |
+| Worker | thread daemon + `SessionLocal` dedicata; batch 100 snapshot; heartbeat 5s; stale→`interrupted` 120s |
+| Idempotenza | chiave deterministica; completed/active riusati; nessun `force_new` |
+| Anti-leakage | panel whitelist; performance collegata **dopo** lo score; 1 riga per valutazione teorica |
+
+UI: CTA **Avvia replay Acquistabilità** sulla pagina autonoma (dopo preflight+probe Go), modal di conferma, progressione/polling, cancel/resume. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
+
 ## STEP 3A.2 — Semantica integrità storica preflight (2026-08-02)
 
 Causa Run #3: `pre_match_locked_at` è il wall-clock del **freeze di ricostruzione** durante lo scan Lab (`_utcnow()`), non una cattura prospettica pre-kickoff. Confrontarlo con `kickoff_at` storico (2021) marcava tutte le valutazioni come `invalid` → contatori exact/warning/not_replayable a 0 in UI.
@@ -47,7 +66,7 @@ Preflight **read-only** per verificare se Acquistabilità V3 può essere ricalco
 | Probe | solo se `include_probe=true`; max 30 snapshot; nessuna persistenza |
 | Cache | vedi 3A.2 |
 
-**Non implementato in 3A/3A.1/3A.2:** replay completo, job, export V3, pulsante Avvia, migration, overwrite Run #3. STEP 3B solo dopo Go sul preflight reale.
+**STEP 3B.1 (job isolato):** tabelle/API/UI start+progress; **nessun replay reale ancora**. STEP 3B.2 = avvio controllato Run #3. STEP 3C = analytics/export V3. Export V2 invariato. Motore V3 invariato.
 
 Anti-leakage: formula usa solo campi pre-match; `won`/`profit_*`/`result_*`/`settlement_*` solo per copertura performance futura.
 

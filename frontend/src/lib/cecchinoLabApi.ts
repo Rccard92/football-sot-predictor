@@ -2069,6 +2069,113 @@ export function getHistoricalPurchasabilityV3ReplayPreflight(
   )
 }
 
+export const PURCHASABILITY_V3_FORMULA_VERSION =
+  'cecchino_purchasability_v3_fixed_discount_v1'
+export const PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION =
+  'cecchino_lab_purchasability_v3_replay_preflight_v2'
+export const PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION =
+  'cecchino_lab_historical_reconstruction_integrity_v1'
+export const PURCHASABILITY_V3_REPLAY_POLL_MS = 2500
+
+export type PurchasabilityV3ReplayStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed_with_warnings'
+  | 'cancel_requested'
+  | 'cancelled'
+  | 'failed'
+  | 'interrupted'
+
+export type PurchasabilityV3ReplayRun = {
+  id: number
+  source_scan_run_id: number
+  status: PurchasabilityV3ReplayStatus | string
+  effective_status?: PurchasabilityV3ReplayStatus | string
+  replay_schema_version?: string
+  replay_engine_version?: string
+  candidate_version?: string
+  formula_version?: string
+  audit_version?: string
+  preflight_schema_version?: string
+  integrity_policy_version?: string
+  requested_at?: string | null
+  started_at?: string | null
+  heartbeat_at?: string | null
+  completed_at?: string | null
+  snapshots_total?: number
+  snapshots_processed?: number
+  evaluations_total?: number
+  evaluations_processed?: number
+  results_persisted?: number
+  progress_pct?: number | null
+  current_snapshot_id?: number | null
+  current_chronological_order?: number | null
+  current_competition?: string | null
+  scored_count?: number
+  gate_failed_count?: number
+  unavailable_count?: number
+  not_applicable_count?: number
+  error_count?: number
+  unclassified_count?: number
+  exact_source_count?: number
+  warning_source_count?: number
+  non_replayable_source_count?: number
+  real_quote_count?: number
+  derived_quote_count?: number
+  unavailable_quote_count?: number
+  cancel_requested?: boolean
+  resume_count?: number
+  attempt_count?: number
+  idempotency_key?: string
+  summary?: Record<string, unknown> | null
+  error?: { error?: string; message?: string; details?: unknown } | null
+  can_cancel?: boolean
+  can_resume?: boolean
+  reused_existing?: boolean
+}
+
+export function isPurchasabilityV3ReplayActive(status: string): boolean {
+  return status === 'queued' || status === 'running' || status === 'cancel_requested'
+}
+
+export function startPurchasabilityV3Replay(
+  runId: number,
+  body: {
+    confirmed: true
+    expected_formula_version: string
+    expected_preflight_schema_version: string
+    expected_integrity_policy_version: string
+  },
+): Promise<PurchasabilityV3ReplayRun> {
+  return postJson(
+    `/api/admin/cecchino-lab/historical-scans/${runId}/purchasability-v3-replays`,
+    body,
+  )
+}
+
+export function getPurchasabilityV3Replay(replayId: number): Promise<PurchasabilityV3ReplayRun> {
+  return requestJson(`/api/cecchino-lab/purchasability-v3-replays/${replayId}`)
+}
+
+export function listPurchasabilityV3Replays(
+  runId: number,
+): Promise<{ items: PurchasabilityV3ReplayRun[] }> {
+  return requestJson(`/api/cecchino-lab/historical-scans/${runId}/purchasability-v3-replays`)
+}
+
+export function cancelPurchasabilityV3Replay(
+  replayId: number,
+): Promise<PurchasabilityV3ReplayRun> {
+  return postJson(`/api/admin/cecchino-lab/purchasability-v3-replays/${replayId}/cancel`)
+}
+
+export function resumePurchasabilityV3Replay(
+  replayId: number,
+): Promise<PurchasabilityV3ReplayRun> {
+  return postJson(`/api/admin/cecchino-lab/purchasability-v3-replays/${replayId}/resume`)
+}
+
 export function getHistoricalRunDashboardSignals(
   runId: number,
   filters: HistoricalRunFilters = {},

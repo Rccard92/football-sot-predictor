@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Job replay Acquistabilità V3 isolato STEP 3B.1 (2026-08-02)
+
+Tabelle isolate + worker persistente (start/status/cancel/resume), idempotenza, batch resource-safe, anti-leakage, UI conferma+progressione. Formula V3/V2/V1.1, scan storico, export V2, Run #3 **invariati**. **Nessun replay reale avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
+
 ## Fix — Semantica integrità storica preflight STEP 3A.2 (2026-08-02)
 
 `pre_match_locked_at` = freeze di ricostruzione Lab, non cattura pre-kickoff. Schema `…_preflight_v2` + policy `…_historical_reconstruction_integrity_v1`; classificazione completa; probe con contatori/by_market. Formula/scan/Run #3 invariati. **Nessun replay.** STEP 3B subordinato al nuovo Go.

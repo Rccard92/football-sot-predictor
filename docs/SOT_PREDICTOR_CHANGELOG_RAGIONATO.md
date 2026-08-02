@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add purchasability V3 replay job (STEP 3B.1) (2026-08-02)
+
+- Perché: preparare un replay V3 isolato e persistente senza toccare il Run storico, dopo Go di preflight+probe.
+- Cosa: migration additive (run/result); job thread+SessionLocal; idempotenza; batch 100; cancel/resume; heartbeat/interrupted; API admin/public; UI CTA+modal+progress; test BE/FE.
+- Cosa non fa: nessun avvio reale Run #3 (STEP 3B.2); nessun analytics/export V3 (STEP 3C); formula V3/V2/V1.1 e scan storico invariati.
+
 ## Fix — Correct historical replay integrity semantics (STEP 3A.2) (2026-08-02)
 
 - Perché: su Run #3 `lock >= kickoff` storico invalidava tutte le valutazioni; `pre_match_locked_at` è freeze di ricostruzione 2026, non cattura 2021.

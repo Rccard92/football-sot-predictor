@@ -66,7 +66,7 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Fix: aggregati SQL + streaming; `include_probe` summary/probe; budget; UI `/cecchino-lab/purchasability-replay`.
 - Universo `eligible_core` × 8 mercati; anti-leakage; quote real/derived; fair Bet365; adapter contract invariati.
 - Probe solo su richiesta (`include_probe=true`), max 30 snapshot.
-- **Non** STEP 3B: nessun job replay, export V3, overwrite Run #3. Motore V3 invariato.
+- **Non** STEP 3B.2 ancora: nessun avvio reale Run #3. Job isolato = STEP 3B.1. Export V3 = STEP 3C. Motore V3 invariato.
 
 ### STEP 3A.2 — Integrità storica + classificazione completa (2026-08-02)
 
@@ -75,7 +75,14 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Chronology lock check `not_applicable` sul Run storico; hash+lock = prova di congelamento.
 - Tutte le valutazioni teoriche classificate; probe con contatori completi e `by_market`.
 - Status atteso tipico Run #3: `ready_with_warnings` (quote derivate diagnostiche).
-- **Nessun replay ancora.** STEP 3B subordinato al nuovo risultato.
+- Infrastruttura job = STEP 3B.1; **nessun replay reale ancora avviato** (STEP 3B.2).
+
+### STEP 3B.1 — Job replay isolato persistente (2026-08-02)
+
+- Tabelle `cecchino_lab_purchasability_v3_replay_runs` / `…_results`; schema `…_replay_v1`; engine `…_replay_engine_v1`.
+- Start con preflight server-side + conferma; idempotenza; batch 100; cancel/resume; heartbeat/interrupted.
+- Anti-leakage: whitelist formula; performance collegata dopo score; una riga per valutazione teorica (anche unavailable).
+- UI: Avvia + modal + progressione/polling. **Nessun avvio reale Run #3.** STEP 3C = analytics/export.
 
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 

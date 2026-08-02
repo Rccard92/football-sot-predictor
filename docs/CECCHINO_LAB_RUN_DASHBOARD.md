@@ -1,8 +1,12 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3B.1 — Job replay V3 (2026-08-02)
+
+La dashboard Run **non** esegue il replay. Job isolato + UI su `/cecchino-lab/purchasability-replay`. Tabelle dedicate; Run storico immutabile. **Nessun replay reale ancora avviato** (STEP 3B.2). Analytics/export V3 = STEP 3C.
+
 ## STEP 3A.2 — Integrità storica preflight (2026-08-02)
 
-Il preflight resta fuori dalla dashboard. Schema v2 + policy ricostruzione storica: lock chronology non applicabile; hash/lock come prova di freeze; classificazione completa in UI Replay. Nessun replay ancora.
+Il preflight resta fuori dalla dashboard. Schema v2 + policy ricostruzione storica: lock chronology non applicabile; hash/lock come prova di freeze; classificazione completa in UI Replay. Infrastruttura job = STEP 3B.1 (nessun avvio reale ancora).
 
 ## STEP 3A.1 — Preflight fuori dalla dashboard (2026-07-29)
 

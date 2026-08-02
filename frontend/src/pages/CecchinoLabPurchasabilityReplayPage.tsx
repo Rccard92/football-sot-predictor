@@ -1,13 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import {
+  cancelPurchasabilityV3Replay,
   getHistoricalPurchasabilityV3ReplayPreflight,
+  getPurchasabilityV3Replay,
   historicalScanScopeLabel,
   historicalScanStatusLabel,
+  isPurchasabilityV3ReplayActive,
   listHistoricalScans,
+  PURCHASABILITY_V3_FORMULA_VERSION,
+  PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION,
+  PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION,
+  PURCHASABILITY_V3_REPLAY_POLL_MS,
+  resumePurchasabilityV3Replay,
+  startPurchasabilityV3Replay,
   type HistoricalPurchasabilityV3ReplayPreflight,
   type HistoricalScanRun,
+  type PurchasabilityV3ReplayRun,
 } from '../lib/cecchinoLabApi'
 
 type UiStatus = 'idle' | 'loading_summary' | 'loading_probe' | 'ready' | 'ready_with_warnings' | 'blocked' | 'error'
@@ -29,6 +39,14 @@ function statusLabel(status: UiStatus | string): string {
   if (status === 'blocked') return 'Bloccato'
   if (status === 'loading_summary' || status === 'loading_probe') return 'Verifica in corso…'
   if (status === 'error') return 'Errore'
+  if (status === 'queued') return 'In coda'
+  if (status === 'running') return 'In esecuzione'
+  if (status === 'cancel_requested') return 'Annullamento…'
+  if (status === 'cancelled') return 'Annullato'
+  if (status === 'completed') return 'Completato'
+  if (status === 'completed_with_warnings') return 'Completato con avvisi'
+  if (status === 'failed') return 'Fallito'
+  if (status === 'interrupted') return 'Interrotto'
   return 'In attesa'
 }
 
@@ -51,9 +69,19 @@ function integrityModeLabel(mode: string | null | undefined): string {
 }
 
 function statusBadgeClass(status: UiStatus | string): string {
-  if (status === 'ready') return 'lab-badge-ok'
-  if (status === 'ready_with_warnings') return 'lab-badge-warn'
-  if (status === 'blocked' || status === 'error') return 'lab-badge-err'
+  if (status === 'ready' || status === 'completed') return 'lab-badge-ok'
+  if (
+    status === 'ready_with_warnings' ||
+    status === 'completed_with_warnings' ||
+    status === 'queued' ||
+    status === 'running' ||
+    status === 'cancel_requested'
+  ) {
+    return 'lab-badge-warn'
+  }
+  if (status === 'blocked' || status === 'error' || status === 'failed' || status === 'cancelled') {
+    return 'lab-badge-err'
+  }
   return 'lab-badge-muted'
 }
 
@@ -66,6 +94,48 @@ function formatPreflightError(err: unknown): string {
     return `${base} (errore di rete)`
   }
   return `${base}${msg ? ` — ${msg}` : ''}`
+}
+
+function formatReplayError(err: unknown): string {
+  if (!(err instanceof Error)) return 'Errore replay'
+  return err.message || 'Errore replay'
+}
+
+function probeExpectedReturnedMatch(
+  probe: NonNullable<HistoricalPurchasabilityV3ReplayPreflight['probe']>,
+): boolean {
+  const expected = Number(probe.markets_expected ?? 0)
+  const returned = Number(probe.formula_items_returned ?? 0)
+  if (expected > 0 && returned === expected) return true
+  const submitted = Number(probe.panel_rows_submitted ?? 0)
+  return submitted > 0 && returned === submitted
+}
+
+export function canStartPurchasabilityV3Replay(
+  data: HistoricalPurchasabilityV3ReplayPreflight | null,
+): boolean {
+  if (!data) return false
+  if (data.status !== 'ready' && data.status !== 'ready_with_warnings') return false
+  const wl = data.workload
+  const theoretical = wl.theoretical_evaluations
+  const classified =
+    wl.classified_evaluations_total ??
+    wl.exact_replay_ready +
+      wl.ready_with_warning +
+      wl.gate_only_ready +
+      wl.not_replayable +
+      (wl.invalid_integrity ?? 0) +
+      (wl.ambiguous_market_join ?? 0)
+  const unclassified = wl.unclassified_evaluations ?? Math.max(0, theoretical - classified)
+  if (unclassified !== 0 || classified !== theoretical) return false
+  if ((wl.invalid_integrity ?? 0) !== 0) return false
+  if ((wl.ambiguous_market_join ?? 0) !== 0) return false
+  const probe = data.probe
+  if (!probe || probe.skipped) return false
+  if ((probe.markets_error ?? 0) !== 0) return false
+  if ((probe.markets_unclassified ?? 0) !== 0) return false
+  if (!probeExpectedReturnedMatch(probe)) return false
+  return true
 }
 
 function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayPreflight }) {
@@ -369,6 +439,115 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
   )
 }
 
+function ReplayProgressCard({
+  replay,
+  onCancel,
+  onResume,
+  busy,
+}: {
+  replay: PurchasabilityV3ReplayRun
+  onCancel: () => void
+  onResume: () => void
+  busy: boolean
+}) {
+  const eff = replay.effective_status || replay.status
+  const pct = replay.progress_pct ?? 0
+  return (
+    <section
+      className="lab-card"
+      data-testid="purchasability-v3-replay-progress"
+      style={{ padding: '1rem 1.1rem', marginTop: '1rem' }}
+    >
+      <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.05rem' }}>Progressione replay</h2>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))',
+          gap: '0.5rem',
+          fontSize: '0.9rem',
+        }}
+      >
+        <div data-testid="replay-id">Replay ID: {replay.id}</div>
+        <div>
+          Stato:{' '}
+          <span className={statusBadgeClass(eff)} data-testid="replay-status">
+            {statusLabel(eff)}
+          </span>
+        </div>
+        <div data-testid="replay-snapshots">
+          Snapshot: {replay.snapshots_processed ?? 0}/{replay.snapshots_total ?? 0}
+        </div>
+        <div data-testid="replay-evaluations">
+          Valutazioni: {replay.evaluations_processed ?? 0}/{replay.evaluations_total ?? 0}
+        </div>
+        <div data-testid="replay-persisted">Persistiti: {replay.results_persisted ?? 0}</div>
+        <div data-testid="replay-scored">Score: {replay.scored_count ?? 0}</div>
+        <div data-testid="replay-gate-failed">Gate falliti: {replay.gate_failed_count ?? 0}</div>
+        <div data-testid="replay-unavailable">Non disponibili: {replay.unavailable_count ?? 0}</div>
+        <div data-testid="replay-errors">Errori: {replay.error_count ?? 0}</div>
+        <div data-testid="replay-competition">
+          Competizione: {replay.current_competition || '—'}
+        </div>
+        <div data-testid="replay-heartbeat">
+          Heartbeat: {replay.heartbeat_at ? replay.heartbeat_at.slice(0, 19) : '—'}
+        </div>
+      </div>
+      <div
+        data-testid="replay-progress-bar"
+        style={{
+          marginTop: '0.85rem',
+          height: '0.55rem',
+          background: 'var(--lab-border, #ddd)',
+          borderRadius: 4,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, Number(pct)))}%`,
+            height: '100%',
+            background: 'var(--lab-cyan, #0aa)',
+          }}
+        />
+      </div>
+      <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        {replay.can_cancel ? (
+          <button
+            type="button"
+            className="lab-btn"
+            data-testid="cancel-purchasability-v3-replay"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Annulla replay
+          </button>
+        ) : null}
+        {replay.can_resume ? (
+          <button
+            type="button"
+            className="lab-btn"
+            data-testid="resume-purchasability-v3-replay"
+            disabled={busy}
+            onClick={onResume}
+          >
+            Riprendi replay
+          </button>
+        ) : null}
+      </div>
+      {replay.reused_existing ? (
+        <p data-testid="replay-reused" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+          Replay esistente riutilizzato (idempotenza).
+        </p>
+      ) : null}
+      {replay.error?.message ? (
+        <p data-testid="replay-error" style={{ color: 'var(--lab-err)', marginTop: '0.5rem' }}>
+          {replay.error.message}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 export function CecchinoLabPurchasabilityReplayPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const runIdParam = searchParams.get('run_id')
@@ -381,6 +560,24 @@ export function CecchinoLabPurchasabilityReplayPage() {
   const [uiStatus, setUiStatus] = useState<UiStatus>('idle')
   const [data, setData] = useState<HistoricalPurchasabilityV3ReplayPreflight | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmChecked, setConfirmChecked] = useState(false)
+  const [replay, setReplay] = useState<PurchasabilityV3ReplayRun | null>(null)
+  const [replayBusy, setReplayBusy] = useState(false)
+  const [replayError, setReplayError] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current != null) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => stopPolling()
+  }, [stopPolling])
 
   useEffect(() => {
     let cancelled = false
@@ -413,12 +610,37 @@ export function CecchinoLabPurchasabilityReplayPage() {
     [runs, selectedRunId],
   )
 
+  const startPolling = useCallback(
+    (replayId: number) => {
+      stopPolling()
+      pollRef.current = setInterval(() => {
+        void getPurchasabilityV3Replay(replayId)
+          .then((r) => {
+            setReplay(r)
+            const eff = r.effective_status || r.status
+            if (!isPurchasabilityV3ReplayActive(String(eff))) {
+              stopPolling()
+            }
+          })
+          .catch(() => {
+            /* keep polling; surface on next action */
+          })
+      }, PURCHASABILITY_V3_REPLAY_POLL_MS)
+    },
+    [stopPolling],
+  )
+
   const onSelectRun = (id: number) => {
     setSelectedRunId(id)
     setSearchParams(id > 0 ? { run_id: String(id) } : {})
     setData(null)
     setError(null)
     setUiStatus('idle')
+    setReplay(null)
+    setReplayError(null)
+    setConfirmOpen(false)
+    setConfirmChecked(false)
+    stopPolling()
   }
 
   const runSummary = useCallback(async () => {
@@ -464,11 +686,69 @@ export function CecchinoLabPurchasabilityReplayPage() {
     }
   }, [selectedRunId])
 
+  const onConfirmStart = useCallback(async () => {
+    if (!selectedRunId || !confirmChecked) return
+    setReplayBusy(true)
+    setReplayError(null)
+    try {
+      const result = await startPurchasabilityV3Replay(selectedRunId, {
+        confirmed: true,
+        expected_formula_version: PURCHASABILITY_V3_FORMULA_VERSION,
+        expected_preflight_schema_version: PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION,
+        expected_integrity_policy_version: PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION,
+      })
+      setReplay(result)
+      setConfirmOpen(false)
+      setConfirmChecked(false)
+      const eff = result.effective_status || result.status
+      if (isPurchasabilityV3ReplayActive(String(eff))) {
+        startPolling(result.id)
+      }
+    } catch (err) {
+      setReplayError(formatReplayError(err))
+    } finally {
+      setReplayBusy(false)
+    }
+  }, [selectedRunId, confirmChecked, startPolling])
+
+  const onCancelReplay = useCallback(async () => {
+    if (!replay) return
+    setReplayBusy(true)
+    setReplayError(null)
+    try {
+      const result = await cancelPurchasabilityV3Replay(replay.id)
+      setReplay(result)
+    } catch (err) {
+      setReplayError(formatReplayError(err))
+    } finally {
+      setReplayBusy(false)
+    }
+  }, [replay])
+
+  const onResumeReplay = useCallback(async () => {
+    if (!replay) return
+    setReplayBusy(true)
+    setReplayError(null)
+    try {
+      const result = await resumePurchasabilityV3Replay(replay.id)
+      setReplay(result)
+      const eff = result.effective_status || result.status
+      if (isPurchasabilityV3ReplayActive(String(eff))) {
+        startPolling(result.id)
+      }
+    } catch (err) {
+      setReplayError(formatReplayError(err))
+    } finally {
+      setReplayBusy(false)
+    }
+  }, [replay, startPolling])
+
   const displayStatus = data?.status ?? uiStatus
   const summaryDone =
     data != null &&
     (uiStatus === 'ready' || uiStatus === 'ready_with_warnings' || uiStatus === 'blocked')
   const loading = uiStatus === 'loading_summary' || uiStatus === 'loading_probe'
+  const canStart = canStartPurchasabilityV3Replay(data)
 
   return (
     <CecchinoLabShell>
@@ -586,7 +866,112 @@ export function CecchinoLabPurchasabilityReplayPage() {
           ) : null}
 
           {data ? <PreflightResultView data={data} /> : null}
+
+          {canStart ? (
+            <div style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="lab-btn"
+                data-testid="start-purchasability-v3-replay"
+                disabled={replayBusy}
+                onClick={() => {
+                  setConfirmChecked(false)
+                  setConfirmOpen(true)
+                }}
+              >
+                Avvia replay Acquistabilità
+              </button>
+            </div>
+          ) : null}
         </section>
+
+        {replayError ? (
+          <p
+            data-testid="replay-start-error"
+            style={{ color: 'var(--lab-err)', marginTop: '0.75rem' }}
+          >
+            {replayError}
+          </p>
+        ) : null}
+
+        {replay ? (
+          <ReplayProgressCard
+            replay={replay}
+            busy={replayBusy}
+            onCancel={() => void onCancelReplay()}
+            onResume={() => void onResumeReplay()}
+          />
+        ) : null}
+
+        {confirmOpen && data && selectedRun ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            role="dialog"
+            aria-modal="true"
+            data-testid="start-replay-confirm-modal"
+          >
+            <div className="lab-card max-w-lg rounded-xl p-5">
+              <h3 className="text-lg font-semibold">Avvia replay Acquistabilità</h3>
+              <div
+                data-testid="start-replay-confirm-summary"
+                className="mt-3 space-y-1 text-sm"
+                style={{ color: 'var(--lab-muted)' }}
+              >
+                <div>Run sorgente: #{selectedRun.id}</div>
+                <div>Stagione: {selectedRun.season_label}</div>
+                <div>
+                  Snapshot eleggibili: {data.source_integrity.snapshots_eligible_core ?? 0}
+                </div>
+                <div>Valutazioni previste: {data.workload.theoretical_evaluations}</div>
+                <div>Quote reali: {data.quote_quality.real}</div>
+                <div>Quote derivate: {data.quote_quality.derived}</div>
+                <div>Quote non disponibili: {data.quote_quality.unavailable}</div>
+                <div>
+                  Formula: {data.formula.formula_version || PURCHASABILITY_V3_FORMULA_VERSION}
+                </div>
+                <p className="pt-2">
+                  Il Run storico non verrà modificato. Verrà creato un replay separato.
+                </p>
+              </div>
+              <label
+                className="mt-4 flex items-start gap-2 text-sm"
+                data-testid="start-replay-confirm-checkbox-label"
+              >
+                <input
+                  type="checkbox"
+                  data-testid="start-replay-confirm-checkbox"
+                  checked={confirmChecked}
+                  onChange={(e) => setConfirmChecked(e.target.checked)}
+                />
+                <span>
+                  Confermo di voler creare un replay separato senza modificare il Run storico.
+                </span>
+              </label>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="lab-btn rounded-md px-3 py-2 text-sm"
+                  data-testid="start-replay-confirm-cancel"
+                  onClick={() => {
+                    setConfirmOpen(false)
+                    setConfirmChecked(false)
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className="lab-btn rounded-md px-3 py-2 text-sm font-semibold"
+                  data-testid="start-replay-confirm-submit"
+                  disabled={!confirmChecked || replayBusy}
+                  onClick={() => void onConfirmStart()}
+                >
+                  Avvia replay
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </CecchinoLabShell>
   )

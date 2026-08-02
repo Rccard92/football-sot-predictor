@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — job replay Acquistabilità V3 STEP 3B.1 (2026-08-02)
+
+| Voce | Dettaglio |
+|---|---|
+| Schema / engine | `cecchino_lab_purchasability_v3_replay_v1` / `…_replay_engine_v1` |
+| Tabelle | `cecchino_lab_purchasability_v3_replay_runs` + `…_results` (migration `20260802120000`) |
+| API | start/cancel/resume admin; status/list public |
+| UI | CTA + modal + progressione su `/cecchino-lab/purchasability-replay` |
+| Next | STEP 3B.2 = avvio controllato Run #3; STEP 3C = analytics/export |
+
 ## Cecchino Lab — integrità storica preflight STEP 3A.2 (2026-08-02)
 
 | Voce | Dettaglio |
@@ -10,7 +20,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Policy | `cecchino_lab_historical_reconstruction_integrity_v1` |
 | Semantica lock | freeze ricostruzione storica, non cattura pre-kickoff |
 | Chronology | `not_applicable` sul Run storico Lab |
-| Next | STEP 3B solo dopo classificazione completa + probe senza errori |
+| Next | infrastruttura job = STEP 3B.1 (nessun avvio reale ancora) |
 
 ## Cecchino Lab — harden preflight replay V3 STEP 3A.1 (2026-07-29)
 
@@ -28,8 +38,8 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Schema | aggiornato a `…_preflight_v2` in 3A.2 |
 | Endpoint | `GET /api/cecchino-lab/historical-scans/{run_id}/purchasability-v3-replay/preflight` |
 | Scope | Solo Lab read-only; formula V3/V2/V1.1 invariate; nessuna nuova scansione |
-| UI | Pagina autonoma Replay Acquistabilità (dal 3A.1); nessun Avvia replay |
-| Next | STEP 3B solo dopo Go sul preflight reale |
+| UI | Pagina autonoma Replay Acquistabilità (dal 3A.1); CTA Avvia in STEP 3B.1 |
+| Next | STEP 3B.2 avvio controllato dopo verifica deploy |
 
 ## Cecchino Lab — export Acquistabilità storica compatto (2026-07-29)
 

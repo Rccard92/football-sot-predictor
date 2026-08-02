@@ -1,12 +1,20 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — job replay V3 STEP 3B.1 (2026-08-02)
+
+1. Deploy migration `20260802120000` (solo nuove tabelle replay).
+2. Aprire `/cecchino-lab/purchasability-replay?run_id=3`.
+3. Eseguire summary + probe (come 3A.2); verificare CTA **Avvia replay Acquistabilità**.
+4. **Non** cliccare ancora Avvia (STEP 3B.2 = avvio controllato + monitoraggio).
+5. STEP 3C (dopo 3B.2): analytics/export V3, ROI reale vs sintetico.
+
 ## Cecchino Lab — preflight integrità storica STEP 3A.2 (2026-08-02)
 
 1. Da **Storico run** aprire **Verifica replay Acquistabilità**.
 2. Route: `/cecchino-lab/purchasability-replay?run_id=3`.
 3. Click **Verifica disponibilità replay** → verificare Classificate N/N, modalità Ricostruzione storica congelata, chronology Non applicabile, unclassified 0.
 4. Click **Verifica formula su 30 snapshot** → card «Risultato verifica formula» con contatori e tabella per mercato.
-5. Go/No-Go STEP 3B solo con classificazione completa, probe senza errori, nessun campo post-match in formula.
+5. Go → abilitazione CTA replay (STEP 3B.1); avvio reale solo in STEP 3B.2.
 
 ## Cecchino Lab — preflight resource-safe STEP 3A.1 (2026-07-29)
 
@@ -15,14 +23,14 @@
 3. Click **Verifica disponibilità replay** → `GET .../preflight?include_probe=false` (nessuna formula V3).
 4. Solo dopo summary OK: **Verifica formula su 30 snapshot** → `include_probe=true`.
 5. Controllare log Railway: nessun restart; `duration_ms`; `market_rows_streamed`; `max_market_rows_held_in_memory`.
-6. **Non** avviare ancora il replay completo (STEP 3B).
+6. **Non** avviare ancora il replay completo sul Run #3 (STEP 3B.2); infrastruttura job = STEP 3B.1.
 
 ## Cecchino Lab — preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
 
 1. Pagina autonoma Replay Acquistabilità (dal 3A.1; non più nella dashboard Run).
 2. Summary poi probe opzionale; API read-only preflight.
 3. Interpretare `ready` / `ready_with_warnings` / `blocked`.
-4. **Non** avviare ancora il replay completo (STEP 3B). Nessuna nuova scansione.
+4. **Non** avviare ancora il replay completo sul Run #3 (STEP 3B.2). Nessuna nuova scansione.
 
 ## Cecchino Lab — finalize semantics report/dashboard (2026-07-28)
 

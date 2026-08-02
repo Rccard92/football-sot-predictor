@@ -30,6 +30,12 @@ from app.models.cecchino_lab_historical_match_snapshot import (
 from app.models.cecchino_lab_historical_market_result import (
     CecchinoLabHistoricalMarketResult,
 )
+from app.models.cecchino_lab_purchasability_v3_replay_run import (
+    CecchinoLabPurchasabilityV3ReplayRun,
+)
+from app.models.cecchino_lab_purchasability_v3_replay_result import (
+    CecchinoLabPurchasabilityV3ReplayResult,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -105,6 +111,8 @@ __all__ = [
     "CecchinoLabHistoricalScanRun",
     "CecchinoLabHistoricalMatchSnapshot",
     "CecchinoLabHistoricalMarketResult",
+    "CecchinoLabPurchasabilityV3ReplayRun",
+    "CecchinoLabPurchasabilityV3ReplayResult",
     "Competition",
     "Fixture",
     "FixtureLineup",
