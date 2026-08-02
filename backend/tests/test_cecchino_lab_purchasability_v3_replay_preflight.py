@@ -21,6 +21,9 @@ from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight import (
     FAIR_SUM_TOLERANCE,
     FORBIDDEN_FORMULA_FIELDS,
+    INTEGRITY_MODE_FROZEN,
+    INTEGRITY_MODE_PROSPECTIVE,
+    INTEGRITY_POLICY_VERSION,
     PREFLIGHT_SCHEMA_VERSION,
     PROBE_SNAPSHOT_LIMIT,
     V3_MARKET_ORDER,
@@ -30,6 +33,7 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_prefligh
     classify_quote_quality,
     classify_score_replay,
     clear_purchasability_v3_replay_preflight_cache,
+    evaluate_historical_integrity_policy,
     run_purchasability_v3_replay_preflight,
 )
 
@@ -513,10 +517,10 @@ def test_classify_exact_and_gate_only_and_missing():
         m=m,
         by_mk=by_mk,
         integrity="invalid",
-        integrity_reasons=["lock_not_before_kickoff"],
+        integrity_reasons=["malformed_pre_match_hash"],
         duplicate=False,
     )
-    assert status5 == "invalid_pre_match_integrity"
+    assert status5 == "invalid_integrity"
 
     status6, _ = classify_score_replay(
         market_key="HOME",
@@ -633,21 +637,50 @@ def test_integrity_hash_lock_before_kickoff():
     run = _run()
     db = _db_with(run, snaps, markets)
     out = run_purchasability_v3_replay_preflight(db, 1)
+    assert out["source_integrity"]["with_payload_hash"] == 2
+    assert out["source_integrity"]["with_historical_freeze_lock"] == 2
     assert out["source_integrity"]["with_pre_match_hash"] == 2
     assert out["source_integrity"]["with_pre_match_lock"] == 2
+    # Fixture default: lock < kickoff → prospective
+    assert out["source_integrity"]["chronological_lock_check_passed"] == 2
     assert out["source_integrity"]["lock_before_kickoff"] == 2
+    assert out["integrity_policy_version"] == INTEGRITY_POLICY_VERSION
+    assert out["schema_version"] == PREFLIGHT_SCHEMA_VERSION
 
 
-def test_lock_after_kickoff_invalid():
+def test_lock_after_kickoff_historical_reconstruction_not_blocking():
     kick = _utcnow()
     snap = _snap(sid=1, locked_at=kick + timedelta(hours=1), kickoff=kick)
     markets = _v3_family_markets(1)
     run = _run()
     db = _db_with(run, [snap], markets)
     out = run_purchasability_v3_replay_preflight(db, 1)
-    assert out["source_integrity"]["invalid_lock_timestamp"] >= 1
-    assert out["workload"]["invalid_pre_match_integrity"] >= 1
+    assert out["source_integrity"]["historical_reconstruction_verified"] == 1
+    assert out["source_integrity"]["chronological_lock_check_not_applicable"] == 1
+    assert out["workload"]["invalid_integrity"] == 0
+    assert out["workload"]["exact_replay_ready"] + out["workload"]["ready_with_warning"] >= 1
+    assert out["status"] in ("ready", "ready_with_warnings")
+    policy = evaluate_historical_integrity_policy(snap)
+    assert policy["integrity_mode"] == INTEGRITY_MODE_FROZEN
+    assert policy["chronological_lock_check"] == "not_applicable"
+    assert policy["captured_before_kickoff"] is False
 
+
+def test_prospective_lock_before_kickoff_valid():
+    kick = _utcnow()
+    snap = _snap(sid=1, locked_at=kick - timedelta(hours=2), kickoff=kick)
+    policy = evaluate_historical_integrity_policy(snap)
+    assert policy["integrity_mode"] == INTEGRITY_MODE_PROSPECTIVE
+    assert policy["chronological_lock_check"] == "passed"
+    assert policy["captured_before_kickoff"] is True
+
+
+def test_historical_incomplete_missing_hash():
+    kick = _utcnow()
+    snap = _snap(sid=1, locked_at=kick + timedelta(hours=1), kickoff=kick, sha=None)
+    policy = evaluate_historical_integrity_policy(snap)
+    assert policy["integrity_mode"] == "historical_reconstruction_incomplete"
+    assert policy["integrity_gate"] == "incomplete"
 
 def test_duplicate_market_key_blocker():
     snap = _snap(sid=1)
@@ -1036,3 +1069,150 @@ def test_endpoint_include_probe_query_param():
     )
     assert r2.status_code == 200
     assert r2.json()["probe"].get("invoked_v3_formula") is True
+
+
+def test_schema_v2_and_integrity_policy_version():
+    snaps, markets = _full_universe()
+    out = run_purchasability_v3_replay_preflight(_db_with(_run(), snaps, markets), 1)
+    assert out["schema_version"] == "cecchino_lab_purchasability_v3_replay_preflight_v2"
+    assert out["integrity_policy_version"] == INTEGRITY_POLICY_VERSION
+    assert out["source_integrity"]["integrity_policy_version"] == INTEGRITY_POLICY_VERSION
+
+
+def test_workload_classification_complete_invariant():
+    snaps, markets = _full_universe()
+    out = run_purchasability_v3_replay_preflight(_db_with(_run(), snaps, markets), 1)
+    wl = out["workload"]
+    classified = (
+        wl["exact_replay_ready"]
+        + wl["ready_with_warning"]
+        + wl["gate_only_ready"]
+        + wl["not_replayable"]
+        + wl["invalid_integrity"]
+        + wl["ambiguous_market_join"]
+    )
+    assert wl["classified_evaluations_total"] == classified
+    assert classified == wl["theoretical_evaluations"]
+    assert wl["unclassified_evaluations"] == 0
+    for mk, bucket in out["by_market"].items():
+        m_sum = (
+            bucket["exact_replay_ready"]
+            + bucket["ready_with_warning"]
+            + bucket["gate_only_ready"]
+            + bucket["not_replayable"]
+            + bucket["invalid_integrity"]
+            + bucket["ambiguous_market_join"]
+        )
+        assert m_sum == bucket["eligible_rows"], mk
+        assert bucket["classified_total"] == bucket["eligible_rows"]
+        assert bucket["unclassified"] == 0
+
+
+def test_quote_real_exact_derived_warning():
+    snaps, markets = _full_universe()
+    out = run_purchasability_v3_replay_preflight(_db_with(_run(), snaps, markets), 1)
+    assert out["quote_quality"]["real"] >= 1
+    assert out["quote_quality"]["derived"] >= 1
+    assert out["workload"]["exact_replay_ready"] >= 1
+    assert out["workload"]["ready_with_warning"] >= 1
+    assert out["status"] == "ready_with_warnings"
+
+
+def test_anti_leakage_phase_separation_fields():
+    snaps, markets = _full_universe()
+    out = run_purchasability_v3_replay_preflight(_db_with(_run(), snaps, markets), 1)
+    al = out["anti_leakage"]
+    assert al["performance_fields_loaded_but_not_forwarded"] is True
+    assert al["formula_payload_forbidden_fields_found"] == []
+    assert "edge_pct" in al["formula_payload_allowed_fields"]
+    assert "won" in al["forbidden_formula_fields"]
+    assert out["source_integrity"]["formula_input_whitelist_verified"] is True
+    assert out["source_integrity"]["post_match_fields_excluded"] is True
+    assert out["source_integrity"]["score_performance_phase_separation_verified"] is True
+
+
+def test_probe_counters_and_by_market_invariant(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+
+    def fake_batch(*, kpi_panel, fixture_meta):
+        rows = (kpi_panel or {}).get("rows") or []
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "market_key": r.get("market_key"),
+                    "status": "available",
+                    "score": 50,
+                    "gate": {"gate_status": "passed"},
+                }
+            )
+        return {"items": items}
+
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    monkeypatch.setattr(mod, "calculate_purchasability_v3_batch", fake_batch)
+    out = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
+    probe = out["probe"]
+    assert probe["skipped"] is False
+    assert probe["snapshots_selected"] == 2
+    assert probe["snapshots_probed"] == 2
+    assert probe["markets_expected"] == 16
+    assert probe["panel_rows_submitted"] >= 8
+    assert probe["formula_items_returned"] == probe["panel_rows_submitted"]
+    assert probe["markets_scored"] == probe["formula_items_returned"]
+    assert probe["markets_gate_failed"] == 0
+    assert probe["markets_unavailable"] == 0
+    assert probe["markets_not_applicable"] == 0
+    assert probe["markets_unsupported"] == 0
+    assert probe["markets_error"] == 0
+    assert probe["markets_unclassified"] == 0
+    classified = (
+        probe["markets_scored"]
+        + probe["markets_gate_failed"]
+        + probe["markets_unavailable"]
+        + probe["markets_not_applicable"]
+        + probe["markets_unsupported"]
+        + probe["markets_error"]
+        + probe["markets_unclassified"]
+    )
+    assert probe["probe_classified_total"] == classified
+    assert classified == probe["formula_items_returned"]
+    assert probe["expected_vs_returned_status"] == "match"
+    assert "by_market" in probe
+    assert probe["by_market"]["HOME"]["scored"] >= 1
+    assert not any(b["code"] == "probe_formula_error" for b in out["blockers"])
+
+
+def test_probe_formula_error_blocks(monkeypatch):
+    snaps, markets = _full_universe()
+    run = _run()
+    db = _db_with(run, snaps, markets)
+
+    def boom(*, kpi_panel, fixture_meta):
+        raise RuntimeError("formula boom")
+
+    import app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight as mod
+
+    monkeypatch.setattr(mod, "calculate_purchasability_v3_batch", boom)
+    out = run_purchasability_v3_replay_preflight(db, 1, include_probe=True)
+    assert out["status"] == "blocked"
+    assert any(b["code"] == "probe_formula_error" for b in out["blockers"])
+    probe = out["probe"]
+    assert probe["snapshots_with_error"] >= 1
+    assert probe["markets_error"] >= 1
+    assert all("traceback" not in str(e).lower() for e in probe.get("errors") or [])
+
+
+def test_freeze_hash_and_lock_required_for_frozen():
+    kick = _utcnow()
+    snap = _snap(sid=1, locked_at=kick + timedelta(hours=3), kickoff=kick, sha="deadbeef")
+    policy = evaluate_historical_integrity_policy(snap)
+    assert policy["historical_payload_hash_present"] is True
+    assert policy["historical_freeze_lock_present"] is True
+    assert policy["integrity_mode"] == INTEGRITY_MODE_FROZEN
+    snap2 = _snap(sid=2, kickoff=kick, sha="deadbeef")
+    snap2.pre_match_locked_at = None
+    policy2 = evaluate_historical_integrity_policy(snap2)
+    assert policy2["integrity_mode"] == "historical_reconstruction_incomplete"

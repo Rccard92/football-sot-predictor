@@ -1,12 +1,16 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## STEP 3A.2 — Integrità storica preflight (2026-08-02)
+
+Il preflight resta fuori dalla dashboard. Schema v2 + policy ricostruzione storica: lock chronology non applicabile; hash/lock come prova di freeze; classificazione completa in UI Replay. Nessun replay ancora.
+
 ## STEP 3A.1 — Preflight fuori dalla dashboard (2026-07-29)
 
 Il preflight replay Acquistabilità V3 **non** è più montato su `/cecchino-lab/historical-scans/:runId`. Accesso da **Storico run → Verifica replay Acquistabilità** → `/cecchino-lab/purchasability-replay?run_id=`. La dashboard Run non chiama più l’endpoint preflight e non compete con summary/probe resource-safe.
 
 ## STEP 3A — Replay Acquistabilità V3 preflight (2026-07-29) [superato da 3A.1 per UI]
 
-Originariamente sulla pagina run, dopo Acquistabilità (export V2). Dal 3A.1: pagina autonoma; summary `include_probe=false`; probe opzionale; nessun Avvia replay. Schema e regole business invariati; motore V3 e export V2 invariati.
+Originariamente sulla pagina run, dopo Acquistabilità (export V2). Dal 3A.1: pagina autonoma; summary `include_probe=false`; probe opzionale; nessun Avvia replay. Schema aggiornato in 3A.2; motore V3 e export V2 invariati.
 
 ## Obiettivo
 

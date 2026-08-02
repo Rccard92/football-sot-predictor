@@ -2,13 +2,17 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Semantica integrità storica preflight STEP 3A.2 (2026-08-02)
+
+`pre_match_locked_at` = freeze di ricostruzione Lab, non cattura pre-kickoff. Schema `…_preflight_v2` + policy `…_historical_reconstruction_integrity_v1`; classificazione completa; probe con contatori/by_market. Formula/scan/Run #3 invariati. **Nessun replay.** STEP 3B subordinato al nuovo Go.
+
 ## Fix — Harden preflight replay Acquistabilità V3 STEP 3A.1 (2026-07-29)
 
-Incidente Railway su Run #3 (restart durante preflight; nessuna prova definitiva OOM). Causa: full ORM load. Mitigazione: aggregati+streaming, summary/probe separati (`include_probe`), pagina autonoma `/cecchino-lab/purchasability-replay`, budget risorse. **Nessun replay/migration/scansione.** Formula V3 e Run #3 invariati. STEP 3B ancora bloccato.
+Incidente Railway su Run #3 (restart durante preflight; nessuna prova definitiva OOM). Causa: full ORM load. Mitigazione: aggregati+streaming, summary/probe separati (`include_probe`), pagina autonoma `/cecchino-lab/purchasability-replay`, budget risorse. **Nessun replay/migration/scansione.** Formula V3 e Run #3 invariati.
 
 ## Feat — Preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
 
-Preflight read-only Lab: `GET .../purchasability-v3-replay/preflight` (+ `include_probe` dal 3A.1). Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`. Motore V3 e export V2 invariati. **Run #3 invariato.** Doc: `CECCHINO_LAB_HISTORICAL_SCAN.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
+Preflight read-only Lab: `GET .../purchasability-v3-replay/preflight` (+ `include_probe` dal 3A.1). Schema aggiornato in 3A.2 a `…_preflight_v2`. Motore V3 e export V2 invariati. **Run #3 invariato.** Doc: `CECCHINO_LAB_HISTORICAL_SCAN.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
 
 ## Fix — Export Acquistabilità storica compatto (2026-07-29)
 

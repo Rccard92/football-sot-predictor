@@ -26,8 +26,12 @@ function basePreflight(overrides: Partial<Preflight> = {}): Preflight {
     eligible_rows: 8,
     exact_replay_ready: 5,
     ready_with_warning: 1,
-    gate_only_ready: 0,
-    not_replayable: 2,
+    gate_only_ready: 1,
+    not_replayable: 1,
+    invalid_integrity: 0,
+    ambiguous_market_join: 0,
+    classified_total: 8,
+    unclassified: 0,
     quote_real: 6,
     quote_derived: 1,
     quote_unavailable: 1,
@@ -35,7 +39,8 @@ function basePreflight(overrides: Partial<Preflight> = {}): Preflight {
     performance_synthetic_ready: 1,
   }
   return {
-    schema_version: 'cecchino_lab_purchasability_v3_replay_preflight_v1',
+    schema_version: 'cecchino_lab_purchasability_v3_replay_preflight_v2',
+    integrity_policy_version: 'cecchino_lab_historical_reconstruction_integrity_v1',
     status: 'ready_with_warnings',
     generated_at: '2026-07-29T10:00:00Z',
     run: {
@@ -62,9 +67,14 @@ function basePreflight(overrides: Partial<Preflight> = {}): Preflight {
       snapshots_total: 10,
       snapshots_eligible_core: 8,
       snapshots_excluded: 2,
+      with_payload_hash: 8,
+      with_historical_freeze_lock: 8,
       with_pre_match_hash: 8,
       with_pre_match_lock: 8,
-      lock_before_kickoff: 8,
+      chronological_lock_check_not_applicable: 8,
+      historical_reconstruction_verified: 8,
+      integrity_mode_dominant: 'historical_reconstruction_frozen',
+      score_performance_phase_separation_verified: true,
       duplicate_market_keys: 0,
     },
     workload: {
@@ -72,8 +82,12 @@ function basePreflight(overrides: Partial<Preflight> = {}): Preflight {
       theoretical_evaluations: 64,
       exact_replay_ready: 40,
       ready_with_warning: 10,
-      gate_only_ready: 0,
-      not_replayable: 14,
+      gate_only_ready: 8,
+      not_replayable: 6,
+      invalid_integrity: 0,
+      ambiguous_market_join: 0,
+      classified_evaluations_total: 64,
+      unclassified_evaluations: 0,
       family_decisions_theoretical: 24,
     },
     quote_quality: { real: 30, derived: 20, unavailable: 10, inconsistent_flags: 0 },
@@ -172,7 +186,7 @@ function renderPage(path = '/cecchino-lab/purchasability-replay?run_id=3') {
   )
 }
 
-describe('CecchinoLabPurchasabilityReplayPage STEP 3A.1', () => {
+describe('CecchinoLabPurchasabilityReplayPage STEP 3A.2', () => {
   beforeEach(() => {
     apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
     apiMock.listHistoricalScans.mockReset()
@@ -205,9 +219,30 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3A.1', () => {
     expect(screen.getByTestId('preflight-status-badge').textContent).toMatch(/avvisi/i)
     expect(screen.getByTestId('preflight-resource-profile').textContent).toMatch(/streamed/)
     expect(screen.getByTestId('verify-purchasability-v3-probe')).toBeTruthy()
+    expect(screen.getByTestId('preflight-classified').textContent).toMatch(/Classificate:\s*64\s*\/\s*64/)
+    expect(screen.getByTestId('integrity-mode').textContent).toMatch(/Ricostruzione storica congelata/)
+    expect(screen.getByTestId('integrity-chronology').textContent).toMatch(/Non applicabile/)
+    expect(screen.getByTestId('integrity-lock-explanation').textContent).toMatch(/congelata/)
+    expect(screen.getByTestId('preflight-coverage').textContent).toMatch(/Pronto esatto/)
+    expect(screen.getByTestId('preflight-coverage').textContent).toMatch(/Solo gate/)
   })
 
-  it('probe uses include_probe true', async () => {
+  it('probe uses include_probe true and shows probe card', async () => {
+    const probeByMarket = Object.fromEntries(
+      ['HOME', 'DRAW', 'AWAY', 'OVER_2_5', 'UNDER_2_5', 'ONE_X', 'X_TWO', 'ONE_TWO'].map((mk) => [
+        mk,
+        {
+          submitted: 30,
+          returned: 30,
+          scored: 10,
+          gate_failed: 15,
+          unavailable: 5,
+          not_applicable: 0,
+          errors: 0,
+          unclassified: 0,
+        },
+      ]),
+    )
     apiMock.getHistoricalPurchasabilityV3ReplayPreflight
       .mockResolvedValueOnce(basePreflight())
       .mockResolvedValueOnce(
@@ -215,10 +250,20 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3A.1', () => {
           probe: {
             skipped: false,
             invoked_v3_formula: true,
-            snapshots_probed: 2,
-            markets_scored: 10,
+            snapshots_selected: 30,
+            snapshots_probed: 30,
+            markets_expected: 240,
+            panel_rows_submitted: 240,
+            formula_items_returned: 240,
+            markets_scored: 84,
+            markets_gate_failed: 120,
+            markets_unavailable: 36,
+            markets_not_applicable: 0,
+            markets_error: 0,
+            markets_unclassified: 0,
             probe_is_diagnostic_only: true,
             probe_not_a_backtest: true,
+            by_market: probeByMarket,
           },
         }),
       )
@@ -232,7 +277,35 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3A.1', () => {
         includeProbe: true,
       }),
     )
-    await waitFor(() => expect(screen.getByTestId('preflight-probe-summary')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('preflight-probe-card')).toBeTruthy())
+    expect(screen.getByTestId('probe-card-title').textContent).toMatch(/Risultato verifica formula/)
+    expect(screen.getByTestId('probe-card-counters').textContent).toMatch(/Mercati attesi:\s*240/)
+    expect(screen.getByTestId('probe-card-counters').textContent).toMatch(/Score prodotti:\s*84/)
+    expect(screen.getByTestId('probe-by-market-table')).toBeTruthy()
+  })
+
+  it('highlights incomplete classification', async () => {
+    apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockResolvedValue(
+      basePreflight({
+        workload: {
+          supported_markets_per_snapshot: 8,
+          theoretical_evaluations: 64,
+          exact_replay_ready: 10,
+          ready_with_warning: 0,
+          gate_only_ready: 0,
+          not_replayable: 0,
+          invalid_integrity: 0,
+          ambiguous_market_join: 0,
+          classified_evaluations_total: 10,
+          unclassified_evaluations: 54,
+        },
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('verify-purchasability-v3-replay')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('verify-purchasability-v3-replay'))
+    await waitFor(() => expect(screen.getByTestId('preflight-classified')).toBeTruthy())
+    expect(screen.getByTestId('preflight-classified').textContent).toMatch(/Classificazione incompleta/)
   })
 
   it('shows blocked state', async () => {

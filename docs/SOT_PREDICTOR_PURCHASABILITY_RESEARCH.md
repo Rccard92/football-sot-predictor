@@ -58,7 +58,7 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 ### STEP 3A — Preflight replay storico V3 (2026-07-29)
 
 - Solo Cecchino Lab: verifica read-only se gli snapshot pre-match del run (es. Run #3) bastano per ricalcolare V3 **senza** nuova scansione.
-- Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`; endpoint GET preflight.
+- Schema aggiornato in 3A.2 a `cecchino_lab_purchasability_v3_replay_preflight_v2`; endpoint GET preflight.
 
 ### STEP 3A.1 — Resource-safe + pagina autonoma (2026-07-29)
 
@@ -67,6 +67,15 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Universo `eligible_core` × 8 mercati; anti-leakage; quote real/derived; fair Bet365; adapter contract invariati.
 - Probe solo su richiesta (`include_probe=true`), max 30 snapshot.
 - **Non** STEP 3B: nessun job replay, export V3, overwrite Run #3. Motore V3 invariato.
+
+### STEP 3A.2 — Integrità storica + classificazione completa (2026-08-02)
+
+- `pre_match_locked_at` = momento del freeze di ricostruzione Lab, non cattura originale pre-kickoff.
+- Policy `cecchino_lab_historical_reconstruction_integrity_v1`: mode frozen vs prospective vs incomplete vs invalid.
+- Chronology lock check `not_applicable` sul Run storico; hash+lock = prova di congelamento.
+- Tutte le valutazioni teoriche classificate; probe con contatori completi e `by_market`.
+- Status atteso tipico Run #3: `ready_with_warnings` (quote derivate diagnostiche).
+- **Nessun replay ancora.** STEP 3B subordinato al nuovo risultato.
 
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 

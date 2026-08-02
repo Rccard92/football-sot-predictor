@@ -1,10 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Correct historical replay integrity semantics (STEP 3A.2) (2026-08-02)
+
+- Perché: su Run #3 `lock >= kickoff` storico invalidava tutte le valutazioni; `pre_match_locked_at` è freeze di ricostruzione 2026, non cattura 2021.
+- Cosa: policy `historical_reconstruction_integrity_v1`; schema preflight v2; classificazione completa; probe contatori/by_market; UI semantica corretta.
+- Cosa non fa: nessun replay/migration/scansione; formula V3 e Run #3 invariati. STEP 3B ancora subordinato al Go.
+
 ## Fix — Harden purchasability replay preflight resources (STEP 3A.1) (2026-07-29)
 
 - Perché: il primo preflight reale su Run #3 ha riavviato il backend Railway (`Failed to fetch`); carico ORM completo + dashboard concorrente.
 - Cosa: streaming/aggregati; summary vs probe (`include_probe`); budget; pagina autonoma; errori controllati; test+doc.
-- Cosa non fa: nessun replay/migration/scansione/backfill; formula V3 e regole business invariate; Run #3 invariato. STEP 3B ancora bloccato.
+- Cosa non fa: nessun replay/migration/scansione/backfill; formula V3 e regole business invariate; Run #3 invariato.
 
 ## Feat — Preflight replay Acquistabilità V3 (STEP 3A) (2026-07-29)
 

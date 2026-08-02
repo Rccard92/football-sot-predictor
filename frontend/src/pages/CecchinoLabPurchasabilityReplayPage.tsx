@@ -32,6 +32,24 @@ function statusLabel(status: UiStatus | string): string {
   return 'In attesa'
 }
 
+function classificationLabel(key: string): string {
+  if (key === 'exact_replay_ready') return 'Pronto esatto'
+  if (key === 'ready_with_warning' || key === 'score_replay_ready_with_warning') return 'Pronto con avviso'
+  if (key === 'gate_only_ready' || key === 'gate_only_replay_ready') return 'Solo gate verificabile'
+  if (key === 'not_replayable' || key === 'not_replayable_missing_inputs') return 'Non ricalcolabile'
+  if (key === 'invalid_integrity' || key === 'invalid_pre_match_integrity') return 'Integrità non verificata'
+  if (key === 'ambiguous_market_join') return 'Join ambiguo'
+  return key
+}
+
+function integrityModeLabel(mode: string | null | undefined): string {
+  if (mode === 'historical_reconstruction_frozen') return 'Ricostruzione storica congelata'
+  if (mode === 'prospective_pre_match') return 'Cattura prospettica pre-match'
+  if (mode === 'historical_reconstruction_incomplete') return 'Ricostruzione storica incompleta'
+  if (mode === 'invalid_or_ambiguous') return 'Integrità non valida o ambigua'
+  return mode || '—'
+}
+
 function statusBadgeClass(status: UiStatus | string): string {
   if (status === 'ready') return 'lab-badge-ok'
   if (status === 'ready_with_warnings') return 'lab-badge-warn'
@@ -52,6 +70,28 @@ function formatPreflightError(err: unknown): string {
 
 function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayPreflight }) {
   const rp = data.resource_profile
+  const si = data.source_integrity
+  const wl = data.workload
+  const theoretical = wl.theoretical_evaluations
+  const classified =
+    wl.classified_evaluations_total ??
+    wl.exact_replay_ready +
+      wl.ready_with_warning +
+      wl.gate_only_ready +
+      wl.not_replayable +
+      (wl.invalid_integrity ?? 0) +
+      (wl.ambiguous_market_join ?? 0)
+  const unclassified = wl.unclassified_evaluations ?? Math.max(0, theoretical - classified)
+  const classificationComplete = unclassified === 0 && classified === theoretical
+  const hashCount = si.with_payload_hash ?? si.with_pre_match_hash ?? 0
+  const lockCount = si.with_historical_freeze_lock ?? si.with_pre_match_lock ?? 0
+  const eligible = si.snapshots_eligible_core ?? 0
+  const mode = si.integrity_mode_dominant
+  const chronoNa = (si.chronological_lock_check_not_applicable ?? 0) > 0 || mode === 'historical_reconstruction_frozen'
+  const phaseOk = si.score_performance_phase_separation_verified !== false
+  const probe = data.probe
+  const probeActive = Boolean(probe && !probe.skipped)
+
   return (
     <div data-testid="preflight-result" style={{ marginTop: '1rem' }}>
       <div
@@ -72,12 +112,34 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
         <div>
           <div style={{ color: 'var(--lab-muted)', fontSize: '0.75rem' }}>COPERTURA</div>
           <div data-testid="preflight-coverage">
-            snapshot {data.source_integrity.snapshots_total ?? 0} / eleggibili{' '}
-            {data.source_integrity.snapshots_eligible_core ?? 0}
+            snapshot {si.snapshots_total ?? 0} / eleggibili {eligible}
             <br />
-            teoriche {data.workload.theoretical_evaluations} · exact{' '}
-            {data.workload.exact_replay_ready} · warning {data.workload.ready_with_warning} · non
-            replayable {data.workload.not_replayable}
+            teoriche {theoretical}
+            <br />
+            {classificationLabel('exact_replay_ready')}: {wl.exact_replay_ready}
+            <br />
+            {classificationLabel('ready_with_warning')}: {wl.ready_with_warning}
+            <br />
+            {classificationLabel('gate_only_ready')}: {wl.gate_only_ready}
+            <br />
+            {classificationLabel('not_replayable')}: {wl.not_replayable}
+            <br />
+            {classificationLabel('invalid_integrity')}: {wl.invalid_integrity ?? 0}
+            <br />
+            {classificationLabel('ambiguous_market_join')}: {wl.ambiguous_market_join ?? 0}
+            <br />
+            <span
+              data-testid="preflight-classified"
+              style={{
+                color: classificationComplete ? 'var(--lab-ok)' : 'var(--lab-err)',
+                fontWeight: 600,
+              }}
+            >
+              Classificate: {classified} / {theoretical}
+              {!classificationComplete ? ' — Classificazione incompleta' : ''}
+            </span>
+            <br />
+            Non classificate: {unclassified}
           </div>
         </div>
         <div>
@@ -90,10 +152,30 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
         <div>
           <div style={{ color: 'var(--lab-muted)', fontSize: '0.75rem' }}>INTEGRITÀ</div>
           <div data-testid="preflight-integrity">
-            hash {data.source_integrity.with_pre_match_hash ?? 0} · lock{' '}
-            {data.source_integrity.with_pre_match_lock ?? 0} · lock&lt;KO{' '}
-            {data.source_integrity.lock_before_kickoff ?? 0} · duplicati{' '}
-            {data.source_integrity.duplicate_market_keys ?? 0}
+            <div>
+              Modalità: <strong data-testid="integrity-mode">{integrityModeLabel(mode)}</strong>
+            </div>
+            <div data-testid="integrity-hash">
+              Hash payload: {hashCount} / {eligible}
+            </div>
+            <div data-testid="integrity-freeze-lock">
+              Lock di congelamento: {lockCount} / {eligible}
+            </div>
+            <div data-testid="integrity-chronology">
+              Controllo lock prima del kickoff:{' '}
+              {chronoNa ? 'Non applicabile alla ricostruzione storica' : 'Applicabile'}
+            </div>
+            <div data-testid="integrity-phase-sep">
+              Separazione score/risultato: {phaseOk ? 'Verificata' : 'Non verificata'}
+            </div>
+            <div data-testid="integrity-duplicates">Duplicati: {si.duplicate_market_keys ?? 0}</div>
+            <p
+              data-testid="integrity-lock-explanation"
+              style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--lab-muted)' }}
+            >
+              Il timestamp di lock indica quando la ricostruzione storica è stata congelata, non quando
+              il dato fu originariamente acquisito.
+            </p>
           </div>
         </div>
         <div>
@@ -123,9 +205,12 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
             <tr>
               <th>Mercato</th>
               <th>Eleggibili</th>
-              <th>Exact ready</th>
-              <th>Warning</th>
-              <th>Non replayable</th>
+              <th>Pronto esatto</th>
+              <th>Pronto con avviso</th>
+              <th>Solo gate</th>
+              <th>Non ricalcolabile</th>
+              <th>Integrità</th>
+              <th>Join ambiguo</th>
               <th>Quote reali</th>
               <th>Quote derivate</th>
               <th>Performance ready</th>
@@ -143,7 +228,10 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
                   <td>{row.eligible_rows}</td>
                   <td>{row.exact_replay_ready}</td>
                   <td>{row.ready_with_warning}</td>
+                  <td>{row.gate_only_ready}</td>
                   <td>{row.not_replayable}</td>
+                  <td>{row.invalid_integrity ?? row.invalid_pre_match_integrity ?? 0}</td>
+                  <td>{row.ambiguous_market_join ?? 0}</td>
                   <td>{row.quote_real}</td>
                   <td>{row.quote_derived}</td>
                   <td>{perfReady}</td>
@@ -202,17 +290,80 @@ function PreflightResultView({ data }: { data: HistoricalPurchasabilityV3ReplayP
           }}
           data-testid="preflight-workload-summary"
         >
-          Snapshot eleggibili: {data.source_integrity.snapshots_eligible_core ?? 0} · Valutazioni
-          teoriche: {data.workload.theoretical_evaluations} · Decisioni familiari:{' '}
-          {data.workload.family_decisions_theoretical ?? 0}
+          Snapshot eleggibili: {eligible} · Valutazioni teoriche: {theoretical} · Decisioni familiari:{' '}
+          {wl.family_decisions_theoretical ?? 0}
         </p>
       </div>
 
-      {data.probe && !data.probe.skipped ? (
-        <p data-testid="preflight-probe-summary" style={{ marginTop: '0.75rem', fontSize: '0.9rem' }}>
-          Probe: {String(data.probe.snapshots_probed ?? 0)} snapshot · scored{' '}
-          {String(data.probe.markets_scored ?? 0)}
-        </p>
+      {probeActive && probe ? (
+        <div
+          data-testid="preflight-probe-card"
+          style={{
+            marginTop: '1.25rem',
+            padding: '1rem',
+            border: '1px solid var(--lab-border, #ccc)',
+            background: 'var(--lab-surface, transparent)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.05rem' }} data-testid="probe-card-title">
+            Risultato verifica formula
+          </h3>
+          <div
+            data-testid="probe-card-counters"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))',
+              gap: '0.5rem',
+              fontSize: '0.9rem',
+              marginBottom: '0.75rem',
+            }}
+          >
+            <div>Snapshot selezionati: {String(probe.snapshots_selected ?? 0)}</div>
+            <div>Snapshot elaborati: {String(probe.snapshots_probed ?? 0)}</div>
+            <div>Mercati attesi: {String(probe.markets_expected ?? 0)}</div>
+            <div>Panel rows inviate: {String(probe.panel_rows_submitted ?? 0)}</div>
+            <div>Item restituiti: {String(probe.formula_items_returned ?? 0)}</div>
+            <div>Score prodotti: {String(probe.markets_scored ?? 0)}</div>
+            <div>Gate non attivati: {String(probe.markets_gate_failed ?? 0)}</div>
+            <div>Non disponibili: {String(probe.markets_unavailable ?? 0)}</div>
+            <div>Non applicabili: {String(probe.markets_not_applicable ?? 0)}</div>
+            <div>Errori: {String(probe.markets_error ?? 0)}</div>
+            <div>Non classificati: {String(probe.markets_unclassified ?? 0)}</div>
+          </div>
+          <div className="lab-table-wrap">
+            <table className="lab-table" data-testid="probe-by-market-table">
+              <thead>
+                <tr>
+                  <th>Mercato</th>
+                  <th>Inviati</th>
+                  <th>Restituiti</th>
+                  <th>Score</th>
+                  <th>Gate fallito</th>
+                  <th>Non disponibile</th>
+                  <th>Non applicabile</th>
+                  <th>Errori</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MARKET_ORDER.map((mk) => {
+                  const row = probe.by_market?.[mk]
+                  return (
+                    <tr key={mk}>
+                      <td>{mk}</td>
+                      <td>{row?.submitted ?? 0}</td>
+                      <td>{row?.returned ?? 0}</td>
+                      <td>{row?.scored ?? 0}</td>
+                      <td>{row?.gate_failed ?? 0}</td>
+                      <td>{row?.unavailable ?? 0}</td>
+                      <td>{row?.not_applicable ?? 0}</td>
+                      <td>{row?.errors ?? 0}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : null}
     </div>
   )

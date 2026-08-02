@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — preflight integrità storica STEP 3A.2 (2026-08-02)
+
+1. Da **Storico run** aprire **Verifica replay Acquistabilità**.
+2. Route: `/cecchino-lab/purchasability-replay?run_id=3`.
+3. Click **Verifica disponibilità replay** → verificare Classificate N/N, modalità Ricostruzione storica congelata, chronology Non applicabile, unclassified 0.
+4. Click **Verifica formula su 30 snapshot** → card «Risultato verifica formula» con contatori e tabella per mercato.
+5. Go/No-Go STEP 3B solo con classificazione completa, probe senza errori, nessun campo post-match in formula.
+
 ## Cecchino Lab — preflight resource-safe STEP 3A.1 (2026-07-29)
 
 1. Da **Storico run** aprire **Verifica replay Acquistabilità** (non dalla dashboard Run).

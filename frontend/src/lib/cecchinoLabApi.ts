@@ -1863,8 +1863,11 @@ export type HistoricalPurchasabilityV3ReplayMarketCoverage = {
   ready_with_warning: number
   gate_only_ready: number
   not_replayable: number
+  invalid_integrity?: number
   invalid_pre_match_integrity?: number
   ambiguous_market_join?: number
+  classified_total?: number
+  unclassified?: number
   quote_real: number
   quote_derived: number
   quote_unavailable: number
@@ -1885,8 +1888,47 @@ export type HistoricalPurchasabilityV3ReplayFamilyCoverage = {
   family_decisions_theoretical: number
 }
 
+export type HistoricalPurchasabilityV3ReplayProbeMarket = {
+  submitted?: number
+  returned?: number
+  scored?: number
+  gate_failed?: number
+  unavailable?: number
+  not_applicable?: number
+  unsupported?: number
+  errors?: number
+  unclassified?: number
+}
+
+export type HistoricalPurchasabilityV3ReplayProbe = {
+  skipped?: boolean
+  reason?: string
+  probe_is_diagnostic_only?: boolean
+  probe_not_a_backtest?: boolean
+  probe_snapshot_limit?: number
+  snapshots_selected?: number
+  snapshots_probed?: number
+  markets_expected?: number
+  panel_rows_submitted?: number
+  formula_items_returned?: number
+  markets_scored?: number
+  markets_gate_failed?: number
+  markets_unavailable?: number
+  markets_not_applicable?: number
+  markets_unsupported?: number
+  markets_error?: number
+  markets_unclassified?: number
+  snapshots_with_error?: number
+  probe_classified_total?: number
+  expected_vs_returned_status?: string
+  by_market?: Record<string, HistoricalPurchasabilityV3ReplayProbeMarket>
+  errors?: Array<Record<string, string | number | null | undefined>>
+  [key: string]: unknown
+}
+
 export type HistoricalPurchasabilityV3ReplayPreflight = {
   schema_version: string
+  integrity_policy_version?: string
   status: 'ready' | 'ready_with_warnings' | 'blocked' | string
   generated_at: string
   cache_hit?: boolean
@@ -1923,11 +1965,26 @@ export type HistoricalPurchasabilityV3ReplayPreflight = {
     snapshots_eligible_core?: number
     snapshots_excluded?: number
     exclusions_by_reason?: Record<string, number>
+    with_payload_hash?: number
+    with_historical_freeze_lock?: number
     with_pre_match_hash?: number
     with_pre_match_lock?: number
     lock_before_kickoff?: number
     invalid_lock_timestamp?: number
+    historical_reconstruction_verified?: number
+    historical_reconstruction_with_warning?: number
+    historical_reconstruction_invalid?: number
+    chronological_lock_check_applicable?: number
+    chronological_lock_check_passed?: number
+    chronological_lock_check_failed?: number
+    chronological_lock_check_not_applicable?: number
     duplicate_market_keys?: number
+    snapshots_with_duplicates?: number
+    formula_input_whitelist_verified?: boolean
+    post_match_fields_excluded?: boolean
+    score_performance_phase_separation_verified?: boolean
+    integrity_mode_dominant?: string | null
+    integrity_policy_version?: string
   }
   workload: {
     supported_markets_per_snapshot: number
@@ -1937,6 +1994,10 @@ export type HistoricalPurchasabilityV3ReplayPreflight = {
     ready_with_warning: number
     gate_only_ready: number
     not_replayable: number
+    invalid_integrity?: number
+    ambiguous_market_join?: number
+    classified_evaluations_total?: number
+    unclassified_evaluations?: number
     family_decisions_theoretical?: number
   }
   quote_quality: {
@@ -1960,11 +2021,14 @@ export type HistoricalPurchasabilityV3ReplayPreflight = {
     pre_match_input_fields?: string[]
     post_match_performance_fields?: string[]
     forbidden_formula_fields?: string[]
+    formula_payload_allowed_fields?: string[]
+    formula_payload_forbidden_fields_found?: string[]
+    performance_fields_loaded_but_not_forwarded?: boolean
     anti_leakage_status?: string
     result_fields_passed_to_formula?: boolean
     settlement_fields_passed_to_formula?: boolean
   }
-  probe?: Record<string, unknown>
+  probe?: HistoricalPurchasabilityV3ReplayProbe
   blockers: Array<{ code: string; message: string }>
   warnings: Array<{ code: string; message: string }>
   issue_examples?: Record<string, HistoricalPurchasabilityV3ReplayIssueExample[]>
