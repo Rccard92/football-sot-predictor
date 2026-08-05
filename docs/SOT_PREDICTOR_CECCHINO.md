@@ -2,6 +2,21 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Acquistabilità V3.1 — Fase 1B formule e backfill (2026-08-05)
+
+| Voce | Dettaglio |
+|------|-----------|
+| OU FT/PT | Pipeline a coppia condivisa (`goal_market_poisson_empirical_v2`): stesso λ, empirico Under, Over = 1−P; audit `complement_sum_check` su probabilità raw |
+| Under 1.5 | `P_Poisson = e^{-λ}(1+λ)`; empirico total≤1 |
+| Over 3.5 | `P_Poisson = 1 − P(K≤3)`; empirico total≥4; coerente con Under 3.5 |
+| Under PT 0.5 | `P_Poisson = e^{-λ_HT}`; empirico HT total=0; coerente con Over PT 0.5 |
+| 1X2 PT | Famiglia `first_half_1x2_empirical_shrinkage_v2`: vettore empirico unico → shrinkage → floor → normalizza (somma=1) |
+| Backfill | Modalità `formula_backfill_v31_phase1b`, dry-run default, merge-only, as-of kickoff |
+| Analisi formule | Celle Quota Cecchino cliccabili; dettaglio evento/λ/blend/famiglia/motivo non calcolabile |
+| V3 | **Non modificata** (`fixed_discount_v3`, `SUPPORTED_V3_MARKETS`) |
+
+Differenza HT 1X2 v1→v2: v1 calcolava ogni esito isolato (cap indipendente, somma ≠ 1); v2 normalizza il vettore una sola volta.
+
 ## Acquistabilità V3.1 — Fase 1 pipeline mercati KPI (2026-08-05)
 
 Preparazione dati end-to-end **senza** modificare la formula Acquistabilità V3 (`fixed_discount_v3`).

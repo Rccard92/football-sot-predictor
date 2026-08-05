@@ -24,7 +24,7 @@ from app.services.cecchino.cecchino_fixture_history import (
     aggregate_halftime_goal_totals,
 )
 from app.services.cecchino.cecchino_goal_poisson_v2 import (
-    FORMULA_DRAW_PT_V1,
+    FORMULA_HT_1X2_V2,
     calculate_first_half_draw_market_v1,
     shrink_empirical_only,
 )
@@ -80,7 +80,7 @@ def _contexts() -> GoalMarketContexts:
 def test_calculate_draw_pt_produces_numeric_odd():
     out = calculate_first_half_draw_market_v1(_contexts(), {SEL_DRAW_PT: 0.42})
     assert out["market_key"] == SEL_DRAW_PT
-    assert out["formula_version"] == FORMULA_DRAW_PT_V1
+    assert out["formula_version"] == FORMULA_HT_1X2_V2
     assert out["final_odd"] is not None
     assert out["final_odd"] > 1.0
     assert out["status"] in (STATUS_AVAILABLE, STATUS_PARTIAL_LOW_SAMPLE)

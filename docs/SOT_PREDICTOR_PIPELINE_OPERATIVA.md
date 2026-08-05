@@ -1,5 +1,20 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Acquistabilità V3.1 — Fase 1B formule + backfill (2026-08-05)
+
+1. Scan live: `build_goal_market_cecchino_odds` produce coppie OU coerenti + famiglia HT 1X2 v2.
+2. Refresh Betfair: ricostruisce KPI da `goal_markets` persistiti (non ricalcola formule).
+3. Snapshot vecchi con null: eseguire backfill mirato (dry-run prima):
+
+```bash
+cd backend
+python -m app.jobs.backfill_cecchino_formulas_v31_phase1b --date-from YYYY-MM-DD --date-to YYYY-MM-DD --limit N
+python -m app.jobs.backfill_cecchino_formulas_v31_phase1b --date-from YYYY-MM-DD --date-to YYYY-MM-DD --limit N --apply --confirm WRITE_FORMULA_BACKFILL_V31_P1B
+```
+
+4. Admin: `POST /admin/cecchino/formula-backfill-v31-phase1b` (dry_run default).
+5. V3 invariata; nuovi mercati restano «Non supportato dalla V3».
+
 ## Acquistabilità V3.1 — Fase 1 mercati KPI (2026-08-05)
 
 1. Verificare mapping `kpi_markets_v31_phase1` nel payload KPI (`mapping_version`).

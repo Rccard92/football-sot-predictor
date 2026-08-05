@@ -401,6 +401,7 @@ def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "market_key": market_result.get("market_key"),
         "formula_version": market_result.get("formula_version"),
+        "event_definition": market_result.get("event_definition"),
         "final_odd": market_result.get("final_odd"),
         "status": market_result.get("status"),
         "warnings": list(market_result.get("warnings") or []),
@@ -415,6 +416,12 @@ def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
         out["technical"] = market_result["technical"]
     if market_result.get("legacy_excel_parity"):
         out["legacy_excel_parity"] = market_result["legacy_excel_parity"]
+    if market_result.get("complementary_market"):
+        out["complementary_market"] = market_result["complementary_market"]
+    if market_result.get("complement_sum_check") is not None:
+        out["complement_sum_check"] = market_result["complement_sum_check"]
+    if market_result.get("family"):
+        out["family"] = market_result["family"]
     if market_result.get("formula_note"):
         out["formula_note"] = market_result["formula_note"]
     if market_result.get("blocks"):
@@ -426,6 +433,12 @@ def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
         out["probability"] = market_result.get("probability")
         out["skipped_missing_halftime_score"] = market_result.get(
             "skipped_missing_halftime_score",
+        )
+    # Motivo esplicito se non calcolabile
+    if out.get("final_odd") is None and out.get("status") == "insufficient_data":
+        reasons = out.get("warnings") or []
+        out["not_computable_reason"] = (
+            reasons[0] if reasons else "insufficient_data"
         )
     return out
 

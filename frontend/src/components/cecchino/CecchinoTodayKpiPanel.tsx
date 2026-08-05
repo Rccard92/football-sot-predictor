@@ -637,7 +637,7 @@ export function CecchinoTodayKpiPanel({
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap font-semibold tabular-nums text-amber-100">
                     <AnalyzableCell
                       active={analysisMode}
-                      label="Quota Cecchino"
+                      label={`${segnoLabel} · Quota Cecchino`}
                       onOpen={() => openMetric(mk, 'quota_cecchino')}
                     >
                       {fmtKpiCell(row.quota_cecchino, true)}
@@ -824,7 +824,7 @@ export function CecchinoTodayKpiPanel({
                 <dd className="text-amber-100">
                   <AnalyzableCell
                     active={analysisMode}
-                    label="Quota Cecchino"
+                    label={`${segnoLabel} · Quota Cecchino`}
                     onOpen={() => openMetric(mk, 'quota_cecchino')}
                   >
                     {fmtKpiCell(row.quota_cecchino, true)}

@@ -126,7 +126,71 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
                     Motivo: {explanation.unavailable_reason}
                   </p>
                 ) : null}
+                {typeof explanation.event_definition === 'string' &&
+                explanation.event_definition ? (
+                  <p className="mt-2 text-xs text-slate-700">
+                    Evento:{' '}
+                    <span className="font-mono font-medium text-slate-900">
+                      {explanation.event_definition}
+                    </span>
+                  </p>
+                ) : null}
+                {typeof explanation.complementary_market === 'string' &&
+                explanation.complementary_market ? (
+                  <p className="mt-1 text-xs text-slate-700">
+                    Mercato opposto:{' '}
+                    <span className="font-mono font-medium text-slate-900">
+                      {explanation.complementary_market}
+                    </span>
+                  </p>
+                ) : null}
               </section>
+
+              {explanation.family &&
+              typeof explanation.family === 'object' &&
+              (explanation.family as { final_vector?: Record<string, number> }).final_vector ? (
+                <section className="rounded-lg border border-slate-200 px-3 py-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Famiglia 1X2 PT
+                  </h4>
+                  {(() => {
+                    const fam = explanation.family as {
+                      final_vector?: Record<string, number | null>
+                      sum_raw?: number
+                      sum_check?: { ok?: boolean; sum?: number }
+                      formula_version?: string
+                    }
+                    const fv = fam.final_vector || {}
+                    const fmt = (v: number | null | undefined) =>
+                      v == null || Number.isNaN(Number(v))
+                        ? '—'
+                        : `${(Number(v) * 100).toFixed(1)}%`
+                    return (
+                      <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-700 sm:grid-cols-4">
+                        <div>
+                          1 PT:{' '}
+                          <span className="font-semibold tabular-nums">{fmt(fv.HOME_PT)}</span>
+                        </div>
+                        <div>
+                          X PT:{' '}
+                          <span className="font-semibold tabular-nums">{fmt(fv.DRAW_PT)}</span>
+                        </div>
+                        <div>
+                          2 PT:{' '}
+                          <span className="font-semibold tabular-nums">{fmt(fv.AWAY_PT)}</span>
+                        </div>
+                        <div>
+                          Somma:{' '}
+                          <span className="font-semibold tabular-nums">
+                            {fam.sum_raw != null ? Number(fam.sum_raw).toFixed(4) : '—'}
+                            {fam.sum_check?.ok === true ? ' ✓' : ''}
+                          </span>
+                        </div>
+                      </dl>
+                    )
+                  })()}
+                </section>
+              ) : null}
 
               {explanation.metric_key === 'purchasability_v2' &&
               explanation.normalization_profile &&

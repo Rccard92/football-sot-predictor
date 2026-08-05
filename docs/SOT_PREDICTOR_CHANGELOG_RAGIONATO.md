@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Complete cecchino formulas and KPI backfill (Fase 1B) (2026-08-05)
+
+- Perché: consolidare le quote Cecchino dei mercati estesi in Fase 1, riempire gli snapshot precedenti e rendere Analisi formule completa, senza toccare Acquistabilità V3.
+- Cosa: pipeline OU a coppia condivisa (P_raw Under+Over≈1); famiglia 1X2 PT normalizzata (`first_half_1x2_empirical_shrinkage_v2`); backfill mirato `formula_backfill_v31_phase1b` (dry-run default, idempotente); debug/explanations e UI Analisi formule per 1/X/2 PT, Under 1.5, Over 3.5, Under PT 0.5.
+- Cosa non fa: formula V3 / `SUPPORTED_V3_MARKETS` / `fixed_discount_v3` invariati; nessuna nuova dipendenza; refresh Betfair non inventa formule mancanti; nessun delete storico.
+
 ## Feat — Extend KPI markets for purchasability v3.1 (Fase 1) (2026-08-05)
 
 - Perché: preparare dati, coppie opposte e Pannello KPI completi prima della formula Acquistabilità V3.1.

@@ -19,6 +19,10 @@ from app.schemas.cecchino_signal_min_book_odds import (
 from app.services.cecchino.cecchino_api_raw_inspector import build_api_raw_inspector
 from app.services.cecchino.cecchino_current_season_xg import backfill_current_season_xg_for_today_fixture
 from app.services.cecchino.cecchino_fixture_identity_audit import build_fixture_identity_audit
+from app.services.cecchino.cecchino_formula_backfill_v31 import (
+    CONFIRM_TOKEN as FORMULA_BACKFILL_CONFIRM_TOKEN,
+    run_formula_backfill_v31_phase1b,
+)
 from app.services.cecchino.cecchino_kpi_panel_rebuild_from_cache import rebuild_kpi_panels_from_cache
 from app.services.cecchino.cecchino_recompute_service import recompute_cecchino_range
 from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
@@ -44,6 +48,17 @@ class RebuildKpiPanelsFromCacheBody(BaseModel):
     include_xpt: bool = True
     rebuild_signals_after: bool = False
     evaluate_after: bool = False
+
+
+class FormulaBackfillV31Phase1bBody(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    fixture_id: int | None = None
+    dry_run: bool = True
+    force: bool = False
+    limit: int | None = None
+    apply: bool = False
+    confirm: str | None = None
 
 
 @router.get("/signal-min-book-odds")
@@ -116,6 +131,51 @@ def cecchino_rebuild_kpi_panels_from_cache(
         rebuild_signals_after=body.rebuild_signals_after,
         evaluate_after=body.evaluate_after,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/formula-backfill-v31-phase1b")
+def cecchino_formula_backfill_v31_phase1b(
+    body: FormulaBackfillV31Phase1bBody,
+    db: Session = Depends(get_db),
+):
+    """Backfill mirato goal_markets Fase 1B — dry-run default, nessuna API esterna."""
+    dry_run = True
+    if body.apply:
+        if body.confirm != FORMULA_BACKFILL_CONFIRM_TOKEN:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": (
+                        f"apply richiede confirm={FORMULA_BACKFILL_CONFIRM_TOKEN}"
+                    ),
+                },
+            )
+        if body.dry_run:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "dry_run=true e apply=true non compatibili",
+                },
+            )
+        dry_run = False
+    try:
+        payload = run_formula_backfill_v31_phase1b(
+            db,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            fixture_id=body.fixture_id,
+            dry_run=dry_run,
+            force=body.force,
+            limit=body.limit,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(exc)},
+        )
     return JSONResponse(content=jsonable_encoder(payload))
 
 

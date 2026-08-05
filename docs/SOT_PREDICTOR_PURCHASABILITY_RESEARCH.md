@@ -2,6 +2,10 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## V3.1 Fase 1B — Formule Cecchino + backfill (2026-08-05)
+
+Consolidamento quote Cecchino (coppie OU, famiglia 1X2 PT v2), propagazione KPI (Prob/Edge/Score/Rating), backfill sicuro snapshot, Analisi formule BE/FE. **Formula Acquistabilità V3 non modificata**; `SUPPORTED_V3_MARKETS` invariato; nuovi mercati restano `unsupported_market`. Nessuna dichiarazione di profittevolezza senza replay storico.
+
 ## V3.1 Fase 1 — Pipeline mercati (2026-08-05)
 
 Estensione dati/KPI per mercati mancanti (`UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5`, `HOME_PT`, `AWAY_PT`) e complete set overround. **Formula V3 non modificata**; i nuovi mercati restano `unsupported_market` fino alla Fase formula V3.1. Nessuna quota inventata; snapshot storici non riscritti.

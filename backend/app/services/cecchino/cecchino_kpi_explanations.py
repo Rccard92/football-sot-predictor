@@ -53,17 +53,22 @@ from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
     SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -140,13 +145,18 @@ _1X2_KEYS = {SEL_HOME, SEL_DRAW, SEL_AWAY}
 _DC_KEYS = {SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO}
 _GOAL_KEYS = {
     SEL_OVER_1_5,
+    SEL_UNDER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
+    SEL_OVER_3_5,
     SEL_UNDER_3_5,
-    SEL_UNDER_PT_1_5,
     SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+    SEL_HOME_PT,
     SEL_DRAW_PT,
+    SEL_AWAY_PT,
 }
 
 _DC_FORMULAS: dict[str, tuple[str, tuple[str, str], tuple[str, str]]] = {
@@ -898,9 +908,14 @@ def _explain_quota_cecchino_goal(
     stored = _num(row.get("quota_cecchino"))
     gm = output.get("goal_markets") if isinstance(output.get("goal_markets"), dict) else {}
     block = gm.get(mk) if isinstance(gm.get(mk), dict) else None
+    is_ht_1x2 = mk in (SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT)
     formula = (
-        "Quota goal da goal_markets persistiti: "
-        "λ → Poisson → empirico → blend → shrink lega → clamp → odd = 1/p"
+        "Famiglia 1X2 PT: vettore empirico HT → shrinkage lega → floor → normalizza → odd = 1/p"
+        if is_ht_1x2
+        else (
+            "Quota goal da goal_markets persistiti (coppia condivisa): "
+            "λ → Poisson → empirico → blend → shrink lega → odd = 1/p"
+        )
     )
     if not block:
         return _unavailable(
@@ -909,16 +924,29 @@ def _explain_quota_cecchino_goal(
             metric_key="quota_cecchino",
             formula_symbolic=formula,
             inputs=[],
-            reason="Blocco goal_markets assente nello snapshot",
-            description="Quota Cecchino mercati goal / X PT da calcolo Poisson-empirico persistito.",
+            reason="formula assente nello snapshot (blocco goal_markets mancante)",
+            description="Quota Cecchino mercati goal / PT da calcolo persistito.",
             purpose="Quota modello goal senza ricostruire lo storico.",
         )
     dbg = build_goal_market_debug(block)
     summary = block.get("summary") if isinstance(block.get("summary"), dict) else {}
+    family = block.get("family") if isinstance(block.get("family"), dict) else None
     final_odd = _num(block.get("final_odd"))
-    final_p = _num(summary.get("final_probability") or summary.get("final_probability_raw"))
+    final_p = _num(
+        summary.get("final_probability_raw")
+        or summary.get("probability_raw")
+        or summary.get("final_probability")
+    )
     formula_version = str(block.get("formula_version") or "goal_market_persisted")
+    event_def = block.get("event_definition") or dbg.get("event_definition")
     inputs = [
+        _input(
+            key="event_definition",
+            label="Definizione evento",
+            value=event_def,
+            display_value=str(event_def) if event_def else "—",
+            source_path=f"cecchino_output_json.goal_markets[{mk}].event_definition",
+        ),
         _input(
             key="final_odd",
             label="Quota finale persistita",
@@ -927,46 +955,140 @@ def _explain_quota_cecchino_goal(
             source_path=f"cecchino_output_json.goal_markets[{mk}].final_odd",
         ),
         _input(
-            key="final_probability",
-            label="Probabilità finale",
+            key="final_probability_raw",
+            label="Probabilità finale (raw)",
             value=final_p,
             display_value=_fmt_pct(final_p),
             source_path=f"cecchino_output_json.goal_markets[{mk}].summary",
         ),
-        _input(
-            key="lambda",
-            label="Lambda",
-            value=summary.get("lambda"),
-            display_value=str(summary.get("lambda")) if summary.get("lambda") is not None else "—",
-            source_path=f"cecchino_output_json.goal_markets[{mk}].summary.lambda",
-        ),
-        _input(
-            key="weights",
-            label="Pesi",
-            value=block.get("weights"),
-            display_value="vedi dettaglio",
-            source_path=f"cecchino_output_json.goal_markets[{mk}].weights",
-        ),
     ]
+    if summary.get("lambda") is not None:
+        inputs.append(
+            _input(
+                key="lambda",
+                label="Lambda totale",
+                value=summary.get("lambda"),
+                display_value=str(summary.get("lambda")),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].summary.lambda",
+            ),
+        )
+    if summary.get("poisson_probability") is not None:
+        inputs.append(
+            _input(
+                key="poisson_probability",
+                label="Probabilità Poisson",
+                value=summary.get("poisson_probability"),
+                display_value=_fmt_pct(_num(summary.get("poisson_probability"))),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].summary.poisson_probability",
+            ),
+        )
+    if summary.get("empirical_probability") is not None:
+        inputs.append(
+            _input(
+                key="empirical_probability",
+                label="Probabilità empirica",
+                value=summary.get("empirical_probability"),
+                display_value=_fmt_pct(_num(summary.get("empirical_probability"))),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].summary.empirical_probability",
+            ),
+        )
+    league_p = summary.get("league_event_probability")
+    if league_p is None:
+        league_p = summary.get("league_halftime_1x2_probability")
+    if league_p is not None:
+        inputs.append(
+            _input(
+                key="league_prior",
+                label="Prior di lega",
+                value=league_p,
+                display_value=_fmt_pct(_num(league_p)),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].summary",
+            ),
+        )
+    if summary.get("overall_reliability") is not None:
+        inputs.append(
+            _input(
+                key="reliability",
+                label="Reliability",
+                value=summary.get("overall_reliability"),
+                display_value=str(summary.get("overall_reliability")),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].summary.overall_reliability",
+            ),
+        )
+    if block.get("complementary_market"):
+        inputs.append(
+            _input(
+                key="complementary_market",
+                label="Mercato complementare",
+                value=block.get("complementary_market"),
+                display_value=str(block.get("complementary_market")),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].complementary_market",
+            ),
+        )
+    if family and isinstance(family.get("final_vector"), dict):
+        fv = family["final_vector"]
+        inputs.append(
+            _input(
+                key="family_vector",
+                label="Famiglia 1X2 PT (P1+PX+P2)",
+                value=fv,
+                display_value=(
+                    f"1={_fmt_pct(_num(fv.get(SEL_HOME_PT)))} · "
+                    f"X={_fmt_pct(_num(fv.get(SEL_DRAW_PT)))} · "
+                    f"2={_fmt_pct(_num(fv.get(SEL_AWAY_PT)))} · "
+                    f"sum={family.get('sum_raw', '—')}"
+                ),
+                source_path=f"cecchino_output_json.goal_markets[{mk}].family.final_vector",
+            ),
+        )
+    if block.get("weights"):
+        inputs.append(
+            _input(
+                key="weights",
+                label="Pesi contesto",
+                value=block.get("weights"),
+                display_value="vedi dettaglio",
+                source_path=f"cecchino_output_json.goal_markets[{mk}].weights",
+            ),
+        )
+
     applied = [
         f"formula_version = {formula_version}",
+        f"evento = {event_def}" if event_def else "evento = —",
         f"status campione = {block.get('status')}",
-        f"probabilità finale = {_fmt_pct(final_p)}" if final_p is not None else "probabilità finale = —",
+        f"probabilità finale raw = {_fmt_pct(final_p)}" if final_p is not None else "probabilità finale = —",
         f"quota finale = {_fmt_it(final_odd)}" if final_odd is not None else "quota finale = —",
     ]
+    if block.get("complement_sum_check"):
+        csc = block["complement_sum_check"]
+        applied.append(
+            f"complement_sum_check = {csc.get('sum_raw')} ok={csc.get('ok')}",
+        )
+    if family and family.get("sum_check"):
+        sc = family["sum_check"]
+        applied.append(f"family_sum_check = {sc.get('sum')} ok={sc.get('ok')}")
+
+    warnings = list(block.get("warnings") or [])
+    not_computable = dbg.get("not_computable_reason")
+
     if final_odd is None:
+        reason = not_computable or (
+            f"Non calcolabile (status={block.get('status')}"
+            + (f", {warnings[0]}" if warnings else "")
+            + ")"
+        )
         return _unavailable(
             market_key=mk,
             market_label=market_label,
             metric_key="quota_cecchino",
             formula_symbolic=formula,
             inputs=inputs,
-            reason=f"Quota goal non disponibile (status={block.get('status')})",
+            reason=str(reason),
             formula_version=formula_version,
-            description="Quota Cecchino mercati goal / X PT da calcolo Poisson-empirico persistito.",
+            description="Quota Cecchino mercati goal / PT da calcolo persistito.",
             purpose="Quota modello goal senza ricostruire lo storico.",
         )
-    # Audit: se abbiamo probabilità, ripeti odd = 1/p arrotondato; altrimenti not_verifiable.
+
     audit = round(1.0 / final_p, 2) if final_p is not None and final_p > 0 else None
     cons = (
         _consistency(stored, audit, abs_tol=0.01, rounding_tol=0.05)
@@ -986,7 +1108,7 @@ def _explain_quota_cecchino_goal(
         metric_key="quota_cecchino",
         status="available" if stored is not None else "partial",
         calculation_type="goal_market_persisted",
-        description="Quota Cecchino mercati goal / X PT dal blocco goal_markets persistito.",
+        description="Quota Cecchino mercati goal / PT dal blocco goal_markets persistito.",
         purpose="Quota modello goal senza ricostruire lo storico.",
         formula_symbolic=formula,
         formula_applied=applied,
@@ -997,7 +1119,7 @@ def _explain_quota_cecchino_goal(
         consistency=cons if stored is not None else {"status": "not_verifiable", "delta": None},
         rounding={"policy": "round", "precision": 2, "display_precision": 2},
         formula_version=formula_version,
-        warnings=list(block.get("warnings") or []),
+        warnings=warnings,
         extra={
             "goal_market_debug": dbg,
             "summary": summary,
@@ -1005,6 +1127,11 @@ def _explain_quota_cecchino_goal(
             "technical": block.get("technical"),
             "weights": block.get("weights"),
             "market_status": block.get("status"),
+            "event_definition": event_def,
+            "complementary_market": block.get("complementary_market"),
+            "complement_sum_check": block.get("complement_sum_check"),
+            "family": family,
+            "not_computable_reason": not_computable,
         },
     )
 
@@ -1020,7 +1147,7 @@ def _explain_quota_cecchino(
         return _explain_quota_cecchino_1x2(row, market_label, picchetti_debug)
     if mk in _DC_KEYS:
         return _explain_quota_cecchino_dc(row, market_label, output)
-    if mk in _GOAL_KEYS or mk == SEL_DRAW_PT:
+    if mk in _GOAL_KEYS:
         return _explain_quota_cecchino_goal(row, market_label, output)
     # Generico: solo valore persistito
     stored = _num(row.get("quota_cecchino"))

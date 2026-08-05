@@ -141,16 +141,38 @@ def _cecchino_goal_odds_used(output: dict[str, Any]) -> dict[str, Any]:
     ):
         block = goal_markets.get(sk)
         if not isinstance(block, dict):
+            out[sk] = {
+                "market_key": sk,
+                "status": "absent_from_snapshot",
+                "final_odd": None,
+                "not_computable_reason": "formula assente nello snapshot",
+                "warnings": ["formula_absent_from_snapshot"],
+            }
             continue
         dbg = build_goal_market_debug(block)
         dbg["summary"] = block.get("summary")
         dbg["contexts"] = block.get("contexts")
         dbg["legacy_excel_parity"] = block.get("legacy_excel_parity")
         dbg["technical"] = block.get("technical")
+        dbg["event_definition"] = block.get("event_definition") or dbg.get("event_definition")
+        dbg["complementary_market"] = block.get("complementary_market")
+        dbg["complement_sum_check"] = block.get("complement_sum_check")
+        dbg["family"] = block.get("family")
+        dbg["provenance"] = {
+            "source": "cecchino_output_json.goal_markets",
+            "formula_version": block.get("formula_version"),
+            "status": block.get("status"),
+        }
+        if block.get("final_odd") is None:
+            dbg["not_computable_reason"] = dbg.get("not_computable_reason") or (
+                (block.get("warnings") or ["insufficient_data"])[0]
+            )
         dbg["inputs"] = {
             "summary": block.get("summary"),
             "contexts": block.get("contexts"),
             "legacy_excel_parity": block.get("legacy_excel_parity"),
+            "event_definition": block.get("event_definition"),
+            "weights": block.get("weights"),
         }
         dbg["intermediate_values"] = block.get("technical") or block.get("summary") or {
             "blocks": block.get("blocks"),
