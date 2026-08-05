@@ -260,9 +260,10 @@ def backfill_fixture_formulas_phase1b(
         result["would_update"] = True
         return result
 
-    # Persist: merge goal_markets; preserva V3 / final / selected
+    # Persist: merge goal_markets; preserva V3 / V3.1 / final / selected
     new_output = dict(existing_output)
     prev_v3 = existing_output.get("purchasability_preview_v3")
+    prev_v31 = existing_output.get("purchasability_preview_v31")
     new_output["goal_markets"] = merge_out["goal_markets"]
     new_output["formula_backfill_v31_phase1b"] = {
         "mode": BACKFILL_MODE,
@@ -277,6 +278,8 @@ def backfill_fixture_formulas_phase1b(
     }
     if prev_v3 is not None:
         new_output["purchasability_preview_v3"] = prev_v3
+    if prev_v31 is not None:
+        new_output["purchasability_preview_v31"] = prev_v31
 
     betfair_payload = _load_betfair_payload_offline(db, row)
     kpi_panel = build_cecchino_kpi_panel_v2_betfair(

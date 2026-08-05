@@ -122,6 +122,14 @@ from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
     attach_purchasability_preview_v3_to_output,
     resolve_purchasability_preview_v3_for_detail,
 )
+from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
+    attach_purchasability_preview_v31_to_output,
+    resolve_purchasability_preview_v31_for_detail,
+)
+from app.services.cecchino.cecchino_purchasability_v31_hr import (
+    build_hr_history_context,
+    resolve_hr_by_market_for_fixture,
+)
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     attach_balance_v5_monitoring_to_output,
 )
@@ -811,6 +819,7 @@ def run_scan(
     budget_stopped = False
     budget_stop_status = "partial_stopped_budget"
     budget_stop_message = "Scansione interrotta per proteggere il budget API giornaliero."
+    v31_hr_context: dict[str, Any] | None = None
 
     _emit_progress(progress, current_step="fetching_fixtures")
 
@@ -1507,6 +1516,65 @@ def run_scan(
                     )
                 except Exception:
                     # v3 non bloccante: non invalida eleggibilità né v1.1/v2
+                    pass
+                existing_prev_v31 = None
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_prev_v31 = existing_row.cecchino_output_json.get(
+                        "purchasability_preview_v31"
+                    )
+                try:
+                    if v31_hr_context is None:
+                        v31_hr_context = build_hr_history_context(
+                            db, date_to=resolved_date
+                        )
+                    hr_by_market = resolve_hr_by_market_for_fixture(
+                        db,
+                        existing_row,
+                        kpi_panel,
+                        history_context=v31_hr_context,
+                        today_fixture_id=(
+                            int(existing_row.id) if existing_row is not None else None
+                        ),
+                        competition_id=int(comp.id),
+                        kickoff=getattr(local_fx, "kickoff", None)
+                        or (item.get("fixture") or {}).get("date"),
+                        scan_date=resolved_date,
+                    )
+                    attach_purchasability_preview_v31_to_output(
+                        cecchino_output=cecchino_output,
+                        kpi_panel=kpi_panel,
+                        fixture_meta={
+                            "today_fixture_id": (
+                                int(existing_row.id)
+                                if existing_row is not None
+                                else None
+                            ),
+                            "local_fixture_id": int(local_fx.id),
+                            "provider_fixture_id": api_fid,
+                            "competition_id": int(comp.id),
+                            "scan_date": resolved_date,
+                            "kickoff": getattr(local_fx, "kickoff", None)
+                            or (item.get("fixture") or {}).get("date"),
+                        },
+                        snapshot_info={
+                            "snapshot_at": snap_at,
+                            "snapshot_source": snap_src,
+                            "snapshot_fidelity": (
+                                "verified_panel_odds_meta"
+                                if snap_verified
+                                else "missing"
+                            ),
+                            "snapshot_timestamp_verified": snap_verified,
+                        },
+                        existing_preview_v31=existing_prev_v31
+                        if isinstance(existing_prev_v31, dict)
+                        else None,
+                        historical_by_market=hr_by_market,
+                    )
+                except Exception:
+                    # v3.1 shadow non bloccante
                     pass
                 existing_bal = None
                 if existing_row is not None and isinstance(
@@ -2366,6 +2434,17 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
     )
     try:
+        hr_by_market_detail = resolve_hr_by_market_for_fixture(
+            db, row, kpi_panel if isinstance(kpi_panel, dict) else None
+        )
+    except Exception:
+        hr_by_market_detail = {}
+    purch_v31 = resolve_purchasability_preview_v31_for_detail(
+        row=row,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        historical_by_market=hr_by_market_detail,
+    )
+    try:
         from app.services.cecchino.cecchino_purchasability_observational import (
             build_observational_maps_for_previews,
         )
@@ -2417,6 +2496,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "purchasability_preview": purch_v1,
         "purchasability_preview_v2": purch_v2,
         "purchasability_preview_v3": purch_v3,
+        "purchasability_preview_v31": purch_v31,
         "purchasability_observational_v1_1": obs_v1,
         "purchasability_observational_v2": obs_v2,
         "purchasability_comparison": build_purchasability_comparison(

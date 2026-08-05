@@ -484,3 +484,197 @@ export function fmtRoiPct(roi: number | null | undefined): string {
   const sign = pct > 0 ? '+' : ''
   return `${sign}${pct.toFixed(1)}%`
 }
+
+// ============================================================================
+// Acquistabilità V3.1 Cell State Resolver
+// ============================================================================
+
+export type PurchasabilityV31CellKind =
+  | 'score'
+  | 'gate_failed'
+  | 'non_calculable'
+  | 'snapshot_absent'
+  | 'loading'
+
+export type PurchasabilityV31CellState = {
+  kind: PurchasabilityV31CellKind
+  primary: string
+  subtitle: string | null
+  showScoreBadge: boolean
+  analyzable: boolean
+  score: number | null
+  classLabel: string | null
+  reasonCode: string | null
+}
+
+const V31_NON_CALCULABLE_REASON_LABELS: Record<string, string> = {
+  missing_quote: 'Quota mancante',
+  derived_quote: 'Quota derivata',
+  incomplete_set_book: 'Set Book incompleto',
+  missing_cecchino_formula: 'Formula Cecchino mancante',
+  insufficient_history: 'Storico insufficiente',
+  complement_unavailable: 'Complemento non disponibile',
+}
+
+const V31_GATE_FAILED_REASON_LABELS: Record<string, string> = {
+  no_positive_value: 'Nessun valore positivo',
+  rating_below_50: 'Rating sotto 50',
+}
+
+/**
+ * Risolve lo stato visuale della cella Acquistabilità V3.1.
+ * - snapshotAvailable=false → snapshot assente
+ * - loading=true → stato di caricamento
+ * - item.status='score' → mostra score con badge
+ * - item.status='gate_failed' → "Non attivato" con reason subtitle
+ * - item.status='non_calculable' → "Non calcolabile" con reason subtitle
+ */
+export function resolvePurchasabilityV31CellState(
+  item: {
+    status?: 'score' | 'gate_failed' | 'non_calculable' | string | null
+    score?: number | null
+    class?: string | null
+    reason?: string | null
+    reason_code?: string | null
+    gate_status?: string | null
+    input?: Record<string, number | string | boolean | null>
+  } | null | undefined,
+  opts?: { snapshotAvailable?: boolean; loading?: boolean },
+): PurchasabilityV31CellState {
+  const snapshotAvailable = opts?.snapshotAvailable !== false
+  const loading = opts?.loading === true
+
+  if (loading) {
+    return {
+      kind: 'loading',
+      primary: 'Calcolo in corso…',
+      subtitle: null,
+      showScoreBadge: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      reasonCode: null,
+    }
+  }
+
+  if (!snapshotAvailable) {
+    return {
+      kind: 'snapshot_absent',
+      primary: '—',
+      subtitle: null,
+      showScoreBadge: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      reasonCode: null,
+    }
+  }
+
+  if (!item) {
+    return {
+      kind: 'snapshot_absent',
+      primary: '—',
+      subtitle: null,
+      showScoreBadge: false,
+      analyzable: false,
+      score: null,
+      classLabel: null,
+      reasonCode: null,
+    }
+  }
+
+  const status = item.status
+  const reasonCode = item.reason_code ?? null
+  const reason = item.reason ?? null
+
+  if (status === 'gate_failed') {
+    const subtitle =
+      reasonCode && V31_GATE_FAILED_REASON_LABELS[reasonCode]
+        ? V31_GATE_FAILED_REASON_LABELS[reasonCode]
+        : reason ?? 'Nessun valore positivo'
+    return {
+      kind: 'gate_failed',
+      primary: 'Non attivato',
+      subtitle,
+      showScoreBadge: false,
+      analyzable: true,
+      score: null,
+      classLabel: null,
+      reasonCode,
+    }
+  }
+
+  if (status === 'non_calculable') {
+    const subtitle =
+      reasonCode && V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
+        ? V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
+        : reason ?? 'Input mancanti'
+    return {
+      kind: 'non_calculable',
+      primary: 'Non calcolabile',
+      subtitle,
+      showScoreBadge: false,
+      analyzable: true,
+      score: null,
+      classLabel: null,
+      reasonCode,
+    }
+  }
+
+  if (status === 'score' && item.score != null) {
+    return {
+      kind: 'score',
+      primary: String(item.score),
+      subtitle: null,
+      showScoreBadge: true,
+      analyzable: true,
+      score: item.score,
+      classLabel: item.class ?? null,
+      reasonCode,
+    }
+  }
+
+  if (item.score != null) {
+    return {
+      kind: 'score',
+      primary: String(item.score),
+      subtitle: null,
+      showScoreBadge: true,
+      analyzable: true,
+      score: item.score,
+      classLabel: item.class ?? null,
+      reasonCode,
+    }
+  }
+
+  return {
+    kind: 'non_calculable',
+    primary: 'Non calcolabile',
+    subtitle: reason ?? 'Input mancanti',
+    showScoreBadge: false,
+    analyzable: true,
+    score: null,
+    classLabel: null,
+    reasonCode,
+  }
+}
+
+/** Badge class per Acquistabilità V3.1 (stessa palette di V3). */
+export function purchasabilityV31BadgeClass(
+  klass: string | null | undefined,
+): string {
+  switch (klass) {
+    case 'Molto Bassa':
+      return 'bg-slate-600 text-white'
+    case 'Bassa':
+      return 'bg-orange-600 text-white'
+    case 'Media':
+      return 'bg-amber-500 text-slate-950'
+    case 'Alta':
+      return 'bg-sky-500 text-white'
+    case 'Molto Alta':
+      return 'bg-emerald-500 text-white'
+    default:
+      return 'bg-slate-600 text-slate-200'
+  }
+}

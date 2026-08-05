@@ -2,6 +2,62 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## V3.1 Fase 2A — Shadow candidate empirica (2026-08-05)
+
+Candidate shadow parallela **non ufficiale** e **non promossa**.
+
+| Campo | Valore |
+|-------|--------|
+| Candidate | `purchasability_v31_shadow` / `cecchino_purchasability_v31_candidate_1` |
+| Formula | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
+| Config | `fixed_discount_v31_empirical_v1` |
+| Registry | `shadow_candidate` |
+| Persistenza | `cecchino_output_json.purchasability_preview_v31` (JSONB esistente, nessuna migration) |
+| V3 ufficiale | `fixed_discount_v3` **invariata** e ancora default UI |
+
+### Formula
+
+```
+value_score = clamp(edge_pct / 50 × 100, 0, 100)
+theoretical_quality = clamp(100 − Σ penalità teoriche, 0, 100)
+theoretical_raw = value_score × theoretical_quality / 100
+historical_factor = historical_reliability_score / 100   # obbligatorio, no default
+raw_score_v31 = theoretical_raw × historical_factor
+score_v31 = ROUND_HALF_UP(raw_score_v31)
+```
+
+Penalità teoriche (scale fisse V3, senza −15 quote derivate): probability_risk, opposite_market_pressure (complemento matematico `1−p_fair`), extreme_divergence, family_ambiguity (solo 1X2 FT/HT).
+
+### Gate (prima dello score)
+
+`edge_pct > 0` AND `vantaggio_prob > 0` AND `rating >= 50`. Null → `non_calculable`; ≤0 / rating&lt;50 → `gate_failed` («Non attivato»). HR non applicata se gate fallisce.
+
+### Mercati (19)
+
+Tutti i `PANEL_MARKET_KEYS` / `KPI_V2_ROW_DEFS`. Nessun `unsupported_market` in V3.1.
+
+### Complementi
+
+HOME/DRAW/AWAY (e PT): `p_opposta = 1 − p_fair`. DC: 1X→AWAY, X2→HOME, 12→DRAW. OU: lato opposto stessa linea/periodo. DC non normalizzate insieme; family ambiguity non applicabile a DC/OU.
+
+### Quote
+
+Score solo con quota Book **reale** eseguibile. Quota derivata → `non_calculable` / `derived_quote_not_executable` (niente penalità −15). Fair DC può restare derivata da 1X2 normalizzato.
+
+### Affidabilità storica
+
+Riuso `cecchino_historical_reliability_v1_1` (batch orchestratore, motore puro). Status≠ok o sample&lt;MIN_SAMPLE → `non_calculable`.
+
+### UI
+
+Selettore «V3 attuale | V3.1 shadow»; default V3. Analisi formule su `purchasability_v31`.
+
+### Non dichiarato
+
+Né profittevolezza né promozione. Prossimo passo Fase 2B: replay storico V3.1 e Go/No-Go.
+
+Smoke dry-run: `python -m app.jobs.smoke_purchasability_v31_audit --date-from … --date-to … --limit N`.
+
 ## V3.1 Fase 1B — Formule Cecchino + backfill (2026-08-05)
 
 Consolidamento quote Cecchino (coppie OU, famiglia 1X2 PT v2), propagazione KPI (Prob/Edge/Score/Rating), backfill sicuro snapshot, Analisi formule BE/FE. **Formula Acquistabilità V3 non modificata**; `SUPPORTED_V3_MARKETS` invariato; nuovi mercati restano `unsupported_market`. Nessuna dichiarazione di profittevolezza senza replay storico.
@@ -26,6 +82,7 @@ Replay ID 1 completato su stagione 2021/2022 (Run #3). Analytics/export V3 read-
 | **ACQUISTABILITÀ v1.1** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti (`balanced_geometric_v1_1`). |
 | **ACQUISTABILITÀ v2** | Indice decisionale parallelo (`decision_quality_v2`): valore assoluto (Rating/Edge/Vantaggio) × qualità della decisione (dominanze, shift Book→Cecchino, contrasto opposto), con normalizzazione storica congelata. |
 | **ACQUISTABILITÀ v3** | Candidato parallelo osservazionale (`fixed_discount_v3`): gate valore positivo → value score da Edge (scala fissa) scontato da penalità di qualità reali; nessuna media geometrica, nessun profilo storico. |
+| **ACQUISTABILITÀ v3.1** | Shadow empirica (`purchasability_v31_shadow`): nucleo V3 + complemento matematico su 19 mercati + × Affidabilità storica; quote derivate bloccano lo score. Non ufficiale. |
 
 ## Acquistabilità v3 — fixed_discount_v3 (2026-07-29)
 

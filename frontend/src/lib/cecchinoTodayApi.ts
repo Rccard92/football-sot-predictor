@@ -615,6 +615,155 @@ export type CecchinoPurchasabilityV3Snapshot = {
   warnings?: string[]
 }
 
+// ============================================================================
+// Acquistabilità V3.1 (shadow candidate)
+// ============================================================================
+
+export type CecchinoPurchasabilityV31ItemStatus = 'score' | 'gate_failed' | 'non_calculable'
+
+export type CecchinoPurchasabilityV31SectionKey =
+  | 'final_state'
+  | 'gate'
+  | 'quote_quality'
+  | 'fair_book'
+  | 'theoretical_value'
+  | 'penalties'
+  | 'family_ambiguity'
+  | 'historical_reliability'
+  | 'final_calculation'
+  | 'comparison_with_v3'
+
+export type CecchinoPurchasabilityV31ExplanationSection = {
+  section_key: CecchinoPurchasabilityV31SectionKey
+  title?: string | null
+  description?: string | null
+  formula_symbolic?: string | null
+  formula_applied?: string[]
+  inputs?: Record<string, unknown>
+  result?: unknown
+  warnings?: string[]
+}
+
+export type CecchinoPurchasabilityV31Explanation = {
+  sections?: CecchinoPurchasabilityV31ExplanationSection[] | Record<string, CecchinoPurchasabilityV31ExplanationSection>
+  final_state?: {
+    status?: CecchinoPurchasabilityV31ItemStatus | null
+    score?: number | null
+    class?: string | null
+    reason?: string | null
+    reason_code?: string | null
+  }
+  gate?: {
+    gate_status?: string | null
+    gate_passed?: boolean | null
+    reason?: string | null
+    reason_code?: string | null
+  }
+  quote_quality?: {
+    status?: string | null
+    performance_type?: string | null
+    reason?: string | null
+  }
+  fair_book?: {
+    fair_book_probability?: number | null
+    quota_book?: number | null
+    margin_pct?: number | null
+  }
+  theoretical_value?: {
+    theoretical_raw?: number | null
+    edge_pct?: number | null
+  }
+  penalties?: {
+    total_penalty?: number | null
+    penalties_applied?: Array<{
+      key?: string | null
+      label?: string | null
+      points?: number | null
+    }>
+  }
+  family_ambiguity?: {
+    status?: string | null
+    is_leader?: boolean | null
+    leader_market_key?: string | null
+    gap_from_leader?: number | null
+  }
+  historical_reliability?: {
+    factor?: number | null
+    score?: number | null
+    class?: string | null
+    sample_size?: number | null
+  }
+  final_calculation?: {
+    theoretical_raw?: number | null
+    historical_factor?: number | null
+    raw_result?: number | null
+    score?: number | null
+    rounding?: string | null
+  }
+  comparison_with_v3?: {
+    v3_score?: number | null
+    v31_score?: number | null
+    delta?: number | null
+    direction?: string | null
+  }
+  [key: string]: unknown
+}
+
+export type CecchinoPurchasabilityV31Item = {
+  market_key: string
+  market_label?: string | null
+  market_family?: string | null
+  period?: string | null
+  line?: number | null
+  status: CecchinoPurchasabilityV31ItemStatus
+  score: number | null
+  raw_score?: number | null
+  class?: string | null
+  reason?: string | null
+  reason_code?: string | null
+  gate_status?: string | null
+  gate_passed?: boolean | null
+  theoretical_raw?: number | null
+  historical_factor?: number | null
+  total_penalty?: number | null
+  formula_version?: string | null
+  candidate_version?: string | null
+  explanation?: CecchinoPurchasabilityV31Explanation | null
+  warnings?: string[]
+  input?: Record<string, number | string | boolean | null>
+}
+
+export type CecchinoPurchasabilityV31Snapshot = {
+  snapshot_version: string
+  contract_version?: string
+  feature_version?: string
+  candidate_version: string
+  candidate_name?: string
+  formula_version?: string
+  audit_version?: string
+  registry_status?: string | null
+  status: 'ok' | 'partial' | 'unavailable' | string
+  items: CecchinoPurchasabilityV31Item[]
+  summary?: Record<string, unknown>
+  generated_at?: string | null
+  source_snapshot_at?: string | null
+  pre_match_only?: boolean
+  warnings?: string[]
+}
+
+/** Indexer V3.1 per market_key. */
+export function indexPurchasabilityV31ByMarketKey(
+  snapshot: CecchinoPurchasabilityV31Snapshot | null | undefined,
+): Record<string, CecchinoPurchasabilityV31Item> {
+  const items = snapshot?.items
+  if (!items?.length) return {}
+  const map: Record<string, CecchinoPurchasabilityV31Item> = {}
+  for (const it of items) {
+    if (it?.market_key) map[it.market_key] = it
+  }
+  return map
+}
+
 /** Indexer V3 per market_key — analogo ai resolver V1.1/V2 del DetailPanel. */
 export function indexPurchasabilityV3ByMarketKey(
   snapshot: CecchinoPurchasabilityV3Snapshot | null | undefined,
@@ -1385,6 +1534,7 @@ export type CecchinoTodayDetailResponse = {
   purchasability_preview?: CecchinoPurchasabilityPreviewSnapshot | null
   purchasability_preview_v2?: CecchinoPurchasabilityPreviewSnapshot | null
   purchasability_preview_v3?: CecchinoPurchasabilityV3Snapshot | null
+  purchasability_preview_v31?: CecchinoPurchasabilityV31Snapshot | null
   purchasability_observational_v1_1?: Record<
     string,
     CecchinoPurchasabilityObservationalItem

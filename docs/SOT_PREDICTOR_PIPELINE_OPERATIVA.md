@@ -1,5 +1,12 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Acquistabilità V3.1 — Fase 2A shadow candidate (2026-08-05)
+
+1. Scan/recompute: KPI → Fair Book → V3 (invariata) → HR batch as-of kickoff → V3.1 shadow → persist `purchasability_preview_v31`.
+2. Detail: espone V3 e V3.1; UI default V3; selettore shadow.
+3. Smoke dry-run (no write): `python -m app.jobs.smoke_purchasability_v31_audit --date-from YYYY-MM-DD --date-to YYYY-MM-DD --limit N`.
+4. Non promuovere V3.1; non eseguire ancora replay storico completo.
+
 ## Acquistabilità V3.1 — Fase 1B formule + backfill (2026-08-05)
 
 1. Scan live: `build_goal_market_cecchino_odds` produce coppie OU coerenti + famiglia HT 1X2 v2.

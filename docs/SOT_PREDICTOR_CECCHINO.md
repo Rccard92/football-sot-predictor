@@ -2,6 +2,19 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Acquistabilità V3.1 — Fase 2A shadow candidate (2026-08-05)
+
+| Campo | Valore |
+|-------|--------|
+| Candidate | `purchasability_v31_shadow` |
+| Formula | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
+| Persistenza | `purchasability_preview_v31` |
+| Mercati | 19 (`PANEL_MARKET_KEYS`) |
+| V3 | **Invariata** (`fixed_discount_v3`), ancora default UI |
+| Promozione | **No** — `shadow_candidate`; Fase 2B = replay storico |
+
+Gate: Edge&gt;0 ∧ vantaggio&gt;0 ∧ Rating≥50. Score = ROUND_HALF_UP(theoretical_raw × historical_factor). Quote derivate → Non calcolabile. Affidabilità storica v1.1 obbligatoria (batch).
+
 ## Acquistabilità V3.1 — Fase 1B formule e backfill (2026-08-05)
 
 | Voce | Dettaglio |

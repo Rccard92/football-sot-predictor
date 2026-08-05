@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import type { CecchinoKpiExplanation } from '../../lib/cecchinoTodayApi'
 import { CecchinoPurchasabilityV3AuditView } from './CecchinoPurchasabilityV3AuditView'
+import { CecchinoPurchasabilityV31AuditView } from './CecchinoPurchasabilityV31AuditView'
 
 type Props = {
   explanation: CecchinoKpiExplanation
@@ -24,6 +25,8 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
   const titleId = useId()
   const closeRef = useRef<HTMLButtonElement>(null)
   const isV3 = explanation.metric_key === 'purchasability_v3'
+  const isV31 = explanation.metric_key === 'purchasability_v31'
+  const isPurchasabilityAudit = isV3 || isV31
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -54,14 +57,21 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p id={titleId} className="text-sm font-bold tracking-wide sm:text-base">
-                {isV3 ? 'Analisi Acquistabilità' : 'Analisi formula'}
+                {isPurchasabilityAudit
+                  ? isV31
+                    ? 'Analisi Acquistabilità V3.1'
+                    : 'Analisi Acquistabilità'
+                  : 'Analisi formula'}
               </p>
               <p className="mt-1 text-xs text-slate-200">
                 Mercato: <span className="font-semibold text-white">{explanation.market_label}</span>
-                {isV3 ? (
+                {isPurchasabilityAudit ? (
                   <>
                     {' · '}
-                    Metrica: <span className="font-semibold text-white">Acquistabilità</span>
+                    Metrica:{' '}
+                    <span className="font-semibold text-white">
+                      {isV31 ? 'Acquistabilità V3.1' : 'Acquistabilità'}
+                    </span>
                   </>
                 ) : (
                   <>
@@ -71,7 +81,7 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
                   </>
                 )}
               </p>
-              {isV3 ? null : (
+              {isPurchasabilityAudit ? null : (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span
                     className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${statusBadgeClass(
@@ -111,7 +121,9 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
         </header>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-          {isV3 ? (
+          {isV31 ? (
+            <CecchinoPurchasabilityV31AuditView explanation={explanation} />
+          ) : isV3 ? (
             <CecchinoPurchasabilityV3AuditView explanation={explanation} />
           ) : (
             <>

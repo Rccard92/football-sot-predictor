@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add purchasability v3.1 shadow candidate (Fase 2A) (2026-08-05)
+
+- Perché: introdurre una candidate empirica parallela (19 mercati, complemento matematico, quote reali, gate Rating, × Affidabilità storica) senza promuovere né alterare `fixed_discount_v3`.
+- Cosa: motore/snapshot `purchasability_preview_v31`; orchestrazione today/recompute con HR batch; selettore FE V3/V3.1; Analisi formule V3.1; smoke dry-run; test BE/FE.
+- Cosa non fa: V3 invariata e ancora default; nessuna migration; nessuna nuova dipendenza; nessun replay storico completo; nessuna dichiarazione di profittevolezza. Next = Fase 2B replay Go/No-Go.
+
 ## Feat — Complete cecchino formulas and KPI backfill (Fase 1B) (2026-08-05)
 
 - Perché: consolidare le quote Cecchino dei mercati estesi in Fase 1, riempire gli snapshot precedenti e rendere Analisi formule completa, senza toccare Acquistabilità V3.

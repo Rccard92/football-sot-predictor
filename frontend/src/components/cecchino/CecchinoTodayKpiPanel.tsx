@@ -6,6 +6,7 @@ import type {
   CecchinoKpiV2Panel,
   CecchinoKpiV2Row,
   CecchinoPurchasabilityV3Item,
+  CecchinoPurchasabilityV31Item,
 } from '../../lib/cecchinoTodayApi'
 import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
 import { CecchinoFormulaAuditModal } from './CecchinoFormulaAuditModal'
@@ -20,8 +21,10 @@ import {
   historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
   purchasabilityV3BadgeClass,
+  purchasabilityV31BadgeClass,
   ratingBadgeClass,
   resolvePurchasabilityV3CellState,
+  resolvePurchasabilityV31CellState,
   vantaggioClassName,
 } from './cecchinoKpiUiUtils'
 
@@ -38,6 +41,9 @@ export type AnalyzableMetricKey =
   | 'purchasability_v1_1'
   | 'purchasability_v2'
   | 'purchasability_v3'
+  | 'purchasability_v31'
+
+export type PurchasabilityVersionSelection = 'v3' | 'v31'
 
 function kpiSegnoLabel(row: CecchinoKpiV2Row): string {
   return row.segno || row.label || row.market_key
@@ -72,6 +78,9 @@ type Props = {
   historicalReliabilityError?: string | null
   purchasabilityV3ByMarketKey?: Record<string, CecchinoPurchasabilityV3Item>
   purchasabilityV3SnapshotAvailable?: boolean
+  purchasabilityV31ByMarketKey?: Record<string, CecchinoPurchasabilityV31Item>
+  purchasabilityV31SnapshotAvailable?: boolean
+  purchasabilityV31Loading?: boolean
   todayFixtureId?: number
   providerFixtureId?: number | null
 }
@@ -166,6 +175,127 @@ function PurchasabilityV3Cell({
         <span className="mt-0.5 block text-[9px] text-slate-400">{state.subtitle}</span>
       ) : null}
     </span>
+  )
+}
+
+function PurchasabilityV31Cell({
+  item,
+  snapshotAvailable,
+  loading,
+}: {
+  item: CecchinoPurchasabilityV31Item | undefined
+  snapshotAvailable: boolean
+  loading?: boolean
+}) {
+  const state = resolvePurchasabilityV31CellState(item, { snapshotAvailable, loading })
+  const ariaParts = [state.primary]
+  if (state.classLabel) ariaParts.push(`classe ${state.classLabel}`)
+  if (state.subtitle) ariaParts.push(state.subtitle)
+
+  if (state.kind === 'loading') {
+    return (
+      <span
+        className="text-left"
+        aria-label="Calcolo in corso"
+        data-testid="purchasability-v31-cell"
+        data-v31-kind="loading"
+      >
+        <span className="block text-[11px] text-slate-400 animate-pulse">Calcolo in corso…</span>
+      </span>
+    )
+  }
+
+  if (state.kind === 'score' && state.showScoreBadge) {
+    return (
+      <span
+        className="text-left"
+        aria-label={ariaParts.join('. ')}
+        data-testid="purchasability-v31-cell"
+        data-v31-kind={state.kind}
+      >
+        <span className="flex items-center gap-1">
+          <span
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityV31BadgeClass(
+              state.classLabel,
+            )}`}
+          >
+            {state.score}
+          </span>
+          <span className="rounded border border-violet-400/50 bg-violet-500/20 px-1 py-0.5 text-[8px] font-medium text-violet-200">
+            V3.1 shadow
+          </span>
+        </span>
+        {state.classLabel ? (
+          <span className="mt-0.5 block text-[9px] text-slate-300">{state.classLabel}</span>
+        ) : null}
+      </span>
+    )
+  }
+
+  return (
+    <span
+      className="text-left"
+      aria-label={ariaParts.join('. ')}
+      data-testid="purchasability-v31-cell"
+      data-v31-kind={state.kind}
+    >
+      <span
+        className={`block text-[11px] ${
+          state.kind === 'gate_failed' ? 'font-medium text-amber-100' : 'text-slate-300'
+        }`}
+      >
+        {state.primary}
+      </span>
+      {state.subtitle ? (
+        <span className="mt-0.5 block text-[9px] text-slate-400">{state.subtitle}</span>
+      ) : null}
+    </span>
+  )
+}
+
+function PurchasabilityVersionSelector({
+  value,
+  onChange,
+}: {
+  value: PurchasabilityVersionSelection
+  onChange: (v: PurchasabilityVersionSelection) => void
+}) {
+  return (
+    <div
+      className="inline-flex items-center gap-1 rounded-md border border-slate-500/40 bg-slate-800/50 p-0.5 text-[10px]"
+      role="radiogroup"
+      aria-label="Versione Acquistabilità"
+      data-testid="purchasability-version-selector"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value === 'v3'}
+        onClick={() => onChange('v3')}
+        className={`rounded px-2 py-1 font-medium transition-colors ${
+          value === 'v3'
+            ? 'bg-slate-600 text-white'
+            : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+        }`}
+        data-testid="purchasability-version-v3"
+      >
+        V3 attuale
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value === 'v31'}
+        onClick={() => onChange('v31')}
+        className={`rounded px-2 py-1 font-medium transition-colors ${
+          value === 'v31'
+            ? 'bg-violet-600 text-white'
+            : 'text-slate-300 hover:bg-violet-700/50 hover:text-white'
+        }`}
+        data-testid="purchasability-version-v31"
+      >
+        V3.1 shadow
+      </button>
+    </div>
   )
 }
 
@@ -393,6 +523,9 @@ export function CecchinoTodayKpiPanel({
   historicalReliabilityError,
   purchasabilityV3ByMarketKey,
   purchasabilityV3SnapshotAvailable = false,
+  purchasabilityV31ByMarketKey,
+  purchasabilityV31SnapshotAvailable = false,
+  purchasabilityV31Loading = false,
   todayFixtureId,
   providerFixtureId,
 }: Props) {
@@ -407,6 +540,7 @@ export function CecchinoTodayKpiPanel({
     null,
   )
   const [analysisFixtureId, setAnalysisFixtureId] = useState(todayFixtureId)
+  const [purchasabilityVersion, setPurchasabilityVersion] = useState<PurchasabilityVersionSelection>('v3')
 
   if (analysisFixtureId !== todayFixtureId) {
     setAnalysisFixtureId(todayFixtureId)
@@ -471,6 +605,14 @@ export function CecchinoTodayKpiPanel({
     purchasabilityV3ByMarketKey?.[row.market_key] ||
     purchasabilityV3ByMarketKey?.[row.segno] ||
     undefined
+
+  const lookupPurchV31 = (row: CecchinoKpiV2Row) =>
+    purchasabilityV31ByMarketKey?.[row.market_key] ||
+    purchasabilityV31ByMarketKey?.[row.segno] ||
+    undefined
+
+  const showV31 = purchasabilityVersion === 'v31'
+  const hasV31Data = purchasabilityV31SnapshotAvailable || purchasabilityV31Loading
 
   return (
     <section className="rounded-xl border border-slate-300 shadow-md">
@@ -600,7 +742,15 @@ export function CecchinoTodayKpiPanel({
                 className="px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100"
                 title="Valuta quanto valore teorico rimane dopo rischi e penalità."
               >
-                Acquistabilità
+                <div className="flex flex-col items-center gap-1">
+                  <span>Acquistabilità</span>
+                  {hasV31Data ? (
+                    <PurchasabilityVersionSelector
+                      value={purchasabilityVersion}
+                      onChange={setPurchasabilityVersion}
+                    />
+                  ) : null}
+                </div>
               </th>
             </tr>
           </thead>
@@ -613,152 +763,187 @@ export function CecchinoTodayKpiPanel({
                 ? 'font-bold text-white'
                 : 'font-medium text-slate-300'
               const emp = lookup(row)
-              const purchV3 = lookupPurchV3(row)
-              const mk = row.market_key
-              const v3State = resolvePurchasabilityV3CellState(purchV3, {
-                snapshotAvailable: purchasabilityV3SnapshotAvailable,
-              })
-              const v3Clickable =
-                analysisMode && v3State.analyzable && hasExplanation(mk, 'purchasability_v3')
+                  const purchV3 = lookupPurchV3(row)
+                  const purchV31 = lookupPurchV31(row)
+                  const mk = row.market_key
+                  const v3State = resolvePurchasabilityV3CellState(purchV3, {
+                    snapshotAvailable: purchasabilityV3SnapshotAvailable,
+                  })
+                  const v31State = resolvePurchasabilityV31CellState(purchV31, {
+                    snapshotAvailable: purchasabilityV31SnapshotAvailable,
+                    loading: purchasabilityV31Loading,
+                  })
+                  const v3Clickable =
+                    analysisMode && v3State.analyzable && hasExplanation(mk, 'purchasability_v3')
+                  const v31Clickable =
+                    analysisMode && v31State.analyzable && hasExplanation(mk, 'purchasability_v31')
+                  const purchClickable = showV31 ? v31Clickable : v3Clickable
+                  const purchMetricKey: AnalyzableMetricKey = showV31 ? 'purchasability_v31' : 'purchasability_v3'
 
-              return (
-                <tr
-                  key={row.market_key}
-                  className={`border-b border-slate-600/40 hover:bg-slate-800/25 ${rowBg}`}
-                >
-                  <td
-                    className={`border-r border-slate-500/40 px-1.5 py-2.5 text-left whitespace-nowrap ${labelClass}`}
-                  >
-                    {segnoLabel}
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
-                    {fmtKpiCell(row.quota_book, true)}
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap font-semibold tabular-nums text-amber-100">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label={`${segnoLabel} · Quota Cecchino`}
-                      onOpen={() => openMetric(mk, 'quota_cecchino')}
+                  return (
+                    <tr
+                      key={row.market_key}
+                      className={`border-b border-slate-600/40 hover:bg-slate-800/25 ${rowBg}`}
                     >
-                      {fmtKpiCell(row.quota_cecchino, true)}
-                    </AnalyzableCell>
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Prob. Book"
-                      onOpen={() => openMetric(mk, 'prob_book')}
-                    >
-                      {fmtProbPct(row.prob_book)}
-                    </AnalyzableCell>
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Prob. Cecchino"
-                      onOpen={() => openMetric(mk, 'prob_cecchino')}
-                    >
-                      {fmtProbPct(row.prob_cecchino)}
-                    </AnalyzableCell>
-                  </td>
-                  <td
-                    className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${vantaggioClassName(row.vantaggio_prob)}`}
-                  >
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Vant. Prob."
-                      onOpen={() => openMetric(mk, 'vantaggio_prob')}
-                    >
-                      {fmtVantaggioProb(row.vantaggio_prob)}
-                    </AnalyzableCell>
-                  </td>
-                  <td
-                    className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${edgeClassName(row.edge_pct)}`}
-                  >
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Edge"
-                      onOpen={() => openMetric(mk, 'edge_pct')}
-                    >
-                      {formatEdgePct(row.edge_pct)}
-                    </AnalyzableCell>
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-300">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Score"
-                      onOpen={() => openMetric(mk, 'score_acquisto')}
-                    >
-                      {fmtScoreAcquisto(row.score_acquisto)}
-                    </AnalyzableCell>
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Rating"
-                      onOpen={() => openMetric(mk, 'rating')}
-                    >
-                      {row.rating != null ? (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
+                      <td
+                        className={`border-r border-slate-500/40 px-1.5 py-2.5 text-left whitespace-nowrap ${labelClass}`}
+                      >
+                        {segnoLabel}
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
+                        {fmtKpiCell(row.quota_book, true)}
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap font-semibold tabular-nums text-amber-100">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label={`${segnoLabel} · Quota Cecchino`}
+                          onOpen={() => openMetric(mk, 'quota_cecchino')}
                         >
-                          <span className="tabular-nums">{row.rating}</span>
-                          {row.rating_label && (
-                            <span className="hidden 2xl:inline">{row.rating_label}</span>
+                          {fmtKpiCell(row.quota_cecchino, true)}
+                        </AnalyzableCell>
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Prob. Book"
+                          onOpen={() => openMetric(mk, 'prob_book')}
+                        >
+                          {fmtProbPct(row.prob_book)}
+                        </AnalyzableCell>
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Prob. Cecchino"
+                          onOpen={() => openMetric(mk, 'prob_cecchino')}
+                        >
+                          {fmtProbPct(row.prob_cecchino)}
+                        </AnalyzableCell>
+                      </td>
+                      <td
+                        className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${vantaggioClassName(row.vantaggio_prob)}`}
+                      >
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Vant. Prob."
+                          onOpen={() => openMetric(mk, 'vantaggio_prob')}
+                        >
+                          {fmtVantaggioProb(row.vantaggio_prob)}
+                        </AnalyzableCell>
+                      </td>
+                      <td
+                        className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${edgeClassName(row.edge_pct)}`}
+                      >
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Edge"
+                          onOpen={() => openMetric(mk, 'edge_pct')}
+                        >
+                          {formatEdgePct(row.edge_pct)}
+                        </AnalyzableCell>
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-300">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Score"
+                          onOpen={() => openMetric(mk, 'score_acquisto')}
+                        >
+                          {fmtScoreAcquisto(row.score_acquisto)}
+                        </AnalyzableCell>
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Rating"
+                          onOpen={() => openMetric(mk, 'rating')}
+                        >
+                          {row.rating != null ? (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
+                            >
+                              <span className="tabular-nums">{row.rating}</span>
+                              {row.rating_label && (
+                                <span className="hidden 2xl:inline">{row.rating_label}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">—</span>
                           )}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </AnalyzableCell>
-                  </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Affidabilità"
-                      onOpen={() => openMetric(mk, 'historical_reliability')}
-                    >
-                      <HistoricalReliabilityCell
-                        item={emp}
-                        loading={historicalReliabilityLoading}
-                        error={historicalReliabilityError}
-                        interactive={!analysisMode}
-                        onOpen={() => {
-                          if (emp) setOpenItem(emp)
-                        }}
-                      />
-                    </AnalyzableCell>
-                  </td>
-                  <td className="px-1 py-2.5">
-                    <AnalyzableCell
-                      active={v3Clickable}
-                      label="Acquistabilità"
-                      onOpen={() => openMetric(mk, 'purchasability_v3')}
-                    >
-                      <PurchasabilityV3Cell
-                        item={purchV3}
-                        snapshotAvailable={purchasabilityV3SnapshotAvailable}
-                      />
-                    </AnalyzableCell>
-                  </td>
-                </tr>
-              )
+                        </AnalyzableCell>
+                      </td>
+                      <td className="border-r border-slate-500/40 px-1.5 py-2.5">
+                        <AnalyzableCell
+                          active={analysisMode}
+                          label="Affidabilità"
+                          onOpen={() => openMetric(mk, 'historical_reliability')}
+                        >
+                          <HistoricalReliabilityCell
+                            item={emp}
+                            loading={historicalReliabilityLoading}
+                            error={historicalReliabilityError}
+                            interactive={!analysisMode}
+                            onOpen={() => {
+                              if (emp) setOpenItem(emp)
+                            }}
+                          />
+                        </AnalyzableCell>
+                      </td>
+                      <td className="px-1 py-2.5">
+                        <AnalyzableCell
+                          active={purchClickable}
+                          label="Acquistabilità"
+                          onOpen={() => openMetric(mk, purchMetricKey)}
+                        >
+                          {showV31 ? (
+                            <PurchasabilityV31Cell
+                              item={purchV31}
+                              snapshotAvailable={purchasabilityV31SnapshotAvailable}
+                              loading={purchasabilityV31Loading}
+                            />
+                          ) : (
+                            <PurchasabilityV3Cell
+                              item={purchV3}
+                              snapshotAvailable={purchasabilityV3SnapshotAvailable}
+                            />
+                          )}
+                        </AnalyzableCell>
+                      </td>
+                    </tr>
+                  )
             })}
           </tbody>
         </table>
       </div>
 
       <div className="space-y-2 bg-[#163352] p-3 xl:hidden">
+        {hasV31Data ? (
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400">Acquistabilità</span>
+            <PurchasabilityVersionSelector
+              value={purchasabilityVersion}
+              onChange={setPurchasabilityVersion}
+            />
+          </div>
+        ) : null}
         {(panel.rows || []).map((row) => {
           const segnoLabel = kpiSegnoLabel(row)
           const emp = lookup(row)
           const purchV3 = lookupPurchV3(row)
+          const purchV31 = lookupPurchV31(row)
           const mk = row.market_key
           const v3State = resolvePurchasabilityV3CellState(purchV3, {
             snapshotAvailable: purchasabilityV3SnapshotAvailable,
           })
+          const v31State = resolvePurchasabilityV31CellState(purchV31, {
+            snapshotAvailable: purchasabilityV31SnapshotAvailable,
+            loading: purchasabilityV31Loading,
+          })
           const v3Clickable =
             analysisMode && v3State.analyzable && hasExplanation(mk, 'purchasability_v3')
+          const v31Clickable =
+            analysisMode && v31State.analyzable && hasExplanation(mk, 'purchasability_v31')
+          const purchClickable = showV31 ? v31Clickable : v3Clickable
+          const purchMetricKey: AnalyzableMetricKey = showV31 ? 'purchasability_v31' : 'purchasability_v3'
           return (
             <article
               key={row.market_key}
@@ -807,14 +992,22 @@ export function CecchinoTodayKpiPanel({
                   Acquistabilità
                 </p>
                 <AnalyzableCell
-                  active={v3Clickable}
+                  active={purchClickable}
                   label="Acquistabilità"
-                  onOpen={() => openMetric(mk, 'purchasability_v3')}
+                  onOpen={() => openMetric(mk, purchMetricKey)}
                 >
-                  <PurchasabilityV3Cell
-                    item={purchV3}
-                    snapshotAvailable={purchasabilityV3SnapshotAvailable}
-                  />
+                  {showV31 ? (
+                    <PurchasabilityV31Cell
+                      item={purchV31}
+                      snapshotAvailable={purchasabilityV31SnapshotAvailable}
+                      loading={purchasabilityV31Loading}
+                    />
+                  ) : (
+                    <PurchasabilityV3Cell
+                      item={purchV3}
+                      snapshotAvailable={purchasabilityV3SnapshotAvailable}
+                    />
+                  )}
                 </AnalyzableCell>
               </div>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">

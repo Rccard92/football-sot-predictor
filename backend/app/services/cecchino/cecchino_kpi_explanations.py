@@ -122,6 +122,7 @@ ANALYZABLE_METRICS = (
     "purchasability_v1_1",
     "purchasability_v2",
     "purchasability_v3",
+    "purchasability_v31",
     "purchasability_delta",
 )
 
@@ -138,6 +139,7 @@ _METRIC_LABELS: dict[str, str] = {
     "purchasability_v1_1": "Acquistabilità v1.1",
     "purchasability_v2": "Acquistabilità v2",
     "purchasability_v3": "Acquistabilità v3",
+    "purchasability_v31": "Acquistabilità V3.1 shadow",
     "purchasability_delta": "Differenza V2−V1.1",
 }
 
@@ -2555,6 +2557,196 @@ def _rebuild_purchasability_v2_candidate(
         return None, preview
 
 
+def _explain_purchasability_v31(
+    row: dict[str, Any],
+    market_label: str,
+    preview_item: dict[str, Any] | None,
+    preview_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Audit completo V3.1 shadow (anche con score null)."""
+    from app.schemas.cecchino_purchasability_v31 import (
+        PURCHASABILITY_V31_FORMULA_VERSION,
+    )
+
+    mk = str(row.get("market_key") or "")
+    formula = (
+        "theoretical_raw = value × theoretical_quality / 100; "
+        "raw_score_v31 = theoretical_raw × historical_factor; "
+        "score_v31 = ROUND_HALF_UP(raw_score_v31)"
+    )
+    source = preview_item if isinstance(preview_item, dict) else {}
+    if not source:
+        return _unavailable(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_v31",
+            formula_symbolic=formula,
+            inputs=[],
+            reason="Snapshot Acquistabilità V3.1 assente",
+            formula_version=PURCHASABILITY_V31_FORMULA_VERSION,
+            description=(
+                "Candidate shadow: V3 teorica × Affidabilità storica. "
+                "Non operativa."
+            ),
+            purpose="Indice shadow parallelo — non sostituisce fixed_discount_v3.",
+        )
+
+    gate = dict(source.get("gate")) if isinstance(source.get("gate"), dict) else {}
+    theoretical = (
+        dict(source.get("theoretical"))
+        if isinstance(source.get("theoretical"), dict)
+        else {}
+    )
+    historical = (
+        dict(source.get("historical"))
+        if isinstance(source.get("historical"), dict)
+        else {}
+    )
+    fair = (
+        dict(source.get("fair_book_audit"))
+        if isinstance(source.get("fair_book_audit"), dict)
+        else {}
+    )
+    inp = source.get("input") if isinstance(source.get("input"), dict) else {}
+    comparison = (
+        source.get("comparison_with_v3")
+        if isinstance(source.get("comparison_with_v3"), dict)
+        else {}
+    )
+    status = str(source.get("status") or "non_calculable")
+    score = source.get("score")
+    klass = source.get("class")
+
+    return _base_explanation(
+        market_key=mk,
+        market_label=market_label,
+        metric_key="purchasability_v31",
+        status="ok" if status == "score" else "partial",
+        calculation_type="purchasability_v31_shadow",
+        description=(
+            "Acquistabilità V3.1 shadow: valore teorico V3 × fattore empirico "
+            "Affidabilità storica. Solo quote Book reali."
+        ),
+        purpose="Candidate shadow — non ufficiale, non promuove V3.1.",
+        formula_symbolic=formula,
+        formula_applied=list(source.get("formula_steps") or []),
+        inputs=[
+            _input(
+                key="execution_quote",
+                label="Quota eseguibile",
+                value=inp.get("execution_quote"),
+                source_path="purchasability_preview_v31.items[].input.execution_quote",
+                source_type="persisted_snapshot",
+            ),
+            _input(
+                key="edge_pct",
+                label="Edge %",
+                value=inp.get("edge_pct"),
+                source_path="kpi_panel.rows[].edge_pct",
+                source_type="kpi_panel",
+            ),
+            _input(
+                key="rating",
+                label="Rating",
+                value=inp.get("rating"),
+                source_path="kpi_panel.rows[].rating",
+                source_type="kpi_panel",
+            ),
+            _input(
+                key="historical_reliability_score",
+                label="Affidabilità storica",
+                value=historical.get("historical_reliability_score"),
+                source_path="purchasability_preview_v31.items[].historical",
+                source_type="canonical_service",
+            ),
+        ],
+        stored_result=score,
+        stored_result_display=(
+            f"{score} ({klass})" if score is not None else str(status)
+        ),
+        audit_result={
+            "status": status,
+            "score_v31": score,
+            "class_v31": klass,
+            "raw_score_v31": source.get("raw_score_v31") or source.get("raw_score"),
+            "theoretical_raw_score": theoretical.get("theoretical_raw_score"),
+            "historical_factor": historical.get("historical_factor"),
+        },
+        consistency={"status": "computed", "delta": None},
+        rounding=source.get("rounding")
+        or {"policy": "ROUND_HALF_UP", "precision": 0},
+        formula_version=str(
+            source.get("formula_version") or PURCHASABILITY_V31_FORMULA_VERSION
+        ),
+        warnings=list(source.get("warnings") or []),
+        extra={
+            "status_v31": status,
+            "score": score,
+            "class": klass,
+            "raw_score_v31": source.get("raw_score_v31") or source.get("raw_score"),
+            "gate": gate,
+            "gate_status": source.get("gate_status") or gate.get("gate_status"),
+            "gate_reason_codes": list(
+                source.get("gate_reason_codes") or gate.get("gate_reason_codes") or []
+            ),
+            "input": inp,
+            "fair_book": fair,
+            "theoretical": theoretical,
+            "historical": historical,
+            "penalties": source.get("penalties") or theoretical.get("penalties"),
+            "formula_steps": list(source.get("formula_steps") or []),
+            "comparison_with_v3": comparison,
+            "reading_short": source.get("reading_short"),
+            "reading_detailed": source.get("reading_detailed"),
+            "reason_codes": list(source.get("reason_codes") or []),
+            "candidate_name": source.get("candidate_name")
+            or preview_meta.get("candidate_name"),
+            "registry_status": source.get("registry_status")
+            or preview_meta.get("registry_status"),
+            "formula_config_version": source.get("formula_config_version"),
+            "shadow_candidate": True,
+            "current_operational_version": False,
+            "sections": {
+                "final_state": {
+                    "score": score,
+                    "class": klass,
+                    "status": status,
+                    "reading": source.get("reading_short"),
+                },
+                "gate": gate,
+                "quote_quality": {
+                    "execution_quote": inp.get("execution_quote"),
+                    "execution_quote_source": inp.get("execution_quote_source"),
+                    "execution_quote_real": inp.get("execution_quote_real"),
+                    "performance_type": inp.get("performance_type"),
+                },
+                "fair_book": fair,
+                "theoretical_value": {
+                    "edge_pct": inp.get("edge_pct"),
+                    "value_score": theoretical.get("value_score")
+                    or source.get("value_score"),
+                },
+                "penalties": source.get("penalties") or theoretical.get("penalties"),
+                "family_ambiguity": {
+                    "status": theoretical.get("family_ambiguity_status")
+                    or source.get("family_ambiguity_status"),
+                    "penalty": theoretical.get("family_ambiguity_penalty"),
+                },
+                "historical_reliability": historical,
+                "final_calculation": {
+                    "theoretical_raw_score": theoretical.get("theoretical_raw_score"),
+                    "historical_factor": historical.get("historical_factor"),
+                    "raw_score_v31": source.get("raw_score_v31")
+                    or source.get("raw_score"),
+                    "score_v31": score,
+                    "rounding": source.get("rounding"),
+                },
+                "comparison_with_v3": comparison,
+            },
+        },
+    )
+
+
 def _rebuild_purchasability_v3_candidate(
     row: CecchinoTodayFixture,
     kpi_panel: dict[str, Any],
@@ -2728,6 +2920,22 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             if preview_v3_meta.get(flag) is None and flag in candidate_v3:
                 preview_v3_meta[flag] = candidate_v3.get(flag)
 
+    preview_v31: dict[str, Any] = {}
+    if isinstance(output.get("purchasability_preview_v31"), dict):
+        preview_v31 = output["purchasability_preview_v31"]
+    from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
+        index_purchasability_v31_snapshot_by_market,
+    )
+
+    preview_v31_index = index_purchasability_v31_snapshot_by_market(preview_v31)
+    preview_v31_meta = {
+        "candidate_version": preview_v31.get("candidate_version"),
+        "candidate_name": preview_v31.get("candidate_name"),
+        "formula_version": preview_v31.get("formula_version"),
+        "registry_status": preview_v31.get("registry_status"),
+        "generated_at": preview_v31.get("generated_at"),
+    }
+
     comparison = build_purchasability_comparison(
         preview if isinstance(preview, dict) else None,
         preview_v2 if isinstance(preview_v2, dict) else None,
@@ -2798,6 +3006,12 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
                 candidate_v3_index=candidate_v3_index,
                 kpi_rows_by_market=kpi_rows_by_market,
             )
+            market_explanations["purchasability_v31"] = _explain_purchasability_v31(
+                r,
+                label,
+                preview_v31_index.get(mk),
+                preview_v31_meta,
+            )
             market_explanations["purchasability_delta"] = _explain_purchasability_delta(
                 r,
                 label,
@@ -2846,6 +3060,7 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             "purchasability_preview_present": bool(preview),
             "purchasability_preview_v2_present": bool(preview_v2),
             "purchasability_preview_v3_present": bool(preview_v3),
+            "purchasability_preview_v31_present": bool(preview_v31),
             "historical_reliability_markets": len(hr_by_market),
             "read_only": True,
             "db_writes": False,
