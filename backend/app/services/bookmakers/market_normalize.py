@@ -68,8 +68,10 @@ SEL_OVER_1_5 = "OVER_1_5"
 SEL_UNDER_1_5 = "UNDER_1_5"
 SEL_OVER_2_5 = "OVER_2_5"
 SEL_UNDER_2_5 = "UNDER_2_5"
+SEL_OVER_3_5 = "OVER_3_5"
 SEL_UNDER_3_5 = "UNDER_3_5"
 SEL_OVER_PT_0_5 = "OVER_PT_0_5"
+SEL_UNDER_PT_0_5 = "UNDER_PT_0_5"
 SEL_OVER_PT_1_5 = "OVER_PT_1_5"
 SEL_UNDER_PT_1_5 = "UNDER_PT_1_5"
 SEL_UNKNOWN = "UNKNOWN"
@@ -120,6 +122,8 @@ def normalize_over_under_selection(raw_value: str | None) -> str:
         return SEL_OVER_2_5
     if is_under and has_25:
         return SEL_UNDER_2_5
+    if is_over and has_35:
+        return SEL_OVER_3_5
     if is_under and has_35:
         return SEL_UNDER_3_5
     return SEL_UNKNOWN
@@ -138,6 +142,8 @@ def normalize_first_half_over_under_selection(raw_value: str | None) -> str:
     has_15 = bool(_LINE_15.search(n))
     if is_over and has_05:
         return SEL_OVER_PT_0_5
+    if is_under and has_05:
+        return SEL_UNDER_PT_0_5
     if is_over and has_15:
         return SEL_OVER_PT_1_5
     if is_under and has_15:

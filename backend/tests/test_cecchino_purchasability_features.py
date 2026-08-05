@@ -230,7 +230,7 @@ def test_case_g_large_gap_no_auto_penalty():
 
 
 def test_case_h_unsupported_opposition():
-    rows = [_full_row(SEL_OVER_1_5, qb=1.25, qc=1.20, pb=0.8, pc=0.82)]
+    rows = [_full_row("BTTS_YES", qb=1.80, qc=1.70, pb=0.55, pc=0.58)]
     batch = build_purchasability_features_for_panel(
         kpi_panel={"rows": rows},
         fixture_meta=FIXTURE_META,

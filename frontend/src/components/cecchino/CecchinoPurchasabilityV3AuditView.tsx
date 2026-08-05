@@ -80,11 +80,22 @@ const MARKET_LABELS: Record<string, string> = {
   HOME: '1',
   DRAW: 'X',
   AWAY: '2',
+  HOME_PT: '1 PT',
+  DRAW_PT: 'X PT',
+  AWAY_PT: '2 PT',
   ONE_X: '1X',
   X_TWO: 'X2',
   ONE_TWO: '12',
+  OVER_1_5: 'Over 1.5',
+  UNDER_1_5: 'Under 1.5',
   OVER_2_5: 'Over 2.5',
   UNDER_2_5: 'Under 2.5',
+  OVER_3_5: 'Over 3.5',
+  UNDER_3_5: 'Under 3.5',
+  OVER_PT_0_5: 'Over PT 0.5',
+  UNDER_PT_0_5: 'Under PT 0.5',
+  OVER_PT_1_5: 'Over PT 1.5',
+  UNDER_PT_1_5: 'Under PT 1.5',
 }
 
 const FAMILY_LABELS: Record<string, string> = {

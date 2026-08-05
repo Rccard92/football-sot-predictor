@@ -18,13 +18,22 @@ from app.services.cecchino.cecchino_market_opposition import (
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
+    SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
+    SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
+    SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -35,16 +44,26 @@ SOURCE_DC_DERIVED = "derived_double_chance_from_normalized_1x2"
 SOURCE_RAW_SECONDARY = "raw_implied_secondary_only"
 
 MATCH_WINNER_SELS = frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
+MATCH_WINNER_HT_SELS = frozenset({SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT})
 DC_SELS = frozenset({SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO})
 PRIMARY_MARKETS = (
     SEL_HOME,
     SEL_DRAW,
     SEL_AWAY,
+    SEL_HOME_PT,
+    SEL_DRAW_PT,
+    SEL_AWAY_PT,
     SEL_ONE_X,
     SEL_X_TWO,
     SEL_ONE_TWO,
+    SEL_OVER_1_5,
+    SEL_UNDER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
+    SEL_OVER_3_5,
+    SEL_UNDER_3_5,
+    SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
     SEL_OVER_PT_1_5,
     SEL_UNDER_PT_1_5,
 )
@@ -288,8 +307,10 @@ def resolve_fair_book_probability(
         if sk and o is not None:
             odds_by_sel[sk] = o
 
-    # --- 1X2 ---
-    if sel in MATCH_WINNER_SELS and family == FAMILY_MATCH_WINNER:
+    # --- 1X2 FT / HT ---
+    if (
+        sel in MATCH_WINNER_SELS or sel in MATCH_WINNER_HT_SELS
+    ) and family == FAMILY_MATCH_WINNER:
         required = required_selections_for_normalization(FAMILY_MATCH_WINNER, period, line)
         if not required:
             return _raw_fallback(row, "no_normalization_set")
@@ -316,8 +337,14 @@ def resolve_fair_book_probability(
 
     # --- Over/Under two-way ---
     if family == FAMILY_OVER_UNDER and sel in (
+        SEL_OVER_1_5,
+        SEL_UNDER_1_5,
         SEL_OVER_2_5,
         SEL_UNDER_2_5,
+        SEL_OVER_3_5,
+        SEL_UNDER_3_5,
+        SEL_OVER_PT_0_5,
+        SEL_UNDER_PT_0_5,
         SEL_OVER_PT_1_5,
         SEL_UNDER_PT_1_5,
     ):

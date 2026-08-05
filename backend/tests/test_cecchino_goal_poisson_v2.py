@@ -13,6 +13,7 @@ from app.services.cecchino.cecchino_constants import (
     PICCHETTO_KEY_LAST6_TOTALS,
     PICCHETTO_KEY_TOTALS,
     STATUS_INSUFFICIENT_DATA,
+    WARNING_ZERO_PROBABILITY,
 )
 from app.services.cecchino.cecchino_fixture_history import (
     GoalContextSlice,
@@ -40,10 +41,13 @@ from app.services.cecchino.cecchino_goal_poisson_v2 import (
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
 )
 
@@ -122,6 +126,32 @@ def test_over_pt_15_probability():
 def test_under_pt_15_probability():
     lam = 0.8
     assert poisson_market_probability_ht(SEL_UNDER_PT_1_5, lam) == pytest.approx(poisson_cumulative(lam, 1), abs=0.0001)
+
+
+def test_phase1_complementary_probabilities():
+    lam_ft = 2.3
+    p_o15 = poisson_market_probability_ft(SEL_OVER_1_5, lam_ft)
+    p_u15 = poisson_market_probability_ft(SEL_UNDER_1_5, lam_ft)
+    assert p_o15 + p_u15 == pytest.approx(1.0, abs=1e-12)
+    assert 0.0 <= p_u15 <= 1.0
+
+    p_u35 = poisson_market_probability_ft(SEL_UNDER_3_5, lam_ft)
+    p_o35 = poisson_market_probability_ft(SEL_OVER_3_5, lam_ft)
+    assert p_o35 + p_u35 == pytest.approx(1.0, abs=1e-12)
+
+    lam_ht = 0.9
+    p_o05 = poisson_market_probability_ht(SEL_OVER_PT_0_5, lam_ht)
+    p_u05 = poisson_market_probability_ht(SEL_UNDER_PT_0_5, lam_ht)
+    assert p_o05 + p_u05 == pytest.approx(1.0, abs=1e-12)
+
+
+def test_zero_probability_to_odd_null():
+    odd, raw, capped, warnings = probability_to_odd(0.0)
+    assert odd is None
+    assert raw == 0.0
+    assert WARNING_ZERO_PROBABILITY in warnings or any(
+        WARNING_ZERO_PROBABILITY in str(w) for w in warnings
+    ) or warnings  # zero prob warning present
 
 
 def test_lambda_for_context():

@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Extend KPI markets for purchasability v3.1 (Fase 1) (2026-08-05)
+
+- Perché: preparare dati, coppie opposte e Pannello KPI completi prima della formula Acquistabilità V3.1.
+- Cosa: selection key `UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5` + righe KPI `1 PT`/`2 PT`; parser OU FT/PT; quote Cecchino complementari; famiglia HT 1X2; complete set overround; mapping_version `kpi_markets_v31_phase1`.
+- Cosa non fa: formula Acquistabilità V3 invariata (`fixed_discount_v3` / `SUPPORTED_V3_MARKETS`); nessuna migration; nessuno snapshot storico riscritto; nessuna quota Book inventata. Copertura provider reale da verificare su DB.
+
 ## Feat — Combine historical kpi with purchasability v3 (STEP 4B) (2026-08-02)
 
 - Perché: filtrare i segnali KPI storici per soglia Acquistabilità V3 e analizzare A–F senza saturare la hub.

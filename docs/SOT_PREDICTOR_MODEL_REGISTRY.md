@@ -133,6 +133,8 @@ Route FE: `/monitoraggio-moduli`.
 | Snapshot | `cecchino_purchasability_snapshot_v1` |
 | Validation | `cecchino_purchasability_validation_v1` |
 | Policy | `cecchino_purchasability_promotion_policy_v1` |
+| V3 ufficiale | `fixed_discount_v3` (invariata in Fase 1 V3.1) |
+| KPI panel mapping | `kpi_markets_v31_phase1` (Fase 1: mercati estesi, formula V3 non toccata) |
 
 Registry candidate resta `active_preview` (nessun auto-promote).
 

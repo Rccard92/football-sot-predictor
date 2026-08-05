@@ -2,6 +2,20 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Acquistabilità V3.1 — Fase 1 pipeline mercati KPI (2026-08-05)
+
+Preparazione dati end-to-end **senza** modificare la formula Acquistabilità V3 (`fixed_discount_v3`).
+
+| Voce | Dettaglio |
+|------|-----------|
+| Nuove selection key | `UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5` (+ `HOME_PT`/`AWAY_PT` nel pannello) |
+| Coppie | O/U 1.5, 2.5, 3.5 FT; O/U 0.5/1.5 PT; famiglia `MATCH_WINNER_1X2_FIRST_HALF` |
+| KPI version | `cecchino_kpi_v2_betfair_markets_v31_p1` / mapping `kpi_markets_v31_phase1` |
+| Acquistabilità V3 | Mercati già supportati invariati; nuovi mercati visibili come «Non supportato» |
+| Quote | Nessuna quota Book inventata; complementi Cecchino solo entro stessa distribuzione/periodo |
+| Persistenza | JSONB esistente; nessuna migration; snapshot storici leggibili |
+| Copertura | Parser/test sintetici pronti; copertura provider reale da verificare su DB |
+
 ## Cecchino Lab — KPI × V3 + Segnali A–F STEP 4B (2026-08-02)
 
 Filtro Acquistabilità V3 minima sull’Analisi KPI storica; pagina autonoma Segnali A–F; navigazione Storico semplificata. Formule e dati storici invariati.

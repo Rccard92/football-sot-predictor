@@ -23,10 +23,13 @@ from app.services.cecchino.cecchino_fixture_history import (
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
 )
 
@@ -35,14 +38,26 @@ FORMULA_FT_UNDER = "over_under_fulltime_excel_parity_v1"
 FORMULA_PT = "first_half_rate_to_odd_v1"
 
 _OVER_NOTE = (
-    "Excel parity: Over 1.5 e Over 2.5 usano stesso coefficiente nel foglio OVER."
+    "Excel parity: Over 1.5, Over 2.5 e Over 3.5 usano stesso coefficiente nel foglio OVER."
 )
 _UNDER_NOTE = (
-    "Excel parity: Under 2.5 e Under 3.5 usano stesso coefficiente nel foglio UNDER."
+    "Excel parity: Under 1.5, Under 2.5 e Under 3.5 usano stesso coefficiente nel foglio UNDER."
 )
 
-_FT_MARKETS = (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5)
-_PT_MARKETS = (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5)
+_FT_MARKETS = (
+    SEL_OVER_1_5,
+    SEL_UNDER_1_5,
+    SEL_OVER_2_5,
+    SEL_UNDER_2_5,
+    SEL_OVER_3_5,
+    SEL_UNDER_3_5,
+)
+_PT_MARKETS = (
+    SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
+    SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+)
 
 
 def _round_odd(v: float | None) -> float | None:
@@ -246,6 +261,9 @@ def calculate_under_fulltime_excel_parity(slices: GoalFixtureSlices) -> dict[str
 def _pt_hits(totals: GoalTotals, market_key: str) -> int:
     if market_key == SEL_OVER_PT_0_5:
         return totals.over_pt_0_5_hits
+    if market_key == SEL_UNDER_PT_0_5:
+        # Complemento esatto sulla stessa linea 0.5 (sample con HT valido).
+        return max(0, totals.sample - totals.over_pt_0_5_hits)
     if market_key == SEL_OVER_PT_1_5:
         return totals.over_pt_1_5_hits
     if market_key == SEL_UNDER_PT_1_5:
@@ -256,6 +274,8 @@ def _pt_hits(totals: GoalTotals, market_key: str) -> int:
 def _pt_event_label(market_key: str) -> str:
     if market_key == SEL_OVER_PT_0_5:
         return "halftime_total_goals >= 1"
+    if market_key == SEL_UNDER_PT_0_5:
+        return "halftime_total_goals <= 0"
     if market_key == SEL_OVER_PT_1_5:
         return "halftime_total_goals >= 2"
     return "halftime_total_goals <= 1"
@@ -341,11 +361,18 @@ def build_goal_market_cecchino_odds_legacy(slices: GoalFixtureSlices) -> dict[st
 
     markets: dict[str, Any] = {
         SEL_OVER_1_5: _clone_ft(over_ft, SEL_OVER_1_5),
+        SEL_UNDER_1_5: _clone_ft(under_ft, SEL_UNDER_1_5),
         SEL_OVER_2_5: _clone_ft(over_ft, SEL_OVER_2_5),
         SEL_UNDER_2_5: _clone_ft(under_ft, SEL_UNDER_2_5),
+        SEL_OVER_3_5: _clone_ft(over_ft, SEL_OVER_3_5),
         SEL_UNDER_3_5: _clone_ft(under_ft, SEL_UNDER_3_5),
     }
-    for mk in (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5):
+    for mk in (
+        SEL_OVER_PT_0_5,
+        SEL_UNDER_PT_0_5,
+        SEL_OVER_PT_1_5,
+        SEL_UNDER_PT_1_5,
+    ):
         markets[mk] = calculate_first_half_rate_to_odd(mk, slices)
     return markets
 

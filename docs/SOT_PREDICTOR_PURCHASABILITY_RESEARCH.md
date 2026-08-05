@@ -2,6 +2,10 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## V3.1 Fase 1 — Pipeline mercati (2026-08-05)
+
+Estensione dati/KPI per mercati mancanti (`UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5`, `HOME_PT`, `AWAY_PT`) e complete set overround. **Formula V3 non modificata**; i nuovi mercati restano `unsupported_market` fino alla Fase formula V3.1. Nessuna quota inventata; snapshot storici non riscritti.
+
 ## STEP 3C.2 — V3 ufficiale (2026-08-02)
 
 Acquistabilità V3 è l’unica sorgente ufficiale per Run con replay V3 compatibile. Nessun confronto V2/V3 negli analytics ufficiali. Nessun fallback legacy. Dati V1.1/V2 restano nel DB solo per conservazione/rollback tecnico.

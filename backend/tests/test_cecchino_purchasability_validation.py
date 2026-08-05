@@ -80,7 +80,7 @@ def test_feature_version_active_is_v1_1():
 
 @pytest.mark.parametrize(
     "market_key",
-    [SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5, SEL_OVER_PT_0_5],
+    ["BTTS_YES", "BTTS_NO"],
 )
 def test_unsupported_markets_no_favourite_ft_context(market_key):
     rows = [_full_row(market_key, qb=1.8, qc=1.7, pb=0.55, pc=0.58)]
@@ -107,6 +107,29 @@ def test_unsupported_markets_no_favourite_ft_context(market_key):
     assert p2["book_favourite"] is None
     assert p2["model_favourite"] is None
     assert batch["feature_version"] == PURCHASABILITY_FEATURE_V1_1_VERSION
+
+
+def test_phase1_ht_draw_no_ft_favourite_leak():
+    """DRAW_PT usa contesto HT; senza 1X2 PT completo favourite resta unavailable."""
+    rows = [
+        _full_row(SEL_DRAW_PT, qb=2.1, qc=2.0, pb=0.47, pc=0.48),
+        _full_row(SEL_HOME, qb=2.1, qc=2.0, pb=0.47, pc=0.48),
+        _full_row(SEL_DRAW, qb=3.4, qc=3.2, pb=0.29, pc=0.30),
+        _full_row("AWAY", qb=3.5, qc=3.4, pb=0.28, pc=0.22),
+    ]
+    batch = build_purchasability_features_for_panel(
+        kpi_panel={"rows": rows},
+        fixture_meta={"today_fixture_id": 1, "kickoff": "2026-07-20T18:00:00+00:00"},
+        snapshot_info={
+            "snapshot_at": "2026-07-20T12:00:00+00:00",
+            "snapshot_timestamp_verified": True,
+        },
+    )
+    item = next(i for i in batch["items"] if i["market_key"] == SEL_DRAW_PT)
+    p2 = item["phase_2_quality"]
+    assert p2["favourite_context_basis"] in (None, "normalized_1x2_ht")
+    assert p2["favourite_alignment"] == "unavailable"
+    assert p2.get("favourite_context_basis") != "normalized_1x2"
 
 
 def test_supported_market_still_has_favourite_when_applicable():

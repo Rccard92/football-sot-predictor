@@ -21,10 +21,13 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -241,25 +244,39 @@ def validate_betfair_kpi_odds_mapping(
         if src != _SOURCE_DOUBLE_CHANCE:
             warnings.append(f"dc_{sk}:source_non_tracciabile:{src}")
 
-    for sk in (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5):
+    for sk in (
+        SEL_OVER_1_5,
+        SEL_UNDER_1_5,
+        SEL_OVER_2_5,
+        SEL_UNDER_2_5,
+        SEL_OVER_3_5,
+        SEL_UNDER_3_5,
+    ):
         if sk in (markets.get(MARKET_OU) or {}):
             prov = provenance.get(sk) or {}
             if prov.get("source") not in (_SOURCE_OVER_UNDER, None) and prov:
                 warnings.append(f"ou_{sk}:source_sospetta:{prov.get('source')}")
 
-    for sk in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+    for sk in (
+        SEL_UNDER_PT_0_5,
+        SEL_UNDER_PT_1_5,
+        SEL_OVER_PT_0_5,
+        SEL_OVER_PT_1_5,
+    ):
         if sk in (markets.get(MARKET_OU_FH) or {}):
             prov = provenance.get(sk) or {}
             if prov.get("source") not in (_SOURCE_OVER_UNDER_FH, None) and prov:
                 warnings.append(f"ou_fh_{sk}:source_sospetta:{prov.get('source')}")
 
-    if SEL_DRAW_PT in (markets.get(MARKET_1X2_FH) or {}):
-        prov = provenance.get(SEL_DRAW_PT) or {}
+    for sk in (SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT):
+        if sk not in (markets.get(MARKET_1X2_FH) or {}):
+            continue
+        prov = provenance.get(sk) or {}
         src = prov.get("source")
         if src != _SOURCE_FH_MATCH_WINNER:
-            warnings.append(f"fh_1x2_{SEL_DRAW_PT}:source_non_tracciabile:{src}")
+            warnings.append(f"fh_1x2_{sk}:source_non_tracciabile:{src}")
         raw_mkt = prov.get("raw_market_name") or ""
         if raw_mkt and not is_strict_first_half_match_winner_market(raw_mkt, prov.get("bet_id")):
-            warnings.append(f"fh_1x2_{SEL_DRAW_PT}:mercato_non_ammesso:{raw_mkt}")
+            warnings.append(f"fh_1x2_{sk}:mercato_non_ammesso:{raw_mkt}")
 
     return warnings

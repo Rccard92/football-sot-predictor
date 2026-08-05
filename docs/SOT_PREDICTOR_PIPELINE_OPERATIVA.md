@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Acquistabilità V3.1 — Fase 1 mercati KPI (2026-08-05)
+
+1. Verificare mapping `kpi_markets_v31_phase1` nel payload KPI (`mapping_version`).
+2. Pannello KPI: 19 righe (1/X/2, 1 PT/X PT/2 PT, DC, O/U 1.5–3.5, O/U PT 0.5–1.5).
+3. Export opposition/coverage: coppie complete; nessun confronto cross-line o FT↔PT.
+4. Nuovi mercati: Book/Cecchino se presenti; Acquistabilità V3 = `unsupported_market`.
+5. Nessuna migration; non riscrivere snapshot storici; non inventare quote mancanti.
+6. Copertura reale provider: misurare su ambiente con DB (test repo = sintetici).
+
 ## Cecchino Lab — KPI × V3 + Segnali A–F STEP 4B (2026-08-02)
 
 1. Analisi KPI: query `purchasability_min_score` → resolver replay ufficiale → join V3 → funnel + aggregati filtrati.

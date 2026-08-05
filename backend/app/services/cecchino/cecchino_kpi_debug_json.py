@@ -22,17 +22,22 @@ from app.services.cecchino.cecchino_icm_analysis import build_cecchino_icm_analy
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
     SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -42,18 +47,23 @@ _BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
 _DEBUG_SELECTIONS = (
     SEL_HOME,
     SEL_DRAW,
-    SEL_DRAW_PT,
     SEL_AWAY,
+    SEL_HOME_PT,
+    SEL_DRAW_PT,
+    SEL_AWAY_PT,
     SEL_ONE_X,
     SEL_X_TWO,
     SEL_ONE_TWO,
     SEL_OVER_1_5,
+    SEL_UNDER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
+    SEL_OVER_3_5,
     SEL_UNDER_3_5,
-    SEL_UNDER_PT_1_5,
     SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
 )
 
 
@@ -116,12 +126,18 @@ def _cecchino_goal_odds_used(output: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for sk in (
         SEL_OVER_1_5,
+        SEL_UNDER_1_5,
         SEL_OVER_2_5,
         SEL_UNDER_2_5,
+        SEL_OVER_3_5,
         SEL_UNDER_3_5,
-        SEL_UNDER_PT_1_5,
         SEL_OVER_PT_0_5,
+        SEL_UNDER_PT_0_5,
         SEL_OVER_PT_1_5,
+        SEL_UNDER_PT_1_5,
+        SEL_HOME_PT,
+        SEL_DRAW_PT,
+        SEL_AWAY_PT,
     ):
         block = goal_markets.get(sk)
         if not isinstance(block, dict):

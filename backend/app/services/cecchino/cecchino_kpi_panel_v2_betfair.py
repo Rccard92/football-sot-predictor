@@ -17,22 +17,28 @@ from app.services.cecchino.cecchino_selection_keys import (
     MARKET_OU,
     MARKET_OU_FH,
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
     SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
 
-KPI_V2_VERSION = "cecchino_kpi_v2_betfair"
+KPI_V2_VERSION = "cecchino_kpi_v2_betfair_markets_v31_p1"
+KPI_V2_MAPPING_VERSION = "kpi_markets_v31_phase1"
 
 KPI_V2_COLUMNS = [
     "segno",
@@ -49,49 +55,80 @@ KPI_V2_COLUMNS = [
 KPI_V2_ROW_DEFS: tuple[tuple[str, str], ...] = (
     (SEL_HOME, "1"),
     (SEL_DRAW, "X"),
-    (SEL_DRAW_PT, "X PT"),
     (SEL_AWAY, "2"),
+    (SEL_HOME_PT, "1 PT"),
+    (SEL_DRAW_PT, "X PT"),
+    (SEL_AWAY_PT, "2 PT"),
     (SEL_ONE_X, "1X"),
     (SEL_X_TWO, "X2"),
     (SEL_ONE_TWO, "12"),
     (SEL_OVER_1_5, "Over 1.5"),
+    (SEL_UNDER_1_5, "Under 1.5"),
     (SEL_OVER_2_5, "Over 2.5"),
     (SEL_UNDER_2_5, "Under 2.5"),
+    (SEL_OVER_3_5, "Over 3.5"),
     (SEL_UNDER_3_5, "Under 3.5"),
-    (SEL_UNDER_PT_1_5, "Under PT 1.5"),
     (SEL_OVER_PT_0_5, "Over PT 0.5"),
+    (SEL_UNDER_PT_0_5, "Under PT 0.5"),
     (SEL_OVER_PT_1_5, "Over PT 1.5"),
+    (SEL_UNDER_PT_1_5, "Under PT 1.5"),
 )
 
 _MARKET_FOR_KEY: dict[str, str] = {
     SEL_HOME: MARKET_1X2,
     SEL_DRAW: MARKET_1X2,
-    SEL_DRAW_PT: MARKET_1X2_FH,
     SEL_AWAY: MARKET_1X2,
+    SEL_HOME_PT: MARKET_1X2_FH,
+    SEL_DRAW_PT: MARKET_1X2_FH,
+    SEL_AWAY_PT: MARKET_1X2_FH,
     SEL_ONE_X: MARKET_DC,
     SEL_X_TWO: MARKET_DC,
     SEL_ONE_TWO: MARKET_DC,
     SEL_OVER_1_5: MARKET_OU,
+    SEL_UNDER_1_5: MARKET_OU,
     SEL_OVER_2_5: MARKET_OU,
     SEL_UNDER_2_5: MARKET_OU,
+    SEL_OVER_3_5: MARKET_OU,
     SEL_UNDER_3_5: MARKET_OU,
-    SEL_UNDER_PT_1_5: MARKET_OU_FH,
     SEL_OVER_PT_0_5: MARKET_OU_FH,
+    SEL_UNDER_PT_0_5: MARKET_OU_FH,
     SEL_OVER_PT_1_5: MARKET_OU_FH,
+    SEL_UNDER_PT_1_5: MARKET_OU_FH,
 }
 
 _CECCHINO_1X2_KEYS = {SEL_HOME, SEL_DRAW, SEL_AWAY}
 _CECCHINO_DC_KEYS = {SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO}
 _CECCHINO_GOAL_MARKET_KEYS = {
     SEL_OVER_1_5,
+    SEL_UNDER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
+    SEL_OVER_3_5,
     SEL_UNDER_3_5,
-    SEL_UNDER_PT_1_5,
     SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+    SEL_HOME_PT,
     SEL_DRAW_PT,
+    SEL_AWAY_PT,
 }
+
+_FT_OU_KEYS = {
+    SEL_OVER_1_5,
+    SEL_UNDER_1_5,
+    SEL_OVER_2_5,
+    SEL_UNDER_2_5,
+    SEL_OVER_3_5,
+    SEL_UNDER_3_5,
+}
+_PT_OU_KEYS = {
+    SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
+    SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+}
+_HT_1X2_KEYS = {SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT}
 
 
 def _num(v: Any) -> float | None:
@@ -275,11 +312,11 @@ def _book_source_for_row(
                 return "derived_from_betfair_1x2"
     if market_key in _CECCHINO_1X2_KEYS:
         return "betfair_raw_match_winner"
-    if market_key in (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5):
+    if market_key in _FT_OU_KEYS:
         return "betfair_raw_over_under"
-    if market_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+    if market_key in _PT_OU_KEYS:
         return "betfair_raw_over_under_first_half"
-    if market_key == SEL_DRAW_PT:
+    if market_key in _HT_1X2_KEYS:
         return "betfair_raw_first_half_match_winner"
     if odds_source == "cached_betfair_odds":
         return "cached_betfair_odds"
@@ -366,7 +403,7 @@ def build_cecchino_kpi_panel_v2_betfair(
         if (
             provenance_map is not None
             and quota_book is not None
-            and market_key in _CECCHINO_1X2_KEYS
+            and market_key in (_CECCHINO_1X2_KEYS | _HT_1X2_KEYS)
             and not prov.get("source")
         ):
             warnings.append(f"kpi_{market_key}:provenance_mancante")
@@ -397,6 +434,7 @@ def build_cecchino_kpi_panel_v2_betfair(
 
     return {
         "version": KPI_V2_VERSION,
+        "mapping_version": KPI_V2_MAPPING_VERSION,
         "bookmaker": {
             "name": CECCHINO_BOOKMAKER["name"],
             "provider_bookmaker_id": int(CECCHINO_BOOKMAKER["provider_bookmaker_id"]),

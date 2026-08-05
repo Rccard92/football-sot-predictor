@@ -114,7 +114,8 @@ def test_parse_api_football_over_rows():
 
 def test_sync_today_persists_over_with_bookmaker_id():
     db = MagicMock()
-    odds_by_book = {8: _mock_ou_payload(over_15=1.5, over_25=2.5)}
+    # Cecchino Today persiste solo Betfair (provider_bookmaker_id=3).
+    odds_by_book = {3: _mock_ou_payload(over_15=1.5, over_25=2.5)}
     with patch("app.services.cecchino.cecchino_today_service.upsert_selection_odds") as upsert:
         saved = sync_today_bookmaker_odds(
             db,
@@ -131,8 +132,8 @@ def test_sync_today_persists_over_with_bookmaker_id():
         and c.kwargs.get("selection_key") == SEL_OVER_1_5
     ]
     assert len(over_calls) == 1
-    assert over_calls[0].kwargs["provider_bookmaker_id"] == "8"
-    assert over_calls[0].kwargs["bookmaker_name"] == "Bet365"
+    assert over_calls[0].kwargs["provider_bookmaker_id"] == "3"
+    assert over_calls[0].kwargs["bookmaker_name"] == "Betfair"
 
 
 def test_build_bookmaker_average_over_three_books():

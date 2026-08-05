@@ -33,18 +33,28 @@ from app.services.cecchino.cecchino_purchasability_audit import (
 )
 from app.services.cecchino.cecchino_purchasability_fair_book import (
     DC_SELS,
+    MATCH_WINNER_HT_SELS,
     MATCH_WINNER_SELS,
     resolve_fair_book_for_panel_rows,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
+    SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
+    SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
+    SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -180,6 +190,29 @@ def build_model_context_probability_map(
             "source": "normalized_1x2_model" if mw_norm else "raw_or_unavailable",
         }
 
+    # 1X2 HT
+    ht_probs = {
+        sel: _num(by_m[sel].get("prob_cecchino"))
+        for sel in MATCH_WINNER_HT_SELS
+        if sel in by_m
+    }
+    ht_complete = {k: v for k, v in ht_probs.items() if v is not None and v >= 0}
+    ht_norm: dict[str, float] | None = None
+    ht_status = "incomplete_market"
+    if set(MATCH_WINNER_HT_SELS).issubset(set(ht_complete.keys())):
+        total_ht = sum(ht_complete[s] for s in MATCH_WINNER_HT_SELS)
+        if total_ht > 0:
+            ht_norm = {s: ht_complete[s] / total_ht for s in MATCH_WINNER_HT_SELS}
+            ht_status = "ok"
+    for sel in MATCH_WINNER_HT_SELS:
+        raw = ht_probs.get(sel)
+        out[sel] = {
+            "model_probability_raw": raw,
+            "model_context_probability": ht_norm.get(sel) if ht_norm else None,
+            "normalization_status": ht_status if sel in by_m else "unavailable",
+            "source": "normalized_1x2_ht_model" if ht_norm else "raw_or_unavailable",
+        }
+
     # Double Chance derived from normalized 1X2
     if mw_norm:
         derived = {
@@ -208,10 +241,28 @@ def build_model_context_probability_map(
     # OU pairs
     for pair, family, period, line in (
         (
+            (SEL_OVER_1_5, SEL_UNDER_1_5),
+            FAMILY_OVER_UNDER,
+            "FT",
+            1.5,
+        ),
+        (
             (SEL_OVER_2_5, SEL_UNDER_2_5),
             FAMILY_OVER_UNDER,
             "FT",
             2.5,
+        ),
+        (
+            (SEL_OVER_3_5, SEL_UNDER_3_5),
+            FAMILY_OVER_UNDER,
+            "FT",
+            3.5,
+        ),
+        (
+            (SEL_OVER_PT_0_5, SEL_UNDER_PT_0_5),
+            FAMILY_OVER_UNDER,
+            "HT",
+            0.5,
         ),
         (
             (SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5),
@@ -291,7 +342,20 @@ def _build_favourite_context(
     book_probs: dict[str, float] = {}
     model_probs: dict[str, float] = {}
 
-    if family == FAMILY_MATCH_WINNER or family == FAMILY_DOUBLE_CHANCE:
+    if family == FAMILY_MATCH_WINNER and period == "HT":
+        basis = "normalized_1x2_ht"
+        for sel in MATCH_WINNER_HT_SELS:
+            fb = fair_by_m.get(sel) or {}
+            if fb.get("fair_book_probability_verified") and fb.get("fair_book_probability") is not None:
+                book_probs[sel] = float(fb["fair_book_probability"])
+            mc = model_by_m.get(sel) or {}
+            if mc.get("model_context_probability") is not None:
+                model_probs[sel] = float(mc["model_context_probability"])
+        if len(book_probs) < 3:
+            book_probs = {}
+        if len(model_probs) < 3:
+            model_probs = {}
+    elif family == FAMILY_MATCH_WINNER or family == FAMILY_DOUBLE_CHANCE:
         basis = "normalized_1x2"
         for sel in MATCH_WINNER_SELS:
             fb = fair_by_m.get(sel) or {}
@@ -305,8 +369,14 @@ def _build_favourite_context(
         if len(model_probs) < 3:
             model_probs = {}
     elif family == FAMILY_OVER_UNDER and market_key in (
+        SEL_OVER_1_5,
+        SEL_UNDER_1_5,
         SEL_OVER_2_5,
         SEL_UNDER_2_5,
+        SEL_OVER_3_5,
+        SEL_UNDER_3_5,
+        SEL_OVER_PT_0_5,
+        SEL_UNDER_PT_0_5,
         SEL_OVER_PT_1_5,
         SEL_UNDER_PT_1_5,
     ):

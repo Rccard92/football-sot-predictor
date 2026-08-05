@@ -39,18 +39,24 @@ from app.services.cecchino.cecchino_goal_formulas import (
     calculate_under_fulltime_excel_parity,
 )
 from app.services.cecchino.cecchino_selection_keys import (
+    SEL_AWAY_PT,
     SEL_DRAW_PT,
+    SEL_HOME_PT,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
 )
 
 FORMULA_V2 = "goal_market_poisson_empirical_v2"
 FORMULA_DRAW_PT_V1 = "first_half_draw_empirical_shrinkage_v1"
+FORMULA_HT_1X2_V1 = "first_half_1x2_empirical_shrinkage_v1"
 BLEND_POISSON = 0.65
 BLEND_EMPIRICAL = 0.35
 MIN_PROB = 0.03
@@ -63,8 +69,21 @@ _CONTEXT_WEIGHT_MAP: dict[str, float] = {
     CONTEXT_KEY_LAST5_HOME_AWAY: CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY],
 }
 
-_FT_MARKETS = (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5)
-_PT_MARKETS = (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5)
+_FT_MARKETS = (
+    SEL_OVER_1_5,
+    SEL_UNDER_1_5,
+    SEL_OVER_2_5,
+    SEL_UNDER_2_5,
+    SEL_OVER_3_5,
+    SEL_UNDER_3_5,
+)
+_PT_MARKETS = (
+    SEL_OVER_PT_0_5,
+    SEL_UNDER_PT_0_5,
+    SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+)
+_HT_1X2_MARKETS = (SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT)
 
 
 def poisson_pmf(k: int, lambda_value: float) -> float:
@@ -80,10 +99,14 @@ def poisson_cumulative(lam: float, max_k: int) -> float:
 def poisson_market_probability_ft(market_key: str, lambda_ft: float) -> float:
     if market_key == SEL_OVER_1_5:
         return 1.0 - poisson_cumulative(lambda_ft, 1)
+    if market_key == SEL_UNDER_1_5:
+        return poisson_cumulative(lambda_ft, 1)
     if market_key == SEL_OVER_2_5:
         return 1.0 - poisson_cumulative(lambda_ft, 2)
     if market_key == SEL_UNDER_2_5:
         return poisson_cumulative(lambda_ft, 2)
+    if market_key == SEL_OVER_3_5:
+        return 1.0 - poisson_cumulative(lambda_ft, 3)
     if market_key == SEL_UNDER_3_5:
         return poisson_cumulative(lambda_ft, 3)
     return 0.0
@@ -92,6 +115,8 @@ def poisson_market_probability_ft(market_key: str, lambda_ft: float) -> float:
 def poisson_market_probability_ht(market_key: str, lambda_ht: float) -> float:
     if market_key == SEL_OVER_PT_0_5:
         return 1.0 - poisson_pmf(0, lambda_ht)
+    if market_key == SEL_UNDER_PT_0_5:
+        return poisson_pmf(0, lambda_ht)
     if market_key == SEL_OVER_PT_1_5:
         return 1.0 - poisson_cumulative(lambda_ht, 1)
     if market_key == SEL_UNDER_PT_1_5:
@@ -226,10 +251,14 @@ def _ft_event_hit(goals_for: int, goals_against: int, market_key: str) -> bool:
     total = goals_for + goals_against
     if market_key == SEL_OVER_1_5:
         return total >= 2
+    if market_key == SEL_UNDER_1_5:
+        return total <= 1
     if market_key == SEL_OVER_2_5:
         return total >= 3
     if market_key == SEL_UNDER_2_5:
         return total <= 2
+    if market_key == SEL_OVER_3_5:
+        return total >= 4
     if market_key == SEL_UNDER_3_5:
         return total <= 3
     return False
@@ -238,10 +267,34 @@ def _ft_event_hit(goals_for: int, goals_against: int, market_key: str) -> bool:
 def _pt_event_hit(ht_total: int, market_key: str) -> bool:
     if market_key == SEL_OVER_PT_0_5:
         return ht_total >= 1
+    if market_key == SEL_UNDER_PT_0_5:
+        return ht_total <= 0
     if market_key == SEL_OVER_PT_1_5:
         return ht_total >= 2
     if market_key == SEL_UNDER_PT_1_5:
         return ht_total <= 1
+    return False
+
+
+def _ht_1x2_hit_from_home_pov(gf: int, ga: int, market_key: str) -> bool:
+    """Hit HT 1X2 dal POV della squadra di casa del matchup target."""
+    if market_key == SEL_HOME_PT:
+        return gf > ga
+    if market_key == SEL_DRAW_PT:
+        return gf == ga
+    if market_key == SEL_AWAY_PT:
+        return gf < ga
+    return False
+
+
+def _ht_1x2_hit_from_away_pov(gf: int, ga: int, market_key: str) -> bool:
+    """Hit HT 1X2 dal POV della squadra ospite del matchup target."""
+    if market_key == SEL_HOME_PT:
+        return gf < ga
+    if market_key == SEL_DRAW_PT:
+        return gf == ga
+    if market_key == SEL_AWAY_PT:
+        return gf > ga
     return False
 
 
@@ -278,8 +331,8 @@ def _hit_rates_for_context(
         home_sample += 1
         total = gf + ga
         if is_ht:
-            if market_key == SEL_DRAW_PT:
-                if gf == ga:
+            if market_key in _HT_1X2_MARKETS:
+                if _ht_1x2_hit_from_home_pov(gf, ga, market_key):
                     home_hits += 1
             elif _pt_event_hit(total, market_key):
                 home_hits += 1
@@ -296,8 +349,8 @@ def _hit_rates_for_context(
         away_sample += 1
         total = gf + ga
         if is_ht:
-            if market_key == SEL_DRAW_PT:
-                if gf == ga:
+            if market_key in _HT_1X2_MARKETS:
+                if _ht_1x2_hit_from_away_pov(gf, ga, market_key):
                     away_hits += 1
             elif _pt_event_hit(total, market_key):
                 away_hits += 1
@@ -399,14 +452,14 @@ def league_event_probabilities(
     league_fixtures: list[Fixture],
 ) -> dict[str, float | None]:
     """Rate evento su tutte le fixture lega finite."""
-    all_markets = _FT_MARKETS + _PT_MARKETS + (SEL_DRAW_PT,)
+    all_markets = _FT_MARKETS + _PT_MARKETS + _HT_1X2_MARKETS
     if not league_fixtures:
         return {m: None for m in all_markets}
 
     ft_totals: dict[str, int] = {m: 0 for m in _FT_MARKETS}
     pt_totals: dict[str, int] = {m: 0 for m in _PT_MARKETS}
+    ht_1x2_totals: dict[str, int] = {m: 0 for m in _HT_1X2_MARKETS}
     ft_n = pt_n = 0
-    ht_draw_n = 0
 
     for f in league_fixtures:
         if f.goals_home is None or f.goals_away is None:
@@ -429,21 +482,23 @@ def league_event_probabilities(
             if ht_home is not None and ht_away is not None:
                 pt_n += 1
                 ht_total = ht_home + ht_away
-                if ht_total >= 1:
-                    pt_totals[SEL_OVER_PT_0_5] += 1
-                if ht_total >= 2:
-                    pt_totals[SEL_OVER_PT_1_5] += 1
-                if ht_total <= 1:
-                    pt_totals[SEL_UNDER_PT_1_5] += 1
-                if ht_home == ht_away:
-                    ht_draw_n += 1
+                for m in _PT_MARKETS:
+                    if _pt_event_hit(ht_total, m):
+                        pt_totals[m] += 1
+                if ht_home > ht_away:
+                    ht_1x2_totals[SEL_HOME_PT] += 1
+                elif ht_home == ht_away:
+                    ht_1x2_totals[SEL_DRAW_PT] += 1
+                else:
+                    ht_1x2_totals[SEL_AWAY_PT] += 1
 
     out: dict[str, float | None] = {}
     for m in _FT_MARKETS:
         out[m] = round(ft_totals[m] / ft_n, 4) if ft_n > 0 else None
     for m in _PT_MARKETS:
         out[m] = round(pt_totals[m] / pt_n, 4) if pt_n > 0 else None
-    out[SEL_DRAW_PT] = round(ht_draw_n / pt_n, 4) if pt_n > 0 else None
+    for m in _HT_1X2_MARKETS:
+        out[m] = round(ht_1x2_totals[m] / pt_n, 4) if pt_n > 0 else None
     return out
 
 
@@ -472,9 +527,9 @@ def probability_to_odd(p_raw: float) -> tuple[float | None, float, float, list[s
 
 
 def _legacy_excel_odd(market_key: str, slices) -> float | None:
-    if market_key in (SEL_OVER_1_5, SEL_OVER_2_5):
+    if market_key in (SEL_OVER_1_5, SEL_OVER_2_5, SEL_OVER_3_5):
         return calculate_over_fulltime_excel_parity(slices).get("final_odd")
-    if market_key in (SEL_UNDER_2_5, SEL_UNDER_3_5):
+    if market_key in (SEL_UNDER_1_5, SEL_UNDER_2_5, SEL_UNDER_3_5):
         return calculate_under_fulltime_excel_parity(slices).get("final_odd")
     if market_key in _PT_MARKETS:
         return calculate_first_half_rate_to_odd(market_key, slices).get("final_odd")
@@ -682,18 +737,22 @@ def shrink_empirical_only(
     return empirical_p
 
 
-def calculate_first_half_draw_market_v1(
+def calculate_first_half_1x2_market_v1(
+    market_key: str,
     contexts: GoalMarketContexts,
     league_probs: dict[str, float | None],
 ) -> dict[str, Any]:
-    """Quota Cecchino X PT — hit-rate empirico HT draw + shrinkage lega."""
+    """Quota Cecchino 1/X/2 PT — hit-rate empirico HT + shrinkage lega."""
+    formula_version = (
+        FORMULA_DRAW_PT_V1 if market_key == SEL_DRAW_PT else FORMULA_HT_1X2_V1
+    )
     ctx_list = contexts.ht_slices()
     warnings: list[str] = []
 
     if _usable_context_count(ctx_list) == 0:
         return {
-            "market_key": SEL_DRAW_PT,
-            "formula_version": FORMULA_DRAW_PT_V1,
+            "market_key": market_key,
+            "formula_version": formula_version,
             "final_odd": None,
             "status": STATUS_INSUFFICIENT_DATA,
             "summary": None,
@@ -707,7 +766,7 @@ def calculate_first_half_draw_market_v1(
 
     emp_p, emp_rows, emp_warnings = weighted_empirical_probability(
         ctx_list,
-        SEL_DRAW_PT,
+        market_key,
         home_team_id=contexts.home_team_id,
         away_team_id=contexts.away_team_id,
         is_ht=True,
@@ -716,8 +775,8 @@ def calculate_first_half_draw_market_v1(
 
     if emp_p is None:
         return {
-            "market_key": SEL_DRAW_PT,
-            "formula_version": FORMULA_DRAW_PT_V1,
+            "market_key": market_key,
+            "formula_version": formula_version,
             "final_odd": None,
             "status": STATUS_INSUFFICIENT_DATA,
             "summary": None,
@@ -726,9 +785,9 @@ def calculate_first_half_draw_market_v1(
             "warnings": warnings,
         }
 
-    league_p = league_probs.get(SEL_DRAW_PT)
+    league_p = league_probs.get(market_key)
     if league_p is None:
-        warnings.append("missing_league_halftime_draw_probability")
+        warnings.append(f"missing_league_halftime_1x2_probability:{market_key}")
 
     final_raw = shrink_empirical_only(emp_p, overall_rel, league_p)
     final_odd, prob_raw, prob_capped, prob_warnings = probability_to_odd(final_raw)
@@ -748,16 +807,18 @@ def calculate_first_half_draw_market_v1(
     merged_ctx = _merge_context_rows(rel_rows, emp_rows)
     summary = {
         "empirical_probability": round(emp_p, 4),
-        "league_halftime_draw_probability": league_p,
+        "league_halftime_1x2_probability": league_p,
         "overall_reliability": round(overall_rel, 4),
         "reliability_badge": _reliability_badge(overall_rel),
         "probability_raw": round(prob_raw, 4),
         "probability_capped": round(prob_capped, 4),
     }
+    if market_key == SEL_DRAW_PT:
+        summary["league_halftime_draw_probability"] = league_p
 
     return {
-        "market_key": SEL_DRAW_PT,
-        "formula_version": FORMULA_DRAW_PT_V1,
+        "market_key": market_key,
+        "formula_version": formula_version,
         "final_odd": final_odd,
         "status": status,
         "summary": summary,
@@ -765,6 +826,14 @@ def calculate_first_half_draw_market_v1(
         "legacy_excel_parity": {"final_odd": None, "enabled_for_kpi": False},
         "warnings": warnings,
     }
+
+
+def calculate_first_half_draw_market_v1(
+    contexts: GoalMarketContexts,
+    league_probs: dict[str, float | None],
+) -> dict[str, Any]:
+    """Alias compatibile: Quota Cecchino X PT."""
+    return calculate_first_half_1x2_market_v1(SEL_DRAW_PT, contexts, league_probs)
 
 
 def build_goal_markets_v2(
@@ -778,7 +847,8 @@ def build_goal_markets_v2(
     league_probs = league_event_probabilities(league_fx)
 
     markets: dict[str, Any] = {}
-    markets[SEL_DRAW_PT] = calculate_first_half_draw_market_v1(contexts, league_probs)
+    for mk in _HT_1X2_MARKETS:
+        markets[mk] = calculate_first_half_1x2_market_v1(mk, contexts, league_probs)
     for mk in _FT_MARKETS + _PT_MARKETS:
         markets[mk] = calculate_goal_market_v2(
             mk,

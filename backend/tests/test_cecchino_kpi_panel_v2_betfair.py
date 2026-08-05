@@ -139,12 +139,82 @@ def test_normalize_legacy_label_only():
 def test_kpi_v2_columns_and_version():
     panel = _build()
     assert panel["version"] == KPI_V2_VERSION
+    assert panel.get("mapping_version") == "kpi_markets_v31_phase1"
     assert panel["bookmaker"]["name"] == "Betfair"
     assert panel["bookmaker"]["provider_bookmaker_id"] == 3
     cols = panel["columns"]
     assert "quota_book" in cols
     assert "rating" in cols
-    assert len(panel["rows"]) == 14
+    assert len(panel["rows"]) == 19
+
+
+def test_phase1_new_rows_present():
+    panel = _build()
+    keys = {r["market_key"] for r in panel["rows"]}
+    for mk, segno in (
+        ("UNDER_1_5", "Under 1.5"),
+        ("OVER_3_5", "Over 3.5"),
+        ("UNDER_PT_0_5", "Under PT 0.5"),
+        ("HOME_PT", "1 PT"),
+        ("AWAY_PT", "2 PT"),
+    ):
+        assert mk in keys
+        row = _row_by_key(panel, mk)
+        assert row["segno"] == segno
+        # Mock senza queste quote Book → non inventate
+        assert row["quota_book"] is None
+        assert row["status"] in ("not_available", "book_only", "insufficient_data")
+
+
+def test_phase1_rows_with_book_odds():
+    payload = _betfair_payload()
+    mkt = payload["bookmakers"][0]["markets"]
+    mkt["OVER_UNDER_GOALS"]["UNDER_1_5"] = 3.10
+    mkt["OVER_UNDER_GOALS"]["OVER_3_5"] = 3.40
+    mkt["OVER_UNDER_GOALS_FIRST_HALF"]["UNDER_PT_0_5"] = 2.80
+    mkt["MATCH_WINNER_1X2_FIRST_HALF"]["HOME_PT"] = 2.50
+    mkt["MATCH_WINNER_1X2_FIRST_HALF"]["AWAY_PT"] = 3.10
+    panel = build_cecchino_kpi_panel_v2_betfair(
+        final_odds=_final_odds(),
+        betfair_payload=payload,
+        goal_markets={
+            "UNDER_1_5": {
+                "market_key": "UNDER_1_5",
+                "final_odd": 2.90,
+                "status": "available",
+                "formula_version": FORMULA_V2,
+            },
+            "OVER_3_5": {
+                "market_key": "OVER_3_5",
+                "final_odd": 3.20,
+                "status": "available",
+                "formula_version": FORMULA_V2,
+            },
+            "UNDER_PT_0_5": {
+                "market_key": "UNDER_PT_0_5",
+                "final_odd": 2.70,
+                "status": "available",
+                "formula_version": FORMULA_V2,
+            },
+            "HOME_PT": {
+                "market_key": "HOME_PT",
+                "final_odd": 2.40,
+                "status": "available",
+                "formula_version": "first_half_1x2_empirical_shrinkage_v1",
+            },
+            "AWAY_PT": {
+                "market_key": "AWAY_PT",
+                "final_odd": 3.00,
+                "status": "available",
+                "formula_version": "first_half_1x2_empirical_shrinkage_v1",
+            },
+        },
+    )
+    for mk in ("UNDER_1_5", "OVER_3_5", "UNDER_PT_0_5", "HOME_PT", "AWAY_PT"):
+        row = _row_by_key(panel, mk)
+        assert row["quota_book"] is not None
+        assert row["quota_cecchino"] is not None
+        assert row["status"] == "available"
 
 
 def test_draw_pt_row_available_with_book_and_cecchino():

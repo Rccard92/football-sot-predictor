@@ -31,6 +31,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_3_5,
@@ -272,11 +273,11 @@ def test_emp_v11_panel_item_key():
 
 
 def test_emp_v11_supported_panel_markets():
-    for mk in (SEL_HOME, SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5, SEL_OVER_2_5):
+    for mk in (SEL_HOME, SEL_DRAW_PT, SEL_HOME_PT, SEL_OVER_1_5, SEL_UNDER_3_5, SEL_OVER_2_5):
         assert is_market_settlement_supported(mk)
         assert mk in SUPPORTED_SELECTIONS
     assert not is_market_settlement_supported("BTTS_YES")
-    assert not is_market_settlement_supported("HOME_PT")
+    assert not is_market_settlement_supported("BTTS_NO")
 
 
 def test_emp_v11_global_index():

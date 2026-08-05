@@ -15,6 +15,10 @@ from app.services.bookmakers.market_normalize import (
     normalize_market_name,
     normalize_over_under_selection,
     SEL_OVER_1_5,
+    SEL_OVER_3_5,
+    SEL_UNDER_1_5,
+    SEL_UNDER_PT_0_5,
+    SEL_UNKNOWN,
 )
 
 
@@ -42,6 +46,26 @@ def test_match_goals_without_ou_values_stays_unknown():
 
 def test_over_selection_helper():
     assert normalize_over_under_selection("Over 1.5") == SEL_OVER_1_5
+
+
+def test_phase1_ou_ft_complements():
+    assert normalize_over_under_selection("Under 1.5") == SEL_UNDER_1_5
+    assert normalize_over_under_selection("Under 1,5") == SEL_UNDER_1_5
+    assert normalize_over_under_selection("Over 3.5") == SEL_OVER_3_5
+    assert normalize_over_under_selection("Over 3,5") == SEL_OVER_3_5
+
+
+def test_phase1_ou_pt_under_05():
+    assert normalize_first_half_over_under_selection("Under 0.5") == SEL_UNDER_PT_0_5
+    assert normalize_first_half_over_under_selection("Under 0,5") == SEL_UNDER_PT_0_5
+
+
+def test_rejects_ambiguous_values():
+    assert normalize_over_under_selection("Exactly 2") == SEL_UNKNOWN
+    assert normalize_first_half_over_under_selection("Exactly 1") == SEL_UNKNOWN
+    assert is_main_first_half_goals_over_under("Goals Over/Under Second Half") is False
+    assert is_main_full_time_goals_over_under("Goal Line", 5) is False
+    assert is_main_full_time_goals_over_under("Asian Handicap", 5) is False
 
 
 def test_strict_full_time_helper():
