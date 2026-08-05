@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.api_usage_event import PROVIDER_API_FOOTBALL, ApiUsageEvent
-from app.services.api_usage_context import BudgetGuardStop
 
 _SENSITIVE_PARAM_KEYS = frozenset({"key", "api_key", "x-apisports-key", "token"})
 
@@ -182,17 +181,13 @@ def get_api_usage_summary(db: Session, *, usage_date: date) -> dict[str, Any]:
 
 
 def check_api_budget_before_scan(db: Session, *, usage_date: date | None = None) -> None:
-    settings = get_settings()
-    target = usage_date or _utcnow().date()
-    used = count_api_calls_for_date(db, usage_date=target)
-    remaining = int(settings.api_football_daily_budget) - used
-    if remaining < int(settings.api_football_safe_stop_remaining):
-        raise BudgetGuardStop(
-            status="failed_budget_guard",
-            message="Scansione interrotta per proteggere il budget API giornaliero.",
-            api_calls_total=used,
-            details={"remaining": remaining, "used_today": used},
-        )
+    """No-op: i guard locali non interrompono più la scansione.
+
+    Il conteggio API resta informativo. L'unica interruzione per quota è
+    ApiFootballQuotaExhausted dal provider.
+    """
+    _ = (db, usage_date)
+    return None
 
 
 def check_api_budget_during_scan(
@@ -202,25 +197,9 @@ def check_api_budget_during_scan(
     usage_date: date,
     job_calls: int,
 ) -> None:
-    settings = get_settings()
-    used_today = count_api_calls_for_date(db, usage_date=usage_date)
-    remaining = int(settings.api_football_daily_budget) - used_today
-    max_job = int(settings.api_football_cecchino_scan_max_calls)
-
-    if job_calls >= max_job:
-        raise BudgetGuardStop(
-            status="partial_stopped_budget",
-            message="Scansione interrotta per proteggere il budget API giornaliero.",
-            api_calls_total=job_calls,
-            details={"reason": "job_max_calls", "job_calls": job_calls, "max_job": max_job},
-        )
-    if remaining < int(settings.api_football_safe_stop_remaining):
-        raise BudgetGuardStop(
-            status="partial_stopped_budget",
-            message="Scansione interrotta per proteggere il budget API giornaliero.",
-            api_calls_total=job_calls,
-            details={"reason": "daily_remaining", "remaining": remaining},
-        )
+    """No-op: nessun CAP locale (max calls / safe_stop / daily budget)."""
+    _ = (db, job_id, usage_date, job_calls)
+    return None
 
 
 def build_api_usage_debug_for_fixture(

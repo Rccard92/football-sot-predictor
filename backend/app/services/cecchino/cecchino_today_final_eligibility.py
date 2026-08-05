@@ -41,6 +41,7 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_LOW_SAMPLE,
     WARNING_ZERO_PROBABILITY,
 )
+from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_VERSION
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 from app.services.cecchino.cecchino_today_constants import (
     MIN_AWAY_CONTEXT,
@@ -50,6 +51,10 @@ from app.services.cecchino.cecchino_today_constants import (
     MIN_RECENT_CONTEXT_5,
     MIN_RECENT_TOTAL_6,
 )
+
+_KPI_V2_VERSION_PREFIX = "cecchino_kpi_v2_betfair"
+_KPI_V2_FIELD_KEYS = ("quota_cecchino", "quota_book", "edge_pct")
+_KPI_LEGACY_FIELD_KEYS = ("cecchino", "book", "edge")
 
 _REQUIRED_BOOKMAKERS = ("Betfair",)
 _REQUIRED_SELECTIONS = ("HOME", "DRAW", "AWAY")
@@ -283,6 +288,40 @@ def _check_final_odds_complete(final: dict[str, Any] | None) -> tuple[bool, list
     return True, []
 
 
+def _kpi_1x2_rows(kpi_panel: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = kpi_panel.get("rows") or []
+    row_by_key = {r.get("market_key"): r for r in rows if isinstance(r, dict)}
+    return [row_by_key[k] for k in _KPI_1X2_KEYS if k in row_by_key]
+
+
+def _rows_have_any_fields(rows: list[dict[str, Any]], field_keys: tuple[str, ...]) -> bool:
+    for row in rows:
+        if any(k in row for k in field_keys):
+            return True
+    return False
+
+
+def _classify_kpi_panel_schema(kpi_panel: dict[str, Any]) -> str:
+    """Classifica lo schema KPI: v2 | legacy | unknown."""
+    version = str(kpi_panel.get("version") or "")
+    rows_1x2 = _kpi_1x2_rows(kpi_panel)
+    has_v2_shape = _rows_have_any_fields(rows_1x2, _KPI_V2_FIELD_KEYS)
+    has_legacy_shape = _rows_have_any_fields(rows_1x2, _KPI_LEGACY_FIELD_KEYS)
+    is_v2_family = version == KPI_V2_VERSION or version.startswith(_KPI_V2_VERSION_PREFIX)
+
+    if is_v2_family:
+        # Famiglia V2 dichiarata: non degradare a legacy anche se i campi sono incompleti.
+        if has_legacy_shape and not has_v2_shape:
+            return "unknown"
+        return "v2"
+
+    if has_v2_shape:
+        return "v2"
+    if has_legacy_shape:
+        return "legacy"
+    return "unknown"
+
+
 def _check_kpi_1x2_complete(kpi_panel: dict[str, Any] | None) -> tuple[bool, list[str], str]:
     if not kpi_panel:
         return False, ["kpi_panel_missing"], "insufficient_data"
@@ -290,7 +329,14 @@ def _check_kpi_1x2_complete(kpi_panel: dict[str, Any] | None) -> tuple[bool, lis
     rows = kpi_panel.get("rows") or []
     row_by_key = {r.get("market_key"): r for r in rows if isinstance(r, dict)}
     missing_rows: list[str] = []
-    is_v2 = kpi_panel.get("version") == "cecchino_kpi_v2_betfair"
+    schema = _classify_kpi_panel_schema(kpi_panel)
+
+    if schema == "unknown":
+        version = str(kpi_panel.get("version") or "missing")
+        bm_status = kpi_panel.get("bookmaker_status") or "unknown"
+        return False, [f"kpi_unknown_version:{version}"], bm_status
+
+    is_v2 = schema == "v2"
 
     for key in _KPI_1X2_KEYS:
         row = row_by_key.get(key)

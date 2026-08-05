@@ -27,6 +27,7 @@ from app.models.cecchino_today_scan_job import (
     JOB_STATUS_FAILED_TIMEOUT,
     JOB_STATUS_INTERRUPTED,
     JOB_STATUS_PARTIAL_STOPPED_BUDGET,
+    JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
     JOB_STATUS_SKIPPED_CONCURRENT_SCAN,
     CecchinoTodayScanJob,
 )
@@ -223,7 +224,11 @@ def outcome_to_exit_code(outcome: dict[str, Any]) -> int:
         return EXIT_OK
     if status == JOB_STATUS_FAILED_TIMEOUT:
         return EXIT_TIMEOUT
-    if status in {JOB_STATUS_PARTIAL_STOPPED_BUDGET, JOB_STATUS_FAILED_BUDGET_GUARD}:
+    if status in {
+        JOB_STATUS_PARTIAL_STOPPED_BUDGET,
+        JOB_STATUS_FAILED_BUDGET_GUARD,
+        JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
+    }:
         return EXIT_BUDGET
     if status in {JOB_STATUS_FAILED, JOB_STATUS_INTERRUPTED}:
         return EXIT_ERROR
@@ -238,6 +243,7 @@ def _is_transient_retryable(outcome: dict[str, Any]) -> bool:
     if outcome.get("status") in {
         JOB_STATUS_PARTIAL_STOPPED_BUDGET,
         JOB_STATUS_FAILED_BUDGET_GUARD,
+        JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
         JOB_STATUS_FAILED_TIMEOUT,
         JOB_STATUS_SKIPPED_CONCURRENT_SCAN,
         JOB_STATUS_INTERRUPTED,
@@ -511,6 +517,7 @@ def run_auto_scan(
             if last_outcome.get("status") in {
                 JOB_STATUS_PARTIAL_STOPPED_BUDGET,
                 JOB_STATUS_FAILED_BUDGET_GUARD,
+                JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
             }:
                 return EXIT_BUDGET
             if last_outcome.get("status") == JOB_STATUS_INTERRUPTED:

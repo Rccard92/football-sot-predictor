@@ -14,11 +14,6 @@ os.environ.setdefault(
 )
 
 from app.models.cecchino_today_fixture import ELIGIBILITY_DISCOVERED, ELIGIBILITY_EXCLUDED_CUP
-from app.models.cecchino_today_scan_job import (
-    JOB_STATUS_FAILED_BUDGET_GUARD,
-    JOB_STATUS_PARTIAL_STOPPED_BUDGET,
-)
-from app.services.api_usage_context import BudgetGuardStop
 from app.services.api_usage_service import (
     check_api_budget_before_scan,
     check_api_budget_during_scan,
@@ -71,7 +66,10 @@ def test_scan_run_census_discovered_status():
                         "app.services.cecchino.cecchino_today_service.is_cecchino_allowed_competition",
                         return_value=(False, ELIGIBILITY_EXCLUDED_CUP),
                     ):
-                        with patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan"):
+                        with patch(
+                            "app.services.cecchino.cecchino_today_service.check_api_budget_during_scan",
+                            create=True,
+                        ):
                             report = run_scan(db, scan_date=TARGET_DATE, client=client, force_rescan=True)
 
     assert report["status"] == "ok"
@@ -94,7 +92,10 @@ def test_competition_gate_excludes_without_odds_api():
                         "app.services.cecchino.cecchino_today_service.is_cecchino_allowed_competition",
                         return_value=(False, ELIGIBILITY_EXCLUDED_CUP),
                     ):
-                        with patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan"):
+                        with patch(
+                            "app.services.cecchino.cecchino_today_service.check_api_budget_during_scan",
+                            create=True,
+                        ):
                             with patch(
                                 "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
                                 odds_fetch,
@@ -124,7 +125,10 @@ def test_bookmaker_gate_fail_skips_bootstrap():
                             "app.services.cecchino.cecchino_today_service.is_fixture_not_started",
                             return_value=True,
                         ):
-                            with patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan"):
+                            with patch(
+                            "app.services.cecchino.cecchino_today_service.check_api_budget_during_scan",
+                            create=True,
+                        ):
                                 with patch(
                                     "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
                                     return_value=({}, [], "fixture_single_call", False),
@@ -286,25 +290,24 @@ def test_api_usage_event_recorded():
     db.flush.assert_called_once()
 
 
-def test_budget_guard_before_scan():
+def test_budget_guards_are_noop():
+    """I guard locali non interrompono più la scansione (nessun CAP)."""
     db = MagicMock()
     with patch("app.services.api_usage_service.count_api_calls_for_date", return_value=7100):
-        with pytest.raises(BudgetGuardStop) as exc:
-            check_api_budget_before_scan(db, usage_date=TARGET_DATE)
-    assert exc.value.status == JOB_STATUS_FAILED_BUDGET_GUARD
-
-
-def test_budget_guard_during_scan_job_max():
-    db = MagicMock()
+        check_api_budget_before_scan(db, usage_date=TARGET_DATE)
     with patch("app.services.api_usage_service.count_api_calls_for_date", return_value=100):
-        with pytest.raises(BudgetGuardStop) as exc:
-            check_api_budget_during_scan(
-                db,
-                job_id="jid",
-                usage_date=TARGET_DATE,
-                job_calls=1000,
-            )
-    assert exc.value.status == JOB_STATUS_PARTIAL_STOPPED_BUDGET
+        check_api_budget_during_scan(
+            db,
+            job_id="jid",
+            usage_date=TARGET_DATE,
+            job_calls=1000,
+        )
+        check_api_budget_during_scan(
+            db,
+            job_id="jid",
+            usage_date=TARGET_DATE,
+            job_calls=50000,
+        )
 
 
 def test_scan_metrics_result_summary_funnel():

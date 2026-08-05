@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     database_url: str
     api_football_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
-    api_football_daily_budget: int = 7500
-    api_football_cecchino_scan_max_calls: int = 1000
-    api_football_safe_stop_remaining: int = 500
+    api_football_daily_budget: int = 7500  # solo informativo (residuo teorico piano)
+    api_football_cecchino_scan_max_calls: int = 1000  # deprecato: non interrompe più la scan
+    api_football_safe_stop_remaining: int = 500  # deprecato: non interrompe più la scan
     cecchino_odds_bookmaker_fallback: bool = True
     cecchino_odds_negative_cache_hours: int = 6
     cecchino_league_stats_cache_hours: int = 12

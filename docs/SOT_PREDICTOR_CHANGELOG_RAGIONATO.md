@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Restore eligibility and remove scan API guards (2026-08-06)
+
+- Perché: (A) il validatore eleggibilità riconosceva il pannello KPI V2 solo con la stringa obsoleta `cecchino_kpi_v2_betfair`, mentre il builder scrive `cecchino_kpi_v2_betfair_markets_v31_p1` → path legacy → falsi `excluded_kpi_not_calculable`. (B) la scansione veniva fermata da CAP locali (~1000 call/job, safe_stop, daily budget) prima della quota reale del provider.
+- Cosa: riconoscimento KPI V2 tramite `KPI_V2_VERSION` / famiglia / shape `quota_*`; gate 1X2 invariato (PT/DC/Goal opzionali); rimozione guard da `start_scan_job`/`run_scan`; helper budget no-op; `ApiFootballQuotaExhausted` + status `provider_quota_exhausted` con risultati parziali; `scan_date` vs `execution_date`; FE messaggi distinti (quota vs vecchio budget locale).
+- Cosa non fa: formule Cecchino / V3 / V3.1 invariate; nessun CAP sostitutivo; nessun delete storico; filtri competizione e gate stats invariati. Post-deploy: revalidate-day + force rescan `2026-08-08`.
+
 ## Feat — Add purchasability v3.1 shadow candidate (Fase 2A) (2026-08-05)
 
 - Perché: introdurre una candidate empirica parallela (19 mercati, complemento matematico, quote reali, gate Rating, × Affidabilità storica) senza promuovere né alterare `fixed_discount_v3`.

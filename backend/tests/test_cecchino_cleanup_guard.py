@@ -39,6 +39,7 @@ def test_run_scan_does_not_call_cleanup():
         ),
         patch(
             "app.services.cecchino.cecchino_today_service.check_api_budget_during_scan",
+            create=True,
         ),
         patch(
             "app.services.cecchino.cecchino_today_service._emit_progress",

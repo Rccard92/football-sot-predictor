@@ -26,26 +26,56 @@ function formatElapsed(startedAt: string | null, nowMs: number): string | null {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
+export function isHistoricalBudgetStop(status: string): boolean {
+  return status === 'partial_stopped_budget' || status === 'failed_budget_guard'
+}
+
+export function isProviderQuotaExhausted(status: string): boolean {
+  return status === 'provider_quota_exhausted'
+}
+
+export function scanJobTitle(job: CecchinoTodayScanJob): string {
+  const { status } = job
+  if (status === 'queued' || status === 'running') return 'Scansione in corso'
+  if (status === 'skipped_concurrent_scan') return 'Scansione saltata (concorrenza)'
+  if (status === 'completed') return 'Scansione completata'
+  if (isProviderQuotaExhausted(status)) return 'Scansione interrotta: richieste API esaurite'
+  if (isHistoricalBudgetStop(status)) return 'Vecchio arresto preventivo per budget locale'
+  if (status === 'failed_timeout') return 'Scansione interrotta per timeout'
+  if (status === 'interrupted') return 'Scansione interrotta dal processo'
+  if (status === 'failed' || status === 'cancelled') return 'Scansione interrotta'
+  return 'Scansione giornata'
+}
+
 export function CecchinoTodayScanProgressCard({ job }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   const pct = computeScanJobProgressPct(job)
   const apiMetrics = getScanJobApiMetrics(job)
   const isRunning = job.status === 'queued' || job.status === 'running'
-  const isBudgetStop =
-    job.status === 'partial_stopped_budget' || job.status === 'failed_budget_guard'
+  const isQuotaStop = isProviderQuotaExhausted(job.status)
+  const isHistoricalBudget = isHistoricalBudgetStop(job.status)
   const isSkippedConcurrent = job.status === 'skipped_concurrent_scan'
   const isTimeout = job.status === 'failed_timeout'
   const isInterrupted = job.status === 'interrupted'
   const isFailed =
     job.status === 'failed' ||
     job.status === 'cancelled' ||
-    isBudgetStop ||
+    isQuotaStop ||
+    isHistoricalBudget ||
     isTimeout ||
     isInterrupted
   const isCompleted = job.status === 'completed' || isSkippedConcurrent
   const autoScan = job.result_summary?.auto_scan
+  const executionDate =
+    job.result_summary?.execution_date ||
+    autoScan?.local_execution_date ||
+    null
   const showBar = isRunning || isCompleted || (isFailed && pct > 0)
   const elapsed = useMemo(() => formatElapsed(job.started_at, nowMs), [job.started_at, nowMs])
+  const remaining =
+    job.result_summary?.fixtures_remaining ??
+    job.result_summary?.unprocessed_count ??
+    null
 
   useEffect(() => {
     if (!isRunning || !job.started_at) return
@@ -65,26 +95,26 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">
-            {isRunning
-              ? 'Scansione in corso'
-              : isSkippedConcurrent
-                ? 'Scansione saltata (concorrenza)'
-                : isCompleted
-                  ? 'Scansione completata'
-                  : isFailed
-                    ? isBudgetStop
-                      ? 'Scansione interrotta per budget API'
-                      : isTimeout
-                        ? 'Scansione interrotta per timeout'
-                        : isInterrupted
-                          ? 'Scansione interrotta dal processo'
-                          : 'Scansione interrotta'
-                    : 'Scansione giornata'}
-          </h3>
+          <h3 className="text-sm font-semibold text-slate-900">{scanJobTitle(job)}</h3>
           <p className="mt-1 text-xs text-slate-600">
-            {job.scan_date} — {stepLabel(job.current_step)}
+            Partite: {job.scan_date} — {stepLabel(job.current_step)}
           </p>
+          {executionDate && executionDate !== job.scan_date ? (
+            <p className="mt-1 text-xs text-slate-500">Esecuzione API: {executionDate}</p>
+          ) : executionDate ? (
+            <p className="mt-1 text-xs text-slate-500">Esecuzione: {executionDate}</p>
+          ) : null}
+          {isQuotaStop ? (
+            <p className="mt-1 text-xs text-slate-600">
+              API-Football ha confermato che non sono disponibili altre richieste. I risultati già
+              elaborati sono stati conservati.
+            </p>
+          ) : null}
+          {isHistoricalBudget ? (
+            <p className="mt-1 text-xs text-slate-600">
+              Stato storico: arresto locale preventivo (non più usato dalle nuove scansioni).
+            </p>
+          ) : null}
           {autoScan?.execution_source === 'auto_scan' ? (
             <p className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
               <span>Origine: Automatica</span>
@@ -139,6 +169,11 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
         <span className="rounded bg-white/80 px-2 py-1 text-slate-700">
           Quote controllate: {job.odds_checked}
         </span>
+        {remaining != null && remaining > 0 ? (
+          <span className="rounded bg-white/80 px-2 py-1 text-slate-700">
+            Residue: {remaining}
+          </span>
+        ) : null}
         {elapsed ? (
           <span className="rounded bg-white/80 px-2 py-1 text-slate-500">Trascorso: {elapsed}</span>
         ) : null}
@@ -153,11 +188,14 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
         <p>Teams: {apiMetrics.teams}</p>
         <p>Fixtures: {apiMetrics.fixtures}</p>
         {apiMetrics.budgetRemaining != null ? (
-          <p>Budget residuo stimato: {apiMetrics.budgetRemaining.toLocaleString('it-IT')}</p>
+          <p>
+            Residuo teorico piano (informativo):{' '}
+            {apiMetrics.budgetRemaining.toLocaleString('it-IT')}
+          </p>
         ) : null}
       </div>
 
-      {(job.warnings?.length ?? 0) > 0 && (isRunning || isCompleted) ? (
+      {(job.warnings?.length ?? 0) > 0 && (isRunning || isCompleted || isQuotaStop) ? (
         <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-amber-800">
           {job.warnings.slice(0, 3).map((w) => (
             <li key={w}>{w}</li>

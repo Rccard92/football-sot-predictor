@@ -106,6 +106,10 @@ export type CecchinoTodayAutoScanMeta = {
 
 export type CecchinoTodayScanJobResultSummary = {
   fixtures_found?: number
+  fixtures_discovered?: number
+  fixtures_processed?: number
+  fixtures_remaining?: number
+  unprocessed_count?: number
   fixtures_censused?: number
   after_competition_filter?: number
   fixtures_after_competition_gate?: number
@@ -123,6 +127,10 @@ export type CecchinoTodayScanJobResultSummary = {
   api_calls_by_endpoint?: Record<string, number>
   odds_strategy?: Record<string, number>
   duration_seconds?: number
+  scan_date?: string
+  execution_date?: string
+  stopped_at_fixture?: number | null
+  stopped_at_endpoint?: string | null
   excluded_funnel?: {
     competition?: number
     bookmaker?: number
@@ -220,6 +228,7 @@ export const SCAN_STEP_LABELS: Record<string, string> = {
   validating_eligibility: 'Validazione eleggibilità',
   saving_snapshots: 'Salvataggio snapshot',
   completed: 'Completato',
+  provider_quota_exhausted: 'Richieste API esaurite',
 }
 
 export type CecchinoTodayScanMeta = {

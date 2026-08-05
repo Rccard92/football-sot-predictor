@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import time
@@ -17,9 +17,103 @@ TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
 BACKOFF_BASE_S = 0.5
 
+_QUOTA_REMAINING_HEADERS = (
+    "x-ratelimit-requests-remaining",
+    "x-ratelimit-remaining",
+    "x-requests-remaining",
+)
+
+_QUOTA_EXHAUSTED_MESSAGE_FRAGMENTS = (
+    "request limit",
+    "requests limit",
+    "quota",
+    "you have reached the limit",
+    "daily limit",
+    "rate limit exceeded for day",
+    "too many requests for your plan",
+)
+
 
 class ApiFootballError(Exception):
     """Errore chiamata API-Football (HTTP o payload)."""
+
+
+class ApiFootballQuotaExhausted(ApiFootballError):
+    """Quota giornaliera provider realmente esaurita (non rate-limit transiente)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        endpoint: str | None = None,
+        status_code: int | None = None,
+        provider_errors: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.endpoint = endpoint
+        self.status_code = status_code
+        self.provider_errors = provider_errors
+        self.headers = headers or {}
+
+
+def _header_map(resp: httpx.Response) -> dict[str, str]:
+    return {str(k).lower(): str(v) for k, v in resp.headers.items()}
+
+
+def _remaining_from_headers(headers: dict[str, str]) -> int | None:
+    for key in _QUOTA_REMAINING_HEADERS:
+        raw = headers.get(key)
+        if raw is None:
+            continue
+        try:
+            return int(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _errors_indicate_quota_exhausted(errors: Any) -> bool:
+    """True solo se il payload errors conferma esaurimento richieste/piano."""
+    if not errors:
+        return False
+    if isinstance(errors, dict):
+        if "requests" in errors:
+            return True
+        texts = [str(v).lower() for v in errors.values()]
+        keys = [str(k).lower() for k in errors.keys()]
+    elif isinstance(errors, list):
+        texts = [str(v).lower() for v in errors]
+        keys = []
+    else:
+        texts = [str(errors).lower()]
+        keys = []
+
+    blob = " ".join(keys + texts)
+    return any(frag in blob for frag in _QUOTA_EXHAUSTED_MESSAGE_FRAGMENTS)
+
+
+def is_provider_quota_exhausted(
+    *,
+    status_code: int | None,
+    errors: Any = None,
+    headers: dict[str, str] | None = None,
+) -> bool:
+    """Classifica esaurimento quota reale del provider.
+
+    Non considera automaticamente quota esaurita un 429 generico, timeout,
+    5xx, auth fallita o payload vuoto.
+    """
+    hdrs = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+    remaining = _remaining_from_headers(hdrs)
+
+    if _errors_indicate_quota_exhausted(errors):
+        return True
+
+    if remaining is not None and remaining <= 0 and status_code in (429, 403):
+        return True
+
+    return False
 
 
 class ApiFootballClient:
@@ -74,6 +168,36 @@ class ApiFootballClient:
             negative_cache_hit=ctx.negative_cache_hit,
         )
 
+    def _raise_quota_if_needed(
+        self,
+        *,
+        path: str,
+        resp: httpx.Response,
+        errors: Any = None,
+        elapsed_ms: int,
+        query: dict[str, Any],
+    ) -> None:
+        headers = _header_map(resp)
+        if not is_provider_quota_exhausted(
+            status_code=resp.status_code,
+            errors=errors,
+            headers=headers,
+        ):
+            return
+        self._record_usage(
+            path=path,
+            params=query,
+            status_code=resp.status_code,
+            duration_ms=elapsed_ms,
+        )
+        raise ApiFootballQuotaExhausted(
+            "API-Football ha confermato che non sono disponibili altre richieste.",
+            endpoint=path,
+            status_code=resp.status_code,
+            provider_errors=errors,
+            headers=headers,
+        )
+
     def get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if not (self._api_key or "").strip():
             raise ApiFootballError("API_FOOTBALL_KEY non configurata")
@@ -98,6 +222,23 @@ class ApiFootballClient:
                     list(query.keys()),
                 )
 
+                # Controlla quota provider prima dei retry transienti.
+                errors_preview: Any = None
+                if "application/json" in (resp.headers.get("content-type") or ""):
+                    try:
+                        preview = resp.json()
+                        if isinstance(preview, dict):
+                            errors_preview = preview.get("errors")
+                    except Exception:
+                        errors_preview = None
+                self._raise_quota_if_needed(
+                    path=path,
+                    resp=resp,
+                    errors=errors_preview,
+                    elapsed_ms=elapsed_ms,
+                    query=query,
+                )
+
                 if resp.status_code in TRANSIENT_STATUS and attempt < MAX_RETRIES:
                     wait = BACKOFF_BASE_S * (2 ** (attempt - 1))
                     if resp.status_code == 429:
@@ -111,6 +252,13 @@ class ApiFootballClient:
                 data = resp.json()
                 errors = data.get("errors")
                 if errors:
+                    self._raise_quota_if_needed(
+                        path=path,
+                        resp=resp,
+                        errors=errors,
+                        elapsed_ms=elapsed_ms,
+                        query=query,
+                    )
                     self._record_usage(
                         path=path,
                         params=query,
@@ -125,8 +273,23 @@ class ApiFootballClient:
                     duration_ms=elapsed_ms,
                 )
                 return data
+            except ApiFootballQuotaExhausted:
+                raise
             except httpx.HTTPStatusError as e:
                 last_exc = e
+                if e.response is not None:
+                    try:
+                        err_body = e.response.json()
+                        err_errors = err_body.get("errors") if isinstance(err_body, dict) else None
+                    except Exception:
+                        err_errors = None
+                    self._raise_quota_if_needed(
+                        path=path,
+                        resp=e.response,
+                        errors=err_errors,
+                        elapsed_ms=int((time.perf_counter() - started) * 1000),
+                        query=query,
+                    )
                 if e.response is not None and e.response.status_code in TRANSIENT_STATUS and attempt < MAX_RETRIES:
                     wait = BACKOFF_BASE_S * (2 ** (attempt - 1))
                     time.sleep(wait)

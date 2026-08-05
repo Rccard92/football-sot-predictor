@@ -36,12 +36,14 @@ from app.models.cecchino_today_fixture import (
     MATCH_UPCOMING,
     PROVIDER_API_FOOTBALL,
 )
-from app.services.api_football_client import ApiFootballClient, ApiFootballError
-from app.services.api_usage_context import ApiUsageContext, BudgetGuardStop
+from app.services.api_football_client import (
+    ApiFootballClient,
+    ApiFootballError,
+    ApiFootballQuotaExhausted,
+)
+from app.services.api_usage_context import ApiUsageContext
 from app.services.api_usage_service import (
     build_api_usage_debug_for_fixture,
-    check_api_budget_during_scan,
-    count_job_api_calls,
     get_api_usage_summary,
 )
 from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_selection_odds
@@ -816,9 +818,15 @@ def run_scan(
     if run_metrics.started_at <= 0:
         run_metrics.started_at = time.time()
     bootstrapped_leagues: set[tuple[int, int]] = set()
-    budget_stopped = False
-    budget_stop_status = "partial_stopped_budget"
-    budget_stop_message = "Scansione interrotta per proteggere il budget API giornaliero."
+    provider_quota_stopped = False
+    provider_quota_message = (
+        "API-Football ha confermato che non sono disponibili altre richieste. "
+        "I risultati già elaborati sono stati conservati."
+    )
+    provider_quota_endpoint: str | None = None
+    provider_quota_fixture: int | None = None
+    provider_quota_league: int | None = None
+    execution_date = datetime.now(ZoneInfo(timezone)).date()
     v31_hr_context: dict[str, Any] | None = None
 
     _emit_progress(progress, current_step="fetching_fixtures")
@@ -827,11 +835,35 @@ def run_scan(
         raw_items = af_client.get_fixtures_by_date(resolved_date.isoformat(), timezone=timezone)
         run_metrics.api_calls["fixtures"] = run_metrics.api_calls.get("fixtures", 0) + 1
         run_metrics.sync_api_calls_total()
+    except ApiFootballQuotaExhausted as exc:
+        err_report = {
+            "status": "provider_quota_exhausted",
+            "version": CECCHINO_TODAY_VERSION,
+            "scan_date": resolved_date.isoformat(),
+            "execution_date": execution_date.isoformat(),
+            "diagnostic_code": "provider_quota_exhausted",
+            "message": str(exc) or provider_quota_message,
+            "stopped_at_endpoint": getattr(exc, "endpoint", None) or "fixtures",
+            "stopped_at_fixture": None,
+            "fixtures_discovered": 0,
+            "fixtures_processed": 0,
+            "fixtures_remaining": 0,
+            "unprocessed_count": 0,
+            "total_discovered": 0,
+            "eligible": 0,
+            "excluded": {},
+            "excluded_total": 0,
+            "warnings": [],
+            "errors": [str(exc) or provider_quota_message],
+        }
+        _emit_progress(progress, current_step="provider_quota_exhausted", errors=err_report["errors"])
+        return err_report
     except ApiFootballError as exc:
         err_report = {
             "status": "error",
             "version": CECCHINO_TODAY_VERSION,
             "scan_date": resolved_date.isoformat(),
+            "execution_date": execution_date.isoformat(),
             "message": str(exc),
             "total_discovered": 0,
             "eligible": 0,
@@ -966,27 +998,13 @@ def run_scan(
     }
 
     for batch_start in range(0, total, SCAN_BATCH_SIZE):
-        if budget_stopped:
+        if provider_quota_stopped:
             break
         batch = raw_items[batch_start : batch_start + SCAN_BATCH_SIZE]
         for item in batch:
             fixtures_checked += 1
             api_fid: int | None = None
             try:
-                try:
-                    check_api_budget_during_scan(
-                        db,
-                        job_id=job_id,
-                        usage_date=resolved_date,
-                        job_calls=count_job_api_calls(db, job_id) if job_id else run_metrics.api_calls_total,
-                    )
-                except BudgetGuardStop as bg:
-                    budget_stopped = True
-                    budget_stop_status = bg.status
-                    budget_stop_message = bg.message
-                    errors.append(bg.message)
-                    break
-
                 brief = _item_brief(item)
                 api_fid = brief["provider_fixture_id"]
                 row_warnings: list[str] = []
@@ -1628,6 +1646,28 @@ def run_scan(
                     previous_status=prev_status,
                 )
                 by_status[eligibility_status] += 1
+            except ApiFootballQuotaExhausted as exc:
+                # Non trasformare in missing_bookmaker / excluded: interrompi il ciclo.
+                provider_quota_stopped = True
+                provider_quota_endpoint = getattr(exc, "endpoint", None)
+                provider_quota_fixture = api_fid
+                try:
+                    league_raw = (item.get("league") or {}).get("id")
+                    provider_quota_league = int(league_raw) if league_raw is not None else None
+                except (TypeError, ValueError):
+                    provider_quota_league = None
+                msg = str(exc) or provider_quota_message
+                if msg not in errors:
+                    errors.append(msg)
+                # La fixture corrente non è stata completata: non contarla come elaborata.
+                fixtures_checked = max(0, fixtures_checked - 1)
+                logger.warning(
+                    "CecchinoTodayJob provider_quota_exhausted job_id=%s fixture=%s endpoint=%s",
+                    job_id,
+                    api_fid,
+                    provider_quota_endpoint,
+                )
+                break
             except Exception as exc:
                 logger.exception(
                     "CecchinoTodayJob fixture_error job_id=%s provider_fixture_id=%s error=%s",
@@ -1695,9 +1735,9 @@ def run_scan(
                         fixtures_checked,
                         total,
                         api_fid,
-                        "budget_stop" if budget_stopped else "ok",
+                        "provider_quota_exhausted" if provider_quota_stopped else "ok",
                     )
-            if budget_stopped:
+            if provider_quota_stopped:
                 break
 
     db.commit()
@@ -1713,7 +1753,13 @@ def run_scan(
         warnings=warnings,
         errors=errors,
     )
-    report["fixtures_processed"] = total
+    fixtures_processed = fixtures_checked if provider_quota_stopped else total
+    fixtures_remaining = max(0, total - fixtures_processed)
+    report["fixtures_discovered"] = total
+    report["fixtures_processed"] = fixtures_processed
+    report["fixtures_remaining"] = fixtures_remaining
+    report["unprocessed_count"] = fixtures_remaining
+    report["execution_date"] = execution_date.isoformat()
     report["provider_items_received"] = provider_items_received
     report["provider_out_of_scan_date_skipped"] = provider_out_of_scan_date_skipped
     report["fixtures_in_scan_date"] = fixtures_in_scan_date
@@ -1726,7 +1772,8 @@ def run_scan(
     duration = time.time() - run_metrics.started_at
     excluded_summary = {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE}
     run_metrics.excluded_summary = dict(excluded_summary)
-    api_usage_summary = get_api_usage_summary(db, usage_date=resolved_date)
+    # Consumo API attribuito al giorno reale di esecuzione, non a scan_date.
+    api_usage_summary = get_api_usage_summary(db, usage_date=execution_date)
     run_metrics.budget_remaining_estimated = api_usage_summary.get("estimated_remaining_daily_budget")
     report["result_summary"] = run_metrics.to_result_summary(
         fixtures_found=total,
@@ -1742,22 +1789,51 @@ def run_scan(
         fixtures_in_scan_date=fixtures_in_scan_date,
         out_of_scan_date_examples=out_of_scan_date_examples,
     )
-    if budget_stopped:
-        report["status"] = budget_stop_status
-        report["message"] = budget_stop_message
-        report["budget_stopped"] = True
-        if budget_stop_message not in report["errors"]:
-            report["errors"].append(budget_stop_message)
-    _emit_progress(
-        progress,
-        current_step="completed",
-        progress_current=total,
-        progress_total=total,
-        progress_pct=100.0,
-        fixtures_checked=total,
-        eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
-        excluded_count=sum(excluded_summary.values()),
-    )
+    result_summary = report["result_summary"]
+    if isinstance(result_summary, dict):
+        result_summary["scan_date"] = resolved_date.isoformat()
+        result_summary["execution_date"] = execution_date.isoformat()
+        result_summary["fixtures_discovered"] = total
+        result_summary["fixtures_processed"] = fixtures_processed
+        result_summary["fixtures_remaining"] = fixtures_remaining
+        result_summary["unprocessed_count"] = fixtures_remaining
+
+    if provider_quota_stopped:
+        report["status"] = "provider_quota_exhausted"
+        report["diagnostic_code"] = "provider_quota_exhausted"
+        report["message"] = provider_quota_message
+        report["stopped_at_endpoint"] = provider_quota_endpoint
+        report["stopped_at_fixture"] = provider_quota_fixture
+        report["stopped_at_league"] = provider_quota_league
+        report["eligible"] = by_status.get(ELIGIBILITY_ELIGIBLE, 0)
+        report["excluded_total"] = sum(excluded_summary.values())
+        if provider_quota_message not in report["errors"]:
+            report["errors"].append(provider_quota_message)
+        progress_pct = (
+            round(100.0 * fixtures_processed / total, 2) if total > 0 else 0.0
+        )
+        _emit_progress(
+            progress,
+            current_step="provider_quota_exhausted",
+            progress_current=fixtures_processed,
+            progress_total=total,
+            progress_pct=progress_pct,
+            fixtures_checked=fixtures_processed,
+            eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+            excluded_count=sum(excluded_summary.values()),
+            errors=list(report["errors"]),
+        )
+    else:
+        _emit_progress(
+            progress,
+            current_step="completed",
+            progress_current=total,
+            progress_total=total,
+            progress_pct=100.0,
+            fixtures_checked=total,
+            eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+            excluded_count=sum(excluded_summary.values()),
+        )
     if job_id:
         logger.info(
             "CecchinoTodayJob job_id=%s scan pipeline finished eligible=%s excluded=%s duration=%.1fs",

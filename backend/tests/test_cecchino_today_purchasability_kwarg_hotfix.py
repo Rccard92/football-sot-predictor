@@ -244,7 +244,7 @@ def test_run_scan_calls_attach_with_existing_preview_not_typeerror():
         ("cleanup_cecchino_today_snapshots", {"return_value": {}}),
         ("sync_signals_for_scan_date", {"return_value": {"fixtures": 0}}),
         ("get_api_usage_summary", {"return_value": {"total_calls": 1}}),
-        ("check_api_budget_during_scan", {}),
+        ("check_api_budget_during_scan", {"create": True}),
     ]
     with ExitStack() as stack:
         for name, kwargs in patches:
@@ -288,10 +288,15 @@ def test_job_thread_failed_propagates_api_calls_total():
             return_value=job,
         ):
             with patch(
-                "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
-                side_effect=_boom,
-            ):
-                _run_scan_job_thread("fail-api")
+                "app.services.cecchino.cecchino_today_scan_job_service.acquire_cecchino_scan_lock",
+            ) as lock_cm:
+                lock_cm.return_value.__enter__ = MagicMock(return_value={})
+                lock_cm.return_value.__exit__ = MagicMock(return_value=False)
+                with patch(
+                    "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
+                    side_effect=_boom,
+                ):
+                    _run_scan_job_thread("fail-api")
 
     assert job.status == JOB_STATUS_FAILED
     assert job.finished_at is not None

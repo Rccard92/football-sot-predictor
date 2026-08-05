@@ -221,6 +221,7 @@ def test_run_scan_bookmaker_fail_does_not_raise_str_utc():
         "app.services.cecchino.cecchino_today_service.write_negative_odds_cache",
     ), patch(
         "app.services.cecchino.cecchino_today_service.check_api_budget_during_scan",
+        create=True,
     ), patch(
         "app.services.cecchino.cecchino_today_service.sync_signals_for_scan_date",
         return_value={"fixtures": 0, "created": 0, "updated": 0, "deactivated": 0, "skipped": 0},

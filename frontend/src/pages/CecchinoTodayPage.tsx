@@ -236,13 +236,32 @@ export function CecchinoTodayPage() {
           job.status === 'cancelled' ||
           job.status === 'partial_stopped_budget' ||
           job.status === 'failed_budget_guard' ||
+          job.status === 'provider_quota_exhausted' ||
           job.status === 'failed_timeout' ||
           job.status === 'interrupted'
         ) {
           stopPolling()
           setScanDayLoading(false)
-          setActionError(job.errors?.[0] ?? 'Scansione interrotta')
+          if (job.status === 'provider_quota_exhausted') {
+            setActionError(
+              job.errors?.[0] ??
+                'Scansione interrotta: richieste API esaurite. I risultati già elaborati sono stati conservati.',
+            )
+            setScanReport(jobToScanReport(job))
+          } else if (
+            job.status === 'partial_stopped_budget' ||
+            job.status === 'failed_budget_guard'
+          ) {
+            setActionError(
+              job.errors?.[0] ?? 'Vecchio arresto preventivo per budget locale',
+            )
+          } else {
+            setActionError(job.errors?.[0] ?? 'Scansione interrotta')
+          }
           await loadDays()
+          if (job.status === 'provider_quota_exhausted') {
+            await loadList(date)
+          }
           return
         }
 
@@ -315,6 +334,7 @@ export function CecchinoTodayPage() {
               latest.status === 'cancelled' ||
               latest.status === 'partial_stopped_budget' ||
               latest.status === 'failed_budget_guard' ||
+              latest.status === 'provider_quota_exhausted' ||
               latest.status === 'skipped_concurrent_scan' ||
               latest.status === 'failed_timeout' ||
               latest.status === 'interrupted'
@@ -659,6 +679,7 @@ export function CecchinoTodayPage() {
       activeJob.status === 'cancelled' ||
       activeJob.status === 'partial_stopped_budget' ||
       activeJob.status === 'failed_budget_guard' ||
+      activeJob.status === 'provider_quota_exhausted' ||
       activeJob.status === 'skipped_concurrent_scan' ||
       activeJob.status === 'failed_timeout' ||
       activeJob.status === 'interrupted')

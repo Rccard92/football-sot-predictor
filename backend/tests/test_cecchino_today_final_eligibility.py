@@ -29,7 +29,19 @@ from app.services.cecchino.cecchino_constants import (
     STATUS_INSUFFICIENT_DATA,
     WARNING_ZERO_PROBABILITY,
 )
-from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
+from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
+    KPI_V2_VERSION,
+    build_cecchino_kpi_panel_v2_betfair,
+)
+from app.services.cecchino.cecchino_selection_keys import (
+    SEL_AWAY,
+    SEL_DRAW,
+    SEL_HOME,
+    SEL_HOME_PT,
+    SEL_OVER_3_5,
+    SEL_UNDER_1_5,
+    SEL_UNDER_PT_0_5,
+)
 from app.services.cecchino.cecchino_today_final_eligibility import (
     partition_scan_warnings,
     validate_cecchino_today_final_eligibility,
@@ -124,7 +136,33 @@ def _kpi_panel(**row_overrides) -> dict:
         return base
 
     return {
-        "version": "cecchino_kpi_v2_betfair",
+        "version": KPI_V2_VERSION,
+        "bookmaker_status": "available",
+        "rows": [
+            row(SEL_HOME, "1", 2.1, 2.0),
+            row(SEL_DRAW, "X", 3.2, 3.1),
+            row(SEL_AWAY, "2", 4.5, 4.4),
+        ],
+        "warnings": [],
+    }
+
+
+def _kpi_panel_legacy(**row_overrides) -> dict:
+    def row(key: str, segno: str, cec: float, book: float) -> dict:
+        edge = round((book / cec - 1) * 100, 2)
+        base = {
+            "market_key": key,
+            "segno": segno,
+            "cecchino": cec,
+            "book": book,
+            "edge": edge,
+            "status": "available",
+        }
+        base.update(row_overrides.get(key, {}))
+        return base
+
+    return {
+        "version": "cecchino_v0_4_bookmaker_kpi",
         "bookmaker_status": "available",
         "rows": [
             row(SEL_HOME, "1", 2.1, 2.0),
@@ -217,6 +255,151 @@ def test_kpi_panel_1x2_insufficient_excluded():
     assert result.eligibility_status == ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE
 
 
+def test_kpi_v2_current_version_complete_eligible():
+    """A. Pannello V2 corrente completo → eligible."""
+    b = _eligible_baseline()
+    assert b["kpi_panel"]["version"] == KPI_V2_VERSION
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert result.is_eligible
+    assert result.eligibility_status == ELIGIBILITY_ELIGIBLE
+
+
+def test_kpi_v2_real_builder_integration_eligible():
+    """B. Builder reale → validatore → eligible."""
+    betfair_payload = {
+        "status": "available",
+        "bookmakers": [
+            {
+                "bookmaker_name": "Betfair",
+                "provider_bookmaker_id": 3,
+                "status": "available",
+                "markets": {
+                    "MATCH_WINNER_1X2": {"HOME": 2.0, "DRAW": 3.1, "AWAY": 4.4},
+                },
+            },
+        ],
+        "warnings": [],
+    }
+    panel = build_cecchino_kpi_panel_v2_betfair(
+        final_odds=_cecchino_output()["final"],
+        betfair_payload=betfair_payload,
+    )
+    assert panel["version"] == KPI_V2_VERSION
+    b = _eligible_baseline()
+    b["kpi_panel"] = panel
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert result.is_eligible
+    assert result.eligibility_status == ELIGIBILITY_ELIGIBLE
+
+
+def test_kpi_v2_no_false_legacy_missing_fields():
+    """C. Nessuna falsa esclusione per campi legacy mancanti."""
+    b = _eligible_baseline()
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert result.is_eligible
+    legacy_markers = (
+        "HOME:cecchino",
+        "HOME:book",
+        "HOME:edge",
+        "DRAW:cecchino",
+        "DRAW:book",
+        "DRAW:edge",
+        "AWAY:cecchino",
+        "AWAY:book",
+        "AWAY:edge",
+    )
+    for marker in legacy_markers:
+        assert marker not in result.blocking_reasons
+        assert not any(marker in r for r in result.blocking_reasons)
+
+
+def test_kpi_v2_real_missing_1x2_fields_excluded():
+    """D. Dati 1X2 realmente mancanti → esclusione."""
+    b = _eligible_baseline()
+    b["kpi_panel"] = _kpi_panel(**{SEL_HOME: {"quota_cecchino": None, "edge_pct": None}})
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert not result.is_eligible
+    assert result.eligibility_status == ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE
+    assert any("HOME:quota_cecchino" in r for r in result.blocking_reasons)
+
+    b2 = _eligible_baseline()
+    b2["kpi_panel"] = _kpi_panel(**{SEL_DRAW: {"quota_book": None, "edge_pct": None}})
+    result2 = validate_cecchino_today_final_eligibility(**b2)
+    assert not result2.is_eligible
+    assert any("DRAW:quota_book" in r for r in result2.blocking_reasons)
+
+    b3 = _eligible_baseline()
+    panel = _kpi_panel()
+    panel["rows"] = [r for r in panel["rows"] if r["market_key"] != SEL_AWAY]
+    b3["kpi_panel"] = panel
+    result3 = validate_cecchino_today_final_eligibility(**b3)
+    assert not result3.is_eligible
+    assert any(
+        r == SEL_AWAY or r.endswith(f":{SEL_AWAY}") or r == f"kpi_missing:{SEL_AWAY}"
+        for r in result3.blocking_reasons
+    )
+
+
+def test_kpi_v2_extra_market_null_still_eligible():
+    """E. Mercato aggiuntivo incompleto non rende non eleggibile la fixture."""
+    b = _eligible_baseline()
+    panel = _kpi_panel()
+    panel["rows"] = list(panel["rows"]) + [
+        {
+            "market_key": SEL_HOME_PT,
+            "segno": "1 PT",
+            "quota_book": 2.5,
+            "quota_cecchino": None,
+            "edge_pct": None,
+            "status": "book_only",
+        },
+        {
+            "market_key": SEL_UNDER_1_5,
+            "segno": "U1.5",
+            "quota_book": 3.0,
+            "quota_cecchino": None,
+            "edge_pct": None,
+            "status": "book_only",
+        },
+        {
+            "market_key": SEL_OVER_3_5,
+            "segno": "O3.5",
+            "quota_book": 1.8,
+            "quota_cecchino": None,
+            "edge_pct": None,
+            "status": "book_only",
+        },
+        {
+            "market_key": SEL_UNDER_PT_0_5,
+            "segno": "U0.5 PT",
+            "quota_book": 4.0,
+            "quota_cecchino": None,
+            "edge_pct": None,
+            "status": "book_only",
+        },
+    ]
+    b["kpi_panel"] = panel
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert result.is_eligible
+    assert result.eligibility_status == ELIGIBILITY_ELIGIBLE
+
+
+def test_kpi_legacy_real_payload_still_supported():
+    """F. Payload legacy reale ancora validato con campi legacy."""
+    b = _eligible_baseline()
+    b["kpi_panel"] = _kpi_panel_legacy()
+    result = validate_cecchino_today_final_eligibility(**b)
+    assert result.is_eligible
+    assert result.eligibility_status == ELIGIBILITY_ELIGIBLE
+
+    b2 = _eligible_baseline()
+    b2["kpi_panel"] = _kpi_panel_legacy(**{SEL_HOME: {"cecchino": None, "edge": None}})
+    result2 = validate_cecchino_today_final_eligibility(**b2)
+    assert not result2.is_eligible
+    assert result2.eligibility_status == ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE
+    assert any("HOME:cecchino" in r for r in result2.blocking_reasons)
+
+
 def test_fixtures_ft_imported_not_blocking_warning():
     import_info, blocking, non_blocking = partition_scan_warnings(["fixtures_ft_imported:45", "leakage_check:undefined"])
     assert import_info == ["fixtures_ft_imported:45"]
@@ -231,7 +414,8 @@ def test_fixtures_ft_imported_not_blocking_warning():
     assert "fixtures_ft_imported:45" not in result.warnings
 
 
-def test_revalidate_day_moves_eligible_to_excluded():
+def test_revalidate_day_preserves_eligible_on_degradation():
+    """Eligible protetti non vengono declassati in esclusi dalla rivalidazione."""
     row = MagicMock(spec=CecchinoTodayFixture)
     row.cecchino_output_json = _cecchino_output(status=STATUS_INSUFFICIENT_DATA, quota_x=None, prob_x=None)
     row.kpi_panel_json = _kpi_panel()
@@ -244,11 +428,33 @@ def test_revalidate_day_moves_eligible_to_excluded():
     db = MagicMock()
     db.scalars.return_value.all.return_value = [row]
 
-    report = revalidate_cecchino_today_day(db, scan_date=date(2026, 6, 4))
-    assert report["moved_to_excluded"] == 1
-    assert row.eligibility_status == ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE
+    with patch(
+        "app.services.cecchino.cecchino_today_service.preserve_eligible_snapshot"
+    ) as preserve:
+        report = revalidate_cecchino_today_day(db, scan_date=date(2026, 6, 4))
+    assert report["preserved_eligible"] == 1
+    assert report["moved_to_excluded"] == 0
+    preserve.assert_called_once()
     db.commit.assert_called_once()
 
+
+def test_revalidate_day_updates_non_eligible():
+    row = MagicMock(spec=CecchinoTodayFixture)
+    row.cecchino_output_json = _cecchino_output(status=STATUS_INSUFFICIENT_DATA, quota_x=None, prob_x=None)
+    row.kpi_panel_json = _kpi_panel()
+    row.odds_snapshot_json = _odds_snapshot()
+    row.stats_snapshot_json = _stats_snapshot()
+    row.warnings_json = []
+    row.eligibility_status = ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE
+    row.cecchino_status = STATUS_INSUFFICIENT_DATA
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [row]
+
+    report = revalidate_cecchino_today_day(db, scan_date=date(2026, 6, 4))
+    assert report["checked"] == 1
+    assert row.eligibility_status == ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE
+    db.commit.assert_called_once()
 
 def test_list_eligible_only_returns_eligible():
     eligible_row = MagicMock(spec=CecchinoTodayFixture)
@@ -309,15 +515,22 @@ def test_list_excluded_includes_blocking_reasons():
     row.stats_status = "insufficient"
     row.fixture_status = "NS"
     row.raw_fixture_json = {}
+    row.provider_league_id = 135
 
     db = MagicMock()
     db.scalars.return_value.all.return_value = [row]
+    # build_api_usage_debug_for_fixture itera su eventi mock
+    db.execute.return_value.all.return_value = []
 
     with patch(
         "app.services.cecchino.cecchino_today_service.get_day_scan_meta",
         return_value={"has_scan": True, "eligible_count": 0, "excluded_count": 1, "last_scan_at": None},
     ):
-        payload = list_excluded_today_enriched(db, scan_date=date(2026, 6, 4))
+        with patch(
+            "app.services.cecchino.cecchino_today_service.build_api_usage_debug_for_fixture",
+            return_value={},
+        ):
+            payload = list_excluded_today_enriched(db, scan_date=date(2026, 6, 4))
     assert payload["total"] == 1
     fx = payload["fixtures"][0]
     assert fx["blocking_reasons"] == [f"{WARNING_ZERO_PROBABILITY}:X"]

@@ -1343,8 +1343,7 @@ flowchart LR
 ```mermaid
 flowchart TD
   btn[Aggiorna quote Betfair UI] --> post[POST refresh-betfair-odds]
-  post --> budget[check_api_budget_before_scan]
-  budget --> api["GET odds?fixture=X&bookmaker=3"]
+  post --> api["GET odds?fixture=X&bookmaker=3"]
   api --> snapshot[Aggiorna odds_snapshot_json + odds_meta]
   snapshot --> kpi[build_cecchino_kpi_panel_v2_betfair]
   kpi --> save[Salva kpi_panel_json]
@@ -1384,7 +1383,7 @@ flowchart TD
 - **Censimento:** tutte le fixture salvate come `discovered` dopo `GET fixtures?date=`.
 - **Gate order:** competition → negative/positive odds cache → bookmaker 1X2 → league stats cache → stats → Cecchino.
 - **API tracking:** `api_usage_events` su ogni `ApiFootballClient.get`; summary giornaliero admin.
-- **Budget guard:** `API_FOOTBALL_DAILY_BUDGET=7500`, stop job se budget residuo < 500 o job > 1000 chiamate.
+- **Budget locale:** rimosso come stop hard (2026-08-06). `API_FOOTBALL_DAILY_BUDGET` resta solo informativo. Interruzione solo su quota provider reale → `provider_quota_exhausted`.
 - **update-results:** date-level fetch; fallback per-id solo se assente nel payload giornaliero.
 
 ## Fix Fase 18 — progress_pct e finalizzazione

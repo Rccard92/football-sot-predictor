@@ -22,13 +22,12 @@ from app.models.cecchino_today_scan_job import (
     JOB_STATUS_FAILED_TIMEOUT,
     JOB_STATUS_INTERRUPTED,
     JOB_STATUS_PARTIAL_STOPPED_BUDGET,
+    JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
     JOB_STATUS_SKIPPED_CONCURRENT_SCAN,
     CecchinoTodayScanJob,
 )
-from app.services.api_usage_context import BudgetGuardStop
-from app.services.api_usage_service import check_api_budget_before_scan
 from app.services.cecchino.cecchino_today_scan_lock import (
     ScanLockNotAcquired,
     acquire_cecchino_scan_lock,
@@ -505,30 +504,43 @@ def _execute_scan_job_body(
 
         if status != "ok":
             job_status = JOB_STATUS_FAILED
-            if status in (JOB_STATUS_PARTIAL_STOPPED_BUDGET, JOB_STATUS_FAILED_BUDGET_GUARD):
+            if status in (
+                JOB_STATUS_PARTIAL_STOPPED_BUDGET,
+                JOB_STATUS_FAILED_BUDGET_GUARD,
+                JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED,
+            ):
                 job_status = status
             summary = _merge_auto_scan_meta(
                 _metrics_result_summary(metrics, report=report),
                 auto_scan_meta,
             )
-            update_scan_job(
-                db,
-                job_id,
-                status=job_status,
-                finished_at=_utcnow(),
-                current_step="completed",
-                errors_json=list(report.get("errors") or [report.get("message", "scan failed")]),
-                warnings_json=list(report.get("warnings") or []),
-                result_summary_json=summary,
-                progress_current=int(report.get("fixtures_processed") or 0),
-                progress_total=int(
-                    report.get("fixtures_found") or report.get("total_discovered") or 0
-                ),
-                eligible_count=int(report.get("eligible") or 0),
-                excluded_count=int(report.get("excluded_total") or 0),
-                excluded_summary_json=dict(report.get("excluded_summary") or {}),
-                fixtures_checked=int(report.get("fixtures_processed") or 0),
+            # Per quota provider: non forzare progress al 100%.
+            progress_current = int(report.get("fixtures_processed") or 0)
+            progress_total = int(
+                report.get("fixtures_discovered")
+                or report.get("fixtures_found")
+                or report.get("total_discovered")
+                or 0
             )
+            update_kwargs: dict[str, Any] = {
+                "status": job_status,
+                "finished_at": _utcnow(),
+                "current_step": "completed" if status != JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED else "provider_quota_exhausted",
+                "errors_json": list(report.get("errors") or [report.get("message", "scan failed")]),
+                "warnings_json": list(report.get("warnings") or []),
+                "result_summary_json": summary,
+                "progress_current": progress_current,
+                "progress_total": progress_total,
+                "eligible_count": int(report.get("eligible") or 0),
+                "excluded_count": int(report.get("excluded_total") or 0),
+                "excluded_summary_json": dict(report.get("excluded_summary") or {}),
+                "fixtures_checked": progress_current,
+            }
+            if status == JOB_STATUS_PROVIDER_QUOTA_EXHAUSTED and progress_total > 0:
+                update_kwargs["progress_pct"] = Decimal(
+                    str(round(100.0 * progress_current / progress_total, 2))
+                )
+            update_scan_job(db, job_id, **update_kwargs)
             db.commit()
             terminal = True
             outcome = {
@@ -782,16 +794,19 @@ def create_scan_job(
 ) -> CecchinoTodayScanJob:
     """Crea un job in stato queued senza avviare il runner."""
     job_id = str(uuid.uuid4())
-    initial_summary: dict[str, Any] | None = None
+    execution_date = _utcnow().date().isoformat()
+    initial_summary: dict[str, Any] = {
+        "scan_date": scan_date.isoformat(),
+        "execution_date": execution_date,
+    }
     if execution_source == "auto_scan":
-        initial_summary = {
-            "auto_scan": {
-                "execution_source": "auto_scan",
-                "execution_mode": "synchronous",
-                "execution_slot": execution_slot,
-                "target_date": scan_date.isoformat(),
-                "timezone": timezone,
-            }
+        initial_summary["auto_scan"] = {
+            "execution_source": "auto_scan",
+            "execution_mode": "synchronous",
+            "execution_slot": execution_slot,
+            "target_date": scan_date.isoformat(),
+            "timezone": timezone,
+            "local_execution_date": execution_date,
         }
     job = CecchinoTodayScanJob(
         job_id=job_id,
@@ -842,16 +857,6 @@ def start_scan_job(
             "scan_date": scan_date.isoformat(),
             "message": "Giornata già scansionata. Usa force_rescan=true per aggiornare.",
             "scan_meta": meta,
-        }
-
-    try:
-        check_api_budget_before_scan(db, usage_date=scan_date)
-    except BudgetGuardStop as bg:
-        return {
-            "status": bg.status,
-            "scan_date": scan_date.isoformat(),
-            "message": bg.message,
-            "details": bg.details,
         }
 
     job = create_scan_job(

@@ -226,18 +226,15 @@ def test_start_scan_job_still_uses_thread_not_sync_block():
             "app.services.cecchino.cecchino_today_scan_job_service.recover_stale_scan_jobs"
         ):
             with patch(
-                "app.services.cecchino.cecchino_today_scan_job_service.check_api_budget_before_scan"
-            ):
-                with patch(
-                    "app.services.cecchino.cecchino_today_scan_job_service.threading.Thread"
-                ) as mock_thread:
-                    mock_thread.return_value.start = MagicMock()
-                    out = start_scan_job(
-                        db,
-                        scan_date=TARGET,
-                        timezone="Europe/Rome",
-                        force_rescan=True,
-                    )
+                "app.services.cecchino.cecchino_today_scan_job_service.threading.Thread"
+            ) as mock_thread:
+                mock_thread.return_value.start = MagicMock()
+                out = start_scan_job(
+                    db,
+                    scan_date=TARGET,
+                    timezone="Europe/Rome",
+                    force_rescan=True,
+                )
     assert out["status"] == JOB_STATUS_QUEUED
     mock_thread.assert_called_once()
     assert mock_thread.call_args.kwargs.get("target") is _run_scan_job_thread or (

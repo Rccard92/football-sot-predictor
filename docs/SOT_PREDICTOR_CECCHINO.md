@@ -2,6 +2,18 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Fix — Eleggibilità KPI V2 e rimozione guard API (2026-08-06)
+
+| Voce | Dettaglio |
+|------|-----------|
+| Root cause KPI | Validatore confrontava `version == "cecchino_kpi_v2_betfair"`; builder scrive `KPI_V2_VERSION = cecchino_kpi_v2_betfair_markets_v31_p1` → path legacy (`cecchino`/`book`/`edge`) → falsi `excluded_kpi_not_calculable` |
+| Fix KPI | `_check_kpi_1x2_complete` usa `KPI_V2_VERSION` + famiglia + shape V2; campi `quota_cecchino`/`quota_book`/`edge_pct`; solo HOME/DRAW/AWAY obbligatori |
+| Root cause API | CAP locali `scan_max_calls=1000`, `safe_stop_remaining`, `daily_budget` |
+| Fix API | Guard no-op; stop solo `ApiFootballQuotaExhausted` → `provider_quota_exhausted`; risultati parziali conservati |
+| Date | `scan_date` = giornata partite; `execution_date` = giorno reale chiamate API (`created_at`) |
+| Recupero | `POST /revalidate-day` poi `force_rescan` su `2026-08-08` |
+| Invariato | Formule Cecchino, V3, V3.1, filtri competizione |
+
 ## Acquistabilità V3.1 — Fase 2A shadow candidate (2026-08-05)
 
 | Campo | Valore |
@@ -1942,9 +1954,9 @@ Versione `cecchino_today_v0_13_api_gates`: ottimizzazione consumo API-Football c
 | Short-circuit | Stop immediato su esclusione; no stats/Cecchino se bookmaker fallisce |
 | Odds | Single-call + cache positiva + negative cache 6h |
 | Bootstrap | `cecchino_league_stats_cache` deduplica import lega |
-| API usage | Tabella `api_usage_events`; summary admin e job report |
-| Budget guard | 7500/giorno; max 1000/job; status `partial_stopped_budget` |
-| UI | Box job con API usate, cache, budget residuo; funnel esclusioni |
+| API usage | Tabella `api_usage_events`; summary admin e job report (solo informativo) |
+| Quota provider | Nessun CAP locale; stop solo su `ApiFootballQuotaExhausted` → status `provider_quota_exhausted` |
+| UI | Box job con API usate, cache, residuo teorico piano; stati storici budget ancora leggibili |
 
 ## Cecchino Today — Fase 18 — Fix progress bar e finalizzazione (v0.12)
 

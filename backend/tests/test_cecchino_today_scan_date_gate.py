@@ -94,7 +94,7 @@ def _run_scan_patches(*, upsert_side_effect=None):
             "app.services.cecchino.cecchino_today_service.is_cecchino_allowed_competition",
             return_value=(False, ELIGIBILITY_EXCLUDED_CUP),
         ),
-        patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan"),
+        patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan", create=True),
         patch("app.services.cecchino.cecchino_today_service.is_fixture_not_started", return_value=True),
         patch(
             "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
