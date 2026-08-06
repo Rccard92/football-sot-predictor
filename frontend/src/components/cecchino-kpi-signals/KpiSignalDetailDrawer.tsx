@@ -171,6 +171,9 @@ function PurchasabilityBlock({
             <StatRow label="Candidate version" value={snap?.candidate_version ?? '—'} />
           ) : null}
           <StatRow label="Formula version" value={snap?.formula_version ?? '—'} />
+          {!isV3 ? (
+            <StatRow label="Registry status" value={snap?.registry_status ?? '—'} />
+          ) : null}
           <StatRow label="Status" value={snap?.status ?? '—'} />
           <StatRow
             label="Score"

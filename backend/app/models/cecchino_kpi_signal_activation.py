@@ -88,6 +88,7 @@ class CecchinoKpiSignalActivation(Base, TimestampMixin):
     purchasability_v31_formula_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     purchasability_v31_formula_config_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     purchasability_v31_audit_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v31_registry_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     purchasability_v31_status: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     purchasability_v31_score: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
     purchasability_v31_class_key: Mapped[str | None] = mapped_column(String(32), nullable=True)

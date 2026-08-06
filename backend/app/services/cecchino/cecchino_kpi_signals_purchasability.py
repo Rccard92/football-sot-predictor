@@ -396,6 +396,7 @@ def purchasability_fingerprint(v3: dict[str, Any], v31: dict[str, Any]) -> str:
             "class_key": v31.get("class_key"),
             "candidate_version": v31.get("candidate_version"),
             "formula_version": v31.get("formula_version"),
+            "registry_status": v31.get("registry_status"),
             "calculation_quality": v31.get("calculation_quality"),
             "historical_evidence_quality": v31.get("historical_evidence_quality"),
             "source_snapshot_at": (
@@ -430,6 +431,7 @@ def apply_purchasability_to_activation(activation: Any, snapshots: dict[str, Any
     activation.purchasability_v31_formula_version = v31.get("formula_version")
     activation.purchasability_v31_formula_config_version = v31.get("formula_config_version")
     activation.purchasability_v31_audit_version = v31.get("audit_version")
+    activation.purchasability_v31_registry_status = v31.get("registry_status")
     activation.purchasability_v31_status = v31.get("status")
     activation.purchasability_v31_score = (
         None if v31.get("score") is None else float(v31["score"])
@@ -462,6 +464,7 @@ def activation_purchasability_fingerprint(activation: Any) -> str:
         "class_key": getattr(activation, "purchasability_v31_class_key", None),
         "candidate_version": getattr(activation, "purchasability_v31_candidate_version", None),
         "formula_version": getattr(activation, "purchasability_v31_formula_version", None),
+        "registry_status": getattr(activation, "purchasability_v31_registry_status", None),
         "calculation_quality": getattr(activation, "purchasability_v31_calculation_quality", None),
         "historical_evidence_quality": getattr(
             activation, "purchasability_v31_historical_evidence_quality", None
@@ -530,7 +533,7 @@ def serialize_purchasability_from_activation(activation: Any, *, version: str) -
         "formula_version": getattr(activation, "purchasability_v31_formula_version", None),
         "formula_config_version": getattr(activation, "purchasability_v31_formula_config_version", None),
         "audit_version": getattr(activation, "purchasability_v31_audit_version", None),
-        "registry_status": None,
+        "registry_status": getattr(activation, "purchasability_v31_registry_status", None),
         "status": status,
         "score": float(score) if score is not None else None,
         "class_key": getattr(activation, "purchasability_v31_class_key", None),

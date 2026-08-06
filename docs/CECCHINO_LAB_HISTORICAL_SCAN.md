@@ -4,6 +4,8 @@
 
 Nota operativa (pagina `/segnali-kpi`, non Lab Run): Heatmap allineata ai 19 mercati Pannello KPI; settlement PT/FT completo; filtri Acquistabilità V3/V3.1 su snapshot pre-match storicizzati. Il Lab storico KPI (STEP 4A/4B) resta separato e non è modificato da questa estensione.
 
+Fix follow-up (stesso giorno): persistenza `purchasability_v31_registry_status` (migration `20260806143000`); Quota Book candidati solo finite > 1,00; nessun ricalcolo Acquistabilità né impatto sul Lab scan.
+
 ## STEP 2B — Replay Acquistabilità V3.1 (shadow validation) (2026-08-06)
 
 | Campo | Valore |

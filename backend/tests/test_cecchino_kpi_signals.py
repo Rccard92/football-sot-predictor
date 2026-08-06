@@ -83,6 +83,37 @@ def test_missing_quota_book_not_candidate():
     assert row is None
 
 
+@pytest.mark.parametrize(
+    "quota_book",
+    [
+        None,
+        "not-a-number",
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        -1.5,
+        0,
+        0.90,
+        1.00,
+        1.0,
+    ],
+)
+def test_invalid_quota_book_rejected(quota_book):
+    assert normalize_kpi_row(_kpi_row(quota_book=quota_book)) is None
+
+
+@pytest.mark.parametrize("quota_book", [1.0001, 1.01, 2.00])
+def test_valid_quota_book_accepted(quota_book):
+    row = normalize_kpi_row(_kpi_row(quota_book=quota_book, rating=50))
+    assert row is not None
+    assert float(row["quota_book"]) == pytest.approx(quota_book)
+
+
+def test_missing_purchasability_does_not_block_with_valid_book():
+    row = normalize_kpi_row(_kpi_row(rating=70, score_acquisto=None, quota_book=1.5))
+    assert row is not None
+
+
 def test_parse_rating_premium_string():
     assert extract_kpi_rating_score({"rating": "89 Premium"}) == 89
 

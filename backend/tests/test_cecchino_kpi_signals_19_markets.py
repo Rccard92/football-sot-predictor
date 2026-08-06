@@ -38,10 +38,13 @@ from app.services.cecchino.cecchino_kpi_signals_purchasability import (
     PURCHASABILITY_STATUS_SCORE_PROVISIONAL,
     PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE,
     PURCHASABILITY_STATUS_UNSUPPORTED,
+    activation_purchasability_fingerprint,
     apply_purchasability_to_activation,
     extract_purchasability_snapshots_for_selection,
     extract_v3_snapshot,
     extract_v31_snapshot,
+    purchasability_fingerprint,
+    serialize_purchasability_from_activation,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
@@ -384,6 +387,7 @@ def test_apply_purchasability_preserves_versions_and_timestamp():
                     "class": "Media",
                     "calculation_quality": "provisional",
                     "historical": {"historical_evidence_quality": "provisional"},
+                    "registry_status": "shadow_candidate",
                 }
             ]
         ),
@@ -393,7 +397,288 @@ def test_apply_purchasability_preserves_versions_and_timestamp():
     assert activation.purchasability_v3_formula_version
     assert activation.purchasability_v3_score == 61
     assert activation.purchasability_v31_status == PURCHASABILITY_STATUS_SCORE_PROVISIONAL
+    assert activation.purchasability_v31_registry_status == "shadow_candidate"
     assert isinstance(activation.purchasability_v3_source_snapshot_at, datetime)
+
+
+# --- registry_status V3.1 ---
+
+
+def test_registry_status_from_item_level():
+    out = _v31_snapshot(
+        [
+            {
+                "market_key": "HOME",
+                "status": "score",
+                "score": 70,
+                "class": "Alta",
+                "registry_status": "shadow_candidate",
+            }
+        ]
+    )
+    snap = extract_v31_snapshot(cecchino_output_json=out, selection_key="HOME")
+    assert snap["registry_status"] == "shadow_candidate"
+
+
+def test_registry_status_from_snapshot_top_level():
+    out = _v31_snapshot(
+        [{"market_key": "HOME", "status": "score", "score": 70, "class": "Alta"}],
+        registry_status="validated_operational",
+    )
+    snap = extract_v31_snapshot(cecchino_output_json=out, selection_key="HOME")
+    assert snap["registry_status"] == "validated_operational"
+
+
+def test_registry_status_item_precedes_snapshot():
+    out = _v31_snapshot(
+        [
+            {
+                "market_key": "HOME",
+                "status": "score",
+                "score": 70,
+                "class": "Alta",
+                "registry_status": "shadow_candidate",
+            }
+        ],
+        registry_status="validated_operational",
+    )
+    snap = extract_v31_snapshot(cecchino_output_json=out, selection_key="HOME")
+    assert snap["registry_status"] == "shadow_candidate"
+
+
+def test_registry_status_absent_is_none():
+    out = _v31_snapshot([{"market_key": "HOME", "status": "score", "score": 70, "class": "Alta"}])
+    snap = extract_v31_snapshot(cecchino_output_json=out, selection_key="HOME")
+    assert snap["registry_status"] is None
+
+
+def test_serialize_registry_status_and_legacy_null():
+    activation = CecchinoKpiSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 8, 1),
+        kpi_row_key="HOME",
+        selection_label="1",
+        normalized_market=MARKET_1X2,
+        selection_key=SEL_HOME,
+        rating_score=70,
+        rating_bucket="70-79",
+        quota_book=Decimal("2.0"),
+        purchasability_v31_status=PURCHASABILITY_STATUS_SCORE,
+        purchasability_v31_score=80.0,
+        purchasability_v31_formula_version="cecchino_purchasability_v31_fixed_discount_empirical_v2",
+        purchasability_v31_candidate_version="cecchino_purchasability_v31_candidate_2",
+        purchasability_v31_registry_status="shadow_candidate",
+    )
+    payload = serialize_purchasability_from_activation(activation, version="v31")
+    assert payload["registry_status"] == "shadow_candidate"
+    assert payload["snapshot_available"] is True
+
+    activation.purchasability_v31_registry_status = None
+    payload_null = serialize_purchasability_from_activation(activation, version="v31")
+    assert payload_null["registry_status"] is None
+    assert payload_null["snapshot_available"] is True
+    assert payload_null["status"] == PURCHASABILITY_STATUS_SCORE
+
+
+def test_fingerprint_changes_only_when_registry_status_changes():
+    base_v3 = {
+        "status": PURCHASABILITY_STATUS_SCORE,
+        "score": 70.0,
+        "class_key": "high",
+        "formula_version": "v3",
+        "calculation_quality": "full",
+        "source_snapshot_at": None,
+        "reason_codes": [],
+    }
+    v31_a = {
+        "status": PURCHASABILITY_STATUS_SCORE,
+        "score": 80.0,
+        "class_key": "high",
+        "candidate_version": "c2",
+        "formula_version": "v31",
+        "registry_status": "shadow_candidate",
+        "calculation_quality": "full",
+        "historical_evidence_quality": "definitive",
+        "source_snapshot_at": None,
+        "execution_quote_real": True,
+        "reason_codes": [],
+    }
+    v31_b = {**v31_a, "registry_status": "validated_operational"}
+    fp_a = purchasability_fingerprint(base_v3, v31_a)
+    fp_b = purchasability_fingerprint(base_v3, v31_b)
+    assert fp_a != fp_b
+
+    activation = CecchinoKpiSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 8, 1),
+        kpi_row_key="HOME",
+        selection_label="1",
+        normalized_market=MARKET_1X2,
+        selection_key=SEL_HOME,
+        rating_score=70,
+        rating_bucket="70-79",
+        quota_book=Decimal("2.0"),
+        purchasability_v31_status=PURCHASABILITY_STATUS_SCORE,
+        purchasability_v31_score=80.0,
+        purchasability_v31_class_key="high",
+        purchasability_v31_candidate_version="c2",
+        purchasability_v31_formula_version="v31",
+        purchasability_v31_registry_status="shadow_candidate",
+        purchasability_v31_calculation_quality="full",
+        purchasability_v31_historical_evidence_quality="definitive",
+        purchasability_v31_execution_quote_real=True,
+        purchasability_v31_reason_codes_json=[],
+        purchasability_v3_status=PURCHASABILITY_STATUS_SCORE,
+        purchasability_v3_score=70.0,
+        purchasability_v3_class_key="high",
+        purchasability_v3_formula_version="v3",
+        purchasability_v3_calculation_quality="full",
+        purchasability_v3_reason_codes_json=[],
+    )
+    act_fp = activation_purchasability_fingerprint(activation)
+    assert "shadow_candidate" in act_fp
+    assert act_fp == fp_a
+
+
+def test_sync_updates_when_only_registry_status_changes():
+    from app.services.cecchino.cecchino_kpi_signals import sync_kpi_signals_for_fixture
+    from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
+
+    db = MagicMock()
+    existing = CecchinoKpiSignalActivation(
+        today_fixture_id=10,
+        provider_fixture_id=999,
+        scan_date=date(2026, 8, 1),
+        kpi_row_key="HOME",
+        selection_label="1",
+        normalized_market=MARKET_1X2,
+        selection_key=SEL_HOME,
+        rating_score=70,
+        rating_bucket="70-79",
+        rating_label="Premium",
+        quota_book=Decimal("2.0"),
+        stake_units=Decimal("1"),
+        is_current=True,
+        purchasability_v3_status=PURCHASABILITY_STATUS_SCORE,
+        purchasability_v3_score=61.0,
+        purchasability_v3_class_key="high",
+        purchasability_v3_formula_version="cecchino_purchasability_v3_fixed_discount_v1",
+        purchasability_v3_calculation_quality="full",
+        purchasability_v3_reason_codes_json=[],
+        purchasability_v31_status=PURCHASABILITY_STATUS_SCORE_PROVISIONAL,
+        purchasability_v31_score=58.0,
+        purchasability_v31_class_key="medium",
+        purchasability_v31_candidate_version="cecchino_purchasability_v31_candidate_2",
+        purchasability_v31_formula_version="cecchino_purchasability_v31_fixed_discount_empirical_v2",
+        purchasability_v31_formula_config_version="fixed_discount_v31_empirical_v2",
+        purchasability_v31_audit_version="cecchino_purchasability_v31_audit_v2",
+        purchasability_v31_registry_status="shadow_candidate",
+        purchasability_v31_calculation_quality="provisional",
+        purchasability_v31_historical_evidence_quality="provisional",
+        purchasability_v31_reason_codes_json=[],
+    )
+    row = MagicMock()
+    row.id = 10
+    row.provider_fixture_id = 999
+    row.scan_date = date(2026, 8, 1)
+    row.kickoff = datetime(2026, 8, 1, 18, 0, tzinfo=timezone.utc)
+    row.country_name = "Italy"
+    row.league_name = "Serie A"
+    row.home_team_name = "A"
+    row.away_team_name = "B"
+    row.eligibility_status = ELIGIBILITY_ELIGIBLE
+    row.kpi_panel_json = {
+        "version": "cecchino_kpi_v2_betfair",
+        "rows": [
+            {
+                "market_key": "HOME",
+                "segno": "1",
+                "label": "1",
+                "quota_book": 2.0,
+                "rating": 70,
+                "rating_label": "Premium",
+            }
+        ],
+    }
+    row.cecchino_output_json = {
+        **_v3_snapshot(
+            [
+                {
+                    "market_key": "HOME",
+                    "status": "available",
+                    "score": 61,
+                    "class": "Alta",
+                    "calculation_quality": "full",
+                }
+            ]
+        ),
+        **_v31_snapshot(
+            [
+                {
+                    "market_key": "HOME",
+                    "status": "score_provisional",
+                    "score": 58,
+                    "class": "Media",
+                    "calculation_quality": "provisional",
+                    "historical": {"historical_evidence_quality": "provisional"},
+                    "registry_status": "validated_operational",
+                }
+            ]
+        ),
+    }
+    row.score_fulltime_home = None
+    row.score_fulltime_away = None
+    row.score_halftime_home = None
+    row.score_halftime_away = None
+    row.match_display_status = "scheduled"
+    row.fixture_status = "NS"
+    db.get.return_value = row
+    db.scalar.return_value = existing
+    db.scalars.return_value.all.return_value = [existing]
+    db.flush = MagicMock()
+
+    result = sync_kpi_signals_for_fixture(db, 10)
+    assert result["updated"] == 1
+    assert existing.purchasability_v31_registry_status == "validated_operational"
+
+    # Idempotente: stesso registry → fingerprint invariato, apply non deve cambiare di nuovo
+    fp_before = activation_purchasability_fingerprint(existing)
+    snaps = extract_purchasability_snapshots_for_selection(
+        cecchino_output_json=row.cecchino_output_json,
+        selection_key="HOME",
+    )
+    assert purchasability_fingerprint(snaps["v3"], snaps["v31"]) == fp_before
+
+
+def test_backfill_reads_registry_from_persisted_snapshot_no_recompute():
+    """Backfill = sync range: legge solo cecchino_output_json già persistito."""
+    from app.services.cecchino.cecchino_kpi_signals import backfill_kpi_signals
+    from unittest.mock import patch
+
+    db = MagicMock()
+    fixture_output = _v31_snapshot(
+        [{"market_key": "HOME", "status": "score", "score": 70, "registry_status": "shadow_candidate"}]
+    )
+    assert "score_fulltime" not in str(fixture_output)
+
+    with patch(
+        "app.services.cecchino.cecchino_kpi_signals.sync_kpi_signals_for_range",
+        return_value={
+            "fixtures_seen": 1,
+            "created": 0,
+            "updated": 1,
+            "deactivated": 0,
+            "evaluated": 0,
+            "errors": 0,
+        },
+    ) as sync_mock:
+        result = backfill_kpi_signals(db, date_from=date(2026, 8, 1), date_to=date(2026, 8, 1))
+    sync_mock.assert_called_once()
+    assert result["updated"] == 1
+    snap = extract_v31_snapshot(cecchino_output_json=fixture_output, selection_key="HOME")
+    assert snap["registry_status"] == "shadow_candidate"
 
 
 # --- Filtri ---

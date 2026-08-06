@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -309,7 +310,7 @@ def normalize_kpi_row(row: dict[str, Any]) -> dict[str, Any] | None:
     if not selection_key:
         return None
     quota_book = _float_or_none(row.get("quota_book"))
-    if quota_book is None or quota_book <= 0:
+    if quota_book is None or not math.isfinite(quota_book) or quota_book <= 1.0:
         return None
     rating_score = extract_kpi_rating_score(row)
     if rating_score is None or rating_score < MIN_KPI_RATING:

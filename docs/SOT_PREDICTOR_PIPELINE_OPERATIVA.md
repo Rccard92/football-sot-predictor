@@ -2,12 +2,14 @@
 
 ## Segnali KPI — 19 mercati + filtri Acquistabilità (2026-08-06)
 
-1. Migration: `alembic upgrade head` (revision `20260806120000`, colonne snapshot V3/V3.1 nullable).
+1. Migration: `alembic upgrade head` (revision `20260806120000`, colonne snapshot V3/V3.1 nullable; poi `20260806143000` per `purchasability_v31_registry_status`).
 2. Sync/backfill DB-only (nessuna API esterna):
    - UI: pulsante «Sincronizza KPI» (`only_missing=false`)
    - Admin: `POST /api/admin/cecchino/kpi-signals/backfill` con `only_missing=false` su intervallo piccolo
 3. Verifica Heatmap 19 righe; filtri `purchasability_version=v3|v31` su summary/activations/export.
 4. Acquistabilità resta filtro storico (non gate); Rating ≥ 50 invariato.
+5. Quota Book candidati: solo finite e strettamente > 1,00 (`math.isfinite`); NaN/Inf/≤1 esclusi.
+6. `registry_status` V3.1: persistito, fingerprint, API, drawer, CSV; sync aggiorna se cambia solo quel campo; null non implica `snapshot_unavailable`.
 
 ## Acquistabilità V3.1 — empirical_v2 storico non bloccante (2026-08-06)
 

@@ -7,12 +7,13 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Artefatto | Versione / note |
 |-----------|-----------------|
 | Mercati Segnali KPI | **19** (`KPI_SIGNAL_MARKET_DEFS`) — allineati al Pannello KPI |
-| Attivazione | Rating ≥ 50 + Quota Book (invariata) |
+| Attivazione | Rating ≥ 50 + Quota Book finita **> 1,00** |
 | Snapshot V3 su activation | campi `purchasability_v3_*` (pre-match, no ricalcolo) |
-| Snapshot V3.1 su activation | campi `purchasability_v31_*` (pre-match, no ricalcolo) |
+| Snapshot V3.1 su activation | campi `purchasability_v31_*` incl. `purchasability_v31_registry_status` (pre-match, no ricalcolo) |
 | V3 formula | **invariata** (`fixed_discount_v3`) |
 | V3.1 formula | **invariata** (shadow `empirical_v2`) |
-| Migration | `20260806120000` additiva |
+| Migration snapshot | `20260806120000` additiva |
+| Migration registry_status | `20260806143000` additiva (nullable; no backfill SQL) |
 
 ## Balance v5 Pilastro 1 — Quota Media X (2026-08-06)
 

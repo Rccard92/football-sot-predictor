@@ -1098,12 +1098,21 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 
 - Heatmap Pronostico × Rating: **19 mercati** canonici (fonte `KPI_SIGNAL_MARKET_DEFS` / `summary.heatmap.rows`).
 - Sei mercati aggiunti: `HOME_PT`, `DRAW_PT`, `AWAY_PT`, `UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5` con settlement HT/FT dedicato.
-- Attivazione invariata: Rating KPI ≥ 50 **e** Quota Book valida. L’Acquistabilità **non** è gate, non modifica settlement/profitto/ROI/fasce.
+- Attivazione: Rating KPI ≥ 50 **e** Quota Book numerica finita strettamente **> 1,00**. L’Acquistabilità **non** è gate, non modifica settlement/profitto/ROI/fasce.
 - Snapshot V3/V3.1 storicizzati sulle attivazioni (campi nullable); estratti dallo snapshot pre-match in `cecchino_output_json` senza ricalcolo.
 - Filtri versionati (`purchasability_version=v3|v31` + status/class/quality/score min-max) su `/summary`, `/activations`, `/export.csv`.
 - Sync/backfill: solo DB; crea i mercati mancanti; aggiorna snapshot; idempotente.
 - Migration: `20260806120000_kpi_signals_purchasability_snapshot_cols` (additiva).
 - Retrocompatibilità: attivazioni senza snapshot → `snapshot_unavailable`.
+
+## Fix — KPI registry_status V3.1 + Quota Book > 1 (2026-08-06)
+
+- Root cause: `extract_v31_snapshot` già estraeva `registry_status` (item → snapshot), ma mancava colonna/modello, `apply` non scriveva, fingerprint non lo includeva, serialize API hardcodava `None`, CSV/drawer non lo esponevano.
+- Colonna `purchasability_v31_registry_status` (String 64, nullable) + migrazione additiva `20260806143000` (down `20260806120000`); nessun backfill SQL, nessun indice.
+- Catena: adapter → apply → fingerprint → API → drawer V3.1 («Registry status») → export CSV; sync/backfill esistenti popolano da snapshot persistito senza ricalcolo V3.1 né leakage post-match.
+- `registry_status` null non rende indisponibile lo snapshot; righe legacy restano leggibili.
+- Quota Book Segnali KPI: rifiuta None / non numerica / NaN / ±Inf / ≤ 1,00; accetta solo finite > 1,00 (`math.isfinite`).
+- Invariato: Rating ≥ 50, formule V3/V3.1, formule Segnali Cecchino, consenso minimo non implementato.
 
 ## Cecchino — Segnali KPI (2026-07-04)
 

@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Complete KPI signals purchasability snapshots (2026-08-06)
+
+- Perché: `registry_status` V3.1 era estratto dall’adapter ma perso in persistenza/API/FE/export; Quota Book accettava valori ≤1 e non-finiti (NaN/Inf).
+- Cosa: colonna `purchasability_v31_registry_status` + migration `20260806143000`; apply/fingerprint/serialize/CSV/drawer; guardia `math.isfinite` e `quota_book > 1`; test BE/FE.
+- Cosa non fa: nessun ricalcolo V3/V3.1; nessuna formula Segnali Cecchino; nessun consenso minimo; nessun leakage post-match; nessuna nuova dipendenza; nessun dato storico eliminato.
+
 ## Feat — Extend KPI signals to all markets and purchasability filters (2026-08-06)
 
 - Perché: allineare Segnali KPI ai 19 mercati del Pannello KPI e consentire filtri storici versionati sull’Acquistabilità senza alterare Rating≥50 né le formule V3/V3.1.

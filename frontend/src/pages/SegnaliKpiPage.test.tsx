@@ -212,4 +212,132 @@ describe('Segnali KPI 19 mercati + Acquistabilità', () => {
     )
     expect(screen.getAllByText(/Snapshot Acquistabilità non disponibile/).length).toBeGreaterThan(0)
   })
+
+  it('drawer V3.1 mostra registry status e V3 no', () => {
+    const base = {
+      id: 3,
+      today_fixture_id: 12,
+      provider_fixture_id: 22,
+      scan_date: '2026-08-06',
+      kickoff: null,
+      country_name: 'Italy',
+      league_name: 'Serie A',
+      home_team_name: 'E',
+      away_team_name: 'F',
+      selection_label: '1',
+      selection_key: 'HOME',
+      normalized_market: 'MATCH_WINNER_1X2',
+      rating_score: 75,
+      rating_label: 'Premium',
+      rating_bucket: '70-79',
+      quota_book: 2.1,
+      quota_cecchino: 1.9,
+      edge_pct: 4,
+      score_pct: null,
+      result_home_ht: null,
+      result_away_ht: null,
+      result_home_ft: null,
+      result_away_ft: null,
+      evaluation_status: 'pending',
+      evaluation_reason: null,
+      profit_units: null,
+      stake_units: 1,
+      evaluated_at: null,
+    }
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <KpiSignalDetailDrawer
+          state={{
+            type: 'activation',
+            row: {
+              ...base,
+              purchasability_v3: {
+                status: 'score',
+                score: 61,
+                formula_version: 'v3-formula',
+                class_label: 'Alta',
+                calculation_quality: 'full',
+                snapshot_available: true,
+              },
+              purchasability_v31: {
+                status: 'score_provisional',
+                score: 58,
+                candidate_version: 'c2',
+                formula_version: 'v31-formula',
+                registry_status: 'shadow_candidate',
+                class_label: 'Media',
+                calculation_quality: 'provisional',
+                snapshot_available: true,
+              },
+            },
+          }}
+          onClose={noop}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Registry status')).toBeTruthy()
+    expect(screen.getByText('shadow_candidate')).toBeTruthy()
+    expect(screen.getByText('Provvisorio')).toBeTruthy()
+    // V3 block must not duplicate Registry status label beyond the one V3.1 row
+    expect(screen.getAllByText('Registry status')).toHaveLength(1)
+
+    rerender(
+      <MemoryRouter>
+        <KpiSignalDetailDrawer
+          state={{
+            type: 'activation',
+            row: {
+              ...base,
+              purchasability_v3: {
+                status: 'score',
+                score: 61,
+                formula_version: 'v3-formula',
+                snapshot_available: true,
+              },
+              purchasability_v31: {
+                status: 'score',
+                score: 80,
+                formula_version: 'v31-formula',
+                registry_status: 'validated_operational',
+                snapshot_available: true,
+              },
+            },
+          }}
+          onClose={noop}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('validated_operational')).toBeTruthy()
+
+    rerender(
+      <MemoryRouter>
+        <KpiSignalDetailDrawer
+          state={{
+            type: 'activation',
+            row: {
+              ...base,
+              purchasability_v3: {
+                status: 'score',
+                score: 61,
+                formula_version: 'v3-formula',
+                snapshot_available: true,
+              },
+              purchasability_v31: {
+                status: 'score',
+                score: 80,
+                formula_version: 'v31-formula',
+                registry_status: null,
+                snapshot_available: true,
+              },
+            },
+          }}
+          onClose={noop}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Registry status')).toBeTruthy()
+    const rows = screen.getAllByText('—')
+    expect(rows.length).toBeGreaterThan(0)
+  })
 })
