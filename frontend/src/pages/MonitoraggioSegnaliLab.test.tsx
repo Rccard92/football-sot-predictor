@@ -10,6 +10,7 @@ import {
   CURRENT_SIGNAL_FORMULA_VERSION,
   DEFAULT_ACQUISITION_FILTER,
   DEFAULT_SIGNAL_FORMULA_VERSION,
+  SIGNAL_FORMULA_CURRENT_BADGE,
   SIGNAL_FORMULA_VERSION_OPTIONS,
   buildCecchinoSignalsExportUrl,
   type SignalActivationRow,
@@ -18,6 +19,7 @@ import {
   acquiredBadgeLabel,
   acquisitionStatusLabel,
   formatConsensusRatio,
+  formatRawSignalValue,
 } from '../components/cecchino-lab/signalsLabUtils'
 
 afterEach(() => {
@@ -92,25 +94,24 @@ function baseActivation(overrides: Partial<SignalActivationRow> = {}): SignalAct
     consensus_passed: true,
     is_acquired: true,
     acquisition_status: 'acquired_consensus',
-    raw_signal_value: true,
+    raw_signal_value: 'SI',
     ...overrides,
   }
 }
 
 describe('Monitoraggio Segnali Lab — filtri formula/acquisition', () => {
-  it('mostra gruppo Filtro Segnali Cecchino con default corrente/acquisiti', () => {
+  it('mostra badge Formula corrente V3 senza Legacy/Tutte', () => {
     render(<SignalsLabFilters {...filterProps()} />)
 
     expect(screen.getByText('Filtro Segnali Cecchino')).toBeTruthy()
-    const formula = screen.getByLabelText('Formula') as HTMLSelectElement
+    expect(screen.getByLabelText('Formula').textContent).toContain(SIGNAL_FORMULA_CURRENT_BADGE)
+    expect(screen.queryByRole('option', { name: 'Legacy' })).toBeNull()
+    expect(SIGNAL_FORMULA_VERSION_OPTIONS.map((o) => o.value)).toEqual(['current'])
+    expect(SIGNAL_FORMULA_VERSION_OPTIONS.map((o) => o.label)).not.toContain('Legacy')
+    expect(SIGNAL_FORMULA_VERSION_OPTIONS.map((o) => o.label)).not.toContain('Tutte')
+    expect(CURRENT_SIGNAL_FORMULA_VERSION).toBe('cecchino_signals_matrix_v3_draw_dfg_decimal2')
     const acquisition = screen.getByLabelText('Acquisizione') as HTMLSelectElement
-    expect(formula.value).toBe('current')
     expect(acquisition.value).toBe('acquired')
-    expect(SIGNAL_FORMULA_VERSION_OPTIONS.map((o) => o.value)).toEqual([
-      'current',
-      'legacy',
-      'all',
-    ])
     expect(ACQUISITION_FILTER_OPTIONS.map((o) => o.label)).toEqual([
       'Segni acquisiti',
       'Consenso raggiunto',
@@ -121,28 +122,24 @@ describe('Monitoraggio Segnali Lab — filtri formula/acquisition', () => {
     ])
   })
 
-  it('propaga cambi formula, acquisizione e conferme minime', () => {
-    const onSignalFormulaVersionChange = vi.fn()
+  it('propaga cambi acquisizione e conferme minime (formula fissa V3)', () => {
     const onAcquisitionFilterChange = vi.fn()
     const onConsensusYesCountMinChange = vi.fn()
 
     render(
       <SignalsLabFilters
         {...filterProps({
-          onSignalFormulaVersionChange,
           onAcquisitionFilterChange,
           onConsensusYesCountMinChange,
         })}
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('Formula'), { target: { value: 'legacy' } })
     fireEvent.change(screen.getByLabelText('Acquisizione'), {
       target: { value: 'consensus_rejected' },
     })
     fireEvent.change(screen.getByLabelText('Conferme minime'), { target: { value: '2' } })
 
-    expect(onSignalFormulaVersionChange).toHaveBeenCalledWith('legacy')
     expect(onAcquisitionFilterChange).toHaveBeenCalledWith('consensus_rejected')
     expect(onConsensusYesCountMinChange).toHaveBeenCalledWith(2)
   })
@@ -235,5 +232,23 @@ describe('Monitoraggio Segnali Lab — badge activations', () => {
     expect(screen.getByText('Excel D, Excel F')).toBeTruthy()
     expect(screen.queryByText('[object Object]')).toBeNull()
     expect(screen.getByText('cecchino_signal_consensus_v1_min_two')).toBeTruthy()
+    expect(screen.getByText('SI')).toBeTruthy()
+    expect(screen.queryByText('true')).toBeNull()
+  })
+
+  it('raw_signal_value SI visualizzato come SI; assente non rompe', () => {
+    expect(formatRawSignalValue('SI')).toBe('SI')
+    expect(formatRawSignalValue('NO')).toBe('NO')
+    expect(formatRawSignalValue(null)).toBe('—')
+    expect(formatRawSignalValue(undefined)).toBe('—')
+    expect(formatRawSignalValue(true)).toBe('—')
+
+    const row = baseActivation({ raw_signal_value: null })
+    render(
+      <MemoryRouter>
+        <SignalsDetailDrawer state={{ type: 'activation', row }} onClose={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText('true')).toBeNull()
   })
 })

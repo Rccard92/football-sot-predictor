@@ -314,6 +314,7 @@ def test_home_unchanged_not_transformed_to_one_x():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [{"key": "one", "label": "1", "signals": {"excel_d": "SI"}}],
         },

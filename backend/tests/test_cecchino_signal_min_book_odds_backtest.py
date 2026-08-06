@@ -6,8 +6,9 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from app.services.cecchino.cecchino_constants import CECCHINO_WEIGHT_MODEL_KEYS
+from app.services.cecchino.cecchino_constants import CECCHINO_WEIGHT_MODEL_KEYS, STATUS_AVAILABLE
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW, SEL_ONE_X
+from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 from app.services.cecchino.cecchino_signal_min_book_odds_backtest_service import (
     save_signal_min_book_odds_and_backtest,
 )
@@ -217,6 +218,7 @@ def test_sync_reactivates_with_lowered_threshold():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
                 {"key": "one_x", "label": "SEGNO 1X", "signals": {"excel_d": "SI"}},

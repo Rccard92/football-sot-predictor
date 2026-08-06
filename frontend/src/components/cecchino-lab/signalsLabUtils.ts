@@ -21,10 +21,30 @@ export function formatSignalFormulaVersion(value: string | null | undefined): st
   if (!value || value === LEGACY_SIGNAL_FORMULA_VERSION || value === 'legacy' || value === 'v1') {
     return 'legacy'
   }
-  if (value === CURRENT_SIGNAL_FORMULA_VERSION || value === 'current' || value === 'v2') {
-    return 'corrente'
+  if (
+    value === CURRENT_SIGNAL_FORMULA_VERSION ||
+    value === 'current' ||
+    value === 'v3'
+  ) {
+    return 'corrente V3'
+  }
+  if (value === 'cecchino_signals_matrix_v2_draw_dfg' || value === 'v2') {
+    return 'precedente V2'
   }
   return value
+}
+
+export function formatRawSignalValue(value: unknown): string {
+  if (value == null) return '—'
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return '—'
+    const upper = trimmed.toUpperCase()
+    if (upper === 'SI' || upper === 'NO') return upper
+    return trimmed
+  }
+  // Non convertire booleani: il backend restituisce "SI"/"NO"
+  return '—'
 }
 
 export function formatConsensusScalar(value: unknown): string {

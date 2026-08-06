@@ -70,14 +70,14 @@ from app.services.cecchino.cecchino_selection_keys import (
 
 
 def build_signals_summary(*args, **kwargs):
-    """Test helper: fixture legacy senza campi consenso → mostra tutto."""
-    kwargs.setdefault("signal_formula_version", "all")
+    """Test helper: default operativo current-only (V3)."""
+    kwargs.setdefault("signal_formula_version", "current")
     kwargs.setdefault("acquisition_filter", "all")
     return _build_signals_summary_raw(*args, **kwargs)
 
 
 def export_signals_csv(*args, **kwargs):
-    kwargs.setdefault("signal_formula_version", "all")
+    kwargs.setdefault("signal_formula_version", "current")
     kwargs.setdefault("acquisition_filter", "all")
     return _export_signals_csv_raw(*args, **kwargs)
 
@@ -515,6 +515,7 @@ def test_sync_scala_on_one_x_not_home():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9, "avg_q": 2.87, "diff_1_2": 0.4},
             "rows": [
                 {"key": "one", "label": "1", "signals": {"excel_d": "NO"}},
@@ -588,6 +589,7 @@ def test_sync_skips_home_scala_from_malformed_matrix():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
                 {"key": "one", "label": "1", "signals": {"excel_d": "NO", "scala_1x": "SI"}},
@@ -610,6 +612,7 @@ def test_sync_home_from_d48_excel_d_only():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [{"key": "one", "label": "1", "signals": {"excel_d": "SI"}}],
         },
@@ -632,6 +635,7 @@ def test_sync_away_from_d54_excel_d_only():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [{"key": "two", "label": "2", "signals": {"excel_d": "SI"}}],
         },
@@ -654,6 +658,7 @@ def test_sync_x_two_from_g54_scala():
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
                 {

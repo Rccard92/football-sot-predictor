@@ -2,7 +2,7 @@
 
 ## Monitoraggio Segnali Cecchino — consenso V2 (2026-08-06)
 
-Nota operativa (pagina `/monitoraggio-segnali`, non Lab Run): formule X V2 + consenso min-two; backfill offline versionato; default UI `current`+`acquired`. Il Lab scan storico non è modificato da questa feature.
+Nota operativa (pagina `/monitoraggio-segnali`, non Lab Run): formule X V3 Decimal + consenso min-two; sync/monitoraggio **current-only** (V3); V1/V2 preservate fuori scope; nessun backfill storico automatico; default UI `current`+`acquired`. Il Lab scan storico non è modificato da questa feature.
 
 ## Segnali KPI operativi — 19 mercati (2026-08-06)
 

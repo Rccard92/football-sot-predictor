@@ -12,6 +12,7 @@ import {
   formatConsensusScalar,
   formatConsensusYesColumns,
   formatOdds,
+  formatRawSignalValue,
   formatSignalFormulaVersion,
   formatSignalLabel,
   formatSuccessRate,
@@ -245,7 +246,7 @@ function ActivationDrawerContent({ row }: { row: SignalActivationRow }) {
           />
           <StatRow
             label="Raw signal value"
-            value={formatConsensusScalar(row.raw_signal_value)}
+            value={formatRawSignalValue(row.raw_signal_value)}
           />
         </dl>
       </div>

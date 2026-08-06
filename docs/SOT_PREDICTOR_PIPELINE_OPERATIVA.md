@@ -793,6 +793,13 @@ Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-o
 - Filtri Monitoraggio: `signal_formula_version`, `acquisition_filter` (default current+acquired).
 - Alembic: `20260806170000` dopo `20260806143000`.
 
+## Cecchino — Formule X V3 Decimal + current-only (2026-08-06)
+
+- Motore: DRAW D/E/F/G via `canonical_signal_decimal` (quantum 0.01, ROUND_HALF_UP); altre formule float invariate.
+- Versione corrente: `cecchino_signals_matrix_v3_draw_dfg_decimal2`; sync skip se matrice ≠ V3; `sync_signals_for_scan_date` può rebuild V3 da prematch sulla data sync.
+- Monitoraggio: solo `current`/V3; `legacy`/`all`/`v1`/`v2` → HTTP 422.
+- Nessun backfill storico; Alembic head resta `20260806170000`.
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 - Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.

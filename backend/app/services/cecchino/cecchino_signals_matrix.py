@@ -6,6 +6,7 @@ Funzione pura: quote finali Cecchino, probabilità 1X2 e sample casa/trasferta.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from typing import Any
 
 from app.services.cecchino.cecchino_balance_analysis import compute_dominance_pp
@@ -13,8 +14,14 @@ from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE, STATUS_IN
 from app.services.cecchino.cecchino_signal_consensus import (
     CURRENT_SIGNAL_FORMULA_VERSION,
     LEGACY_SIGNAL_FORMULA_VERSION,
+    PREVIOUS_SIGNAL_FORMULA_VERSION,
     SIGNAL_CONSENSUS_POLICY_VERSION,
     attach_consensus_to_matrix_rows,
+)
+from app.services.cecchino.cecchino_signal_decimal import (
+    SIGNAL_FORMULA_DECIMAL_QUANTUM,
+    canonical_signal_decimal,
+    format_canonical_decimal,
 )
 
 EXCEL_SOURCE = "AutomazioneCecchino.xlsm"
@@ -23,6 +30,7 @@ WARNING_MISSING_QUOTAS = "signals_matrix:missing_final_quotas"
 # Re-export versioning canoniche
 __all__ = [
     "LEGACY_SIGNAL_FORMULA_VERSION",
+    "PREVIOUS_SIGNAL_FORMULA_VERSION",
     "CURRENT_SIGNAL_FORMULA_VERSION",
     "SIGNAL_CONSENSUS_POLICY_VERSION",
     "build_signals_matrix",
@@ -160,26 +168,52 @@ def build_signals_matrix(
         and under_2_5_cecchino_odd <= 2,
     )
 
-    # SEGNO X (V2: D/F/G aggiornate; E invariata)
-    x_d = _si_no(diff_1_2 < 0.80 and diff_1_2 > -0.80 and q1 >= q2)
-    x_e = _si_no(
-        qx < 3.3
-        and diff_1_2 <= 1.47
-        and diff_1_2 >= -1.4
-        and q1 >= q2,
+    # SEGNO X (V3: Decimal canonici a 2 cifre; logica D/E/F/G invariata)
+    f32_x = canonical_signal_decimal(q1)
+    f33_x = canonical_signal_decimal(qx)
+    f34_x = canonical_signal_decimal(q2)
+    f36_x = (
+        canonical_signal_decimal(f34_x - f32_x)
+        if f32_x is not None and f34_x is not None
+        else None
     )
-    x_f = _si_no(
-        qx <= 2.90
-        and diff_1_2 <= 1.70
-        and diff_1_2 >= -1.70
-        and q1 >= q2,
-    )
-    x_g = _si_no(
-        qx <= 3.50
-        and diff_1_2 <= 1.20
-        and diff_1_2 >= -1.20
-        and q1 >= q2,
-    )
+    draw_inputs_ok = f32_x is not None and f33_x is not None and f34_x is not None and f36_x is not None
+    if draw_inputs_ok:
+        x_d = _si_no(
+            f36_x < Decimal("0.80")
+            and f36_x > Decimal("-0.80")
+            and f32_x >= f34_x,
+        )
+        x_e = _si_no(
+            f33_x < Decimal("3.30")
+            and f36_x <= Decimal("1.47")
+            and f36_x >= Decimal("-1.40")
+            and f32_x >= f34_x,
+        )
+        x_f = _si_no(
+            f33_x <= Decimal("2.90")
+            and f36_x <= Decimal("1.70")
+            and f36_x >= Decimal("-1.70")
+            and f32_x >= f34_x,
+        )
+        x_g = _si_no(
+            f33_x <= Decimal("3.50")
+            and f36_x <= Decimal("1.20")
+            and f36_x >= Decimal("-1.20")
+            and f32_x >= f34_x,
+        )
+    else:
+        x_d = x_e = x_f = x_g = "NO"
+
+    decimal_policy = {
+        "scope": "draw_formulas_only",
+        "quantum": format_canonical_decimal(SIGNAL_FORMULA_DECIMAL_QUANTUM) or "0.01",
+        "rounding": "ROUND_HALF_UP",
+        "canonical_q1": format_canonical_decimal(f32_x),
+        "canonical_qx": format_canonical_decimal(f33_x),
+        "canonical_q2": format_canonical_decimal(f34_x),
+        "canonical_f36": format_canonical_decimal(f36_x),
+    }
 
     # OVER / OVER PT
     over_d = _si_no((diff_1_2 > 1.7 or diff_1_2 < -1.5) and qx >= 6)
@@ -329,6 +363,7 @@ def build_signals_matrix(
             "prob_2": prob_2,
             "under_2_5_cecchino_odd": under_2_5_cecchino_odd,
         },
+        "decimal_policy": decimal_policy,
         "rows": rows,
         "reliability": _compute_reliability(sample_home_away_split),
         "warnings": warnings,

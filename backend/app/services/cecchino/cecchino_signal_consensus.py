@@ -14,7 +14,8 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 
 SIGNAL_CONSENSUS_POLICY_VERSION = "cecchino_signal_consensus_v1_min_two"
 LEGACY_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v1_legacy"
-CURRENT_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v2_draw_dfg"
+PREVIOUS_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v2_draw_dfg"
+CURRENT_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v3_draw_dfg_decimal2"
 
 # Ordine canonico colonne conferma
 CANONICAL_SOURCE_COLUMNS: tuple[str, ...] = (
@@ -212,12 +213,34 @@ def consensus_by_group_from_matrix(signals_matrix: dict[str, Any]) -> dict[str, 
 
 
 def normalize_formula_version(value: str | None) -> str:
-    """Payload storici senza formula_version → legacy."""
+    """Payload storici senza formula_version → legacy.
+
+    Alias:
+    - current / v3 → CURRENT (V3)
+    - v2 → PREVIOUS (V2)
+    - legacy / v1 → LEGACY (V1)
+    """
     if not value:
         return LEGACY_SIGNAL_FORMULA_VERSION
     text = str(value).strip()
-    if text in ("current", "v2"):
+    if text in ("current", "v3"):
         return CURRENT_SIGNAL_FORMULA_VERSION
+    if text in ("v2",):
+        return PREVIOUS_SIGNAL_FORMULA_VERSION
+    if text == PREVIOUS_SIGNAL_FORMULA_VERSION:
+        return PREVIOUS_SIGNAL_FORMULA_VERSION
     if text in ("legacy", "v1"):
         return LEGACY_SIGNAL_FORMULA_VERSION
     return text
+
+
+def is_current_signal_matrix(matrix: dict[str, Any] | None) -> bool:
+    """True solo se status=available e formula_version è esattamente CURRENT (V3)."""
+    if not isinstance(matrix, dict):
+        return False
+    if str(matrix.get("status") or "") != "available":
+        return False
+    fv = matrix.get("formula_version")
+    if fv is None or str(fv).strip() == "":
+        return False
+    return str(fv).strip() == CURRENT_SIGNAL_FORMULA_VERSION

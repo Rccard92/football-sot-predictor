@@ -1,7 +1,7 @@
 import {
   ACQUISITION_FILTER_OPTIONS,
   EVAL_STATUSES,
-  SIGNAL_FORMULA_VERSION_OPTIONS,
+  SIGNAL_FORMULA_CURRENT_BADGE,
   SIGNAL_GROUPS,
   SOURCE_COLUMNS,
 } from '../../lib/cecchinoSignalsApi'
@@ -49,7 +49,6 @@ export function SignalsLabFilters({
   evaluationStatus,
   countryName,
   leagueName,
-  signalFormulaVersion,
   acquisitionFilter,
   consensusYesCountMin,
   loading,
@@ -61,7 +60,6 @@ export function SignalsLabFilters({
   onEvaluationStatusChange,
   onCountryNameChange,
   onLeagueNameChange,
-  onSignalFormulaVersionChange,
   onAcquisitionFilterChange,
   onConsensusYesCountMinChange,
   onRefresh,
@@ -144,21 +142,17 @@ export function SignalsLabFilters({
           Filtro Segnali Cecchino
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <label className="text-xs font-medium text-slate-600">
+          <div className="text-xs font-medium text-slate-600">
             Formula
-            <select
+            <div
               aria-label="Formula"
-              value={signalFormulaVersion}
-              onChange={(e) => onSignalFormulaVersionChange(e.target.value)}
-              className={inputClass}
+              className={`${inputClass} flex items-center bg-slate-100 font-semibold text-slate-800`}
             >
-              {SIGNAL_FORMULA_VERSION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-indigo-800 ring-1 ring-inset ring-indigo-200">
+                {SIGNAL_FORMULA_CURRENT_BADGE}
+              </span>
+            </div>
+          </div>
           <label className="text-xs font-medium text-slate-600">
             Acquisizione
             <select

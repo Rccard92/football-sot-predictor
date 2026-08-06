@@ -1066,6 +1066,15 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 - **Monitoraggio:** default `formula=current` + `acquisition=acquired`; metriche `formula_activations` vs `unique_acquired_signs`.
 - **Invariato:** value gate, settlement, altre formule, Balance/KPI/Rating/Edge; nessun leakage post-match; nessuno storico eliminato.
 
+## Cecchino — Formule X V3 Decimal + cutover current-only (2026-08-06)
+
+- **Root cause:** confronti float sulle soglie DRAW D/E/F/G (es. F36 = −0.80) producevano falsi positivi/negativi.
+- **Fix:** helper condiviso `canonical_signal_decimal` (`Decimal(str(value))` → quantize `0.01` `ROUND_HALF_UP`); scope **solo DRAW** D/E/F/G; altre formule invariate.
+- **Versione corrente:** `cecchino_signals_matrix_v3_draw_dfg_decimal2`; previous `…_v2_draw_dfg`; legacy `…_v1_legacy`; consensus invariata; audit `cecchino_signal_explanations_v3`.
+- **Cutover:** sync rifiuta matrici non-V3 (`skipped_non_current_formula_matrix`); nessuna rinomina V1/V2→V3; Monitoraggio rifiuta `legacy`/`all`/`v1`/`v2` (HTTP 422); modelli A–F usano solo V3.
+- **Nessun backfill storico**; nessuna migrazione; V1/V2 restano nel DB fuori dal flusso operativo.
+- **FE:** badge `Formula corrente V3`; `raw_signal_value` tipizzato `'SI'|'NO'|null`.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 - Formula D42 (SEGNO X, Excel D): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).

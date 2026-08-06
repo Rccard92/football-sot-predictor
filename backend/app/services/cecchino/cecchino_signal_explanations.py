@@ -24,9 +24,14 @@ from app.services.cecchino.cecchino_signal_consensus import (
     compute_consensus_for_matrix_row,
     normalize_formula_version,
 )
+from app.services.cecchino.cecchino_signal_decimal import (
+    SIGNAL_FORMULA_DECIMAL_QUANTUM,
+    canonical_signal_decimal,
+    format_canonical_decimal,
+)
 from app.services.cecchino.cecchino_signal_target_mapping import map_row_key_to_signal_group
 
-AUDIT_VERSION = "cecchino_signal_explanations_v2"
+AUDIT_VERSION = "cecchino_signal_explanations_v3"
 
 Ctx = dict[str, Any]
 Leaf = dict[str, Any]
@@ -102,6 +107,87 @@ def _cmp(left: float | None, op: str, right: float | None) -> bool:
     if op == "==":
         return left == right
     return False
+
+
+def _cmp_dec(left: Any, op: str, right: Any) -> bool:
+    """Confronto Decimal (o None) — usato solo dalle formule DRAW."""
+    from decimal import Decimal
+
+    if left is None or right is None:
+        return False
+    if not isinstance(left, Decimal) or not isinstance(right, Decimal):
+        return False
+    if op == "<":
+        return left < right
+    if op == "<=":
+        return left <= right
+    if op == ">":
+        return left > right
+    if op == ">=":
+        return left >= right
+    if op == "==":
+        return left == right
+    return False
+
+
+def _draw_canonical_ctx(ctx: Ctx) -> dict[str, Any]:
+    """Deriva F32/F33/F34/F36 canonici dallo stesso helper del motore."""
+    f32 = canonical_signal_decimal(ctx.get("q1"))
+    f33 = canonical_signal_decimal(ctx.get("qx"))
+    f34 = canonical_signal_decimal(ctx.get("q2"))
+    f36 = canonical_signal_decimal(f34 - f32) if f32 is not None and f34 is not None else None
+    return {
+        "raw_q1": ctx.get("q1"),
+        "raw_qx": ctx.get("qx"),
+        "raw_q2": ctx.get("q2"),
+        "raw_diff_1_2": ctx.get("diff_1_2"),
+        "f32": f32,
+        "f33": f33,
+        "f34": f34,
+        "f36": f36,
+        "quantum": format_canonical_decimal(SIGNAL_FORMULA_DECIMAL_QUANTUM) or "0.01",
+        "rounding": "ROUND_HALF_UP",
+    }
+
+
+def _draw_leaf(
+    *,
+    condition_key: str,
+    label: str,
+    left_label: str,
+    raw_value: Any,
+    canonical_value: Any,
+    operator: str,
+    right_label: str,
+    right_value: Any,
+    passed: bool,
+    source_path: str,
+) -> Leaf:
+    from decimal import Decimal
+
+    left_canon_str = format_canonical_decimal(canonical_value) if isinstance(canonical_value, Decimal) else (
+        str(canonical_value) if canonical_value is not None else "—"
+    )
+    right_str = format_canonical_decimal(right_value) if isinstance(right_value, Decimal) else str(right_value)
+    leaf = _leaf(
+        condition_key=condition_key,
+        label=label,
+        left_label=left_label,
+        left_value=left_canon_str,
+        operator=operator,
+        right_label=right_label,
+        right_value=right_str,
+        passed=passed,
+        source_path=source_path,
+        left_display=left_canon_str.replace(".", ",") if left_canon_str != "—" else "—",
+        right_display=right_str.replace(".", ","),
+    )
+    leaf["raw_value"] = raw_value
+    leaf["canonical_value"] = left_canon_str if left_canon_str != "—" else None
+    leaf["quantum"] = format_canonical_decimal(SIGNAL_FORMULA_DECIMAL_QUANTUM) or "0.01"
+    leaf["rounding"] = "ROUND_HALF_UP"
+    leaf["comparison"] = f"{left_canon_str} {operator} {right_str}"
+    return leaf
 
 
 def _and_result(leaves: list[Leaf]) -> str:
@@ -462,78 +548,240 @@ def _eval_under_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
 
 
 def _eval_draw_d(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
-    q1, q2, d = _num(ctx["q1"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
+    from decimal import Decimal
+
+    c = _draw_canonical_ctx(ctx)
+    f32, f34, f36 = c["f32"], c["f34"], c["f36"]
     leaves = [
-        _leaf(condition_key="f36_lt_0_80", label="F36 < 0,80", left_label="F36", left_value=d,
-              operator="<", right_label="Soglia", right_value=0.80, passed=_cmp(d, "<", 0.80),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_gt_m0_80", label="F36 > −0,80", left_label="F36", left_value=d,
-              operator=">", right_label="Soglia", right_value=-0.80, passed=_cmp(d, ">", -0.80),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
-              operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
-              source_path="signals_matrix.inputs.q1"),
+        _draw_leaf(
+            condition_key="f36_lt_0_80",
+            label="F36 < 0,80",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator="<",
+            right_label="Soglia",
+            right_value=Decimal("0.80"),
+            passed=_cmp_dec(f36, "<", Decimal("0.80")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="f36_gt_m0_80",
+            label="F36 > −0,80",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator=">",
+            right_label="Soglia",
+            right_value=Decimal("-0.80"),
+            passed=_cmp_dec(f36, ">", Decimal("-0.80")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="q1_ge_q2",
+            label="F32 ≥ F34",
+            left_label="F32",
+            raw_value=c["raw_q1"],
+            canonical_value=f32,
+            operator=">=",
+            right_label="F34",
+            right_value=f34 if f34 is not None else Decimal("0"),
+            passed=_cmp_dec(f32, ">=", f34),
+            source_path="signals_matrix.inputs.q1",
+        ),
     ]
+    # Fix right_value display when f34 is None
+    if f34 is None:
+        leaves[-1]["right_value"] = None
+        leaves[-1]["right_display"] = "—"
+        leaves[-1]["expression"] = f"{leaves[-1]['left_display']} >= —"
+        leaves[-1]["comparison"] = f"{leaves[-1].get('canonical_value') or '—'} >= —"
     logic = _group_and("draw_d", "SEGNO X / Excel D", leaves)
     return logic["result"], logic, _inputs_used(["q1", "q2", "diff_1_2"], ctx)
 
 
 def _eval_draw_e(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
-    q1, qx, q2, d = _num(ctx["q1"]), _num(ctx["qx"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
+    from decimal import Decimal
+
+    c = _draw_canonical_ctx(ctx)
+    f32, f33, f34, f36 = c["f32"], c["f33"], c["f34"], c["f36"]
     leaves = [
-        _leaf(condition_key="qx_lt_3_3", label="F33 < 3,30", left_label="F33", left_value=qx,
-              operator="<", right_label="Soglia", right_value=3.3, passed=_cmp(qx, "<", 3.3),
-              source_path="signals_matrix.inputs.qx"),
-        _leaf(condition_key="f36_le_1_47", label="F36 ≤ 1,47", left_label="F36", left_value=d,
-              operator="<=", right_label="Soglia", right_value=1.47, passed=_cmp(d, "<=", 1.47),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_ge_m1_4", label="F36 ≥ −1,40", left_label="F36", left_value=d,
-              operator=">=", right_label="Soglia", right_value=-1.4, passed=_cmp(d, ">=", -1.4),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
-              operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
-              source_path="signals_matrix.inputs.q1"),
+        _draw_leaf(
+            condition_key="qx_lt_3_3",
+            label="F33 < 3,30",
+            left_label="F33",
+            raw_value=c["raw_qx"],
+            canonical_value=f33,
+            operator="<",
+            right_label="Soglia",
+            right_value=Decimal("3.30"),
+            passed=_cmp_dec(f33, "<", Decimal("3.30")),
+            source_path="signals_matrix.inputs.qx",
+        ),
+        _draw_leaf(
+            condition_key="f36_le_1_47",
+            label="F36 ≤ 1,47",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator="<=",
+            right_label="Soglia",
+            right_value=Decimal("1.47"),
+            passed=_cmp_dec(f36, "<=", Decimal("1.47")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="f36_ge_m1_4",
+            label="F36 ≥ −1,40",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator=">=",
+            right_label="Soglia",
+            right_value=Decimal("-1.40"),
+            passed=_cmp_dec(f36, ">=", Decimal("-1.40")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="q1_ge_q2",
+            label="F32 ≥ F34",
+            left_label="F32",
+            raw_value=c["raw_q1"],
+            canonical_value=f32,
+            operator=">=",
+            right_label="F34",
+            right_value=f34 if f34 is not None else Decimal("0"),
+            passed=_cmp_dec(f32, ">=", f34),
+            source_path="signals_matrix.inputs.q1",
+        ),
     ]
+    if f34 is None:
+        leaves[-1]["right_value"] = None
+        leaves[-1]["right_display"] = "—"
     logic = _group_and("draw_e", "SEGNO X / Excel E", leaves)
     return logic["result"], logic, _inputs_used(["q1", "qx", "q2", "diff_1_2"], ctx)
 
 
 def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
-    q1, qx, q2, d = _num(ctx["q1"]), _num(ctx["qx"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
+    from decimal import Decimal
+
+    c = _draw_canonical_ctx(ctx)
+    f32, f33, f34, f36 = c["f32"], c["f33"], c["f34"], c["f36"]
     leaves = [
-        _leaf(condition_key="qx_le_2_90", label="F33 ≤ 2,90", left_label="F33", left_value=qx,
-              operator="<=", right_label="Soglia", right_value=2.90, passed=_cmp(qx, "<=", 2.90),
-              source_path="signals_matrix.inputs.qx"),
-        _leaf(condition_key="f36_le_1_70", label="F36 ≤ 1,70", left_label="F36", left_value=d,
-              operator="<=", right_label="Soglia", right_value=1.70, passed=_cmp(d, "<=", 1.70),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_ge_m1_70", label="F36 ≥ −1,70", left_label="F36", left_value=d,
-              operator=">=", right_label="Soglia", right_value=-1.70, passed=_cmp(d, ">=", -1.70),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
-              operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
-              source_path="signals_matrix.inputs.q1"),
+        _draw_leaf(
+            condition_key="qx_le_2_90",
+            label="F33 ≤ 2,90",
+            left_label="F33",
+            raw_value=c["raw_qx"],
+            canonical_value=f33,
+            operator="<=",
+            right_label="Soglia",
+            right_value=Decimal("2.90"),
+            passed=_cmp_dec(f33, "<=", Decimal("2.90")),
+            source_path="signals_matrix.inputs.qx",
+        ),
+        _draw_leaf(
+            condition_key="f36_le_1_70",
+            label="F36 ≤ 1,70",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator="<=",
+            right_label="Soglia",
+            right_value=Decimal("1.70"),
+            passed=_cmp_dec(f36, "<=", Decimal("1.70")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="f36_ge_m1_70",
+            label="F36 ≥ −1,70",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator=">=",
+            right_label="Soglia",
+            right_value=Decimal("-1.70"),
+            passed=_cmp_dec(f36, ">=", Decimal("-1.70")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="q1_ge_q2",
+            label="F32 ≥ F34",
+            left_label="F32",
+            raw_value=c["raw_q1"],
+            canonical_value=f32,
+            operator=">=",
+            right_label="F34",
+            right_value=f34 if f34 is not None else Decimal("0"),
+            passed=_cmp_dec(f32, ">=", f34),
+            source_path="signals_matrix.inputs.q1",
+        ),
     ]
+    if f34 is None:
+        leaves[-1]["right_value"] = None
+        leaves[-1]["right_display"] = "—"
     logic = _group_and("draw_f", "SEGNO X / Excel F", leaves)
     return logic["result"], logic, _inputs_used(["q1", "qx", "q2", "diff_1_2"], ctx)
 
 
 def _eval_draw_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
-    q1, qx, q2, d = _num(ctx["q1"]), _num(ctx["qx"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
+    from decimal import Decimal
+
+    c = _draw_canonical_ctx(ctx)
+    f32, f33, f34, f36 = c["f32"], c["f33"], c["f34"], c["f36"]
     leaves = [
-        _leaf(condition_key="qx_le_3_50", label="F33 ≤ 3,50", left_label="F33", left_value=qx,
-              operator="<=", right_label="Soglia", right_value=3.50, passed=_cmp(qx, "<=", 3.50),
-              source_path="signals_matrix.inputs.qx"),
-        _leaf(condition_key="f36_le_1_20", label="F36 ≤ 1,20", left_label="F36", left_value=d,
-              operator="<=", right_label="Soglia", right_value=1.20, passed=_cmp(d, "<=", 1.20),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_ge_m1_20", label="F36 ≥ −1,20", left_label="F36", left_value=d,
-              operator=">=", right_label="Soglia", right_value=-1.20, passed=_cmp(d, ">=", -1.20),
-              source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
-              operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
-              source_path="signals_matrix.inputs.q1"),
+        _draw_leaf(
+            condition_key="qx_le_3_50",
+            label="F33 ≤ 3,50",
+            left_label="F33",
+            raw_value=c["raw_qx"],
+            canonical_value=f33,
+            operator="<=",
+            right_label="Soglia",
+            right_value=Decimal("3.50"),
+            passed=_cmp_dec(f33, "<=", Decimal("3.50")),
+            source_path="signals_matrix.inputs.qx",
+        ),
+        _draw_leaf(
+            condition_key="f36_le_1_20",
+            label="F36 ≤ 1,20",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator="<=",
+            right_label="Soglia",
+            right_value=Decimal("1.20"),
+            passed=_cmp_dec(f36, "<=", Decimal("1.20")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="f36_ge_m1_20",
+            label="F36 ≥ −1,20",
+            left_label="F36",
+            raw_value=c["raw_diff_1_2"],
+            canonical_value=f36,
+            operator=">=",
+            right_label="Soglia",
+            right_value=Decimal("-1.20"),
+            passed=_cmp_dec(f36, ">=", Decimal("-1.20")),
+            source_path="signals_matrix.inputs.diff_1_2",
+        ),
+        _draw_leaf(
+            condition_key="q1_ge_q2",
+            label="F32 ≥ F34",
+            left_label="F32",
+            raw_value=c["raw_q1"],
+            canonical_value=f32,
+            operator=">=",
+            right_label="F34",
+            right_value=f34 if f34 is not None else Decimal("0"),
+            passed=_cmp_dec(f32, ">=", f34),
+            source_path="signals_matrix.inputs.q1",
+        ),
     ]
+    if f34 is None:
+        leaves[-1]["right_value"] = None
+        leaves[-1]["right_display"] = "—"
     logic = _group_and("draw_g", "SEGNO X / Excel G", leaves)
     return logic["result"], logic, _inputs_used(["q1", "qx", "q2", "diff_1_2"], ctx)
 

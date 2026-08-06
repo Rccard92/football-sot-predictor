@@ -471,6 +471,10 @@ Soglie minime quota book editabili da admin e persistite in `cecchino_signal_min
 
 Matrice `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X aggiornate; E invariata). Acquisizione: policy `cecchino_signal_consensus_v1_min_two` (≥2 SI per gruppi multi-formula; HOME/AWAY esenti). Raw SI persistiti; Monitoraggio default `current`+`acquired`. Migration `20260806170000`. V1 legacy preservata. Value gate invariato.
 
+## Cecchino — Formule X V3 Decimal + current-only (2026-08-06)
+
+Matrice corrente `cecchino_signals_matrix_v3_draw_dfg_decimal2`: soglie DRAW via Decimal `0.01` ROUND_HALF_UP (helper condiviso motore/audit). V1/V2 preservate nel DB ma escluse da sync operativo, Monitoraggio (solo `current`/V3; `legacy`/`all` → 422) e modelli A–F. Nessun backfill storico; nessuna nuova migrazione. `raw_signal_value` FE: `'SI'|'NO'|null`.
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 Il Monitoraggio Segnali applica due filtri: (1) `quota_book >= quota_cecchino`; (2) `quota_book >= soglia minima` per mercato. Soglie centralizzate in `cecchino_signal_min_odds.py`: X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85. Monitoraggio classico e Segnali Lab condividono la logica; segnali sotto soglia esclusi/disattivati (no DELETE). Rebuild offline KPI da cache: `POST /api/admin/cecchino/rebuild-kpi-panels-from-cache`. *(Step 3: soglie configurabili in DB + pannello editabile.)* Segnali KPI / formule Cecchino / rating KPI invariati.

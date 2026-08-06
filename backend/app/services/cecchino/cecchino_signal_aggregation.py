@@ -26,7 +26,6 @@ from app.services.cecchino.cecchino_signal_consensus import (
     ACQ_REJECTED_INSUFFICIENT,
     ACQ_SINGLE_FORMULA_EXEMPT,
     CURRENT_SIGNAL_FORMULA_VERSION,
-    LEGACY_SIGNAL_FORMULA_VERSION,
     normalize_formula_version,
 )
 from app.services.cecchino.cecchino_signal_display_order import (
@@ -39,6 +38,29 @@ from app.services.cecchino.cecchino_signal_value_gate import VALUE_REASON_OK, si
 
 DEFAULT_SIGNAL_FORMULA_VERSION_FILTER = "current"
 DEFAULT_ACQUISITION_FILTER = "acquired"
+
+
+class SignalFormulaVersionNotAllowed(ValueError):
+    """Filtro formula non ammesso nel monitoraggio operativo current-only."""
+
+
+def resolve_operational_signal_formula_version(signal_formula_version: str | None) -> str:
+    """Accetta solo current / V3 esplicita. Rifiuta legacy/all/v1/v2/sconosciute."""
+    raw = (signal_formula_version or DEFAULT_SIGNAL_FORMULA_VERSION_FILTER).strip()
+    if raw in ("current", "v3", CURRENT_SIGNAL_FORMULA_VERSION):
+        return CURRENT_SIGNAL_FORMULA_VERSION
+    raise SignalFormulaVersionNotAllowed(
+        f"signal_formula_version non ammesso nel monitoraggio operativo: {raw!r}. "
+        f"Consentiti: 'current' o '{CURRENT_SIGNAL_FORMULA_VERSION}'.",
+    )
+
+
+def _apply_formula_version_filter(query, signal_formula_version: str | None):
+    """Filtro operativo: soltanto activation V3."""
+    fv = resolve_operational_signal_formula_version(signal_formula_version)
+    return query.where(
+        CecchinoSignalActivation.signal_formula_version == fv,
+    )
 
 
 def _export_value_gate_fields(
@@ -242,28 +264,6 @@ def _unique_acquired_sign_metrics(rows: list[Any]) -> dict[str, Any]:
         "average_confirmations_per_acquired_sign": avg_conf,
         "groups_rejected_insufficient_consensus": rejected_groups,
     }
-
-
-def _apply_formula_version_filter(query, signal_formula_version: str | None):
-    raw = (signal_formula_version or DEFAULT_SIGNAL_FORMULA_VERSION_FILTER).strip()
-    if raw == "all":
-        return query
-    if raw in ("legacy", "v1"):
-        return query.where(
-            or_(
-                CecchinoSignalActivation.signal_formula_version.is_(None),
-                CecchinoSignalActivation.signal_formula_version == LEGACY_SIGNAL_FORMULA_VERSION,
-                CecchinoSignalActivation.signal_formula_version == "legacy",
-                CecchinoSignalActivation.signal_formula_version == "v1",
-            ),
-        )
-    if raw in ("current", "v2"):
-        return query.where(
-            CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
-        )
-    return query.where(
-        CecchinoSignalActivation.signal_formula_version == normalize_formula_version(raw),
-    )
 
 
 def _apply_acquisition_filter(query, acquisition_filter: str | None):

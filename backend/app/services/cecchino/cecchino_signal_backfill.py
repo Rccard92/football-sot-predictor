@@ -1,4 +1,4 @@
-"""Backfill e diagnostics segnali Cecchino — offline-only (formula V2 + consenso)."""
+"""Backfill e diagnostics segnali Cecchino — offline-only (formula V3 + consenso)."""
 
 from __future__ import annotations
 
@@ -23,8 +23,10 @@ from app.services.cecchino.cecchino_signal_consensus import (
     CURRENT_SIGNAL_FORMULA_VERSION,
     FORMULA_SOURCE_RECOMPUTED_PREMATCH,
     LEGACY_SIGNAL_FORMULA_VERSION,
+    PREVIOUS_SIGNAL_FORMULA_VERSION,
     SIGNAL_CONSENSUS_POLICY_VERSION,
     consensus_by_group_from_matrix,
+    is_current_signal_matrix,
     normalize_formula_version,
 )
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
@@ -92,8 +94,8 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _build_v2_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[str, Any] | None:
-    """Ricostruisce la matrice V2 in memoria da snapshot pre-match (senza mutare JSON)."""
+def _build_current_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[str, Any] | None:
+    """Ricostruisce la matrice corrente (V3) in memoria da snapshot pre-match (senza mutare JSON)."""
     output = row.cecchino_output_json
     if not isinstance(output, dict):
         return None
@@ -106,7 +108,7 @@ def _build_v2_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[st
     if isinstance(matrix, dict) and matrix.get("status") == STATUS_AVAILABLE:
         return matrix
 
-    # Fallback su quote finali + under da fixture (sempre V2 via build_signals_matrix)
+    # Fallback su quote finali + under da fixture (sempre CURRENT via build_signals_matrix)
     final = output.get("final") or {}
     if not isinstance(final, dict) or final.get("status") != STATUS_AVAILABLE:
         return None
@@ -130,9 +132,14 @@ def _build_v2_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[st
     return matrix
 
 
+def _build_v2_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[str, Any] | None:
+    """Compat alias — ricostruisce sempre la formula corrente (V3)."""
+    return _build_current_signals_matrix_from_prematch(row)
+
+
 def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
-    """Ricostruisce e persiste signals_matrix sul JSON (solo percorsi diagnostics/live)."""
-    matrix = _build_v2_signals_matrix_from_prematch(row)
+    """Ricostruisce e persiste signals_matrix V3 sul JSON (solo percorsi diagnostics/live)."""
+    matrix = _build_current_signals_matrix_from_prematch(row)
     if matrix is None:
         return False
     output = row.cecchino_output_json
@@ -144,12 +151,27 @@ def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
     return True
 
 
+def _matrix_on_row(row: CecchinoTodayFixture) -> dict[str, Any] | None:
+    output = row.cecchino_output_json or {}
+    if not isinstance(output, dict):
+        return None
+    matrix = output.get("signals_matrix")
+    return matrix if isinstance(matrix, dict) else None
+
+
+def _ensure_current_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
+    """Garantisce matrice V3: se già corrente la lascia; altrimenti rebuild da prematch."""
+    matrix = _matrix_on_row(row)
+    if is_current_signal_matrix(matrix):
+        return True
+    return _rebuild_signals_matrix_on_row(row)
+
+
 def _ensure_signals_matrix_on_row(row: CecchinoTodayFixture, *, force_rebuild: bool = False) -> bool:
     if force_rebuild:
         return _rebuild_signals_matrix_on_row(row)
-    if _has_available_matrix(row):
-        return True
-    return _rebuild_signals_matrix_on_row(row)
+    # Flusso operativo: richiede matrice V3 (non basta available legacy/V2)
+    return _ensure_current_signals_matrix_on_row(row)
 
 
 def _fixture_has_current_formula_activations(
@@ -158,8 +180,13 @@ def _fixture_has_current_formula_activations(
     *,
     formula_version: str = CURRENT_SIGNAL_FORMULA_VERSION,
 ) -> bool:
-    """True solo se esistono activation correnti della formula version richiesta (V2)."""
-    fv = normalize_formula_version(formula_version)
+    """True solo se esistono activation correnti della formula version richiesta (default V3)."""
+    if formula_version in (CURRENT_SIGNAL_FORMULA_VERSION, "current", "v3"):
+        fv = CURRENT_SIGNAL_FORMULA_VERSION
+    elif formula_version in (PREVIOUS_SIGNAL_FORMULA_VERSION, "v2"):
+        fv = PREVIOUS_SIGNAL_FORMULA_VERSION
+    else:
+        fv = normalize_formula_version(formula_version)
     count = db.scalar(
         select(func.count())
         .select_from(CecchinoSignalActivation)
@@ -173,7 +200,7 @@ def _fixture_has_current_formula_activations(
 
 
 def _fixture_has_current_activations(db: Session, today_fixture_id: int) -> bool:
-    """Compat: verifica presence V2 corrente (legacy non basta)."""
+    """Compat: verifica presence V3 corrente (V1/V2 non bastano)."""
     return _fixture_has_current_formula_activations(db, today_fixture_id)
 
 
@@ -400,7 +427,7 @@ def backfill_signal_activations(
     persist_recomputed_matrix: bool = False,
     formula_version: str = CURRENT_SIGNAL_FORMULA_VERSION,
 ) -> dict[str, Any]:
-    """Backfill activation V2 da snapshot pre-match; non sovrascrive JSON salvo opzione esplicita."""
+    """Backfill activation V3 da snapshot pre-match; non sovrascrive JSON salvo opzione esplicita."""
     from decimal import Decimal
 
     from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
@@ -412,10 +439,9 @@ def backfill_signal_activations(
     elif not isinstance(next(iter(min_book_odds.values()), None), Decimal):
         min_book_odds = {k: Decimal(str(v)) for k, v in min_book_odds.items()}
 
-    target_formula_version = normalize_formula_version(formula_version)
-    if target_formula_version != CURRENT_SIGNAL_FORMULA_VERSION:
-        target_formula_version = CURRENT_SIGNAL_FORMULA_VERSION
-
+    # Backfill operativo (se invocato) scrive soltanto V3 — non rinomina matrici legacy.
+    target_formula_version = CURRENT_SIGNAL_FORMULA_VERSION
+    _ = formula_version  # parametro accettato per compat; target fisso CURRENT
     fixtures = _fixtures_in_range(db, date_from, date_to)
     warnings: list[str] = []
     totals = {
@@ -625,6 +651,7 @@ def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
         "updated": 0,
         "deactivated": 0,
         "skipped": 0,
+        "skipped_non_current_formula_matrix": 0,
         "si_cells_seen": 0,
         "value_passed": 0,
         "no_value_skipped": 0,
@@ -634,14 +661,22 @@ def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
         "deactivated_no_value": 0,
     }
     for row in fixtures:
-        if not _ensure_signals_matrix_on_row(row):
+        # V3 già presente → sync; altrimenti prova rebuild da prematch (non copia SI/NO legacy)
+        if not _ensure_current_signals_matrix_on_row(row):
             totals["skipped"] += 1
+            totals["skipped_non_current_formula_matrix"] += 1
             continue
         totals["fixtures"] += 1
         counts = sync_cecchino_signal_activations(db, int(row.id), min_book_odds=min_book_odds)
         totals["created"] += counts.get("created", 0)
         totals["updated"] += counts.get("updated", 0)
         totals["deactivated"] += counts.get("deactivated", 0)
+        totals["skipped_non_current_formula_matrix"] += counts.get(
+            "skipped_non_current_formula_matrix",
+            0,
+        )
+        if counts.get("skipped_non_current_formula_matrix"):
+            totals["skipped"] += counts.get("skipped", 0)
         merge_sync_value_counters(totals, counts)
     totals["missing_value_quote"] = (
         totals["missing_book_quote_skipped"] + totals["missing_cecchino_quote_skipped"]

@@ -27,14 +27,16 @@ export type SignalsBucket = {
 export const DEFAULT_SIGNAL_FORMULA_VERSION = 'current'
 export const DEFAULT_ACQUISITION_FILTER = 'acquired'
 
-export const CURRENT_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v2_draw_dfg'
+export const CURRENT_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v3_draw_dfg_decimal2'
+export const PREVIOUS_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v2_draw_dfg'
 export const LEGACY_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v1_legacy'
 
+/** Monitoraggio operativo: solo formula corrente V3 (nessuna selezione Legacy/Tutte). */
 export const SIGNAL_FORMULA_VERSION_OPTIONS = [
-  { value: 'current', label: 'Corrente' },
-  { value: 'legacy', label: 'Legacy' },
-  { value: 'all', label: 'Tutte' },
+  { value: 'current', label: 'Formula corrente V3' },
 ] as const
+
+export const SIGNAL_FORMULA_CURRENT_BADGE = 'Formula corrente V3'
 
 export const ACQUISITION_FILTER_OPTIONS = [
   { value: 'acquired', label: 'Segni acquisiti' },
@@ -158,7 +160,7 @@ export type SignalActivationRow = {
   consensus_passed?: boolean | null
   is_acquired?: boolean | null
   acquisition_status?: string | null
-  raw_signal_value?: boolean | null
+  raw_signal_value?: 'SI' | 'NO' | null
 }
 
 export type SignalsActivationsResponse = {

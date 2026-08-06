@@ -1,4 +1,4 @@
-"""Sync idempotente segnali SI dalla matrice Cecchino (formula V2 + consenso)."""
+"""Sync idempotente segnali SI dalla matrice Cecchino (formula V3 + consenso)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
@@ -24,6 +24,7 @@ from app.services.cecchino.cecchino_signal_consensus import (
     SIGNAL_CONSENSUS_POLICY_VERSION,
     consensus_by_group_from_matrix,
     inherit_draw_consensus,
+    is_current_signal_matrix,
     normalize_formula_version,
 )
 from app.services.cecchino.cecchino_signal_evaluation import (
@@ -78,6 +79,7 @@ def _empty_sync_counts() -> dict[str, int]:
         "updated": 0,
         "deactivated": 0,
         "skipped": 0,
+        "skipped_non_current_formula_matrix": 0,
         "groups_consensus_passed": 0,
         "groups_consensus_rejected": 0,
         "single_formula_exempt_acquired": 0,
@@ -469,14 +471,25 @@ def sync_cecchino_signal_activations(
     if not isinstance(signals_matrix, dict) or signals_matrix.get("status") != STATUS_AVAILABLE:
         return {**_empty_sync_counts(), "skipped": 1}
 
-    fv = normalize_formula_version(
-        formula_version
-        or signals_matrix.get("formula_version")
-        or CURRENT_SIGNAL_FORMULA_VERSION,
-    )
-    # Sync operativo scrive/aggiorna soltanto la versione corrente V2
-    if fv != CURRENT_SIGNAL_FORMULA_VERSION:
-        fv = CURRENT_SIGNAL_FORMULA_VERSION
+    # Current-only: rifiuta matrici senza formula_version, V1, V2 o sconosciute.
+    # Non rinomina e non forza CURRENT su risultati legacy.
+    # Reason code: signal_matrix_formula_version_not_current
+    if not is_current_signal_matrix(signals_matrix):
+        counts = _empty_sync_counts()
+        counts["skipped"] = 1
+        counts["skipped_non_current_formula_matrix"] = 1
+        return counts
+
+    # Arg esplicito deve essere coerente con V3; altrimenti ignora (matrice già validata).
+    if formula_version is not None:
+        explicit = str(formula_version).strip()
+        if explicit and explicit != CURRENT_SIGNAL_FORMULA_VERSION and explicit not in ("current", "v3"):
+            counts = _empty_sync_counts()
+            counts["skipped"] = 1
+            counts["skipped_non_current_formula_matrix"] = 1
+            return counts
+
+    fv = CURRENT_SIGNAL_FORMULA_VERSION
 
     kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
     inputs = signals_matrix.get("inputs") or {}
@@ -484,25 +497,16 @@ def sync_cecchino_signal_activations(
     si_cells = _iter_si_cells(signals_matrix, consensus_by_group=consensus_by_group)
     active_keys: set[tuple[str, str, str, str]] = set()
 
-    # Solo activation V2 della formula corrente (non tocca legacy V1)
+    # Solo activation V3 della formula corrente (non tocca V1/V2)
     existing = list(
         db.scalars(
             select(CecchinoSignalActivation).where(
                 CecchinoSignalActivation.today_fixture_id == int(today_fixture_id),
                 CecchinoSignalActivation.model_key == mk,
-                or_(
-                    CecchinoSignalActivation.signal_formula_version == fv,
-                    # safety: never match null legacy in V2 sync scope
-                    CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
-                ),
+                CecchinoSignalActivation.signal_formula_version == fv,
             ),
         ).all(),
     )
-    existing = [
-        a
-        for a in existing
-        if normalize_formula_version(a.signal_formula_version) == fv
-    ]
     by_key: dict[tuple[str, str, str, str], CecchinoSignalActivation] = {}
     for activation in existing:
         by_key[

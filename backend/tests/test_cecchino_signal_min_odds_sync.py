@@ -44,6 +44,7 @@ def _one_x_fixture_row(*, book: float, cecchino: float) -> CecchinoTodayFixture:
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
                 {
@@ -75,6 +76,7 @@ def _draw_fixture_row(*, draw_book: float, draw_cecchino: float, pt_book: float,
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
                 {

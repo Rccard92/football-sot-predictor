@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Canonicalize draw formulas and enforce current version (2026-08-06)
+
+- Perché: soglie DRAW D/E/F/G su float producevano errori di bordo (es. F36≈−0.80); sync rinominava matrici senza versione come correnti; Monitoraggio poteva mescolare V1/V2/`all`; `raw_signal_value` FE tipizzato boolean invece di `"SI"`.
+- Cosa: Decimal canonico `0.01` ROUND_HALF_UP (solo DRAW); formula `cecchino_signals_matrix_v3_draw_dfg_decimal2`; audit v3; sync/monitoraggio/modelli A–F current-only; badge FE V3; test BE/FE.
+- Cosa non fa: nessun backfill storico; nessuna migrazione; nessuna rinomina/eliminazione V1/V2; E42 e altre formule invariate; consenso invariato; nessuna nuova dipendenza.
+
 ## Feat — Add signal consensus gate and update draw formulas (2026-08-06)
 
 - Perché: aggiornare D/F/G del SEGNO X alle soglie Giovanni e acquisire i segni multi-formula solo con almeno due conferme SI, senza perdere la matrice grezza né lo storico V1.

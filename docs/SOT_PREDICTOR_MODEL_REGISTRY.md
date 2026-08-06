@@ -2,12 +2,25 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
-## Segnali Cecchino — formula V2 + consenso (2026-08-06)
+## Segnali Cecchino — formula V3 Decimal + current-only (2026-08-06)
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
 | Formula matrix legacy | `cecchino_signals_matrix_v1_legacy` |
-| Formula matrix current | `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X; E invariata) |
+| Formula matrix previous | `cecchino_signals_matrix_v2_draw_dfg` |
+| Formula matrix current | `cecchino_signals_matrix_v3_draw_dfg_decimal2` (DRAW Decimal 0.01 ROUND_HALF_UP; E invariata) |
+| Consenso | `cecchino_signal_consensus_v1_min_two` (Opzione B, invariata) |
+| Audit explanations | `cecchino_signal_explanations_v3` |
+| Migration | nessuna nuova — resta `20260806170000` |
+| Operativo | sync/monitoraggio/modelli A–F: **solo V3**; V1/V2 preservate nel DB |
+| Value gate / settlement | **invariati** |
+
+## Segnali Cecchino — formula V2 + consenso (2026-08-06) — storico
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Formula matrix legacy | `cecchino_signals_matrix_v1_legacy` |
+| Formula matrix current (allora) | `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X; E invariata) |
 | Consenso | `cecchino_signal_consensus_v1_min_two` (Opzione B) |
 | Audit explanations | `cecchino_signal_explanations_v2` |
 | Migration | `20260806170000` additiva (unique con formula version) |

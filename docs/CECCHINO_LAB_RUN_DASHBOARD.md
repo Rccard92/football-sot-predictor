@@ -2,7 +2,7 @@
 
 ## Nota — Monitoraggio Segnali Cecchino V2 (2026-08-06)
 
-Il consenso formule e i filtri acquisizione riguardano `/monitoraggio-segnali` (matrice SI/NO), non la dashboard Lab Run. Nessuna modifica a overview/moduli STEP 4A/4B.
+Il consenso formule e i filtri acquisizione riguardano `/monitoraggio-segnali` (matrice SI/NO, formula corrente V3 Decimal). Nessuna modifica a overview/moduli STEP 4A/4B.
 
 ## STEP 4B — Filtro V3 su KPI + pagina Segnali A–F (2026-08-02)
 

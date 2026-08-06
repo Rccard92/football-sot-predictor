@@ -332,11 +332,11 @@ def test_fuzz_parity_deterministic():
 
 
 def test_threshold_edges():
-    # F36 exactly 0.80 for draw_d: need < 0.80 → NO on that leaf
-    cells = explain_all_cells_from_inputs(q1=2.0, qx=3.0, q2=2.8, sample_home_away_split=5)
-    assert abs((2.8 - 2.0) - 0.8) < 1e-9
+    # F36 canonico -0.80: stretto F36 > -0.80 fallisce → NO
+    cells = explain_all_cells_from_inputs(q1=2.80, qx=3.0, q2=2.00, sample_home_away_split=5)
     assert cells["draw:excel_d"]["condition_trace_result"] == "NO"
-    # just below
-    cells2 = explain_all_cells_from_inputs(q1=2.0, qx=3.0, q2=2.7999, sample_home_away_split=5)
+    # F36 canonico -0.79 → SI (con F32 >= F34)
+    cells2 = explain_all_cells_from_inputs(q1=2.79, qx=3.0, q2=2.00, sample_home_away_split=5)
     passed_keys = {c["condition_key"] for c in cells2["draw:excel_d"]["passed_conditions"]}
-    assert "f36_lt_0_80" in passed_keys
+    assert "f36_gt_m0_80" in passed_keys
+    assert cells2["draw:excel_d"]["condition_trace_result"] == "SI"
