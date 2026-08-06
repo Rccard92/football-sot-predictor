@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   GI_HISTORICAL_BENCHMARK_DEFAULT_PILOT_SIZE,
   GI_HISTORICAL_BENCHMARK_DEFAULT_SEED,
@@ -106,31 +106,38 @@ export function HistoricalRunGoalIntensityBenchmark({
 
   const jobId = job?.id
   const jobStatus = job?.status
+  const jobStale = job?.is_stale
 
   useEffect(() => {
-    if (!jobId || !isGiHistoricalBenchmarkJobActive(jobStatus)) return
+    if (!jobId) return
+    const active = isGiHistoricalBenchmarkJobActive(jobStatus) && !jobStale
+    if (!active) return
     const id = window.setInterval(() => {
       void getGoalIntensityBenchmarkJob(jobId)
         .then(setJob)
         .catch(() => undefined)
     }, GI_HISTORICAL_BENCHMARK_POLL_MS)
     return () => window.clearInterval(id)
-  }, [jobId, jobStatus])
+  }, [jobId, jobStatus, jobStale])
 
-  const pilotCompleted = useMemo(() => {
-    if (!job) return false
-    return job.mode === 'pilot' && job.status === 'completed'
-  }, [job])
+  const pilotGateOk = job?.mode === 'pilot' && job?.status === 'completed' && job?.pilot_gate?.ok === true
 
-  const fullEnabled = completed && pilotCompleted && busy === 'idle'
+  const fullEnabled = completed && pilotGateOk && busy === 'idle'
 
-  const ind = preflight?.independence || (job?.preflight_json?.independence as GiHistoricalBenchmarkPreflight['independence'] | undefined)
+  const pilotDisabled =
+    busy !== 'idle' || preflight == null || preflight.pilot_allowed === false
+
+  const ind =
+    preflight?.independence ||
+    (job?.preflight_json?.independence as GiHistoricalBenchmarkPreflight['independence'] | undefined)
   const badge = independenceBadge(ind?.status || job?.independence_status)
   const summary = (job?.summary_json || {}) as Record<string, unknown>
   const metrics = (summary.metrics || {}) as Record<string, unknown>
   const modelMetrics = (metrics.model_metrics || {}) as Record<string, Record<string, unknown>>
   const pairwise = (metrics.pairwise || []) as Array<Record<string, unknown>>
   const missing = job?.missing_by_reason_json || preflight?.availability?.missing_by_reason || {}
+
+  const showResume = Boolean(job?.can_resume)
 
   async function runPreflight() {
     setBusy('preflight')
@@ -146,6 +153,7 @@ export function HistoricalRunGoalIntensityBenchmark({
   }
 
   async function startPilot() {
+    if (pilotDisabled) return
     setBusy('pilot')
     setError(null)
     try {
@@ -243,6 +251,10 @@ export function HistoricalRunGoalIntensityBenchmark({
 
   const pf = preflight
   const bundle = pf?.bundle
+  const pairedEstimate =
+    pf?.paired_complete_estimate ?? pf?.availability?.paired_complete_estimate ?? 0
+  const probeN = pf?.five_models_probe_n ?? pf?.availability?.five_models_probe_n ?? 0
+  const probeOk = pf?.five_models_probe_ok ?? pf?.availability?.five_models_probe_ok ?? 0
 
   return (
     <section
@@ -291,6 +303,9 @@ export function HistoricalRunGoalIntensityBenchmark({
           <div>ID {job?.id ?? '—'}</div>
           <div>Mode {job?.mode ?? '—'}</div>
           <div>Status {job?.status ?? '—'}</div>
+          {job?.effective_status && job.effective_status !== job.status ? (
+            <div data-testid="gi-bench-effective-status">Effective {job.effective_status}</div>
+          ) : null}
           <div>
             Progress {job?.progress_pct ?? 0}% · paired {job?.paired_complete ?? 0}
           </div>
@@ -308,6 +323,16 @@ export function HistoricalRunGoalIntensityBenchmark({
         </div>
       )}
 
+      {job?.is_stale ? (
+        <div
+          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          data-testid="gi-bench-stale-warning"
+        >
+          Job stale (heartbeat assente o scaduto). Usa Resume per riprendere senza perdere le
+          righe già prodotte.
+        </div>
+      ) : null}
+
       <div className="mb-4 flex flex-wrap gap-2">
         <button
           type="button"
@@ -322,9 +347,16 @@ export function HistoricalRunGoalIntensityBenchmark({
           type="button"
           data-testid="gi-bench-pilot"
           onClick={() => void startPilot()}
-          disabled={busy !== 'idle' || (pf != null && pf.pilot_allowed === false)}
+          disabled={pilotDisabled}
           className="rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
           style={{ borderColor: 'var(--lab-border)' }}
+          title={
+            pf == null
+              ? 'Esegui prima Analizza fattibilità'
+              : pf.pilot_allowed === false
+                ? 'Pilot non consentito dal preflight'
+                : 'Avvia pilot'
+          }
         >
           Avvia pilot {GI_HISTORICAL_BENCHMARK_DEFAULT_PILOT_SIZE} partite
         </button>
@@ -338,12 +370,14 @@ export function HistoricalRunGoalIntensityBenchmark({
           title={
             fullEnabled
               ? 'Avvia benchmark completo'
-              : 'Disponibile solo dopo pilot completed'
+              : job?.pilot_gate && job.pilot_gate.ok === false
+                ? `Pilot gate fallito: ${(job.pilot_gate.reasons || []).join(', ')}`
+                : 'Disponibile solo dopo pilot completed con gate valido'
           }
         >
           Avvia benchmark completo
         </button>
-        {job && isGiHistoricalBenchmarkJobActive(job.status) ? (
+        {job && isGiHistoricalBenchmarkJobActive(job.status) && !job.is_stale ? (
           <button
             type="button"
             data-testid="gi-bench-cancel"
@@ -354,7 +388,7 @@ export function HistoricalRunGoalIntensityBenchmark({
             Cancel
           </button>
         ) : null}
-        {job && (job.status === 'failed' || job.status === 'cancelled') ? (
+        {showResume ? (
           <button
             type="button"
             data-testid="gi-bench-resume"
@@ -391,14 +425,68 @@ export function HistoricalRunGoalIntensityBenchmark({
           className="mb-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4"
           data-testid="gi-bench-preflight-panel"
         >
-          <div>V4 disponibili: {pf.availability?.v4_rebuildable ?? 0}</div>
-          <div>V5 feature: {pf.availability?.v5_features_rebuildable ?? 0}</div>
-          <div>Paired stimato: {pf.availability?.paired_complete_estimate ?? 0}</div>
-          <div>Blocked: {String(pf.availability?.blocked)}</div>
+          <div>V4 rebuildable: {pf.availability?.v4_rebuildable ?? 0}</div>
+          <div>V5 rebuildable: {pf.availability?.v5_features_rebuildable ?? 0}</div>
+          <div data-testid="gi-bench-paired-estimate">Paired stimato: {pairedEstimate}</div>
+          <div data-testid="gi-bench-pilot-paired-estimate">
+            Pilot paired: {pf.pilot_paired_estimate ?? pf.availability?.pilot_paired_estimate ?? 0}
+          </div>
+          <div data-testid="gi-bench-five-models-probe">
+            Five-model probe: {probeOk}/{probeN}
+          </div>
+          <div data-testid="gi-bench-data-gate">
+            Data gate: {pf.pilot_data_gate_status ?? '—'}
+          </div>
           <div>External API: {pf.checks?.external_api_calls ?? 0}</div>
-          <div>Full scan required: {String(pf.checks?.full_scan_required)}</div>
-          <div>Base run writes: {pf.checks?.base_run_writes ?? 0}</div>
           <div>Pilot selected: {pf.pilot?.selected ?? 0}</div>
+        </div>
+      ) : null}
+
+      {pf && (pf.blocking_reasons?.length ?? 0) > 0 ? (
+        <div
+          className="mb-4 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-950"
+          data-testid="gi-bench-blocking-reasons"
+        >
+          <div className="font-medium">Blocking reasons</div>
+          <ul className="mt-1 list-disc pl-4">
+            {(pf.blocking_reasons || []).map((r) => (
+              <li key={r} className="font-mono">
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {pf && (pf.warnings?.length ?? 0) > 0 ? (
+        <div
+          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          data-testid="gi-bench-warnings"
+        >
+          <div className="font-medium">Warnings</div>
+          <ul className="mt-1 list-disc pl-4">
+            {(pf.warnings || []).map((w) => (
+              <li key={w} className="font-mono">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {job?.pilot_gate && job.pilot_gate.ok === false ? (
+        <div
+          className="mb-4 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-950"
+          data-testid="gi-bench-pilot-gate-reasons"
+        >
+          <div className="font-medium">Pilot gate (full bloccata)</div>
+          <ul className="mt-1 list-disc pl-4">
+            {(job.pilot_gate.reasons || []).map((r) => (
+              <li key={r} className="font-mono">
+                {r}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 

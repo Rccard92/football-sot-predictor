@@ -3235,8 +3235,13 @@ export type GiHistoricalBenchmarkPreflight = {
     v5_features_rebuildable?: number
     five_models_rebuildable?: number
     paired_complete_estimate?: number
+    pilot_paired_estimate?: number
     blocked?: boolean
     missing_by_reason?: Record<string, number>
+    scoring_probe_n?: number
+    scoring_probe_ok?: number
+    five_models_probe_n?: number
+    five_models_probe_ok?: number
   }
   pilot: {
     requested?: number
@@ -3255,6 +3260,11 @@ export type GiHistoricalBenchmarkPreflight = {
     bundle_refit?: boolean
     result_used_in_prediction?: boolean
   }
+  paired_complete_estimate?: number
+  pilot_paired_estimate?: number
+  five_models_probe_n?: number
+  five_models_probe_ok?: number
+  pilot_data_gate_status?: 'ok' | 'warning' | 'blocked' | string
   pilot_allowed?: boolean
   full_allowed_after_pilot?: boolean
   blocking_reasons?: string[]
@@ -3271,6 +3281,9 @@ export type GiHistoricalBenchmarkJob = {
   job_version: string
   mode: 'pilot' | 'full' | string
   status: GiHistoricalBenchmarkJobStatus | string
+  effective_status?: string
+  is_stale?: boolean
+  can_resume?: boolean
   independence_status?: string | null
   progress_pct?: number | null
   processed_snapshots?: number
@@ -3285,8 +3298,11 @@ export type GiHistoricalBenchmarkJob = {
   preflight_json?: GiHistoricalBenchmarkPreflight | null
   selection_hash?: string
   started_at?: string | null
+  last_checkpoint_at?: string | null
   completed_at?: string | null
   error_json?: Record<string, unknown> | null
+  pilot_gate?: { ok: boolean; reasons: string[] } | null
+  stale_checkpoint_seconds?: number
 }
 
 export function goalIntensityBenchmarkPreflight(

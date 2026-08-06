@@ -23,6 +23,49 @@ import * as api from '../../../lib/cecchinoLabApi'
 
 afterEach(() => cleanup())
 
+const allowedPreflight = {
+  status: 'preview',
+  run: { id: 1, status: 'completed', season: '2021/22', snapshots_found: 10 },
+  bundle: {
+    id: 9,
+    version: api.GI_HISTORICAL_BENCHMARK_BUNDLE_VERSION,
+    status: 'frozen_external_benchmark_candidate',
+    is_active: false,
+    definition_hash: 'abc',
+  },
+  independence: {
+    status: 'external_independent',
+    scientific_label: 'external_validation',
+    overlap_count: 0,
+    overlap_pct: 0,
+  },
+  availability: {
+    v4_rebuildable: 5,
+    v5_features_rebuildable: 8,
+    paired_complete_estimate: 5,
+    five_models_probe_n: 5,
+    five_models_probe_ok: 5,
+    blocked: false,
+    missing_by_reason: { missing_persisted_v4_expected_goals: 5 },
+  },
+  pilot: { requested: 300, selected: 10, selection_hash: 'sel' },
+  checks: {
+    external_api_calls: 0,
+    full_scan_required: false,
+    base_run_writes: 0,
+    bundle_refit: false,
+    result_used_in_prediction: false,
+  },
+  paired_complete_estimate: 5,
+  pilot_paired_estimate: 4,
+  five_models_probe_n: 5,
+  five_models_probe_ok: 5,
+  pilot_data_gate_status: 'ok',
+  pilot_allowed: true,
+  blocking_reasons: [],
+  warnings: [],
+}
+
 describe('HistoricalRunGoalIntensityBenchmark', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -43,40 +86,7 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
   })
 
   it('esegue preflight e mostra independence badge', async () => {
-    vi.mocked(api.goalIntensityBenchmarkPreflight).mockResolvedValue({
-      status: 'preview',
-      run: { id: 1, status: 'completed', season: '2021/22', snapshots_found: 10 },
-      bundle: {
-        id: 9,
-        version: api.GI_HISTORICAL_BENCHMARK_BUNDLE_VERSION,
-        status: 'frozen_external_benchmark_candidate',
-        is_active: false,
-        definition_hash: 'abc',
-      },
-      independence: {
-        status: 'external_independent',
-        scientific_label: 'external_validation',
-        overlap_count: 0,
-        overlap_pct: 0,
-      },
-      availability: {
-        v4_rebuildable: 5,
-        v5_features_rebuildable: 8,
-        paired_complete_estimate: 5,
-        blocked: false,
-        missing_by_reason: { missing_persisted_v4_expected_goals: 5 },
-      },
-      pilot: { requested: 300, selected: 10, selection_hash: 'sel' },
-      checks: {
-        external_api_calls: 0,
-        full_scan_required: false,
-        base_run_writes: 0,
-        bundle_refit: false,
-        result_used_in_prediction: false,
-      },
-      pilot_allowed: true,
-      blocking_reasons: [],
-    })
+    vi.mocked(api.goalIntensityBenchmarkPreflight).mockResolvedValue(allowedPreflight as never)
 
     render(
       <HistoricalRunGoalIntensityBenchmark
@@ -94,9 +104,39 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
       )
     })
     expect(screen.getByTestId('gi-bench-preflight-panel').textContent).toContain(
-      'V4 disponibili: 5',
+      'V4 rebuildable: 5',
     )
+    expect(screen.getByTestId('gi-bench-paired-estimate').textContent).toContain('5')
+    expect(screen.getByTestId('gi-bench-five-models-probe').textContent).toContain('5/5')
     expect(screen.getByTestId('gi-bench-missing')).toBeTruthy()
+  })
+
+  it('disabilita pilot senza preflight e con pilot_allowed=false', async () => {
+    render(
+      <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
+    )
+    expect(screen.getByTestId('gi-bench-pilot').hasAttribute('disabled')).toBe(true)
+
+    vi.mocked(api.goalIntensityBenchmarkPreflight).mockResolvedValue({
+      ...allowedPreflight,
+      pilot_allowed: false,
+      pilot_data_gate_status: 'blocked',
+      blocking_reasons: ['paired_complete_estimate_zero'],
+      paired_complete_estimate: 0,
+      availability: {
+        ...allowedPreflight.availability,
+        paired_complete_estimate: 0,
+        blocked: true,
+      },
+    } as never)
+
+    fireEvent.click(screen.getByTestId('gi-bench-preflight'))
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-blocking-reasons').textContent).toContain(
+        'paired_complete_estimate_zero',
+      )
+    })
+    expect(screen.getByTestId('gi-bench-pilot').hasAttribute('disabled')).toBe(true)
   })
 
   it('full disabilitato prima del pilot completed', () => {
@@ -111,27 +151,97 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
     expect(screen.getByTestId('gi-bench-full').hasAttribute('disabled')).toBe(true)
   })
 
+  it('full disabilitato se pilot_gate backend non ok', async () => {
+    vi.mocked(api.listGoalIntensityBenchmarkJobs).mockResolvedValue({
+      jobs: [
+        {
+          id: 10,
+          job_id: 10,
+          historical_run_id: 1,
+          bundle_id: 9,
+          job_version: 'v1',
+          mode: 'pilot',
+          status: 'completed',
+          progress_pct: 100,
+          paired_complete: 0,
+          pilot_gate: { ok: false, reasons: ['pilot_zero_paired_complete'] },
+        },
+      ],
+    })
+    render(
+      <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-pilot-gate-reasons').textContent).toContain(
+        'pilot_zero_paired_complete',
+      )
+    })
+    expect(screen.getByTestId('gi-bench-full').hasAttribute('disabled')).toBe(true)
+  })
+
+  it('full abilitato solo con pilot_gate.ok dal backend', async () => {
+    vi.mocked(api.listGoalIntensityBenchmarkJobs).mockResolvedValue({
+      jobs: [
+        {
+          id: 11,
+          job_id: 11,
+          historical_run_id: 1,
+          bundle_id: 9,
+          job_version: 'v1',
+          mode: 'pilot',
+          status: 'completed',
+          progress_pct: 100,
+          paired_complete: 3,
+          pilot_gate: { ok: true, reasons: [] },
+        },
+      ],
+    })
+    render(
+      <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-full').hasAttribute('disabled')).toBe(false)
+    })
+  })
+
+  it('mostra warning stale e resume quando can_resume', async () => {
+    vi.mocked(api.listGoalIntensityBenchmarkJobs).mockResolvedValue({
+      jobs: [
+        {
+          id: 12,
+          job_id: 12,
+          historical_run_id: 1,
+          bundle_id: 9,
+          job_version: 'v1',
+          mode: 'pilot',
+          status: 'running',
+          effective_status: 'interrupted',
+          is_stale: true,
+          can_resume: true,
+          progress_pct: 40,
+          paired_complete: 2,
+        },
+      ],
+    })
+    render(
+      <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-stale-warning')).toBeTruthy()
+      expect(screen.getByTestId('gi-bench-resume')).toBeTruthy()
+    })
+  })
+
   it('mostra warning overlap', async () => {
     vi.mocked(api.goalIntensityBenchmarkPreflight).mockResolvedValue({
-      status: 'preview',
-      run: { id: 1, status: 'completed' },
-      bundle: {
-        id: 9,
-        version: 'v',
-        status: 'frozen_external_benchmark_candidate',
-        is_active: false,
-      },
+      ...allowedPreflight,
       independence: {
         status: 'partial_development_overlap',
         scientific_label: 'historical_diagnostic_replay',
         overlap_count: 3,
         overlap_pct: 12,
       },
-      availability: { blocked: false },
-      pilot: { selected: 10 },
-      checks: { external_api_calls: 0, base_run_writes: 0, full_scan_required: false },
-      pilot_allowed: true,
-    })
+    } as never)
     render(
       <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
     )
@@ -141,7 +251,8 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
     })
   })
 
-  it('avvia pilot con token corretto', async () => {
+  it('avvia pilot con token corretto dopo preflight allowed', async () => {
+    vi.mocked(api.goalIntensityBenchmarkPreflight).mockResolvedValue(allowedPreflight as never)
     vi.mocked(api.startGoalIntensityBenchmarkJob).mockResolvedValue({
       id: 55,
       job_id: 55,
@@ -156,6 +267,10 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
     render(
       <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
     )
+    fireEvent.click(screen.getByTestId('gi-bench-preflight'))
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-pilot').hasAttribute('disabled')).toBe(false)
+    })
     fireEvent.click(screen.getByTestId('gi-bench-pilot'))
     await waitFor(() => {
       expect(api.startGoalIntensityBenchmarkJob).toHaveBeenCalledWith(

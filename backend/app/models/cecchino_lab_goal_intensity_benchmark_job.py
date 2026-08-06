@@ -30,6 +30,8 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_CANCEL_REQUESTED = "cancel_requested"
 STATUS_CANCELLED = "cancelled"
+# Effective-only (no DB migration): stale running/queued after heartbeat timeout.
+STATUS_INTERRUPTED = "interrupted"
 
 ACTIVE_STATUSES = frozenset({STATUS_QUEUED, STATUS_RUNNING, STATUS_CANCEL_REQUESTED})
 TERMINAL_STATUSES = frozenset({STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED})
@@ -50,6 +52,15 @@ DEFAULT_RANDOM_SEED = 42
 DEFAULT_BATCH_SIZE = 100
 MAX_BATCH_SIZE = 250
 MIN_BATCH_SIZE = 10
+
+# Heartbeat via last_checkpoint_at. Stale jobs become resumable (aligned with purchasability v3).
+GI_BENCH_STALE_CHECKPOINT_SECONDS = 120
+
+# Technical exclusion reasons counted as errors (not deterministic data skips).
+ERROR_EXCLUSION_REASONS = frozenset({"row_exception", "snapshot_not_found"})
+
+# PostgreSQL advisory lock namespace for per-job worker exclusivity (no schema change).
+GI_BENCH_ADVISORY_LOCK_NAMESPACE = 0xCEC61B01
 
 
 class CecchinoLabGoalIntensityBenchmarkJob(Base, TimestampMixin):

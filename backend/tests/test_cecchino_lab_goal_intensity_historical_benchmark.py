@@ -634,3 +634,387 @@ def test_process_excludes_missing_v4():
     )
     assert out["included_in_main_cohort"] is False
     assert out["exclusion_reason"] == "missing_persisted_v4_expected_goals"
+
+
+def _five_models_payload() -> dict:
+    from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_scoring import (
+        MAIN_MODEL_IDS,
+    )
+
+    models = {
+        mid: {"expected_total_goals": 2.5, "probability_goals_ge_3": 0.4}
+        for mid in MAIN_MODEL_IDS
+    }
+    return {"five_models_available": True, "models": models}
+
+
+def _pilot_job(**overrides):
+    now = datetime.now(timezone.utc)
+    base = dict(
+        id=99,
+        historical_run_id=1,
+        bundle_id=9,
+        job_version=JOB_VERSION,
+        mode=MODE_PILOT,
+        status=STATUS_COMPLETED,
+        independence_status=INDEPENDENCE_EXTERNAL,
+        job_key="k",
+        random_seed=42,
+        requested_sample_size=10,
+        total_snapshots=10,
+        eligible_snapshots=10,
+        selected_snapshots=10,
+        processed_snapshots=10,
+        paired_complete=3,
+        skipped=7,
+        errors=0,
+        progress_pct=100,
+        cancel_requested=False,
+        params_json={},
+        preflight_json={},
+        summary_json={
+            "checks": {
+                "external_api_calls": 0,
+                "base_run_writes": 0,
+                "result_used_in_prediction": False,
+                "bundle_refit": False,
+                "full_scan_restarted": False,
+            },
+            "reconciliation_ok": True,
+            "reconciliation": {
+                "ok": True,
+                "all_paired_have_five_models": True,
+                "selected": 10,
+                "processed": 10,
+            },
+        },
+        missing_by_reason_json=None,
+        error_json=None,
+        bundle_definition_hash="h",
+        run_fixture_ids_hash="r",
+        source_git_commit="abc",
+        started_at=now,
+        last_checkpoint_at=now,
+        completed_at=now,
+        cancelled_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def _row(**overrides):
+    base = dict(
+        historical_snapshot_id=1,
+        included_in_main_cohort=True,
+        exclusion_reason=None,
+        input_hash="abc123",
+        prediction_payload_json=_five_models_payload(),
+        target_payload_json={"total_goals_ft": 2},
+        evaluation_payload_json={
+            "included_in_main_cohort": True,
+            "models_present": list(
+                __import__(
+                    "app.services.cecchino_data_lab.goal_intensity_historical_benchmark_scoring",
+                    fromlist=["MAIN_MODEL_IDS"],
+                ).MAIN_MODEL_IDS
+            ),
+        },
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_pilot_gate_blocks_zero_paired():
+    job = _pilot_job(paired_complete=0, skipped=10, errors=0, processed_snapshots=10)
+    ok, reasons = svc._pilot_gate_ok(job)
+    assert ok is False
+    assert "pilot_zero_paired_complete" in reasons
+
+
+def test_pilot_gate_blocks_errors():
+    job = _pilot_job(errors=2, paired_complete=3, skipped=5, processed_snapshots=10)
+    ok, reasons = svc._pilot_gate_ok(job)
+    assert ok is False
+    assert "pilot_errors_nonzero" in reasons
+
+
+def test_pilot_gate_blocks_processed_selected_mismatch():
+    job = _pilot_job(processed_snapshots=8, selected_snapshots=10)
+    ok, reasons = svc._pilot_gate_ok(job)
+    assert ok is False
+    assert "pilot_processed_selected_mismatch" in reasons
+
+
+def test_pilot_gate_blocks_sum_mismatch():
+    job = _pilot_job(paired_complete=3, skipped=3, errors=0, processed_snapshots=10)
+    ok, reasons = svc._pilot_gate_ok(job)
+    assert ok is False
+    assert "pilot_checks_failed" in reasons
+
+
+def test_pilot_gate_blocks_missing_five_models():
+    job = _pilot_job(
+        summary_json={
+            "checks": {
+                "external_api_calls": 0,
+                "base_run_writes": 0,
+                "result_used_in_prediction": False,
+                "bundle_refit": False,
+                "full_scan_restarted": False,
+            },
+            "reconciliation_ok": True,
+            "reconciliation": {"ok": True, "all_paired_have_five_models": False},
+        }
+    )
+    bad = _row(
+        prediction_payload_json={"five_models_available": False, "models": {}},
+        evaluation_payload_json={"included_in_main_cohort": True, "models_present": []},
+    )
+    ok, reasons = svc._pilot_gate_ok(job, paired_rows=[bad])
+    assert ok is False
+    assert "pilot_five_models_missing" in reasons
+
+
+def test_pilot_gate_accepts_valid():
+    job = _pilot_job()
+    good = _row()
+    ok, reasons = svc._pilot_gate_ok(job, paired_rows=[good])
+    assert ok is True
+    assert reasons == []
+
+
+def test_row_exception_needs_retry_deterministic_skip_complete():
+    exc_row = _row(
+        included_in_main_cohort=False,
+        exclusion_reason="row_exception",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json={"error": "boom"},
+    )
+    assert svc.row_is_complete(exc_row, "h") is False
+
+    skip_row = _row(
+        included_in_main_cohort=False,
+        exclusion_reason="missing_persisted_v4_expected_goals",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json=None,
+    )
+    assert svc.row_is_complete(skip_row, "h") is True
+
+    paired = _row()
+    assert svc.row_is_complete(paired, "h") is True
+
+
+def test_recount_counters_no_double_count():
+    rows = [
+        _row(historical_snapshot_id=1, included_in_main_cohort=True, exclusion_reason=None),
+        _row(
+            historical_snapshot_id=2,
+            included_in_main_cohort=False,
+            exclusion_reason="missing_ft_result",
+            input_hash=None,
+            prediction_payload_json=None,
+        ),
+        _row(
+            historical_snapshot_id=3,
+            included_in_main_cohort=False,
+            exclusion_reason="row_exception",
+            input_hash=None,
+            prediction_payload_json=None,
+        ),
+    ]
+    c = svc.recount_counters_from_rows(rows)
+    assert c["processed"] == 3
+    assert c["paired"] == 1
+    assert c["skipped"] == 1
+    assert c["errors"] == 1
+    assert c["duplicate_rows"] == 0
+
+
+def test_reconciliation_requires_all_conditions():
+    counters = {
+        "processed": 10,
+        "paired": 3,
+        "skipped": 7,
+        "errors": 0,
+        "rows_persisted": 10,
+        "duplicate_rows": 0,
+    }
+    recon = svc.build_reconciliation(selected=10, counters=counters, paired_have_five=True)
+    assert recon["ok"] is True
+
+    recon_err = svc.build_reconciliation(
+        selected=10,
+        counters={**counters, "errors": 1, "skipped": 6},
+        paired_have_five=True,
+    )
+    assert recon_err["ok"] is False
+    assert recon_err["errors"] == 1
+
+
+def test_job_with_errors_not_completed_via_reconciliation():
+    counters = {
+        "processed": 5,
+        "paired": 2,
+        "skipped": 2,
+        "errors": 1,
+        "rows_persisted": 5,
+        "duplicate_rows": 0,
+    }
+    recon = svc.build_reconciliation(selected=5, counters=counters, paired_have_five=True)
+    assert recon["ok"] is False
+    # worker marks failed when not ok — mirrored here
+    status = STATUS_COMPLETED if recon["ok"] and counters["errors"] == 0 else "failed"
+    assert status == "failed"
+
+
+def test_stale_running_recoverable_fresh_not():
+    from app.models.cecchino_lab_goal_intensity_benchmark_job import (
+        GI_BENCH_STALE_CHECKPOINT_SECONDS,
+        STATUS_RUNNING,
+    )
+
+    now = datetime.now(timezone.utc)
+    stale_job = _pilot_job(
+        status=STATUS_RUNNING,
+        completed_at=None,
+        last_checkpoint_at=now - timedelta(seconds=GI_BENCH_STALE_CHECKPOINT_SECONDS + 30),
+        started_at=now - timedelta(seconds=GI_BENCH_STALE_CHECKPOINT_SECONDS + 60),
+    )
+    assert svc.is_job_stale(stale_job) is True
+    assert svc.can_resume_job(stale_job) is True
+    assert svc.effective_status(stale_job) == "interrupted"
+
+    fresh_job = _pilot_job(
+        status=STATUS_RUNNING,
+        completed_at=None,
+        last_checkpoint_at=now,
+        started_at=now,
+    )
+    assert svc.is_job_stale(fresh_job) is False
+    assert svc.can_resume_job(fresh_job) is False
+
+
+def test_queued_orphan_recoverable():
+    orphan = _pilot_job(
+        status=STATUS_QUEUED,
+        completed_at=None,
+        started_at=None,
+        last_checkpoint_at=None,
+        updated_at=None,
+    )
+    # no live thread → stale/orphan
+    assert svc.is_job_stale(orphan) is True
+    assert svc.can_resume_job(orphan) is True
+
+
+def test_resume_rejects_fresh_active():
+    db = MagicMock()
+    now = datetime.now(timezone.utc)
+    job = _pilot_job(
+        status="running",
+        completed_at=None,
+        last_checkpoint_at=now,
+        started_at=now,
+    )
+    db.get.return_value = job
+    with pytest.raises(CecchinoLabImportError) as ei:
+        svc.resume_goal_intensity_benchmark_job(db, 99)
+    assert ei.value.code == "job_already_active"
+
+
+def test_resume_allows_stale_running():
+    from app.models.cecchino_lab_goal_intensity_benchmark_job import (
+        GI_BENCH_STALE_CHECKPOINT_SECONDS,
+    )
+
+    db = MagicMock()
+    now = datetime.now(timezone.utc)
+    job = _pilot_job(
+        status="running",
+        completed_at=None,
+        last_checkpoint_at=now - timedelta(seconds=GI_BENCH_STALE_CHECKPOINT_SECONDS + 10),
+        started_at=now - timedelta(seconds=GI_BENCH_STALE_CHECKPOINT_SECONDS + 20),
+    )
+    db.get.return_value = job
+    with patch.object(svc, "_spawn_worker"):
+        out = svc.resume_goal_intensity_benchmark_job(db, 99)
+    assert job.status == STATUS_QUEUED
+    assert out["status"] == STATUS_QUEUED
+
+
+def test_advisory_lock_blocks_second_worker():
+    engine = MagicMock()
+    engine.dialect.name = "sqlite"
+    with svc.acquire_gi_bench_job_lock(4242, engine=engine):
+        with pytest.raises(svc.GiBenchJobLockNotAcquired):
+            with svc.acquire_gi_bench_job_lock(4242, engine=engine):
+                pass
+
+
+def test_crash_after_batch_resume_retries_exception_only():
+    """Simulate remaining selection: complete skip kept, row_exception retried."""
+    complete_skip = _row(
+        historical_snapshot_id=1,
+        included_in_main_cohort=False,
+        exclusion_reason="missing_persisted_v4_expected_goals",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json=None,
+    )
+    failed = _row(
+        historical_snapshot_id=2,
+        included_in_main_cohort=False,
+        exclusion_reason="row_exception",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json={"error": "x"},
+    )
+    done_map = {1: complete_skip, 2: failed}
+    selected = [1, 2, 3]
+    remaining = [
+        sid
+        for sid in selected
+        if sid not in done_map or not svc.row_is_complete(done_map[sid], "h")
+    ]
+    assert remaining == [2, 3]
+    # recount after hypothetical resume of only new/failed
+    after = [
+        complete_skip,
+        _row(historical_snapshot_id=2),  # recovered paired
+        _row(
+            historical_snapshot_id=3,
+            included_in_main_cohort=False,
+            exclusion_reason="missing_ft_result",
+            input_hash=None,
+            prediction_payload_json=None,
+        ),
+    ]
+    c = svc.recount_counters_from_rows(after)
+    assert c["processed"] == 3
+    assert c["paired"] == 1
+    assert c["skipped"] == 2
+    assert c["errors"] == 0
+
+
+def test_pilot_gate_blocks_reconciliation_failed():
+    job = _pilot_job(
+        summary_json={
+            "checks": {
+                "external_api_calls": 0,
+                "base_run_writes": 0,
+                "result_used_in_prediction": False,
+                "bundle_refit": False,
+                "full_scan_restarted": False,
+            },
+            "reconciliation_ok": False,
+            "reconciliation": {"ok": False, "all_paired_have_five_models": True},
+        }
+    )
+    ok, reasons = svc._pilot_gate_ok(job, paired_rows=[_row()])
+    assert ok is False
+    assert "pilot_reconciliation_failed" in reasons
+
