@@ -520,8 +520,32 @@ def test_metrics_and_bootstrap_pairwise():
     assert ev["paired_n"] == 40
     assert V4_MODEL_ID in ev["model_metrics"]
     assert ev["model_metrics"][V4_MODEL_ID]["btts"]["status"] == "not_comparable"
-    assert len(ev["pairwise"]) == 9
-
+    assert len(ev["pairwise"]) == 32
+    by_metric = {}
+    for p in ev["pairwise"]:
+        by_metric.setdefault(p["metric"], []).append(p)
+    assert len(by_metric["mae"]) == 9
+    assert len(by_metric["brier_goals_ge_2"]) == 9
+    assert len(by_metric["brier_goals_ge_3"]) == 9
+    assert len(by_metric["brier_btts"]) == 5
+    for p in by_metric["brier_btts"]:
+        assert p["left_id"] != V4_MODEL_ID
+        assert p["right_id"] != V4_MODEL_ID
+    assert ev["bootstrap"]["seed"] == 42
+    assert ev["bootstrap"]["iterations"] == 500
+    # Deterministic CI across runs
+    ev2 = evaluate_paired_rows(rows)
+    assert ev["pairwise"][0]["delta"] == ev2["pairwise"][0]["delta"]
+    assert ev["pairwise"][0]["ci"] == ev2["pairwise"][0]["ci"]
+    # Delta direction: lower error favors left (GI_F vs V4 MAE should be negative)
+    mae_f_v4 = next(
+        p
+        for p in by_metric["mae"]
+        if p["left_id"] == GI_F_ID and p["right_id"] == V4_MODEL_ID
+    )
+    assert mae_f_v4["delta"] is not None
+    assert mae_f_v4["delta"] < 0
+    assert mae_f_v4["preferred_side"] == "left"
 
 def test_confirm_tokens_and_job_version():
     assert CONFIRM_PILOT == "RUN_GOAL_INTENSITY_HISTORICAL_BENCHMARK_PILOT"
@@ -1491,4 +1515,458 @@ def test_preflight_route_no_500_readonly_zero_jobs():
     db.add.assert_not_called()
     db.commit.assert_not_called()
     assert db.add.call_count == 0
+
+
+def _make_eval_row(i: int, *, competition: str = 'E0', month: str = '2021-09') -> dict:
+    y = 2.0 + (i % 3)
+    return {
+        'snapshot_id': i,
+        'competition': competition,
+        'kickoff': f'{month}-{(i % 28) + 1:02d}T15:00:00+00:00',
+        'month': month,
+        'models': {
+            V4_MODEL_ID: {
+                'expected_total_goals': y + 0.2,
+                'probability_goals_ge_2': 0.7,
+                'probability_goals_ge_3': 0.4,
+            },
+            PRIMARY_ID: {
+                'raw_score': 50 + i % 10,
+                'expected_total_goals': y + 0.1,
+                'probability_goals_ge_2': 0.72,
+                'probability_goals_ge_3': 0.41,
+                'probability_btts': 0.55,
+            },
+            CHALLENGER_ID: {
+                'raw_score': 48,
+                'expected_total_goals': y + 0.15,
+                'probability_goals_ge_2': 0.71,
+                'probability_goals_ge_3': 0.42,
+                'probability_btts': 0.54,
+            },
+            GI_E_ID: {
+                'raw_score': 50,
+                'expected_total_goals': y + 0.05,
+                'probability_goals_ge_2': 0.73,
+                'probability_goals_ge_3': 0.43,
+                'probability_btts': 0.56,
+            },
+            GI_F_ID: {
+                'raw_score': 49,
+                'expected_total_goals': y,
+                'probability_goals_ge_2': 0.74,
+                'probability_goals_ge_3': 0.44,
+                'probability_btts': 0.57,
+            },
+        },
+        'target': {
+            'total_goals_ft': y,
+            'goals_ge_2': int(y >= 2),
+            'goals_ge_3': int(y >= 3),
+            'btts_ft': 1,
+        },
+    }
+
+
+def test_pairwise_ci_crosses_zero_none():
+    from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import _preferred_side
+
+    assert (
+        _preferred_side(
+            -0.01,
+            {'ci_lower': -0.05, 'ci_upper': 0.05, 'mean': -0.01},
+        )
+        == 'none'
+    )
+
+
+def test_pairwise_ci_fully_favors_left():
+    from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import _preferred_side
+
+    assert (
+        _preferred_side(
+            -0.2,
+            {'ci_lower': -0.3, 'ci_upper': -0.1, 'mean': -0.2},
+        )
+        == 'left'
+    )
+
+
+def test_calibration_csv_mapping_empty_and_populated():
+    model_metrics = {
+        PRIMARY_ID: {
+            'goals_ge_2': {
+                'calibration_bins': [
+                    {
+                        'bin': 0,
+                        'n': 0,
+                        'mean_pred': None,
+                        'mean_actual': None,
+                        'abs_gap': None,
+                    },
+                    {
+                        'bin': 1,
+                        'n': 12,
+                        'mean_pred': 0.45,
+                        'mean_actual': 0.5,
+                        'abs_gap': 0.05,
+                    },
+                ]
+            }
+        }
+    }
+    rows = svc._calibration_csv_rows(model_metrics, 'goals_ge_2')
+    assert rows[0] == [PRIMARY_ID, 0, 0, None, None, None]
+    assert rows[1] == [PRIMARY_ID, 1, 12, 0.45, 0.5, 0.05]
+
+
+def test_fixture_csv_row_probs_and_v4_btts_null():
+    row = SimpleNamespace(
+        historical_snapshot_id=10,
+        lab_match_id=20,
+        competition_name='E0',
+        kickoff_at=datetime(2021, 9, 1, 15, 0, tzinfo=timezone.utc),
+        included_in_main_cohort=True,
+        exclusion_reason=None,
+        input_hash='abc',
+        prediction_payload_json={
+            'models': {
+                V4_MODEL_ID: {
+                    'expected_total_goals': 2.5,
+                    'probability_goals_ge_2': 0.7,
+                    'probability_goals_ge_3': 0.4,
+                    'probability_btts': 0.99,
+                },
+                PRIMARY_ID: {
+                    'expected_total_goals': 2.4,
+                    'probability_goals_ge_2': 0.71,
+                    'probability_goals_ge_3': 0.41,
+                    'probability_btts': 0.55,
+                },
+                CHALLENGER_ID: {
+                    'expected_total_goals': 2.3,
+                    'probability_goals_ge_2': 0.72,
+                    'probability_goals_ge_3': 0.42,
+                    'probability_btts': 0.54,
+                },
+                GI_E_ID: {
+                    'expected_total_goals': 2.2,
+                    'probability_goals_ge_2': 0.73,
+                    'probability_goals_ge_3': 0.43,
+                    'probability_btts': 0.56,
+                },
+                GI_F_ID: {
+                    'expected_total_goals': 2.1,
+                    'probability_goals_ge_2': 0.74,
+                    'probability_goals_ge_3': 0.44,
+                    'probability_btts': 0.57,
+                },
+            }
+        },
+        target_payload_json={
+            'total_goals_ft': 3,
+            'goals_ge_2': 1,
+            'goals_ge_3': 1,
+            'btts_ft': 1,
+        },
+    )
+    out = svc._fixture_csv_row(row)
+    headers = svc.FIXTURE_CSV_HEADERS
+    assert len(out) == len(headers)
+    by_h = dict(zip(headers, out))
+    assert by_h['goals_ge_2_actual'] == 1
+    assert by_h['prob_goals_ge_2_v4'] == 0.7
+    assert by_h['prob_btts_v4'] is None
+    assert by_h['prob_btts_gi_a'] == 0.55
+    assert by_h['pred_v4'] == 2.5
+
+
+def test_breakdown_competition_and_month_complete():
+    from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_metrics import (
+        build_breakdowns,
+    )
+
+    rows = [_make_eval_row(i, competition='E0' if i < 20 else 'SP1', month='2021-09' if i < 25 else '2021-10') for i in range(40)]
+    bd = build_breakdowns(rows)
+    comp_rows = svc._breakdown_csv_rows(bd, 'competition')
+    month_rows = svc._breakdown_csv_rows(bd, 'month')
+    # 2 competitions x 5 models
+    assert len(comp_rows) == 10
+    assert all(len(r) == len(svc.BREAKDOWN_CSV_HEADERS) for r in comp_rows)
+    assert {r[0] for r in comp_rows} == {'E0', 'SP1'}
+    assert {r[1] for r in comp_rows} == set(
+        [V4_MODEL_ID, PRIMARY_ID, CHALLENGER_ID, GI_E_ID, GI_F_ID]
+    )
+    assert len(month_rows) == 10
+    e0_v4 = next(r for r in comp_rows if r[0] == 'E0' and r[1] == V4_MODEL_ID)
+    assert e0_v4[2] == 20  # n
+    assert e0_v4[5] is not None  # MAE
+    assert e0_v4[10] is not None  # Brier O1.5
+    assert e0_v4[12] is None  # BTTS not comparable for V4
+
+
+def test_export_dynamic_from_persisted_rows_no_prediction_mutation():
+    import csv
+    import io
+    import zipfile
+
+    pred_payload = {
+        'models': {
+            V4_MODEL_ID: {
+                'expected_total_goals': 2.5,
+                'probability_goals_ge_2': 0.7,
+                'probability_goals_ge_3': 0.4,
+            },
+            PRIMARY_ID: {
+                'raw_score': 50,
+                'expected_total_goals': 2.4,
+                'probability_goals_ge_2': 0.72,
+                'probability_goals_ge_3': 0.41,
+                'probability_btts': 0.55,
+            },
+            CHALLENGER_ID: {
+                'raw_score': 48,
+                'expected_total_goals': 2.3,
+                'probability_goals_ge_2': 0.71,
+                'probability_goals_ge_3': 0.42,
+                'probability_btts': 0.54,
+            },
+            GI_E_ID: {
+                'raw_score': 50,
+                'expected_total_goals': 2.2,
+                'probability_goals_ge_2': 0.73,
+                'probability_goals_ge_3': 0.43,
+                'probability_btts': 0.56,
+            },
+            GI_F_ID: {
+                'raw_score': 49,
+                'expected_total_goals': 2.1,
+                'probability_goals_ge_2': 0.74,
+                'probability_goals_ge_3': 0.44,
+                'probability_btts': 0.57,
+            },
+        }
+    }
+    target = {'total_goals_ft': 3, 'goals_ge_2': 1, 'goals_ge_3': 1, 'btts_ft': 1}
+    db_rows = []
+    for i in range(12):
+        db_rows.append(
+            SimpleNamespace(
+                historical_snapshot_id=i,
+                lab_match_id=100 + i,
+                competition_name='E0',
+                kickoff_at=datetime(2021, 9, 1 + (i % 20), 15, 0, tzinfo=timezone.utc),
+                included_in_main_cohort=True,
+                exclusion_reason=None,
+                input_hash=f'h{i}',
+                prediction_payload_json=pred_payload,
+                target_payload_json=target,
+            )
+        )
+    original = [dict(r.prediction_payload_json) for r in db_rows]
+
+    job = SimpleNamespace(
+        id=1,
+        historical_run_id=3,
+        bundle_id=9,
+        bundle_definition_hash='bh',
+        job_version=JOB_VERSION,
+        mode=MODE_PILOT,
+        independence_status='external_independent',
+        random_seed=42,
+        source_git_commit='abc123',
+        params_json={'selection': {'selection_hash': 'sel'}, 'provenance': {}},
+        summary_json={'metrics': {'pairwise': []}, 'breakdowns': {}},
+        preflight_json={'independence': {'status': 'external_independent'}},
+        missing_by_reason_json={},
+    )
+    run = SimpleNamespace(id=3, source_git_commit='runcommit')
+    db = MagicMock()
+    db.get.side_effect = lambda model, key: job if key == 1 else run
+    scalar_result = MagicMock()
+    scalar_result.all.return_value = db_rows
+    db.scalars.return_value = scalar_result
+
+    data, filename = svc.build_goal_intensity_benchmark_export(db, 1)
+    assert filename.startswith('gi-benchmark-job-1-pilot')
+    assert [r.prediction_payload_json for r in db_rows] == original
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = set(zf.namelist())
+        assert 'pairwise_metrics.csv' in names
+        assert 'calibration_ge2.csv' in names
+        assert 'fixture_predictions.csv' in names
+        assert 'breakdown_competition.csv' in names
+        assert 'breakdown_month.csv' in names
+        assert 'breakdown_season_third.csv' in names
+        assert 'breakdown_gi_a_score_decile.csv' in names
+        assert 'breakdown_gi_f_score_decile.csv' in names
+        assert 'breakdown_total_goals_prediction_band.csv' in names
+        pairwise = list(csv.DictReader(io.StringIO(zf.read('pairwise_metrics.csv').decode())))
+        metrics = {r['metric'] for r in pairwise}
+        assert 'mae' in metrics
+        assert 'brier_goals_ge_2' in metrics
+        assert 'brier_goals_ge_3' in metrics
+        assert 'brier_btts' in metrics
+        assert len(pairwise) == 32
+        cal = list(csv.DictReader(io.StringIO(zf.read('calibration_ge2.csv').decode())))
+        populated = [r for r in cal if r['count'] not in ('', '0', None) and r['avg_pred']]
+        assert populated
+        for r in cal:
+            if r['count'] == '0':
+                assert r['avg_pred'] == ''
+        fix = list(csv.DictReader(io.StringIO(zf.read('fixture_predictions.csv').decode())))
+        assert 'prob_btts_v4' in fix[0]
+        assert fix[0]['prob_btts_v4'] == ''
+        assert fix[0]['prob_goals_ge_2_v4'] != ''
+        bd = list(csv.DictReader(io.StringIO(zf.read('breakdown_competition.csv').decode())))
+        assert 'model_id' in bd[0]
+        assert 'MAE' in bd[0]
+        assert 'Brier Over 1.5' in bd[0]
+        manifest = __import__('json').loads(zf.read('run_manifest.json'))
+        assert manifest['analytics_source'] == 'persisted_rows_live'
+
+
+def test_rebuild_analytics_updates_summary_keeps_predictions():
+    pred = {'models': {V4_MODEL_ID: {'expected_total_goals': 2.0, 'probability_goals_ge_2': 0.6, 'probability_goals_ge_3': 0.3}}}
+    # Need five models for paired eval — use full payload
+    full_pred = {
+        'models': {
+            V4_MODEL_ID: {
+                'expected_total_goals': 2.5,
+                'probability_goals_ge_2': 0.7,
+                'probability_goals_ge_3': 0.4,
+            },
+            PRIMARY_ID: {
+                'raw_score': 50,
+                'expected_total_goals': 2.4,
+                'probability_goals_ge_2': 0.72,
+                'probability_goals_ge_3': 0.41,
+                'probability_btts': 0.55,
+            },
+            CHALLENGER_ID: {
+                'raw_score': 48,
+                'expected_total_goals': 2.3,
+                'probability_goals_ge_2': 0.71,
+                'probability_goals_ge_3': 0.42,
+                'probability_btts': 0.54,
+            },
+            GI_E_ID: {
+                'raw_score': 50,
+                'expected_total_goals': 2.2,
+                'probability_goals_ge_2': 0.73,
+                'probability_goals_ge_3': 0.43,
+                'probability_btts': 0.56,
+            },
+            GI_F_ID: {
+                'raw_score': 49,
+                'expected_total_goals': 2.1,
+                'probability_goals_ge_2': 0.74,
+                'probability_goals_ge_3': 0.44,
+                'probability_btts': 0.57,
+            },
+        }
+    }
+    row = SimpleNamespace(
+        historical_snapshot_id=1,
+        lab_match_id=1,
+        competition_name='E0',
+        kickoff_at=datetime(2021, 9, 1, 15, 0, tzinfo=timezone.utc),
+        included_in_main_cohort=True,
+        exclusion_reason=None,
+        input_hash='h1',
+        prediction_payload_json=full_pred,
+        target_payload_json={'total_goals_ft': 3, 'goals_ge_2': 1, 'goals_ge_3': 1, 'btts_ft': 1},
+    )
+    job = SimpleNamespace(
+        id=7,
+        historical_run_id=3,
+        bundle_id=9,
+        job_version=JOB_VERSION,
+        mode=MODE_PILOT,
+        status=STATUS_COMPLETED,
+        independence_status='external_independent',
+        job_key='k',
+        random_seed=42,
+        requested_sample_size=1,
+        total_snapshots=1,
+        eligible_snapshots=1,
+        selected_snapshots=1,
+        processed_snapshots=1,
+        paired_complete=1,
+        skipped=0,
+        errors=0,
+        progress_pct=None,
+        cancel_requested=False,
+        params_json={
+            'provenance': {
+                'job_created_source_commit': 'create1',
+                'job_execution_source_commit': 'exec1',
+                'resume_execution_commits': [],
+            }
+        },
+        preflight_json={},
+        summary_json={'metrics': {'pairwise': [{'metric': 'mae'}]}, 'breakdowns': {}, 'reconciliation_ok': True},
+        missing_by_reason_json={},
+        error_json=None,
+        bundle_definition_hash='bh',
+        run_fixture_ids_hash=None,
+        source_git_commit='create1',
+        started_at=None,
+        last_checkpoint_at=None,
+        completed_at=None,
+        cancelled_at=None,
+        created_at=None,
+        updated_at=None,
+    )
+    db = MagicMock()
+    db.get.return_value = job
+    scalar_result = MagicMock()
+    scalar_result.all.return_value = [row]
+    db.scalars.return_value = scalar_result
+
+    with patch.object(svc, '_pilot_gate_ok', return_value=(True, [])):
+        out = svc.rebuild_goal_intensity_benchmark_analytics(db, 7)
+
+    assert len(job.summary_json['metrics']['pairwise']) == 32
+    assert row.prediction_payload_json is full_pred
+    assert out['job_created_source_commit'] == 'create1'
+    assert out['job_execution_source_commit'] == 'exec1'
+    db.commit.assert_called()
+
+
+def test_provenance_create_fields_in_params():
+    rev = {'git_commit': 'newcommitabc'}
+    # Unit: _write_job_provenance / extract
+    job = SimpleNamespace(
+        source_git_commit='newcommitabc',
+        params_json={
+            'provenance': {
+                'job_created_source_commit': 'newcommitabc',
+                'job_execution_source_commit': None,
+                'resume_execution_commits': [],
+            }
+        },
+    )
+    svc._write_job_provenance(job, execution='newcommitabc')
+    prov = svc._extract_job_provenance(job)
+    assert prov['job_created_source_commit'] == 'newcommitabc'
+    assert prov['job_execution_source_commit'] == 'newcommitabc'
+    svc._write_job_provenance(job, append_resume='resumecommit')
+    prov2 = svc._extract_job_provenance(job)
+    assert prov2['resume_execution_commits'] == ['resumecommit']
+    # Legacy job without provenance: do not invent false split beyond source_git_commit
+    legacy = SimpleNamespace(source_git_commit='363775e', params_json={})
+    leg = svc._extract_job_provenance(legacy)
+    assert leg['job_created_source_commit'] == '363775e'
+    assert leg['job_execution_source_commit'] is None
+
+
+def test_rebuild_rejects_non_completed():
+    job = SimpleNamespace(id=1, status=STATUS_FAILED)
+    db = MagicMock()
+    db.get.return_value = job
+    with pytest.raises(CecchinoLabImportError) as ei:
+        svc.rebuild_goal_intensity_benchmark_analytics(db, 1)
+    assert ei.value.code == 'job_not_completed'
 

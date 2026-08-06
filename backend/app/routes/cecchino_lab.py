@@ -113,6 +113,7 @@ from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_service 
     cancel_goal_intensity_benchmark_job,
     get_goal_intensity_benchmark_job,
     list_goal_intensity_benchmark_jobs_for_run,
+    rebuild_goal_intensity_benchmark_analytics,
     resume_goal_intensity_benchmark_job,
     start_goal_intensity_benchmark_job,
 )
@@ -1917,6 +1918,19 @@ def goal_intensity_benchmark_resume(
     except CecchinoLabImportError as exc:
         return _lab_error(exc)
     return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/goal-intensity-benchmark/jobs/{job_id}/rebuild-analytics")
+def goal_intensity_benchmark_rebuild_analytics(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Ricalcola metrics/breakdowns da row persistite. Nessun scoring/API/refit."""
+    try:
+        result = rebuild_goal_intensity_benchmark_analytics(db, job_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 @router.get("/goal-intensity-benchmark/jobs/{job_id}/export")

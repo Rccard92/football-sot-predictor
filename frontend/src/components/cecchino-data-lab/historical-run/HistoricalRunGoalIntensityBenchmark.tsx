@@ -14,6 +14,7 @@ import {
   resumeGoalIntensityBenchmarkJob,
   startGoalIntensityBenchmarkJob,
   type GiHistoricalBenchmarkJob,
+  type GiHistoricalBenchmarkPairwiseMetric,
   type GiHistoricalBenchmarkPreflight,
 } from '../../../lib/cecchinoLabApi'
 
@@ -39,6 +40,16 @@ const MODEL_LABELS: Record<string, string> = {
   GI_E_PRIMARY_RECALIBRATED: 'GI_E Primary Recalibrated',
   GI_F_REGULARIZED_PILLARS: 'GI_F Regularized Pillars',
 }
+
+const PAIRWISE_METRIC_OPTIONS: {
+  value: GiHistoricalBenchmarkPairwiseMetric
+  label: string
+}[] = [
+  { value: 'mae', label: 'MAE total_goals_ft' },
+  { value: 'brier_goals_ge_2', label: 'Brier goals ≥ 2 (O1.5)' },
+  { value: 'brier_goals_ge_3', label: 'Brier goals ≥ 3 (O2.5)' },
+  { value: 'brier_btts', label: 'Brier BTTS (V5)' },
+]
 
 function independenceBadge(status: string | null | undefined): {
   label: string
@@ -84,6 +95,8 @@ export function HistoricalRunGoalIntensityBenchmark({
     'idle',
   )
   const [error, setError] = useState<string | null>(null)
+  const [pairwiseMetric, setPairwiseMetric] =
+    useState<GiHistoricalBenchmarkPairwiseMetric>('mae')
 
   const completed = isRunCompleted(runStatus)
 
@@ -134,7 +147,13 @@ export function HistoricalRunGoalIntensityBenchmark({
   const summary = (job?.summary_json || {}) as Record<string, unknown>
   const metrics = (summary.metrics || {}) as Record<string, unknown>
   const modelMetrics = (metrics.model_metrics || {}) as Record<string, Record<string, unknown>>
-  const pairwise = (metrics.pairwise || []) as Array<Record<string, unknown>>
+  const pairwiseAll = (metrics.pairwise || []) as Array<Record<string, unknown>>
+  const pairwise = pairwiseAll.filter((p) => {
+    const m = String(p.metric || 'mae')
+    return m === pairwiseMetric
+  })
+  const pairwiseLabel =
+    PAIRWISE_METRIC_OPTIONS.find((o) => o.value === pairwiseMetric)?.label || pairwiseMetric
   const missing = job?.missing_by_reason_json || preflight?.availability?.missing_by_reason || {}
 
   const showResume = Boolean(job?.can_resume)
@@ -569,14 +588,22 @@ export function HistoricalRunGoalIntensityBenchmark({
                 <th className="py-1 pr-3">MAE</th>
                 <th className="py-1 pr-3">RMSE</th>
                 <th className="py-1 pr-3">Bias</th>
-                <th className="py-1">Brier O2.5</th>
+                <th className="py-1 pr-3">Brier O1.5</th>
+                <th className="py-1 pr-3">Brier O2.5</th>
+                <th className="py-1">Brier BTTS</th>
               </tr>
             </thead>
             <tbody>
               {MODEL_ORDER.map((mid) => {
                 const block = modelMetrics[mid] || {}
                 const tg = (block.total_goals_ft || {}) as Record<string, unknown>
+                const ge2 = (block.goals_ge_2 || {}) as Record<string, unknown>
                 const ge3 = (block.goals_ge_3 || {}) as Record<string, unknown>
+                const btts = (block.btts || {}) as Record<string, unknown>
+                const bttsDisplay =
+                  btts.status === 'not_comparable' || btts.status === 'insufficient_data'
+                    ? 'n/d'
+                    : String(btts.brier ?? '—')
                 return (
                   <tr key={mid}>
                     <td className="py-1 pr-3">{MODEL_LABELS[mid] || mid}</td>
@@ -584,7 +611,9 @@ export function HistoricalRunGoalIntensityBenchmark({
                     <td className="py-1 pr-3">{String(tg.mae ?? '—')}</td>
                     <td className="py-1 pr-3">{String(tg.rmse ?? '—')}</td>
                     <td className="py-1 pr-3">{String(tg.bias ?? '—')}</td>
-                    <td className="py-1">{String(ge3.brier ?? '—')}</td>
+                    <td className="py-1 pr-3">{String(ge2.brier ?? '—')}</td>
+                    <td className="py-1 pr-3">{String(ge3.brier ?? '—')}</td>
+                    <td className="py-1">{bttsDisplay}</td>
                   </tr>
                 )
               })}
@@ -593,36 +622,65 @@ export function HistoricalRunGoalIntensityBenchmark({
         </div>
       ) : null}
 
-      {pairwise.length > 0 ? (
+      {pairwiseAll.length > 0 ? (
         <div className="overflow-x-auto" data-testid="gi-bench-pairwise">
-          <h4 className="mb-1 text-sm font-semibold">Pairwise MAE (bootstrap 95%)</h4>
-          <table className="min-w-full text-left text-xs">
-            <thead>
-              <tr>
-                <th className="py-1 pr-3">Left</th>
-                <th className="py-1 pr-3">Right</th>
-                <th className="py-1 pr-3">Delta</th>
-                <th className="py-1 pr-3">CI</th>
-                <th className="py-1">Preferred</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pairwise.map((p, idx) => {
-                const ci = (p.ci || {}) as Record<string, unknown>
-                return (
-                  <tr key={`${String(p.left_id)}-${String(p.right_id)}-${idx}`}>
-                    <td className="py-1 pr-3 font-mono text-[10px]">{String(p.left_id)}</td>
-                    <td className="py-1 pr-3 font-mono text-[10px]">{String(p.right_id)}</td>
-                    <td className="py-1 pr-3">{String(p.delta ?? '—')}</td>
-                    <td className="py-1 pr-3">
-                      [{String(ci.ci_lower ?? '—')}, {String(ci.ci_upper ?? '—')}]
-                    </td>
-                    <td className="py-1">{String(p.preferred_side ?? 'none')}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-semibold">
+              Pairwise {pairwiseLabel} (bootstrap 95%)
+            </h4>
+            <label className="text-xs text-[var(--lab-muted)]" htmlFor="gi-bench-pairwise-metric">
+              Metrica
+            </label>
+            <select
+              id="gi-bench-pairwise-metric"
+              data-testid="gi-bench-pairwise-metric"
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: 'var(--lab-border)' }}
+              value={pairwiseMetric}
+              onChange={(e) =>
+                setPairwiseMetric(e.target.value as GiHistoricalBenchmarkPairwiseMetric)
+              }
+            >
+              {PAIRWISE_METRIC_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {pairwise.length === 0 ? (
+            <p className="text-xs text-[var(--lab-muted)]" data-testid="gi-bench-pairwise-empty">
+              Nessun confronto pairwise per questa metrica nel summary corrente.
+            </p>
+          ) : (
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr>
+                  <th className="py-1 pr-3">Left</th>
+                  <th className="py-1 pr-3">Right</th>
+                  <th className="py-1 pr-3">Delta</th>
+                  <th className="py-1 pr-3">CI</th>
+                  <th className="py-1">Preferred</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pairwise.map((p, idx) => {
+                  const ci = (p.ci || {}) as Record<string, unknown>
+                  return (
+                    <tr key={`${String(p.left_id)}-${String(p.right_id)}-${String(p.metric)}-${idx}`}>
+                      <td className="py-1 pr-3 font-mono text-[10px]">{String(p.left_id)}</td>
+                      <td className="py-1 pr-3 font-mono text-[10px]">{String(p.right_id)}</td>
+                      <td className="py-1 pr-3">{String(p.delta ?? '—')}</td>
+                      <td className="py-1 pr-3">
+                        [{String(ci.ci_lower ?? '—')}, {String(ci.ci_upper ?? '—')}]
+                      </td>
+                      <td className="py-1">{String(p.preferred_side ?? 'none')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       ) : null}
     </section>

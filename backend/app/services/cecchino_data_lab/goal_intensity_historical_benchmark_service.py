@@ -879,6 +879,7 @@ def _serialize_job(
     if job.mode == MODE_PILOT and job.status in COMPLETED_STATUSES:
         ok, reasons = _pilot_gate_ok(job, paired_rows=paired_rows)
         pilot_gate = {"ok": ok, "reasons": reasons}
+    provenance = _extract_job_provenance(job)
     return {
         "job_id": job.id,
         "id": job.id,
@@ -911,6 +912,9 @@ def _serialize_job(
         "bundle_definition_hash": job.bundle_definition_hash,
         "run_fixture_ids_hash": job.run_fixture_ids_hash,
         "source_git_commit": job.source_git_commit,
+        "job_created_source_commit": provenance.get("job_created_source_commit"),
+        "job_execution_source_commit": provenance.get("job_execution_source_commit"),
+        "resume_execution_commits": provenance.get("resume_execution_commits") or [],
         "pilot_gate": pilot_gate,
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "last_checkpoint_at": job.last_checkpoint_at.isoformat()
@@ -1138,6 +1142,11 @@ def start_goal_intensity_benchmark_job(
             "pilot_job_id": int(pilot_job_id)
             if pilot_job_id
             else (int(pilot.id) if mode_norm == MODE_FULL and pilot else None),
+            "provenance": {
+                "job_created_source_commit": rev.get("git_commit"),
+                "job_execution_source_commit": None,
+                "resume_execution_commits": [],
+            },
         },
         preflight_json=preflight,
         bundle_definition_hash=bundle.candidate_definition_hash,
@@ -1215,6 +1224,9 @@ def resume_goal_intensity_benchmark_job(db: Session, job_id: int) -> dict[str, A
     job.status = STATUS_QUEUED
     job.error_json = None
     job.last_checkpoint_at = _utcnow()
+    resume_rev = resolve_code_revision().get("git_commit")
+    if resume_rev:
+        _write_job_provenance(job, append_resume=str(resume_rev))
     db.commit()
     db.refresh(job)
     _spawn_worker(int(job.id))
@@ -1375,6 +1387,10 @@ def _run_job_worker(job_id: int) -> None:
         job.status = STATUS_RUNNING
         job.started_at = job.started_at or _utcnow()
         job.last_checkpoint_at = _utcnow()
+        exec_rev = resolve_code_revision().get("git_commit")
+        if exec_rev:
+            # First execution commit; do not invent provenance for legacy jobs without create field.
+            _write_job_provenance(job, execution=str(exec_rev))
         db.commit()
 
         bundle = get_frozen_goal_intensity_candidate_bundle(db)
@@ -1563,6 +1579,7 @@ def _run_job_worker(job_id: int) -> None:
             src = prov.get("v4_source") or "unavailable"
             v4_source_counts[str(src)] += 1
 
+        job_provenance = _extract_job_provenance(job)
         summary = {
             "job_version": JOB_VERSION,
             "mode": job.mode,
@@ -1575,6 +1592,7 @@ def _run_job_worker(job_id: int) -> None:
             "metrics": metrics,
             "breakdowns": breakdowns,
             "models": list(MAIN_MODEL_IDS),
+            "provenance": job_provenance,
             "v4_provenance": {
                 "v4_source_counts": dict(sorted(v4_source_counts.items())),
                 "v4_formula_version": V4_FORMULA_VERSION,
@@ -1583,6 +1601,12 @@ def _run_job_worker(job_id: int) -> None:
                 "goal_market_formula_versions": dict(GOAL_MARKET_FORMULA_VERSIONS),
                 "historical_run_source_commit": run.source_git_commit if run else None,
                 "benchmark_source_commit": job.source_git_commit,
+                "job_created_source_commit": job_provenance.get("job_created_source_commit"),
+                "job_execution_source_commit": job_provenance.get(
+                    "job_execution_source_commit"
+                ),
+                "resume_execution_commits": job_provenance.get("resume_execution_commits")
+                or [],
                 "scientific_description_reconstructed": (
                     "current V4 formula applied to frozen historical prematch inputs"
                 ),
@@ -1659,6 +1683,40 @@ def _run_job_worker(job_id: int) -> None:
             _active_threads.pop(job_id, None)
 
 
+FIXTURE_MODEL_KEYS = (
+    ("v4", "GI_V4_EXPECTED_GOALS"),
+    ("gi_a", "GI_A_STRICT_CORE"),
+    ("gi_b", "GI_B_RECENCY"),
+    ("gi_e", "GI_E_PRIMARY_RECALIBRATED"),
+    ("gi_f", "GI_F_REGULARIZED_PILLARS"),
+)
+
+BREAKDOWN_CSV_SPECS = (
+    ("competition", "breakdown_competition.csv"),
+    ("month", "breakdown_month.csv"),
+    ("season_third", "breakdown_season_third.csv"),
+    ("gi_a_score_decile", "breakdown_gi_a_score_decile.csv"),
+    ("gi_f_score_decile", "breakdown_gi_f_score_decile.csv"),
+    ("total_goals_prediction_band", "breakdown_total_goals_prediction_band.csv"),
+)
+
+BREAKDOWN_CSV_HEADERS = [
+    "segment",
+    "model_id",
+    "n",
+    "coverage",
+    "warning_small_sample",
+    "MAE",
+    "RMSE",
+    "bias",
+    "Pearson",
+    "Spearman",
+    "Brier Over 1.5",
+    "Brier Over 2.5",
+    "Brier BTTS",
+]
+
+
 def _csv_escape(value: Any) -> str:
     s = "" if value is None else str(value)
     if any(c in s for c in [",", '"', "\n"]):
@@ -1673,6 +1731,262 @@ def _rows_to_csv(headers: list[str], rows: list[list[Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _extract_job_provenance(job: CecchinoLabGoalIntensityBenchmarkJob) -> dict[str, Any]:
+    params = job.params_json if isinstance(job.params_json, dict) else {}
+    prov = params.get("provenance") if isinstance(params.get("provenance"), dict) else {}
+    created = prov.get("job_created_source_commit") or job.source_git_commit
+    execution = prov.get("job_execution_source_commit")
+    resumes = prov.get("resume_execution_commits")
+    if not isinstance(resumes, list):
+        resumes = []
+    return {
+        "job_created_source_commit": created,
+        "job_execution_source_commit": execution,
+        "resume_execution_commits": list(resumes),
+    }
+
+
+def _write_job_provenance(
+    job: CecchinoLabGoalIntensityBenchmarkJob,
+    *,
+    created: str | None = None,
+    execution: str | None = None,
+    append_resume: str | None = None,
+) -> None:
+    params = dict(job.params_json) if isinstance(job.params_json, dict) else {}
+    prov = dict(params.get("provenance") or {}) if isinstance(params.get("provenance"), dict) else {}
+    if created is not None:
+        prov["job_created_source_commit"] = created
+    if execution is not None:
+        prov["job_execution_source_commit"] = execution
+    resumes = list(prov.get("resume_execution_commits") or [])
+    if append_resume:
+        resumes.append(append_resume)
+    prov["resume_execution_commits"] = resumes
+    if "job_created_source_commit" not in prov and job.source_git_commit:
+        prov["job_created_source_commit"] = job.source_git_commit
+    params["provenance"] = prov
+    job.params_json = params
+
+
+def db_rows_to_eval_dicts(
+    rows: list[CecchinoLabGoalIntensityBenchmarkRow],
+    *,
+    paired_only: bool = True,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if paired_only and not r.included_in_main_cohort:
+            continue
+        pred = r.prediction_payload_json if isinstance(r.prediction_payload_json, dict) else {}
+        tgt = r.target_payload_json if isinstance(r.target_payload_json, dict) else {}
+        out.append(
+            {
+                "snapshot_id": r.historical_snapshot_id,
+                "competition": r.competition_name,
+                "kickoff": r.kickoff_at.isoformat() if r.kickoff_at else None,
+                "month": r.kickoff_at.strftime("%Y-%m") if r.kickoff_at else None,
+                "models": pred.get("models") or {},
+                "target": tgt,
+            }
+        )
+    return out
+
+
+def _calibration_csv_rows(model_metrics: dict[str, Any], key: str) -> list[list[Any]]:
+    out: list[list[Any]] = []
+    for mid, block in model_metrics.items():
+        bins = ((block.get(key) or {}).get("calibration_bins")) or []
+        for b in bins:
+            if not isinstance(b, dict):
+                continue
+            count = b.get("count")
+            if count is None:
+                count = b.get("n")
+            avg_pred = b.get("avg_pred")
+            if avg_pred is None:
+                avg_pred = b.get("mean_pred")
+            avg_actual = b.get("avg_actual")
+            if avg_actual is None:
+                avg_actual = b.get("mean_actual")
+            out.append(
+                [
+                    mid,
+                    b.get("bin"),
+                    count,
+                    avg_pred,
+                    avg_actual,
+                    b.get("abs_gap"),
+                ]
+            )
+    return out
+
+
+def _breakdown_csv_rows(breakdowns: dict[str, Any], name: str) -> list[list[Any]]:
+    block = breakdowns.get(name) or {}
+    out: list[list[Any]] = []
+    for segment, bucket in sorted(block.items()):
+        if not isinstance(bucket, dict):
+            continue
+        model_metrics = bucket.get("model_metrics") or {}
+        if not model_metrics:
+            out.append(
+                [
+                    segment,
+                    None,
+                    bucket.get("n"),
+                    bucket.get("coverage"),
+                    bucket.get("warning_small_sample"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ]
+            )
+            continue
+        for mid in MAIN_MODEL_IDS:
+            mm = model_metrics.get(mid) or {}
+            tg = mm.get("total_goals_ft") or {}
+            ge2 = mm.get("goals_ge_2") or {}
+            ge3 = mm.get("goals_ge_3") or {}
+            btts = mm.get("btts") or {}
+            btts_brier = None if btts.get("status") in {"not_comparable", "insufficient_data"} else btts.get("brier")
+            out.append(
+                [
+                    segment,
+                    mid,
+                    bucket.get("n"),
+                    bucket.get("coverage"),
+                    bucket.get("warning_small_sample"),
+                    tg.get("mae"),
+                    tg.get("rmse"),
+                    tg.get("bias"),
+                    tg.get("pearson"),
+                    tg.get("spearman"),
+                    ge2.get("brier"),
+                    ge3.get("brier"),
+                    btts_brier,
+                ]
+            )
+    return out
+
+
+def _fixture_csv_row(r: CecchinoLabGoalIntensityBenchmarkRow) -> list[Any]:
+    pred = r.prediction_payload_json if isinstance(r.prediction_payload_json, dict) else {}
+    models = pred.get("models") or {}
+    tgt = r.target_payload_json if isinstance(r.target_payload_json, dict) else {}
+    row: list[Any] = [
+        r.historical_snapshot_id,
+        r.lab_match_id,
+        r.competition_name,
+        r.kickoff_at.isoformat() if r.kickoff_at else None,
+        r.included_in_main_cohort,
+        r.exclusion_reason,
+        r.input_hash,
+        tgt.get("total_goals_ft"),
+        tgt.get("goals_ge_2"),
+        tgt.get("goals_ge_3"),
+        tgt.get("btts_ft"),
+    ]
+    for _, mid in FIXTURE_MODEL_KEYS:
+        m = models.get(mid) if isinstance(models.get(mid), dict) else {}
+        row.append(m.get("expected_total_goals"))
+    for _, mid in FIXTURE_MODEL_KEYS:
+        m = models.get(mid) if isinstance(models.get(mid), dict) else {}
+        row.append(m.get("probability_goals_ge_2"))
+    for _, mid in FIXTURE_MODEL_KEYS:
+        m = models.get(mid) if isinstance(models.get(mid), dict) else {}
+        row.append(m.get("probability_goals_ge_3"))
+    for _, mid in FIXTURE_MODEL_KEYS:
+        m = models.get(mid) if isinstance(models.get(mid), dict) else {}
+        if mid == "GI_V4_EXPECTED_GOALS":
+            row.append(None)
+        else:
+            row.append(m.get("probability_btts"))
+    return row
+
+
+FIXTURE_CSV_HEADERS = [
+    "snapshot_id",
+    "lab_match_id",
+    "competition",
+    "kickoff",
+    "included",
+    "exclusion_reason",
+    "input_hash",
+    "total_goals_ft",
+    "goals_ge_2_actual",
+    "goals_ge_3_actual",
+    "btts_actual",
+    "pred_v4",
+    "pred_gi_a",
+    "pred_gi_b",
+    "pred_gi_e",
+    "pred_gi_f",
+    "prob_goals_ge_2_v4",
+    "prob_goals_ge_2_gi_a",
+    "prob_goals_ge_2_gi_b",
+    "prob_goals_ge_2_gi_e",
+    "prob_goals_ge_2_gi_f",
+    "prob_goals_ge_3_v4",
+    "prob_goals_ge_3_gi_a",
+    "prob_goals_ge_3_gi_b",
+    "prob_goals_ge_3_gi_e",
+    "prob_goals_ge_3_gi_f",
+    "prob_btts_v4",
+    "prob_btts_gi_a",
+    "prob_btts_gi_b",
+    "prob_btts_gi_e",
+    "prob_btts_gi_f",
+]
+
+
+def compute_analytics_from_persisted_rows(
+    rows: list[CecchinoLabGoalIntensityBenchmarkRow],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Ricalcola metrics/breakdowns solo dalle row persistite (no scoring)."""
+    eval_rows = db_rows_to_eval_dicts(rows, paired_only=True)
+    return evaluate_paired_rows(eval_rows), build_breakdowns(eval_rows)
+
+
+def rebuild_goal_intensity_benchmark_analytics(db: Session, job_id: int) -> dict[str, Any]:
+    """Admin idempotente: aggiorna solo metrics/breakdowns in summary da row persistite.
+
+    Non modifica predizioni, status, counters, reconciliation. Nessun scoring/API.
+    """
+    job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
+    if job is None:
+        raise CecchinoLabImportError("job_not_found", f"Job {job_id} non trovata", status_code=404)
+    if job.status not in COMPLETED_STATUSES:
+        raise CecchinoLabImportError(
+            "job_not_completed",
+            "Rebuild analytics consentito solo su job completed",
+            status_code=409,
+        )
+    rows = list(
+        db.scalars(
+            select(CecchinoLabGoalIntensityBenchmarkRow).where(
+                CecchinoLabGoalIntensityBenchmarkRow.job_id == int(job.id)
+            )
+        ).all()
+    )
+    metrics, breakdowns = compute_analytics_from_persisted_rows(rows)
+    summary = dict(job.summary_json) if isinstance(job.summary_json, dict) else {}
+    summary["metrics"] = metrics
+    summary["breakdowns"] = breakdowns
+    prov = _extract_job_provenance(job)
+    if any(prov.values()):
+        summary["provenance"] = prov
+    job.summary_json = summary
+    db.commit()
+    db.refresh(job)
+    return _serialize_job(job)
+
+
 def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[bytes, str]:
     job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
     if job is None:
@@ -1685,11 +1999,19 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
             )
         ).all()
     )
-    summary = job.summary_json if isinstance(job.summary_json, dict) else {}
-    metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
-    model_metrics = metrics.get("model_metrics") or {}
-    pairwise = metrics.get("pairwise") or []
-    breakdowns = summary.get("breakdowns") if isinstance(summary.get("breakdowns"), dict) else {}
+    # Analytics dinamiche dalle row persistite (ZIP corretto anche per job pre-fix).
+    live_metrics, live_breakdowns = compute_analytics_from_persisted_rows(rows)
+    summary = dict(job.summary_json) if isinstance(job.summary_json, dict) else {}
+    export_summary = dict(summary)
+    export_summary["metrics"] = live_metrics
+    export_summary["breakdowns"] = live_breakdowns
+    provenance = _extract_job_provenance(job)
+    if any(v is not None and v != [] for v in provenance.values()):
+        export_summary["provenance"] = provenance
+
+    model_metrics = live_metrics.get("model_metrics") or {}
+    pairwise = live_metrics.get("pairwise") or []
+    breakdowns = live_breakdowns
     preflight = job.preflight_json if isinstance(job.preflight_json, dict) else {}
     independence = preflight.get("independence") or {}
 
@@ -1727,23 +2049,6 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
         for p in pairwise
     ]
 
-    def _cal_rows(key: str) -> list[list[Any]]:
-        out = []
-        for mid, block in model_metrics.items():
-            bins = ((block.get(key) or {}).get("calibration_bins")) or []
-            for b in bins:
-                out.append(
-                    [
-                        mid,
-                        b.get("bin"),
-                        b.get("count"),
-                        b.get("avg_pred"),
-                        b.get("avg_actual"),
-                        b.get("abs_gap"),
-                    ]
-                )
-        return out
-
     btts_rows = []
     for mid, block in model_metrics.items():
         b = block.get("btts") or {}
@@ -1759,40 +2064,10 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
             ]
         )
 
-    def _bd_rows(name: str) -> list[list[Any]]:
-        block = breakdowns.get(name) or {}
-        out = []
-        for k, v in block.items():
-            if not isinstance(v, dict):
-                continue
-            out.append([k, v.get("n"), v.get("warning_small_sample")])
-        return out
-
     missing_rows = [
         [k, v] for k, v in sorted((job.missing_by_reason_json or {}).items())
     ]
-    fixture_rows = []
-    for r in rows:
-        pred = r.prediction_payload_json if isinstance(r.prediction_payload_json, dict) else {}
-        models = pred.get("models") or {}
-        tgt = r.target_payload_json if isinstance(r.target_payload_json, dict) else {}
-        fixture_rows.append(
-            [
-                r.historical_snapshot_id,
-                r.lab_match_id,
-                r.competition_name,
-                r.kickoff_at.isoformat() if r.kickoff_at else None,
-                r.included_in_main_cohort,
-                r.exclusion_reason,
-                r.input_hash,
-                tgt.get("total_goals_ft"),
-                ((models.get("GI_V4_EXPECTED_GOALS") or {}) or {}).get("expected_total_goals"),
-                ((models.get("GI_A_STRICT_CORE") or {}) or {}).get("expected_total_goals"),
-                ((models.get("GI_B_RECENCY") or {}) or {}).get("expected_total_goals"),
-                ((models.get("GI_E_PRIMARY_RECALIBRATED") or {}) or {}).get("expected_total_goals"),
-                ((models.get("GI_F_REGULARIZED_PILLARS") or {}) or {}).get("expected_total_goals"),
-            ]
-        )
+    fixture_rows = [_fixture_csv_row(r) for r in rows]
 
     manifest = {
         "base_run_id": run.id,
@@ -1804,6 +2079,9 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
         "job_version": job.job_version,
         "job_source_commit": job.source_git_commit,
         "benchmark_source_commit": job.source_git_commit,
+        "job_created_source_commit": provenance.get("job_created_source_commit"),
+        "job_execution_source_commit": provenance.get("job_execution_source_commit"),
+        "resume_execution_commits": provenance.get("resume_execution_commits") or [],
         "independence_status": job.independence_status,
         "mode": job.mode,
         "seed": job.random_seed,
@@ -1821,11 +2099,12 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
         "base_run_writes": 0,
         "full_scan_restarted": False,
         "job_id": job.id,
+        "analytics_source": "persisted_rows_live",
     }
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("job_summary.json", json.dumps(summary, indent=2, default=str))
+        zf.writestr("job_summary.json", json.dumps(export_summary, indent=2, default=str))
         zf.writestr("preflight.json", json.dumps(preflight, indent=2, default=str))
         zf.writestr(
             "independence_report.json",
@@ -1870,14 +2149,14 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
             "calibration_ge2.csv",
             _rows_to_csv(
                 ["model_id", "bin", "count", "avg_pred", "avg_actual", "abs_gap"],
-                _cal_rows("goals_ge_2"),
+                _calibration_csv_rows(model_metrics, "goals_ge_2"),
             ),
         )
         zf.writestr(
             "calibration_ge3.csv",
             _rows_to_csv(
                 ["model_id", "bin", "count", "avg_pred", "avg_actual", "abs_gap"],
-                _cal_rows("goals_ge_3"),
+                _calibration_csv_rows(model_metrics, "goals_ge_3"),
             ),
         )
         zf.writestr(
@@ -1887,38 +2166,18 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
                 btts_rows,
             ),
         )
-        zf.writestr(
-            "breakdown_competition.csv",
-            _rows_to_csv(["competition", "n", "warning_small_sample"], _bd_rows("competition")),
-        )
-        zf.writestr(
-            "breakdown_month.csv",
-            _rows_to_csv(["month", "n", "warning_small_sample"], _bd_rows("month")),
-        )
+        for bd_key, bd_filename in BREAKDOWN_CSV_SPECS:
+            zf.writestr(
+                bd_filename,
+                _rows_to_csv(BREAKDOWN_CSV_HEADERS, _breakdown_csv_rows(breakdowns, bd_key)),
+            )
         zf.writestr(
             "missing_reasons.csv",
             _rows_to_csv(["reason", "count"], missing_rows),
         )
         zf.writestr(
             "fixture_predictions.csv",
-            _rows_to_csv(
-                [
-                    "snapshot_id",
-                    "lab_match_id",
-                    "competition",
-                    "kickoff",
-                    "included",
-                    "exclusion_reason",
-                    "input_hash",
-                    "total_goals_ft",
-                    "pred_v4",
-                    "pred_gi_a",
-                    "pred_gi_b",
-                    "pred_gi_e",
-                    "pred_gi_f",
-                ],
-                fixture_rows,
-            ),
+            _rows_to_csv(FIXTURE_CSV_HEADERS, fixture_rows),
         )
         zf.writestr("run_manifest.json", json.dumps(manifest, indent=2, default=str))
 

@@ -128,20 +128,78 @@ def evaluate_paired_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "btts": btts,
         }
 
-    # Pairwise MAE bootstrap
+    # Pairwise bootstrap: MAE total_goals_ft + Brier ge2/ge3 (+ BTTS only V5↔V5)
     indices = bootstrap_index_matrix(n, BOOTSTRAP_ITERATIONS, BOOTSTRAP_SEED) if n else None
     pairwise = []
     for left_id, right_id in PAIRWISE_PAIRS:
-        left_errs = _abs_errs(model_series[left_id]["eg"], y_total)
-        right_errs = _abs_errs(model_series[right_id]["eg"], y_total)
         pairwise.append(
             _pairwise_error_comparison(
-                left_errs,
-                right_errs,
+                _abs_errs(model_series[left_id]["eg"], y_total),
+                _abs_errs(model_series[right_id]["eg"], y_total),
                 left_id=left_id,
                 right_id=right_id,
                 metric="mae",
                 indices=indices,
+            )
+        )
+    for left_id, right_id in PAIRWISE_PAIRS:
+        pairwise.append(
+            _pairwise_error_comparison(
+                _sq_errs(model_series[left_id]["ge2"], y_ge2),
+                _sq_errs(model_series[right_id]["ge2"], y_ge2),
+                left_id=left_id,
+                right_id=right_id,
+                metric="brier_goals_ge_2",
+                indices=indices,
+            )
+        )
+    for left_id, right_id in PAIRWISE_PAIRS:
+        pairwise.append(
+            _pairwise_error_comparison(
+                _sq_errs(model_series[left_id]["ge3"], y_ge3),
+                _sq_errs(model_series[right_id]["ge3"], y_ge3),
+                left_id=left_id,
+                right_id=right_id,
+                metric="brier_goals_ge_3",
+                indices=indices,
+            )
+        )
+    # BTTS: only among V5 models (no invented V4 probabilities)
+    btts_n = 0
+    for mid in MAIN_MODEL_IDS:
+        if mid == V4_MODEL_ID:
+            continue
+        btts_n = len(model_series[mid]["btts"])
+        break
+    btts_indices = (
+        bootstrap_index_matrix(btts_n, BOOTSTRAP_ITERATIONS, BOOTSTRAP_SEED) if btts_n else None
+    )
+    for left_id, right_id in PAIRWISE_PAIRS:
+        if left_id == V4_MODEL_ID or right_id == V4_MODEL_ID:
+            continue
+        left_btts = model_series[left_id]["btts"]
+        right_btts = model_series[right_id]["btts"]
+        y_btts = model_series[left_id]["y_btts"]
+        if not left_btts or not right_btts or len(left_btts) != len(right_btts):
+            pairwise.append(
+                _pairwise_error_comparison(
+                    [],
+                    [],
+                    left_id=left_id,
+                    right_id=right_id,
+                    metric="brier_btts",
+                    indices=None,
+                )
+            )
+            continue
+        pairwise.append(
+            _pairwise_error_comparison(
+                _sq_errs(left_btts, y_btts),
+                _sq_errs(right_btts, y_btts),
+                left_id=left_id,
+                right_id=right_id,
+                metric="brier_btts",
+                indices=btts_indices,
             )
         )
 

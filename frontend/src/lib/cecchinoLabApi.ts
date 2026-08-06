@@ -3292,6 +3292,12 @@ export type GiHistoricalBenchmarkPreflight = {
   v4_provenance_manifest?: Record<string, unknown>
 }
 
+export type GiHistoricalBenchmarkPairwiseMetric =
+  | 'mae'
+  | 'brier_goals_ge_2'
+  | 'brier_goals_ge_3'
+  | 'brier_btts'
+
 export type GiHistoricalBenchmarkJob = {
   job_id?: number
   id: number
@@ -3322,6 +3328,10 @@ export type GiHistoricalBenchmarkJob = {
   error_json?: Record<string, unknown> | null
   pilot_gate?: { ok: boolean; reasons: string[] } | null
   stale_checkpoint_seconds?: number
+  source_git_commit?: string | null
+  job_created_source_commit?: string | null
+  job_execution_source_commit?: string | null
+  resume_execution_commits?: string[]
 }
 
 export function goalIntensityBenchmarkPreflight(

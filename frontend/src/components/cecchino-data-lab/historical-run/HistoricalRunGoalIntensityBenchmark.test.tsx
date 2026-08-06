@@ -299,4 +299,68 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
       )
     })
   })
+
+  it('filtra pairwise per metrica selezionata', async () => {
+    vi.mocked(api.listGoalIntensityBenchmarkJobs).mockResolvedValue({
+      jobs: [
+        {
+          id: 12,
+          job_id: 12,
+          historical_run_id: 1,
+          bundle_id: 9,
+          job_version: 'v1',
+          mode: 'pilot',
+          status: 'completed',
+          pilot_gate: { ok: true, reasons: [] },
+          summary_json: {
+            metrics: {
+              model_metrics: {
+                GI_V4_EXPECTED_GOALS: {
+                  n: 10,
+                  total_goals_ft: { mae: 0.5, rmse: 0.6, bias: 0.1 },
+                  goals_ge_2: { brier: 0.2 },
+                  goals_ge_3: { brier: 0.22 },
+                  btts: { status: 'not_comparable' },
+                },
+              },
+              pairwise: [
+                {
+                  left_id: 'GI_A_STRICT_CORE',
+                  right_id: 'GI_V4_EXPECTED_GOALS',
+                  metric: 'mae',
+                  delta: -0.1,
+                  preferred_side: 'left',
+                  ci: { ci_lower: -0.2, ci_upper: -0.05 },
+                },
+                {
+                  left_id: 'GI_E_PRIMARY_RECALIBRATED',
+                  right_id: 'GI_A_STRICT_CORE',
+                  metric: 'brier_btts',
+                  delta: -0.01,
+                  preferred_side: 'left',
+                  ci: { ci_lower: -0.02, ci_upper: -0.005 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+    render(
+      <HistoricalRunGoalIntensityBenchmark runId={1} runStatus="completed" seasonLabel="2021/22" />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('gi-bench-pairwise')).toBeTruthy()
+    })
+    expect(screen.getByText('GI_V4_EXPECTED_GOALS')).toBeTruthy()
+    expect(screen.queryByText('GI_E_PRIMARY_RECALIBRATED')).toBeNull()
+    fireEvent.change(screen.getByTestId('gi-bench-pairwise-metric'), {
+      target: { value: 'brier_btts' },
+    })
+    await waitFor(() => {
+      expect(screen.getByText('GI_E_PRIMARY_RECALIBRATED')).toBeTruthy()
+    })
+    expect(screen.queryByText('GI_V4_EXPECTED_GOALS')).toBeNull()
+    expect(screen.getByText(/Pairwise Brier BTTS/i)).toBeTruthy()
+  })
 })
