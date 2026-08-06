@@ -96,6 +96,13 @@ export function SegnaliKpiPage() {
           evaluationStatus={kpi.evaluationStatus}
           countryName={kpi.countryName}
           leagueName={kpi.leagueName}
+          purchasabilityVersion={kpi.purchasabilityVersion}
+          purchasabilityStatus={kpi.purchasabilityStatus}
+          purchasabilityClass={kpi.purchasabilityClass}
+          purchasabilityQuality={kpi.purchasabilityQuality}
+          purchasabilityScoreMin={kpi.purchasabilityScoreMin}
+          purchasabilityScoreMax={kpi.purchasabilityScoreMax}
+          purchasabilityScoreError={kpi.purchasabilityScoreError}
           loading={kpi.loading}
           actionLoading={kpi.actionLoading}
           onDateFromChange={kpi.setDateFrom}
@@ -105,6 +112,12 @@ export function SegnaliKpiPage() {
           onEvaluationStatusChange={kpi.setEvaluationStatus}
           onCountryNameChange={kpi.setCountryName}
           onLeagueNameChange={kpi.setLeagueName}
+          onPurchasabilityVersionChange={kpi.setPurchasabilityVersion}
+          onPurchasabilityStatusChange={kpi.setPurchasabilityStatus}
+          onPurchasabilityClassChange={kpi.setPurchasabilityClass}
+          onPurchasabilityQualityChange={kpi.setPurchasabilityQuality}
+          onPurchasabilityScoreMinChange={kpi.setPurchasabilityScoreMin}
+          onPurchasabilityScoreMaxChange={kpi.setPurchasabilityScoreMax}
           onRefresh={() => void kpi.loadAll()}
           onSync={() => void kpi.runSync()}
           onRevaluate={() => void kpi.runRevaluate()}
@@ -135,6 +148,7 @@ export function SegnaliKpiPage() {
             <KpiSignalsMetricRibbon overall={kpi.summary.overall} />
             <KpiSignalsHeatmapLab
               cells={kpi.summary.heatmap.cells}
+              rows={kpi.summary.heatmap.rows}
               onCellClick={handleHeatmapCellClick}
             />
             <KpiSignalsTopRankingLab top={kpi.summary.top} />

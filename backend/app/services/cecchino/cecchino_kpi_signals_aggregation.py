@@ -7,6 +7,7 @@ import io
 from datetime import date
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -21,11 +22,27 @@ from app.models.cecchino_kpi_signal_activation import (
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_kpi_signals import (
     HEATMAP_SELECTION_ROWS,
+    KPI_MARKET_FOR_KEY,
+    KPI_SIGNAL_MARKET_DEFS,
+    KPI_SIGNAL_MARKET_OPTIONS,
     MIN_KPI_RATING,
     RATING_BUCKETS,
     extract_kpi_rating_score,
     normalize_kpi_row,
 )
+from app.services.cecchino.cecchino_kpi_signals_purchasability import (
+    PURCHASABILITY_CLASS_KEYS,
+    PURCHASABILITY_FILTER_STATUSES,
+    PURCHASABILITY_QUALITY_VALUES,
+    PURCHASABILITY_STATUS_SCORE,
+    PURCHASABILITY_STATUS_SCORE_PROVISIONAL,
+    PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE,
+    PURCHASABILITY_STATUS_UNSUPPORTED,
+    PURCHASABILITY_VERSIONS,
+    purchasability_filter_options,
+    serialize_purchasability_from_activation,
+)
+from app.services.cecchino.cecchino_purchasability_v3_opposition import SUPPORTED_V3_MARKETS
 
 
 def _float_odds(value: Any) -> float | None:
@@ -101,6 +118,111 @@ def _profit_metrics(rows: list[CecchinoKpiSignalActivation]) -> dict[str, Any]:
     }
 
 
+def validate_purchasability_filters(
+    *,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
+) -> None:
+    """Valida filtri Acquistabilità. Senza version non applicare sottofiltri."""
+    has_child = any(
+        v is not None and v != ""
+        for v in (
+            purchasability_status,
+            purchasability_class,
+            purchasability_score_min,
+            purchasability_score_max,
+            purchasability_quality,
+        )
+    )
+    if has_child and not purchasability_version:
+        raise HTTPException(
+            status_code=422,
+            detail="purchasability_version is required when other purchasability filters are set",
+        )
+    if not purchasability_version:
+        return
+    if purchasability_version not in PURCHASABILITY_VERSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"purchasability_version must be one of: {', '.join(PURCHASABILITY_VERSIONS)}",
+        )
+    if purchasability_status and purchasability_status not in PURCHASABILITY_FILTER_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"purchasability_status must be one of: {', '.join(PURCHASABILITY_FILTER_STATUSES)}",
+        )
+    if purchasability_class and purchasability_class not in PURCHASABILITY_CLASS_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"purchasability_class must be one of: {', '.join(PURCHASABILITY_CLASS_KEYS)}",
+        )
+    if purchasability_quality and purchasability_quality not in PURCHASABILITY_QUALITY_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"purchasability_quality must be one of: {', '.join(PURCHASABILITY_QUALITY_VALUES)}",
+        )
+    for label, value in (
+        ("purchasability_score_min", purchasability_score_min),
+        ("purchasability_score_max", purchasability_score_max),
+    ):
+        if value is None:
+            continue
+        if value < 0 or value > 100:
+            raise HTTPException(status_code=422, detail=f"{label} must be between 0 and 100")
+    if (
+        purchasability_score_min is not None
+        and purchasability_score_max is not None
+        and purchasability_score_min > purchasability_score_max
+    ):
+        raise HTTPException(status_code=422, detail="purchasability_score_min cannot exceed purchasability_score_max")
+
+
+def _apply_purchasability_filters(
+    query,
+    *,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
+):
+    if not purchasability_version:
+        return query
+
+    if purchasability_version == "v3":
+        status_col = CecchinoKpiSignalActivation.purchasability_v3_status
+        score_col = CecchinoKpiSignalActivation.purchasability_v3_score
+        class_col = CecchinoKpiSignalActivation.purchasability_v3_class_key
+        quality_col = CecchinoKpiSignalActivation.purchasability_v3_calculation_quality
+    else:
+        status_col = CecchinoKpiSignalActivation.purchasability_v31_status
+        score_col = CecchinoKpiSignalActivation.purchasability_v31_score
+        class_col = CecchinoKpiSignalActivation.purchasability_v31_class_key
+        quality_col = CecchinoKpiSignalActivation.purchasability_v31_calculation_quality
+
+    if purchasability_status:
+        if purchasability_status == PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE:
+            query = query.where(
+                (status_col.is_(None)) | (status_col == PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE)
+            )
+        else:
+            query = query.where(status_col == purchasability_status)
+    if purchasability_class:
+        query = query.where(class_col == purchasability_class)
+    if purchasability_quality:
+        query = query.where(quality_col == purchasability_quality)
+    if purchasability_score_min is not None:
+        query = query.where(score_col.is_not(None), score_col >= purchasability_score_min)
+    if purchasability_score_max is not None:
+        query = query.where(score_col.is_not(None), score_col <= purchasability_score_max)
+    return query
+
+
 def _base_query(
     db: Session,
     *,
@@ -113,6 +235,12 @@ def _base_query(
     league_name: str | None = None,
     country_name: str | None = None,
     only_current: bool = True,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
 ):
     query = select(CecchinoKpiSignalActivation).where(
         CecchinoKpiSignalActivation.scan_date >= date_from,
@@ -132,6 +260,64 @@ def _base_query(
         query = query.where(CecchinoKpiSignalActivation.league_name == league_name)
     if country_name:
         query = query.where(CecchinoKpiSignalActivation.country_name == country_name)
+    return _apply_purchasability_filters(
+        query,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
+    )
+
+
+def _count_filters_kwargs(
+    *,
+    date_from: date,
+    date_to: date,
+    rating_bucket: str | None,
+    selection_key: str | None,
+    normalized_market: str | None,
+    evaluation_status: str | None,
+    league_name: str | None,
+    country_name: str | None,
+    only_current: bool,
+    purchasability_version: str | None,
+    purchasability_status: str | None,
+    purchasability_class: str | None,
+    purchasability_score_min: float | None,
+    purchasability_score_max: float | None,
+    purchasability_quality: str | None,
+):
+    clauses = [
+        CecchinoKpiSignalActivation.scan_date >= date_from,
+        CecchinoKpiSignalActivation.scan_date <= date_to,
+    ]
+    if only_current:
+        clauses.append(CecchinoKpiSignalActivation.is_current.is_(True))
+    if rating_bucket:
+        clauses.append(CecchinoKpiSignalActivation.rating_bucket == rating_bucket)
+    if selection_key:
+        clauses.append(CecchinoKpiSignalActivation.selection_key == selection_key)
+    if normalized_market:
+        clauses.append(CecchinoKpiSignalActivation.normalized_market == normalized_market)
+    if evaluation_status:
+        clauses.append(CecchinoKpiSignalActivation.evaluation_status == evaluation_status)
+    if league_name:
+        clauses.append(CecchinoKpiSignalActivation.league_name == league_name)
+    if country_name:
+        clauses.append(CecchinoKpiSignalActivation.country_name == country_name)
+
+    query = select(func.count()).select_from(CecchinoKpiSignalActivation).where(*clauses)
+    query = _apply_purchasability_filters(
+        query,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
+    )
     return query
 
 
@@ -151,6 +337,8 @@ def _build_diagnostics(
         ).all(),
     )
     kpi_rows_seen = 0
+    kpi_rows_supported = 0
+    kpi_rows_unsupported = 0
     below_50 = 0
     without_book = 0
     fixtures_with_kpi = 0
@@ -169,26 +357,105 @@ def _build_diagnostics(
                 below_50 += 1
             if _float_odds(row.get("quota_book")) is None:
                 without_book += 1
+            normalized = normalize_kpi_row(row)
+            if normalized:
+                kpi_rows_supported += 1
+            else:
+                market_key = str(row.get("market_key") or "").strip().upper()
+                if market_key and market_key not in KPI_MARKET_FOR_KEY:
+                    kpi_rows_unsupported += 1
 
-    created = int(
-        db.scalar(
-            select(func.count())
-            .select_from(CecchinoKpiSignalActivation)
-            .where(
+    activations = list(
+        db.scalars(
+            select(CecchinoKpiSignalActivation).where(
                 CecchinoKpiSignalActivation.scan_date >= date_from,
                 CecchinoKpiSignalActivation.scan_date <= date_to,
                 CecchinoKpiSignalActivation.is_current.is_(True),
             ),
-        )
-        or 0,
+        ).all(),
     )
+    created = len(activations)
+    by_market: dict[str, int] = {d["selection_key"]: 0 for d in KPI_SIGNAL_MARKET_DEFS}
+    rows_with_v3 = rows_without_v3 = 0
+    rows_with_v31 = rows_without_v31 = 0
+    v31_provisional = v31_definitive = 0
+    v3_unsupported = 0
+    for act in activations:
+        by_market[act.selection_key] = by_market.get(act.selection_key, 0) + 1
+        v3_status = act.purchasability_v3_status
+        if v3_status and v3_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE:
+            rows_with_v3 += 1
+        else:
+            rows_without_v3 += 1
+        if v3_status == PURCHASABILITY_STATUS_UNSUPPORTED:
+            v3_unsupported += 1
+        v31_status = act.purchasability_v31_status
+        if v31_status and v31_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE:
+            rows_with_v31 += 1
+        else:
+            rows_without_v31 += 1
+        if v31_status == PURCHASABILITY_STATUS_SCORE_PROVISIONAL:
+            v31_provisional += 1
+        elif v31_status == PURCHASABILITY_STATUS_SCORE:
+            v31_definitive += 1
+
     return {
         "today_fixtures_count": len(fixtures),
         "fixtures_with_kpi_panel": fixtures_with_kpi,
         "kpi_rows_seen": kpi_rows_seen,
+        "kpi_rows_supported": kpi_rows_supported,
+        "kpi_rows_unsupported": kpi_rows_unsupported,
         "kpi_signals_created": created,
         "kpi_rows_below_50": below_50,
         "kpi_rows_without_book_odds": without_book,
+        "supported_market_definitions": len(KPI_SIGNAL_MARKET_DEFS),
+        "activations_created_by_market": by_market,
+        "rows_with_v3_snapshot": rows_with_v3,
+        "rows_without_v3_snapshot": rows_without_v3,
+        "rows_with_v31_snapshot": rows_with_v31,
+        "rows_without_v31_snapshot": rows_without_v31,
+        "v31_provisional_count": v31_provisional,
+        "v31_definitive_count": v31_definitive,
+        "v3_unsupported_count": v3_unsupported,
+        "purchasability_snapshot_extraction_errors": 0,
+        "v3_supported_markets": sorted(SUPPORTED_V3_MARKETS),
+    }
+
+
+def _filter_payload(
+    *,
+    date_from: date,
+    date_to: date,
+    rating_bucket: str | None,
+    selection_key: str | None,
+    normalized_market: str | None,
+    evaluation_status: str | None,
+    league_name: str | None,
+    country_name: str | None,
+    only_current: bool,
+    purchasability_version: str | None,
+    purchasability_status: str | None,
+    purchasability_class: str | None,
+    purchasability_score_min: float | None,
+    purchasability_score_max: float | None,
+    purchasability_quality: str | None,
+) -> dict[str, Any]:
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "rating_bucket": rating_bucket,
+        "selection_key": selection_key,
+        "normalized_market": normalized_market,
+        "evaluation_status": evaluation_status,
+        "league_name": league_name,
+        "country_name": country_name,
+        "only_current": only_current,
+        "purchasability_version": purchasability_version,
+        "purchasability_status": purchasability_status,
+        "purchasability_class": purchasability_class,
+        "purchasability_score_min": purchasability_score_min,
+        "purchasability_score_max": purchasability_score_max,
+        "purchasability_quality": purchasability_quality,
     }
 
 
@@ -205,18 +472,38 @@ def build_kpi_signals_summary(
     country_name: str | None = None,
     only_current: bool = True,
     include_diagnostics: bool = True,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
 ) -> dict[str, Any]:
-    filters = {
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "rating_bucket": rating_bucket,
-        "selection_key": selection_key,
-        "normalized_market": normalized_market,
-        "evaluation_status": evaluation_status,
-        "league_name": league_name,
-        "country_name": country_name,
-        "only_current": only_current,
-    }
+    validate_purchasability_filters(
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
+    )
+    filters = _filter_payload(
+        date_from=date_from,
+        date_to=date_to,
+        rating_bucket=rating_bucket,
+        selection_key=selection_key,
+        normalized_market=normalized_market,
+        evaluation_status=evaluation_status,
+        league_name=league_name,
+        country_name=country_name,
+        only_current=only_current,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
+    )
     rows = list(
         db.scalars(
             _base_query(
@@ -230,6 +517,12 @@ def build_kpi_signals_summary(
                 league_name=league_name,
                 country_name=country_name,
                 only_current=only_current,
+                purchasability_version=purchasability_version,
+                purchasability_status=purchasability_status,
+                purchasability_class=purchasability_class,
+                purchasability_score_min=purchasability_score_min,
+                purchasability_score_max=purchasability_score_max,
+                purchasability_quality=purchasability_quality,
             ),
         ).all(),
     )
@@ -296,6 +589,8 @@ def build_kpi_signals_summary(
     payload: dict[str, Any] = {
         "status": "ok",
         "filters": filters,
+        "purchasability_filter_options": purchasability_filter_options(),
+        "market_options": list(KPI_SIGNAL_MARKET_OPTIONS),
         "overall": overall,
         "by_rating_bucket": by_rating_bucket,
         "by_selection": by_selection,
@@ -350,6 +645,8 @@ def serialize_kpi_activation(row: CecchinoKpiSignalActivation) -> dict[str, Any]
         "profit_units": _float_odds(row.profit_units),
         "evaluated_at": row.evaluated_at.isoformat() if row.evaluated_at else None,
         "is_current": bool(row.is_current),
+        "purchasability_v3": serialize_purchasability_from_activation(row, version="v3"),
+        "purchasability_v31": serialize_purchasability_from_activation(row, version="v31"),
     }
 
 
@@ -367,7 +664,21 @@ def list_kpi_signal_activations(
     only_current: bool = True,
     limit: int = 200,
     offset: int = 0,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
 ) -> dict[str, Any]:
+    validate_purchasability_filters(
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
+    )
     query = _base_query(
         db,
         date_from=date_from,
@@ -379,6 +690,12 @@ def list_kpi_signal_activations(
         league_name=league_name,
         country_name=country_name,
         only_current=only_current,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
     ).order_by(
         CecchinoKpiSignalActivation.scan_date.desc(),
         CecchinoKpiSignalActivation.rating_score.desc(),
@@ -386,16 +703,22 @@ def list_kpi_signal_activations(
     )
     total = int(
         db.scalar(
-            select(func.count()).select_from(CecchinoKpiSignalActivation).where(
-                CecchinoKpiSignalActivation.scan_date >= date_from,
-                CecchinoKpiSignalActivation.scan_date <= date_to,
-                *([CecchinoKpiSignalActivation.is_current.is_(True)] if only_current else []),
-                *([CecchinoKpiSignalActivation.rating_bucket == rating_bucket] if rating_bucket else []),
-                *([CecchinoKpiSignalActivation.selection_key == selection_key] if selection_key else []),
-                *([CecchinoKpiSignalActivation.normalized_market == normalized_market] if normalized_market else []),
-                *([CecchinoKpiSignalActivation.evaluation_status == evaluation_status] if evaluation_status else []),
-                *([CecchinoKpiSignalActivation.league_name == league_name] if league_name else []),
-                *([CecchinoKpiSignalActivation.country_name == country_name] if country_name else []),
+            _count_filters_kwargs(
+                date_from=date_from,
+                date_to=date_to,
+                rating_bucket=rating_bucket,
+                selection_key=selection_key,
+                normalized_market=normalized_market,
+                evaluation_status=evaluation_status,
+                league_name=league_name,
+                country_name=country_name,
+                only_current=only_current,
+                purchasability_version=purchasability_version,
+                purchasability_status=purchasability_status,
+                purchasability_class=purchasability_class,
+                purchasability_score_min=purchasability_score_min,
+                purchasability_score_max=purchasability_score_max,
+                purchasability_quality=purchasability_quality,
             ),
         )
         or 0,
@@ -406,6 +729,23 @@ def list_kpi_signal_activations(
         "total": total,
         "limit": limit,
         "offset": offset,
+        "filters": _filter_payload(
+            date_from=date_from,
+            date_to=date_to,
+            rating_bucket=rating_bucket,
+            selection_key=selection_key,
+            normalized_market=normalized_market,
+            evaluation_status=evaluation_status,
+            league_name=league_name,
+            country_name=country_name,
+            only_current=only_current,
+            purchasability_version=purchasability_version,
+            purchasability_status=purchasability_status,
+            purchasability_class=purchasability_class,
+            purchasability_score_min=purchasability_score_min,
+            purchasability_score_max=purchasability_score_max,
+            purchasability_quality=purchasability_quality,
+        ),
         "activations": [serialize_kpi_activation(r) for r in rows],
     }
 
@@ -422,6 +762,12 @@ def export_kpi_signals_csv(
     league_name: str | None = None,
     country_name: str | None = None,
     only_current: bool = True,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
 ) -> str:
     payload = list_kpi_signal_activations(
         db,
@@ -434,6 +780,12 @@ def export_kpi_signals_csv(
         league_name=league_name,
         country_name=country_name,
         only_current=only_current,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
         limit=10000,
         offset=0,
     )
@@ -444,6 +796,7 @@ def export_kpi_signals_csv(
         "away_team_name",
         "league_name",
         "selection_label",
+        "selection_key",
         "rating_score",
         "rating_bucket",
         "quota_book",
@@ -455,9 +808,51 @@ def export_kpi_signals_csv(
         "result_away_ft",
         "evaluation_status",
         "profit_units",
+        "purchasability_v3_formula_version",
+        "purchasability_v3_status",
+        "purchasability_v3_score",
+        "purchasability_v3_class",
+        "purchasability_v3_calculation_quality",
+        "purchasability_v3_source_snapshot_at",
+        "purchasability_v3_reason_codes",
+        "purchasability_v31_candidate_version",
+        "purchasability_v31_formula_version",
+        "purchasability_v31_status",
+        "purchasability_v31_score",
+        "purchasability_v31_class",
+        "purchasability_v31_calculation_quality",
+        "purchasability_v31_historical_evidence_quality",
+        "purchasability_v31_source_snapshot_at",
+        "purchasability_v31_execution_quote_real",
+        "purchasability_v31_reason_codes",
     ]
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     for row in payload["activations"]:
-        writer.writerow(row)
+        v3 = row.get("purchasability_v3") or {}
+        v31 = row.get("purchasability_v31") or {}
+        writer.writerow(
+            {
+                **row,
+                "purchasability_v3_formula_version": v3.get("formula_version"),
+                "purchasability_v3_status": v3.get("status"),
+                "purchasability_v3_score": v3.get("score"),
+                "purchasability_v3_class": v3.get("class_label") or v3.get("class_key"),
+                "purchasability_v3_calculation_quality": v3.get("calculation_quality"),
+                "purchasability_v3_source_snapshot_at": v3.get("source_snapshot_at"),
+                "purchasability_v3_reason_codes": "|".join(v3.get("reason_codes") or []),
+                "purchasability_v31_candidate_version": v31.get("candidate_version"),
+                "purchasability_v31_formula_version": v31.get("formula_version"),
+                "purchasability_v31_status": v31.get("status"),
+                "purchasability_v31_score": v31.get("score"),
+                "purchasability_v31_class": v31.get("class_label") or v31.get("class_key"),
+                "purchasability_v31_calculation_quality": v31.get("calculation_quality"),
+                "purchasability_v31_historical_evidence_quality": v31.get(
+                    "historical_evidence_quality"
+                ),
+                "purchasability_v31_source_snapshot_at": v31.get("source_snapshot_at"),
+                "purchasability_v31_execution_quote_real": v31.get("execution_quote_real"),
+                "purchasability_v31_reason_codes": "|".join(v31.get("reason_codes") or []),
+            }
+        )
     return buffer.getvalue()

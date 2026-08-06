@@ -1,5 +1,9 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## Segnali KPI operativi — 19 mercati (2026-08-06)
+
+Nota operativa (pagina `/segnali-kpi`, non Lab Run): Heatmap allineata ai 19 mercati Pannello KPI; settlement PT/FT completo; filtri Acquistabilità V3/V3.1 su snapshot pre-match storicizzati. Il Lab storico KPI (STEP 4A/4B) resta separato e non è modificato da questa estensione.
+
 ## STEP 2B — Replay Acquistabilità V3.1 (shadow validation) (2026-08-06)
 
 | Campo | Valore |

@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Segnali KPI — 19 mercati + filtri Acquistabilità (2026-08-06)
+
+1. Migration: `alembic upgrade head` (revision `20260806120000`, colonne snapshot V3/V3.1 nullable).
+2. Sync/backfill DB-only (nessuna API esterna):
+   - UI: pulsante «Sincronizza KPI» (`only_missing=false`)
+   - Admin: `POST /api/admin/cecchino/kpi-signals/backfill` con `only_missing=false` su intervallo piccolo
+3. Verifica Heatmap 19 righe; filtri `purchasability_version=v3|v31` su summary/activations/export.
+4. Acquistabilità resta filtro storico (non gate); Rating ≥ 50 invariato.
+
 ## Acquistabilità V3.1 — empirical_v2 storico non bloccante (2026-08-06)
 
 1. Live/shadow: `formula_version=empirical_v2`; sample&lt;30 → `score_provisional` (non `non_calculable`).

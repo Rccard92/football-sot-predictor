@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -67,6 +69,44 @@ class CecchinoKpiSignalActivation(Base, TimestampMixin):
     )
     profit_units: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Snapshot Acquistabilità V3 (pre-match, non ricalcolato)
+    purchasability_v3_formula_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v3_status: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    purchasability_v3_score: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    purchasability_v3_class_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    purchasability_v3_class_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    purchasability_v3_calculation_quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    purchasability_v3_source_snapshot_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    purchasability_v3_reason_codes_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Snapshot Acquistabilità V3.1 (pre-match, non ricalcolato)
+    purchasability_v31_candidate_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v31_formula_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v31_formula_config_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v31_audit_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchasability_v31_status: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    purchasability_v31_score: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    purchasability_v31_class_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    purchasability_v31_class_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    purchasability_v31_calculation_quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    purchasability_v31_historical_evidence_quality: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+    purchasability_v31_source_snapshot_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    purchasability_v31_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    purchasability_v31_execution_quote_real: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    purchasability_v31_reason_codes_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
 
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

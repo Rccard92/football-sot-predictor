@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Extend KPI signals to all markets and purchasability filters (2026-08-06)
+
+- Perché: allineare Segnali KPI ai 19 mercati del Pannello KPI e consentire filtri storici versionati sull’Acquistabilità senza alterare Rating≥50 né le formule V3/V3.1.
+- Cosa: `KPI_SIGNAL_MARKET_DEFS` (19); settlement HOME_PT/DRAW_PT/AWAY_PT/UNDER_1_5/OVER_3_5/UNDER_PT_0_5; colonne snapshot V3/V3.1 su `cecchino_kpi_signal_activations` + migration `20260806120000`; adapter puro da `cecchino_output_json`; filtri API summary/activations/export; FE filtri + heatmap 19 + drawer/badge; backfill DB-only.
+- Cosa non fa: Acquistabilità non è gate; nessun ricalcolo storico V3/V3.1; Balance V5 / formule Cecchino / Pannello KPI invariati; nessuna nuova dipendenza; nessuna cancellazione storica.
+
 ## Feat — Add average draw odds adjustment to balance v5 (2026-08-06)
 
 - Perché: ridurre i «falsi equilibri» in cui le quote laterali 1/2 sono vicine ma la Quota Media X è troppo alta per supportare una lettura di equilibrio.

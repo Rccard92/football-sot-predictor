@@ -10,11 +10,13 @@ export type KpiHeatmapSelection = {
 
 type Props = {
   cells: KpiHeatmapCell[]
+  rows?: string[]
   onCellClick: (sel: KpiHeatmapSelection) => void
 }
 
-export function KpiSignalsHeatmapLab({ cells, onCellClick }: Props) {
+export function KpiSignalsHeatmapLab({ cells, rows, onCellClick }: Props) {
   const map = new Map(cells.map((c) => [`${c.selection_label}|${c.rating_bucket}`, c]))
+  const heatmapRows = rows && rows.length > 0 ? rows : [...KPI_HEATMAP_ROWS]
 
   return (
     <section className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
@@ -34,7 +36,7 @@ export function KpiSignalsHeatmapLab({ cells, onCellClick }: Props) {
               </tr>
             </thead>
             <tbody>
-              {KPI_HEATMAP_ROWS.map((row) => (
+              {heatmapRows.map((row) => (
                 <tr key={row}>
                   <td className="px-2 py-1 text-xs font-medium text-slate-800">{row}</td>
                   {KPI_RATING_BUCKETS.map((col) => {

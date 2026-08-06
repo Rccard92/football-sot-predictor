@@ -1,7 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import type { KpiSignalActivationRow } from '../../lib/cecchinoKpiSignalsApi'
+import type {
+  KpiPurchasabilitySnapshot,
+  KpiSignalActivationRow,
+} from '../../lib/cecchinoKpiSignalsApi'
 import { formatOdds } from '../cecchino-lab/signalsLabUtils'
 import type { KpiHeatmapSelection } from './KpiSignalsHeatmapLab'
 import {
@@ -12,6 +15,7 @@ import {
   kpiStatusLabel,
   profitTextClass,
 } from './kpiSignalsLabUtils'
+import { PurchasabilityBadge } from './PurchasabilityBadge'
 
 export type KpiDrawerState =
   | { type: 'activation'; row: KpiSignalActivationRow }
@@ -133,6 +137,76 @@ function HeatmapDrawerContent({
   )
 }
 
+function purchasabilityMessage(snap: KpiPurchasabilitySnapshot | null | undefined): string | null {
+  if (!snap || snap.status === 'snapshot_unavailable' || (!snap.snapshot_available && snap.status == null)) {
+    return 'Snapshot Acquistabilità non disponibile per questa attivazione.'
+  }
+  if (snap.status === 'unsupported_market') {
+    return 'Mercato non supportato dalla V3.'
+  }
+  return null
+}
+
+function PurchasabilityBlock({
+  title,
+  snap,
+  isV3,
+}: {
+  title: string
+  snap: KpiPurchasabilitySnapshot | null | undefined
+  isV3?: boolean
+}) {
+  const message = purchasabilityMessage(snap)
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+        <PurchasabilityBadge snap={snap} versionLabel={isV3 ? 'V3' : 'V3.1'} />
+      </div>
+      {message ? (
+        <p className="text-sm text-slate-500">{message}</p>
+      ) : (
+        <dl className="space-y-1 text-sm">
+          {!isV3 ? (
+            <StatRow label="Candidate version" value={snap?.candidate_version ?? '—'} />
+          ) : null}
+          <StatRow label="Formula version" value={snap?.formula_version ?? '—'} />
+          <StatRow label="Status" value={snap?.status ?? '—'} />
+          <StatRow
+            label="Score"
+            value={snap?.score != null ? String(snap.score) : '—'}
+          />
+          <StatRow label="Classe" value={snap?.class_label ?? snap?.class_key ?? '—'} />
+          <StatRow label="Qualità" value={snap?.calculation_quality ?? '—'} />
+          {!isV3 ? (
+            <>
+              <StatRow
+                label="Definitiva/Provvisoria"
+                value={
+                  snap?.status === 'score_provisional'
+                    ? 'Provvisoria'
+                    : snap?.status === 'score'
+                      ? 'Definitiva'
+                      : '—'
+                }
+              />
+              <StatRow
+                label="Historical evidence"
+                value={snap?.historical_evidence_quality ?? '—'}
+              />
+            </>
+          ) : null}
+          <StatRow label="Timestamp" value={snap?.source_snapshot_at ?? '—'} />
+          <StatRow
+            label="Motivo sintetico"
+            value={(snap?.reason_codes || []).join(', ') || '—'}
+          />
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function ActivationDrawerContent({ row }: { row: KpiSignalActivationRow }) {
   const [rawOpen, setRawOpen] = useState(false)
   return (
@@ -146,39 +220,48 @@ function ActivationDrawerContent({ row }: { row: KpiSignalActivationRow }) {
           {row.league_name ?? '—'} · {row.scan_date}
         </p>
       </div>
-      <dl className="space-y-2 text-sm">
-        <StatRow label="Pronostico KPI" value={row.selection_label} />
-        <StatRow label="Rating" value={`${row.rating_score} (${row.rating_bucket})`} />
-        <StatRow label="Quota Book" value={formatOdds(row.quota_book)} />
-        <StatRow label="Quota Cecchino" value={formatOdds(row.quota_cecchino)} />
-        <StatRow label="Edge %" value={row.edge_pct != null ? String(row.edge_pct) : '—'} />
-        <StatRow label="Score %" value={row.score_pct != null ? String(row.score_pct) : '—'} />
-        <StatRow
-          label="Risultato PT"
-          value={`${row.result_home_ht ?? '—'}:${row.result_away_ht ?? '—'}`}
-        />
-        <StatRow
-          label="Risultato FT"
-          value={`${row.result_home_ft ?? '—'}:${row.result_away_ft ?? '—'}`}
-        />
-        <StatRow
-          label="Esito"
-          value={
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${kpiStatusBadgeClass(row.evaluation_status)}`}
-            >
-              {kpiStatusLabel(row.evaluation_status)}
-            </span>
-          }
-        />
-        <StatRow
-          label="Profitto (stake 1)"
-          value={
-            <span className={profitTextClass(row.profit_units)}>{formatKpiProfit(row.profit_units)}</span>
-          }
-        />
-        {row.evaluation_reason ? <StatRow label="Motivo" value={row.evaluation_reason} /> : null}
-      </dl>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Dati KPI</p>
+        <dl className="space-y-2 text-sm">
+          <StatRow label="Mercato" value={row.selection_label} />
+          <StatRow label="Rating" value={String(row.rating_score)} />
+          <StatRow label="Fascia Rating" value={row.rating_bucket} />
+          <StatRow label="Quota Book" value={formatOdds(row.quota_book)} />
+          <StatRow label="Quota Cecchino" value={formatOdds(row.quota_cecchino)} />
+          <StatRow label="Edge %" value={row.edge_pct != null ? String(row.edge_pct) : '—'} />
+          <StatRow label="Score KPI" value={row.score_pct != null ? String(row.score_pct) : '—'} />
+          <StatRow
+            label="Risultato PT"
+            value={`${row.result_home_ht ?? '—'}:${row.result_away_ht ?? '—'}`}
+          />
+          <StatRow
+            label="Risultato FT"
+            value={`${row.result_home_ft ?? '—'}:${row.result_away_ft ?? '—'}`}
+          />
+          <StatRow
+            label="Esito"
+            value={
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${kpiStatusBadgeClass(row.evaluation_status)}`}
+              >
+                {kpiStatusLabel(row.evaluation_status)}
+              </span>
+            }
+          />
+          <StatRow
+            label="Profitto (stake 1)"
+            value={
+              <span className={profitTextClass(row.profit_units)}>{formatKpiProfit(row.profit_units)}</span>
+            }
+          />
+          {row.evaluation_reason ? <StatRow label="Motivo" value={row.evaluation_reason} /> : null}
+        </dl>
+      </div>
+
+      <PurchasabilityBlock title="Acquistabilità V3" snap={row.purchasability_v3} isV3 />
+      <PurchasabilityBlock title="Acquistabilità V3.1" snap={row.purchasability_v31} />
+
       <button
         type="button"
         onClick={() => setRawOpen((v) => !v)}

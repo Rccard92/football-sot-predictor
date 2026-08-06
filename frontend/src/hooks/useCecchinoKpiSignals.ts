@@ -23,13 +23,53 @@ export function useCecchinoKpiSignals() {
   const [evaluationStatus, setEvaluationStatus] = useState('')
   const [countryName, setCountryName] = useState('')
   const [leagueName, setLeagueName] = useState('')
+  const [purchasabilityVersion, setPurchasabilityVersion] = useState('')
+  const [purchasabilityStatus, setPurchasabilityStatus] = useState('')
+  const [purchasabilityClass, setPurchasabilityClass] = useState('')
+  const [purchasabilityQuality, setPurchasabilityQuality] = useState('')
+  const [purchasabilityScoreMin, setPurchasabilityScoreMin] = useState<number | ''>('')
+  const [purchasabilityScoreMax, setPurchasabilityScoreMax] = useState<number | ''>('')
   const [summary, setSummary] = useState<KpiSignalsSummaryResponse | null>(null)
   const [activations, setActivations] = useState<KpiSignalActivationRow[]>([])
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const filters: KpiSignalsFilters = useMemo(
-    () => ({
+  const clearPurchasabilityChildFilters = useCallback(() => {
+    setPurchasabilityStatus('')
+    setPurchasabilityClass('')
+    setPurchasabilityQuality('')
+    setPurchasabilityScoreMin('')
+    setPurchasabilityScoreMax('')
+  }, [])
+
+  const handlePurchasabilityVersionChange = useCallback(
+    (value: string) => {
+      setPurchasabilityVersion(value)
+      if (!value) {
+        clearPurchasabilityChildFilters()
+      }
+    },
+    [clearPurchasabilityChildFilters],
+  )
+
+  const purchasabilityScoreError = useMemo(() => {
+    if (!purchasabilityVersion) return null
+    const min = purchasabilityScoreMin === '' ? null : Number(purchasabilityScoreMin)
+    const max = purchasabilityScoreMax === '' ? null : Number(purchasabilityScoreMax)
+    if (min != null && (Number.isNaN(min) || min < 0 || min > 100)) {
+      return 'Score minimo deve essere tra 0 e 100'
+    }
+    if (max != null && (Number.isNaN(max) || max < 0 || max > 100)) {
+      return 'Score massimo deve essere tra 0 e 100'
+    }
+    if (min != null && max != null && min > max) {
+      return 'Score minimo non può superare lo score massimo'
+    }
+    return null
+  }, [purchasabilityVersion, purchasabilityScoreMin, purchasabilityScoreMax])
+
+  const filters: KpiSignalsFilters = useMemo(() => {
+    const base: KpiSignalsFilters = {
       date_from: dateFrom,
       date_to: dateTo,
       rating_bucket: ratingBucket || undefined,
@@ -40,20 +80,41 @@ export function useCecchinoKpiSignals() {
       league_name: leagueName || undefined,
       only_current: true,
       include_diagnostics: true,
-    }),
-    [
-      dateFrom,
-      dateTo,
-      ratingBucket,
-      selectionKey,
-      normalizedMarket,
-      evaluationStatus,
-      countryName,
-      leagueName,
-    ],
-  )
+    }
+    if (!purchasabilityVersion) return base
+    return {
+      ...base,
+      purchasability_version: purchasabilityVersion,
+      purchasability_status: purchasabilityStatus || undefined,
+      purchasability_class: purchasabilityClass || undefined,
+      purchasability_quality: purchasabilityQuality || undefined,
+      purchasability_score_min:
+        purchasabilityScoreMin === '' ? undefined : Number(purchasabilityScoreMin),
+      purchasability_score_max:
+        purchasabilityScoreMax === '' ? undefined : Number(purchasabilityScoreMax),
+    }
+  }, [
+    dateFrom,
+    dateTo,
+    ratingBucket,
+    selectionKey,
+    normalizedMarket,
+    evaluationStatus,
+    countryName,
+    leagueName,
+    purchasabilityVersion,
+    purchasabilityStatus,
+    purchasabilityClass,
+    purchasabilityQuality,
+    purchasabilityScoreMin,
+    purchasabilityScoreMax,
+  ])
 
   const loadAll = useCallback(async () => {
+    if (purchasabilityScoreError) {
+      toast.error(purchasabilityScoreError)
+      return
+    }
     setLoading(true)
     try {
       const [summaryRes, activationsRes] = await Promise.all([
@@ -67,7 +128,7 @@ export function useCecchinoKpiSignals() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, purchasabilityScoreError])
 
   const runSync = useCallback(async () => {
     setActionLoading(true)
@@ -114,8 +175,12 @@ export function useCecchinoKpiSignals() {
   }, [dateFrom, dateTo, loadAll])
 
   const exportCsv = useCallback(() => {
+    if (purchasabilityScoreError) {
+      toast.error(purchasabilityScoreError)
+      return
+    }
     window.open(buildKpiSignalsExportUrl(filters), '_blank', 'noopener,noreferrer')
-  }, [filters])
+  }, [filters, purchasabilityScoreError])
 
   return {
     dateFrom,
@@ -134,6 +199,19 @@ export function useCecchinoKpiSignals() {
     setCountryName,
     leagueName,
     setLeagueName,
+    purchasabilityVersion,
+    setPurchasabilityVersion: handlePurchasabilityVersionChange,
+    purchasabilityStatus,
+    setPurchasabilityStatus,
+    purchasabilityClass,
+    setPurchasabilityClass,
+    purchasabilityQuality,
+    setPurchasabilityQuality,
+    purchasabilityScoreMin,
+    setPurchasabilityScoreMin,
+    purchasabilityScoreMax,
+    setPurchasabilityScoreMax,
+    purchasabilityScoreError,
     summary,
     activations,
     loading,

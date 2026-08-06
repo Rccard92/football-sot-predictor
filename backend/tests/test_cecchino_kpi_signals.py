@@ -204,6 +204,7 @@ def test_sync_does_not_touch_signal_activations_table():
     row.away_team_name = "B"
     row.eligibility_status = ELIGIBILITY_ELIGIBLE
     row.kpi_panel_json = {"version": "cecchino_kpi_v2_betfair", "rows": [_kpi_row(rating=90, market_key="AWAY", segno="2", label="2")]}
+    row.cecchino_output_json = None
     row.score_fulltime_home = 0
     row.score_fulltime_away = 2
     row.score_halftime_home = 0

@@ -6,19 +6,68 @@ export const KPI_HEATMAP_ROWS = [
   '1',
   'X',
   '2',
+  '1 PT',
+  'X PT',
+  '2 PT',
   '1X',
   'X2',
   '12',
   'Over 1.5',
+  'Under 1.5',
   'Over 2.5',
   'Under 2.5',
+  'Over 3.5',
   'Under 3.5',
   'Over PT 0.5',
+  'Under PT 0.5',
   'Over PT 1.5',
   'Under PT 1.5',
 ] as const
 
+export const KPI_SELECTION_OPTIONS = [
+  { key: 'HOME', label: '1' },
+  { key: 'DRAW', label: 'X' },
+  { key: 'AWAY', label: '2' },
+  { key: 'HOME_PT', label: '1 PT' },
+  { key: 'DRAW_PT', label: 'X PT' },
+  { key: 'AWAY_PT', label: '2 PT' },
+  { key: 'ONE_X', label: '1X' },
+  { key: 'X_TWO', label: 'X2' },
+  { key: 'ONE_TWO', label: '12' },
+  { key: 'OVER_1_5', label: 'Over 1.5' },
+  { key: 'UNDER_1_5', label: 'Under 1.5' },
+  { key: 'OVER_2_5', label: 'Over 2.5' },
+  { key: 'UNDER_2_5', label: 'Under 2.5' },
+  { key: 'OVER_3_5', label: 'Over 3.5' },
+  { key: 'UNDER_3_5', label: 'Under 3.5' },
+  { key: 'OVER_PT_0_5', label: 'Over PT 0.5' },
+  { key: 'UNDER_PT_0_5', label: 'Under PT 0.5' },
+  { key: 'OVER_PT_1_5', label: 'Over PT 1.5' },
+  { key: 'UNDER_PT_1_5', label: 'Under PT 1.5' },
+] as const
+
 export const KPI_EVAL_STATUSES = ['pending', 'won', 'lost', 'not_evaluable', 'result_missing'] as const
+
+export type KpiPurchasabilitySnapshot = {
+  available?: boolean
+  version_key?: string
+  candidate_version?: string | null
+  formula_version?: string | null
+  formula_config_version?: string | null
+  audit_version?: string | null
+  registry_status?: string | null
+  status?: string | null
+  score?: number | null
+  class_key?: string | null
+  class_label?: string | null
+  calculation_quality?: string | null
+  historical_evidence_quality?: string | null
+  source_snapshot_at?: string | null
+  generated_at?: string | null
+  execution_quote_real?: boolean | null
+  snapshot_available?: boolean
+  reason_codes?: string[]
+}
 
 export type KpiSignalsBucket = {
   activations: number
@@ -46,6 +95,12 @@ export type KpiSignalsFilters = {
   league_name?: string
   only_current?: boolean
   include_diagnostics?: boolean
+  purchasability_version?: string
+  purchasability_status?: string
+  purchasability_class?: string
+  purchasability_score_min?: number
+  purchasability_score_max?: number
+  purchasability_quality?: string
 }
 
 export type KpiHeatmapCell = KpiSignalsBucket & {
@@ -56,6 +111,21 @@ export type KpiHeatmapCell = KpiSignalsBucket & {
 export type KpiSignalsSummaryResponse = {
   status: string
   filters: Record<string, unknown>
+  purchasability_filter_options?: {
+    versions: string[]
+    statuses: string[]
+    classes: Array<{ key: string; label: string }>
+    qualities: string[]
+    score_range: { min: number; max: number }
+  }
+  market_options?: Array<{
+    selection_key: string
+    selection_label: string
+    normalized_market: string
+    period: string
+    line: number | null
+    display_order: number
+  }>
   overall: KpiSignalsBucket
   by_rating_bucket: Array<KpiSignalsBucket & { rating_bucket: string }>
   by_selection: Array<KpiSignalsBucket & { selection_label: string }>
@@ -76,6 +146,7 @@ export type KpiSignalsSummaryResponse = {
     kpi_signals_created: number
     kpi_rows_below_50: number
     kpi_rows_without_book_odds: number
+    supported_market_definitions?: number
   }
 }
 
@@ -108,6 +179,8 @@ export type KpiSignalActivationRow = {
   profit_units: number | null
   stake_units: number | null
   evaluated_at: string | null
+  purchasability_v3?: KpiPurchasabilitySnapshot | null
+  purchasability_v31?: KpiPurchasabilitySnapshot | null
 }
 
 export type KpiSignalsActivationsResponse = {
@@ -143,10 +216,10 @@ export type KpiSignalsBackfillResponse = {
   message?: string
 }
 
-function qs(params: Record<string, string | number | boolean | undefined>): string {
+function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === '') continue
+    if (v === undefined || v === null || v === '') continue
     sp.set(k, String(v))
   }
   const s = sp.toString()

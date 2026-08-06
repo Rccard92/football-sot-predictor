@@ -76,6 +76,12 @@ def _summary_payload(
     country_name: str | None,
     only_current: bool,
     include_diagnostics: bool,
+    purchasability_version: str | None = None,
+    purchasability_status: str | None = None,
+    purchasability_class: str | None = None,
+    purchasability_score_min: float | None = None,
+    purchasability_score_max: float | None = None,
+    purchasability_quality: str | None = None,
 ) -> dict:
     return build_kpi_signals_summary(
         db,
@@ -89,6 +95,12 @@ def _summary_payload(
         country_name=country_name,
         only_current=only_current,
         include_diagnostics=include_diagnostics,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
     )
 
 
@@ -104,6 +116,12 @@ def kpi_signals_summary(
     country_name: str | None = Query(None),
     only_current: bool = Query(True),
     include_diagnostics: bool = Query(True),
+    purchasability_version: str | None = Query(None),
+    purchasability_status: str | None = Query(None),
+    purchasability_class: str | None = Query(None),
+    purchasability_score_min: float | None = Query(None),
+    purchasability_score_max: float | None = Query(None),
+    purchasability_quality: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     payload = _summary_payload(
@@ -118,6 +136,12 @@ def kpi_signals_summary(
         country_name=country_name,
         only_current=only_current,
         include_diagnostics=include_diagnostics,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -135,6 +159,12 @@ def kpi_signals_activations(
     only_current: bool = Query(True),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    purchasability_version: str | None = Query(None),
+    purchasability_status: str | None = Query(None),
+    purchasability_class: str | None = Query(None),
+    purchasability_score_min: float | None = Query(None),
+    purchasability_score_max: float | None = Query(None),
+    purchasability_quality: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     payload = list_kpi_signal_activations(
@@ -150,6 +180,12 @@ def kpi_signals_activations(
         only_current=only_current,
         limit=limit,
         offset=offset,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -252,6 +288,12 @@ def kpi_signals_export_csv(
     league_name: str | None = Query(None),
     country_name: str | None = Query(None),
     only_current: bool = Query(True),
+    purchasability_version: str | None = Query(None),
+    purchasability_status: str | None = Query(None),
+    purchasability_class: str | None = Query(None),
+    purchasability_score_min: float | None = Query(None),
+    purchasability_score_max: float | None = Query(None),
+    purchasability_quality: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     csv_text = export_kpi_signals_csv(
@@ -265,6 +307,12 @@ def kpi_signals_export_csv(
         league_name=league_name,
         country_name=country_name,
         only_current=only_current,
+        purchasability_version=purchasability_version,
+        purchasability_status=purchasability_status,
+        purchasability_class=purchasability_class,
+        purchasability_score_min=purchasability_score_min,
+        purchasability_score_max=purchasability_score_max,
+        purchasability_quality=purchasability_quality,
     )
     return PlainTextResponse(content=csv_text, media_type="text/csv")
 

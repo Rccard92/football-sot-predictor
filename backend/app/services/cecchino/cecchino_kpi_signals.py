@@ -23,22 +23,35 @@ from app.models.cecchino_kpi_signal_activation import (
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_VERSION
 from app.services.cecchino.league_ingest_helpers import recover_session_if_inactive
+from app.services.cecchino.cecchino_kpi_signals_purchasability import (
+    activation_purchasability_fingerprint,
+    apply_purchasability_to_activation,
+    extract_purchasability_snapshots_for_selection,
+    purchasability_fingerprint,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
+    MARKET_1X2_FH,
     MARKET_DC,
     MARKET_OU,
     MARKET_OU_FH,
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
@@ -49,40 +62,182 @@ MIN_KPI_RATING = 50
 
 RATING_BUCKETS: tuple[str, ...] = ("50-59", "60-69", "70-79", "80-89", "90-99", "100")
 
+# Definizione canonica unica: selection key, label, famiglia, periodo, linea, ordine.
+KPI_SIGNAL_MARKET_DEFS: tuple[dict[str, Any], ...] = (
+    {
+        "selection_key": SEL_HOME,
+        "selection_label": "1",
+        "normalized_market": MARKET_1X2,
+        "period": "FT",
+        "line": None,
+        "display_order": 1,
+    },
+    {
+        "selection_key": SEL_DRAW,
+        "selection_label": "X",
+        "normalized_market": MARKET_1X2,
+        "period": "FT",
+        "line": None,
+        "display_order": 2,
+    },
+    {
+        "selection_key": SEL_AWAY,
+        "selection_label": "2",
+        "normalized_market": MARKET_1X2,
+        "period": "FT",
+        "line": None,
+        "display_order": 3,
+    },
+    {
+        "selection_key": SEL_HOME_PT,
+        "selection_label": "1 PT",
+        "normalized_market": MARKET_1X2_FH,
+        "period": "HT",
+        "line": None,
+        "display_order": 4,
+    },
+    {
+        "selection_key": SEL_DRAW_PT,
+        "selection_label": "X PT",
+        "normalized_market": MARKET_1X2_FH,
+        "period": "HT",
+        "line": None,
+        "display_order": 5,
+    },
+    {
+        "selection_key": SEL_AWAY_PT,
+        "selection_label": "2 PT",
+        "normalized_market": MARKET_1X2_FH,
+        "period": "HT",
+        "line": None,
+        "display_order": 6,
+    },
+    {
+        "selection_key": SEL_ONE_X,
+        "selection_label": "1X",
+        "normalized_market": MARKET_DC,
+        "period": "FT",
+        "line": None,
+        "display_order": 7,
+    },
+    {
+        "selection_key": SEL_X_TWO,
+        "selection_label": "X2",
+        "normalized_market": MARKET_DC,
+        "period": "FT",
+        "line": None,
+        "display_order": 8,
+    },
+    {
+        "selection_key": SEL_ONE_TWO,
+        "selection_label": "12",
+        "normalized_market": MARKET_DC,
+        "period": "FT",
+        "line": None,
+        "display_order": 9,
+    },
+    {
+        "selection_key": SEL_OVER_1_5,
+        "selection_label": "Over 1.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 1.5,
+        "display_order": 10,
+    },
+    {
+        "selection_key": SEL_UNDER_1_5,
+        "selection_label": "Under 1.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 1.5,
+        "display_order": 11,
+    },
+    {
+        "selection_key": SEL_OVER_2_5,
+        "selection_label": "Over 2.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 2.5,
+        "display_order": 12,
+    },
+    {
+        "selection_key": SEL_UNDER_2_5,
+        "selection_label": "Under 2.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 2.5,
+        "display_order": 13,
+    },
+    {
+        "selection_key": SEL_OVER_3_5,
+        "selection_label": "Over 3.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 3.5,
+        "display_order": 14,
+    },
+    {
+        "selection_key": SEL_UNDER_3_5,
+        "selection_label": "Under 3.5",
+        "normalized_market": MARKET_OU,
+        "period": "FT",
+        "line": 3.5,
+        "display_order": 15,
+    },
+    {
+        "selection_key": SEL_OVER_PT_0_5,
+        "selection_label": "Over PT 0.5",
+        "normalized_market": MARKET_OU_FH,
+        "period": "HT",
+        "line": 0.5,
+        "display_order": 16,
+    },
+    {
+        "selection_key": SEL_UNDER_PT_0_5,
+        "selection_label": "Under PT 0.5",
+        "normalized_market": MARKET_OU_FH,
+        "period": "HT",
+        "line": 0.5,
+        "display_order": 17,
+    },
+    {
+        "selection_key": SEL_OVER_PT_1_5,
+        "selection_label": "Over PT 1.5",
+        "normalized_market": MARKET_OU_FH,
+        "period": "HT",
+        "line": 1.5,
+        "display_order": 18,
+    },
+    {
+        "selection_key": SEL_UNDER_PT_1_5,
+        "selection_label": "Under PT 1.5",
+        "normalized_market": MARKET_OU_FH,
+        "period": "HT",
+        "line": 1.5,
+        "display_order": 19,
+    },
+)
+
 KPI_MARKET_FOR_KEY: dict[str, str] = {
-    SEL_HOME: MARKET_1X2,
-    SEL_DRAW: MARKET_1X2,
-    SEL_AWAY: MARKET_1X2,
-    SEL_ONE_X: MARKET_DC,
-    SEL_X_TWO: MARKET_DC,
-    SEL_ONE_TWO: MARKET_DC,
-    SEL_OVER_1_5: MARKET_OU,
-    SEL_OVER_2_5: MARKET_OU,
-    SEL_UNDER_2_5: MARKET_OU,
-    SEL_UNDER_3_5: MARKET_OU,
-    SEL_UNDER_PT_1_5: MARKET_OU_FH,
-    SEL_OVER_PT_0_5: MARKET_OU_FH,
-    SEL_OVER_PT_1_5: MARKET_OU_FH,
+    d["selection_key"]: d["normalized_market"] for d in KPI_SIGNAL_MARKET_DEFS
 }
-
 KPI_SELECTION_LABELS: dict[str, str] = {
-    SEL_HOME: "1",
-    SEL_DRAW: "X",
-    SEL_AWAY: "2",
-    SEL_ONE_X: "1X",
-    SEL_X_TWO: "X2",
-    SEL_ONE_TWO: "12",
-    SEL_OVER_1_5: "Over 1.5",
-    SEL_OVER_2_5: "Over 2.5",
-    SEL_UNDER_2_5: "Under 2.5",
-    SEL_UNDER_3_5: "Under 3.5",
-    SEL_UNDER_PT_1_5: "Under PT 1.5",
-    SEL_OVER_PT_0_5: "Over PT 0.5",
-    SEL_OVER_PT_1_5: "Over PT 1.5",
+    d["selection_key"]: d["selection_label"] for d in KPI_SIGNAL_MARKET_DEFS
 }
-
-_HEATMAP_SELECTION_ROWS: tuple[str, ...] = tuple(KPI_SELECTION_LABELS.values())
-HEATMAP_SELECTION_ROWS = _HEATMAP_SELECTION_ROWS
+HEATMAP_SELECTION_ROWS: tuple[str, ...] = tuple(
+    d["selection_label"] for d in KPI_SIGNAL_MARKET_DEFS
+)
+KPI_SIGNAL_MARKET_OPTIONS: tuple[dict[str, Any], ...] = tuple(
+    {
+        "selection_key": d["selection_key"],
+        "selection_label": d["selection_label"],
+        "normalized_market": d["normalized_market"],
+        "period": d["period"],
+        "line": d["line"],
+        "display_order": d["display_order"],
+    }
+    for d in KPI_SIGNAL_MARKET_DEFS
+)
 
 
 def extract_kpi_rating_score(row: dict[str, Any]) -> int | None:
@@ -319,6 +474,12 @@ def sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> dict[str
     for candidate in candidates:
         key = (candidate["normalized_market"], candidate["selection_key"])
         active_keys.add(key)
+        snapshots = extract_purchasability_snapshots_for_selection(
+            cecchino_output_json=row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else None,
+            selection_key=candidate["selection_key"],
+            kpi_row=candidate,
+        )
+        new_fp = purchasability_fingerprint(snapshots["v3"], snapshots["v31"])
         existing = _find_current_activation(
             db,
             int(row.id),
@@ -352,6 +513,7 @@ def sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> dict[str
                 stake_units=DEFAULT_STAKE_UNITS,
                 is_current=True,
             )
+            apply_purchasability_to_activation(activation, snapshots)
             db.add(activation)
             db.flush()
             evaluate_kpi_signal_activation(db, activation, fixture=row)
@@ -359,11 +521,12 @@ def sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> dict[str
             evaluated += 1
             continue
 
-        changed = (
+        kpi_changed = (
             existing.rating_score != candidate["rating_score"]
             or existing.quota_book != candidate["quota_book"]
             or existing.rating_bucket != candidate["rating_bucket"]
         )
+        purch_changed = activation_purchasability_fingerprint(existing) != new_fp
         existing.kpi_version = kpi_version
         existing.kpi_row_key = candidate["kpi_row_key"]
         existing.selection_label = candidate["selection_label"]
@@ -376,7 +539,9 @@ def sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> dict[str
         existing.prob_cecchino = candidate.get("prob_cecchino")
         existing.edge_pct = candidate.get("edge_pct")
         existing.score_pct = candidate.get("score_pct")
-        if changed:
+        if purch_changed:
+            apply_purchasability_to_activation(existing, snapshots)
+        if kpi_changed:
             evaluate_kpi_signal_activation(db, existing, fixture=row)
             evaluated += 1
         updated += 1

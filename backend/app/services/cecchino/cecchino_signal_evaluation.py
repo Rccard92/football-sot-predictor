@@ -23,19 +23,36 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_AWAY_PT,
     SEL_DRAW,
     SEL_DRAW_PT,
     SEL_HOME,
+    SEL_HOME_PT,
     SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
+    SEL_UNDER_PT_0_5,
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
+)
+
+PT_SELECTION_KEYS = frozenset(
+    {
+        SEL_HOME_PT,
+        SEL_DRAW_PT,
+        SEL_AWAY_PT,
+        SEL_OVER_PT_0_5,
+        SEL_UNDER_PT_0_5,
+        SEL_OVER_PT_1_5,
+        SEL_UNDER_PT_1_5,
+    }
 )
 
 
@@ -69,15 +86,26 @@ def _evaluate_market(
     if target_key == SEL_ONE_TWO:
         return ft_home != ft_away
 
-    if target_key == SEL_DRAW_PT:
+    if target_key in (
+        SEL_HOME_PT,
+        SEL_DRAW_PT,
+        SEL_AWAY_PT,
+        SEL_UNDER_PT_0_5,
+        SEL_UNDER_PT_1_5,
+        SEL_OVER_PT_0_5,
+        SEL_OVER_PT_1_5,
+    ):
         if ht_home is None or ht_away is None:
             return None
-        return ht_home == ht_away
-
-    if target_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
-        if ht_home is None or ht_away is None:
-            return None
+        if target_key == SEL_HOME_PT:
+            return ht_home > ht_away
+        if target_key == SEL_DRAW_PT:
+            return ht_home == ht_away
+        if target_key == SEL_AWAY_PT:
+            return ht_away > ht_home
         ht_total = ht_home + ht_away
+        if target_key == SEL_UNDER_PT_0_5:
+            return ht_total == 0
         if target_key == SEL_UNDER_PT_1_5:
             return ht_total <= 1
         if target_key == SEL_OVER_PT_0_5:
@@ -85,6 +113,8 @@ def _evaluate_market(
         return ht_total >= 2
 
     ft_total = ft_home + ft_away
+    if target_key == SEL_UNDER_1_5:
+        return ft_total <= 1
     if target_key == SEL_UNDER_2_5:
         return ft_total <= 2
     if target_key == SEL_UNDER_3_5:
@@ -93,6 +123,8 @@ def _evaluate_market(
         return ft_total >= 2
     if target_key == SEL_OVER_2_5:
         return ft_total >= 3
+    if target_key == SEL_OVER_3_5:
+        return ft_total >= 4
     return None
 
 
@@ -105,11 +137,10 @@ def evaluate_market_selection(selection_key: str, match_result: dict[str, Any]) 
             "evaluated_at": datetime.now(timezone.utc),
         }
 
-    pt_keys = {SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_DRAW_PT}
     ht = match_result.get("halftime") or {}
     ft = match_result.get("fulltime") or {}
 
-    if selection_key in pt_keys:
+    if selection_key in PT_SELECTION_KEYS:
         if not _ht_available(match_result):
             return {
                 "evaluation_status": EVAL_RESULT_MISSING,

@@ -1094,6 +1094,17 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 - Nessuna modifica schema distruttiva; formule Cecchino, Segnali KPI e Monitoraggio Segnali invariati.
 - Repository con una sola head Alembic per `alembic upgrade head`.
 
+## Cecchino — Segnali KPI 19 mercati + filtri Acquistabilità (2026-08-06)
+
+- Heatmap Pronostico × Rating: **19 mercati** canonici (fonte `KPI_SIGNAL_MARKET_DEFS` / `summary.heatmap.rows`).
+- Sei mercati aggiunti: `HOME_PT`, `DRAW_PT`, `AWAY_PT`, `UNDER_1_5`, `OVER_3_5`, `UNDER_PT_0_5` con settlement HT/FT dedicato.
+- Attivazione invariata: Rating KPI ≥ 50 **e** Quota Book valida. L’Acquistabilità **non** è gate, non modifica settlement/profitto/ROI/fasce.
+- Snapshot V3/V3.1 storicizzati sulle attivazioni (campi nullable); estratti dallo snapshot pre-match in `cecchino_output_json` senza ricalcolo.
+- Filtri versionati (`purchasability_version=v3|v31` + status/class/quality/score min-max) su `/summary`, `/activations`, `/export.csv`.
+- Sync/backfill: solo DB; crea i mercati mancanti; aggiorna snapshot; idempotente.
+- Migration: `20260806120000_kpi_signals_purchasability_snapshot_cols` (additiva).
+- Retrocompatibilità: attivazioni senza snapshot → `snapshot_unavailable`.
+
 ## Cecchino — Segnali KPI (2026-07-04)
 
 - Pagina `/segnali-kpi`: analisi righe Pannello KPI con rating ≥ 50 e quota book.

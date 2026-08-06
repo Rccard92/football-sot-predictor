@@ -6,6 +6,7 @@ import {
   kpiStatusLabel,
   profitTextClass,
 } from './kpiSignalsLabUtils'
+import { PurchasabilityBadge } from './PurchasabilityBadge'
 
 type Props = {
   rows: KpiSignalActivationRow[]
@@ -37,6 +38,7 @@ export function KpiSignalsActivationsLab({ rows, onRowClick }: Props) {
               <th className="px-3 py-2">Quota Book</th>
               <th className="px-3 py-2">Quota Cecchino</th>
               <th className="px-3 py-2">Edge %</th>
+              <th className="px-3 py-2">Acquistabilità</th>
               <th className="px-3 py-2">PT</th>
               <th className="px-3 py-2">FT</th>
               <th className="px-3 py-2">Esito</th>
@@ -61,6 +63,12 @@ export function KpiSignalsActivationsLab({ rows, onRowClick }: Props) {
                 <td className="px-3 py-2.5 tabular-nums">{formatOdds(row.quota_book)}</td>
                 <td className="px-3 py-2.5 tabular-nums">{formatOdds(row.quota_cecchino)}</td>
                 <td className="px-3 py-2.5 tabular-nums">{row.edge_pct ?? '—'}</td>
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-col gap-1">
+                    <PurchasabilityBadge snap={row.purchasability_v3} versionLabel="V3" />
+                    <PurchasabilityBadge snap={row.purchasability_v31} versionLabel="V3.1" />
+                  </div>
+                </td>
                 <td className="px-3 py-2.5 tabular-nums">
                   {row.result_home_ht ?? '—'}:{row.result_away_ht ?? '—'}
                 </td>
