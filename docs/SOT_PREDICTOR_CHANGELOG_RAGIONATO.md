@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add average draw odds adjustment to balance v5 (2026-08-06)
+
+- Perché: ridurre i «falsi equilibri» in cui le quote laterali 1/2 sono vicine ma la Quota Media X è troppo alta per supportare una lettura di equilibrio.
+- Cosa: Balance `cecchino_balance_v5_v3` — Pilastro 1 mantiene F36 base invariato e applica correzione progressiva da Quota Media X = (Book X + Cecchino X)/2 rispetto a soglia 3,60 (full effect 0,60; max ±20). Classificazione finale continua (≥90/≥70/≥50). Audit `_v2`, monitoring snapshot `_v2`, export con base+adjusted. Pilastro 4 continua su `f36_base_index`. FE retrocompatibile V2/V3.
+- Cosa non fa: nessuna modifica a Dominanza / Credibilità X / Gap math oltre l’input F36 base esplicito; V3/V3.1 Acquistabilità invariate; nessuno snapshot storico sovrascritto; nessuna nuova dipendenza; nessun consiglio betting.
+
 ## Fix — Make v3.1 historical adjustment non-blocking (empirical_v2) (2026-08-06)
 
 - Perché: con sample storico &lt;30 la V3.1 v1 annullava valutazioni teoriche complete (`historical_sample_insufficient`); HR=50 dimezzava lo score (`HR/100`).

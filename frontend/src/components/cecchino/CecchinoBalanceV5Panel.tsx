@@ -315,9 +315,11 @@ function PillarCard({
             <li key={c.key} className="flex justify-between gap-2">
               <span className="text-slate-500">{c.label}</span>
               <span className="tabular-nums font-medium">
-                {c.unit === 'quota'
-                  ? fmtQuotaFixed(c.value == null || c.value === '' ? null : Number(c.value))
-                  : fmtValue(c.value, c.unit)}
+                {c.key === 'quota_x_media' && (c.value == null || c.status === 'missing')
+                  ? 'Quota Media X non disponibile'
+                  : c.unit === 'quota'
+                    ? fmtQuotaFixed(c.value == null || c.value === '' ? null : Number(c.value))
+                    : fmtValue(c.value, c.unit)}
               </span>
             </li>
           ))}

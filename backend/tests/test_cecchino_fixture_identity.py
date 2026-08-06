@@ -237,7 +237,7 @@ def test_10_preview_bloccata():
         cecchino_final={},
         identity_consistency=consistency,
     )
-    assert VERSION == "cecchino_balance_v5_v2"
+    assert VERSION == "cecchino_balance_v5_v3"
     assert preview["status"] == "unavailable"
     assert all(p.get("index") is None for p in preview["pillars"].values())
     assert preview["market_deviation"]["status"] == "unavailable"
@@ -426,7 +426,7 @@ def test_15_formule_invariate():
     )
     f36 = preview["pillars"]["f36"]
     assert f36["index"] == bal["f36"]["score"]
-    assert preview["version"] == "cecchino_balance_v5_v2"
+    assert preview["version"] == "cecchino_balance_v5_v3"
     encoded = jsonable_encoder(preview)
     assert encoded["version"] == VERSION
 

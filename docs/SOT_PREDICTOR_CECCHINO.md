@@ -788,11 +788,44 @@ Dettaglio: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_IN
 | Intensità Goal | v4 nascosta dal Today Detail (file/payload restano); titolo v5 = `Intensità Goal Avanzata - v5 Preview research` |
 | Invariato | adapter legacy, ICM, Signals, formule Goal/Poisson/KPI |
 
+## Equilibrio vs Squilibrio v5 — Quota Media X (Pilastro 1) (2026-08-06)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_balance_v5_v3` |
+| Motivazione | Ridurre falsi equilibri quando 1/2 sono vicine ma la X media è alta |
+| F36 base | Invariato: `F36_signed = q2−q1`, `F36_abs = \|signed\|`; score 100/80/60/40; campi `base_index` / `base_class_*` |
+| Quota Media X | `(Quota Book X + Quota Cecchino X) / 2` — Book da KPI `SEL_DRAW` (FT X reale); Cecchino da `final.quota_x` |
+| Soglia | `X_MEAN_THRESHOLD = 3,60` (sotto → rafforza equilibrio; ≥ → rafforza squilibrio; a 3,60 strength=0) |
+| Full effect | `X_MEAN_FULL_EFFECT_DISTANCE = 0,60` |
+| Correzione max | `X_MEAN_MAX_ADJUSTMENT = ±20` |
+| Indice finale | `clamp(base_index + adjustment, 0, 100)` → `pillars.f36.index` |
+| Classi finali | ≥90 Equilibrio forte; 70–89,99 Equilibrio; 50–69,99 Transizione; <50 Squilibrio |
+| Fallback | Quote X mancanti/derivate/diagnostic → F36 base preservato; `calculation_quality=f36_base_only` |
+| Pilastro 3 | Invariato (usa ancora `quota_x` Cecchino, non la media) |
+| Pilastro 4 | Usa **solo** `f36_base_index` (`gap_coherence_f36_input`) |
+| Audit | `cecchino_balance_explanations_v2` — sezioni INPUT / F36 BASE / QUOTA MEDIA X / FINALE |
+| Monitoring | `cecchino_balance_v5_monitoring_snapshot_v2` (+ campi base/X/adjusted); V1 leggibile |
+| FE | Retrocompatibile V2; V3 mostra media/correzione; nessun consiglio betting |
+| Invariato | Dominanza, Credibilità X math, Gap math, Acquistabilità V3/V3.1, KPI builder |
+
+### Esempi numerici
+
+| Caso | Media X | Strength | Adj | Base | Finale |
+|------|---------|----------|-----|------|--------|
+| A neutrale | 3,60 | 0 | 0 | 80 | 80 |
+| B equilibrio | 3,30 | 0,50 | +10 | 80 | 90 |
+| C pieno + | ≤3,00 | 1 | +20 | 60 | 80 |
+| D squilibrio | 3,90 | 0,50 | −10 | 80 | 70 |
+| E pieno − | ≥4,20 | 1 | −20 | 60 | 40 |
+| F clamp ↑ | … | 1 | +20 | 100 | 100 |
+| G clamp ↓ | … | 1 | −20 | 40 | 20 |
+
 ## Equilibrio vs Squilibrio v5 — modulo canonico (2026-07-19)
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| Versione | `cecchino_balance_v5_v2` |
+| Versione | `cecchino_balance_v5_v2` (storico; corrente = `_v3` sopra) |
 | Modulo | `cecchino_balance_v5.py` (unico punto formule Balance) |
 | API | Solo `balance_v5` |
 | Pilastri | F36 / Dominanza / Gap ufficiali; Credibilità X `descriptive_official` |

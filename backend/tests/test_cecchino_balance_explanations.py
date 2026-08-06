@@ -128,8 +128,13 @@ def test_geometry_f36_signed_abs_direction():
     assert can["class"] == "Squilibrio"
     assert can["value"] == 40
     assert "F36" in geo["formula_symbolic"]
-    assert any("F36 =" in s for s in geo["formula_applied"])
+    assert any("F36_signed =" in s or "F36 =" in s for s in geo["formula_applied"])
     assert geo["consistency"]["status"] in ("match", "rounding_match")
+    assert can.get("base_index") == 40
+    assert can.get("gap_coherence_f36_input") == 40
+    assert "SEZIONE" in geo["formula_symbolic"]
+    assert geo.get("audit_version") == AUDIT_VERSION
+    assert AUDIT_VERSION == "cecchino_balance_explanations_v2"
 
 
 def test_conviction_gap_and_dominant():

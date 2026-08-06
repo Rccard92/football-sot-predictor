@@ -124,7 +124,7 @@ def test_detail_includes_identity_and_preview_ok(
     assert detail["kickoff"].startswith("2026-07-16")
     assert detail["fixture_identity_consistency"]["status"] == "consistent"
     assert detail["balance_v5"]["status"] == "ok"
-    assert detail["balance_v5"]["version"] == "cecchino_balance_v5_v2"
+    assert detail["balance_v5"]["version"] == "cecchino_balance_v5_v3"
     assert "balance_v5_preview" not in detail
     db.commit.assert_not_called()
 
@@ -208,7 +208,7 @@ def test_detail_preview_blocked_on_identity_mismatch_no_write(
     )
     preview = detail["balance_v5"]
     assert preview["status"] == "unavailable"
-    assert preview["version"] == "cecchino_balance_v5_v2"
+    assert preview["version"] == "cecchino_balance_v5_v3"
     assert "balance_v5_preview" not in detail
     assert "fixture_identity_mismatch" in preview["warnings"]
     db.commit.assert_not_called()

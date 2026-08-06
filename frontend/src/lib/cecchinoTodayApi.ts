@@ -1415,13 +1415,37 @@ export type CecchinoBalanceV5Pillar = {
   title: string
   question: string
   status: 'official' | 'descriptive_official' | 'unavailable' | string
+  version?: string
   index: number | null
   class_label: string | null
+  class_key?: string | null
   reading: string
   direction?: string | null
+  calculation_quality?: string | null
   components?: CecchinoBalanceV5Component[]
   warnings?: string[]
   informational_note?: string | null
+  /** V3 — F36 base puro (prima della correzione Quota Media X) */
+  base_index?: number | null
+  base_class_label?: string | null
+  base_class_key?: string | null
+  f36_signed?: number | null
+  f36_abs?: number | null
+  quota_x_book?: number | null
+  quota_x_cecchino?: number | null
+  quota_x_media?: number | null
+  x_mean_threshold?: number | null
+  x_mean_delta?: number | null
+  x_mean_strength?: number | null
+  x_mean_direction?: string | null
+  x_mean_adjustment?: number | null
+  x_mean_source_status?: string | null
+  x_mean_book_source?: string | null
+  x_mean_book_real?: boolean | null
+  adjusted_index_raw?: number | null
+  adjusted_index?: number | null
+  adjusted_class_label?: string | null
+  adjusted_class_key?: string | null
 }
 
 export type CecchinoBalanceV5MarketPair = {

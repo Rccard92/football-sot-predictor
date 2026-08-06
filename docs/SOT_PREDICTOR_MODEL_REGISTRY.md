@@ -2,11 +2,22 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Balance v5 Pilastro 1 — Quota Media X (2026-08-06)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Balance formule | **`cecchino_balance_v5_v3`** (Pilastro 1: F36 base + correzione Quota Media X) |
+| Audit explanations | `cecchino_balance_explanations_v2` |
+| Monitoring snapshot | `cecchino_balance_v5_monitoring_snapshot_v2` |
+| Pilastri 2–4 | matematica **invariata**; Gap usa `f36_base_index` |
+| Acquistabilità V3 / V3.1 | **invariate** |
+| Snapshot storici V2 | leggibili; non ricostruiti |
+
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Balance formule | `cecchino_balance_v5_v2` (**invariato**) |
+| Balance formule | `cecchino_balance_v5_v2` (storico; superseduto da `_v3` per nuove scan) |
 | Readiness / policy / governance | versioni Step 2C **invariate** |
 | Schema | solo `server_default now()` su timestamp readiness/governance |
 
@@ -116,7 +127,7 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Modulo | Status UI | Version fallback | Endpoint overview |
 |--------|-----------|------------------|-------------------|
 | Acquistabilità | Preview monitorata | `candidate_2` / validation_v1 | module-monitoring |
-| Balance v5 | Ufficiale monitorato | `cecchino_balance_v5_v2` | module-monitoring |
+| Balance v5 | Ufficiale monitorato | `cecchino_balance_v5_v3` | module-monitoring |
 | Goal Intensity v5 | Preview research | `goal_intensity_v5_preview` | module-monitoring |
 | Segnali | Operativo | `signals_lab` | module-monitoring |
 

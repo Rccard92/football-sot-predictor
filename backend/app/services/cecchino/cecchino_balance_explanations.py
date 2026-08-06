@@ -17,9 +17,15 @@ from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoToda
 from app.services.cecchino.cecchino_balance_v5 import (
     PILLAR_ORDER,
     VERSION as BALANCE_VERSION,
+    X_MEAN_FULL_EFFECT_DISTANCE,
+    X_MEAN_MAX_ADJUSTMENT,
+    X_MEAN_THRESHOLD,
+    _classify_adjusted_f36_index,
     _classify_draw,
     _classify_f36,
+    _compute_x_mean_adjustment,
     _f36_side_from_signed,
+    _is_valid_ft_draw_quote,
     _normalize_2way_probs,
     _normalize_3way_probs,
     _num,
@@ -27,6 +33,7 @@ from app.services.cecchino.cecchino_balance_v5 import (
     build_cecchino_balance_v5,
     classify_conviction,
     classify_gap_coherence,
+    clamp_index,
     compute_dominance_pp,
     conviction_index,
     dominant_side_to_market_label,
@@ -37,7 +44,7 @@ from app.services.cecchino.cecchino_balance_v5 import (
 )
 from app.services.cecchino.cecchino_balance_v5_monitoring import BALANCE_MONITORING_KEY
 
-AUDIT_VERSION = "cecchino_balance_explanations_v1"
+AUDIT_VERSION = "cecchino_balance_explanations_v2"
 MODULE = "balance_v5"
 
 # Mapping contratto audit ↔ chiavi canoniche UI/builder
@@ -185,9 +192,30 @@ def _f36_classification_trace(f36_abs: float | None, matched_label: str | None) 
     ]
     return [
         {
+            "stage": "f36_base",
             "class": label,
             "condition": cond,
             "matched": bool(pred(f36_abs)) and (matched_label is None or matched_label == label),
+        }
+        for label, cond, pred in rules
+    ]
+
+
+def _adjusted_f36_classification_trace(
+    index: float | None, matched_label: str | None
+) -> list[dict[str, Any]]:
+    rules = [
+        ("Equilibrio forte", "indice finale >= 90", lambda v: v is not None and v >= 90),
+        ("Equilibrio", "70 <= indice finale < 90", lambda v: v is not None and 70 <= v < 90),
+        ("Transizione", "50 <= indice finale < 70", lambda v: v is not None and 50 <= v < 70),
+        ("Squilibrio", "indice finale < 50", lambda v: v is not None and v < 50),
+    ]
+    return [
+        {
+            "stage": "adjusted_index",
+            "class": label,
+            "condition": cond,
+            "matched": bool(pred(index)) and (matched_label is None or matched_label == label),
         }
         for label, cond, pred in rules
     ]
@@ -303,23 +331,47 @@ def _explain_geometry(
 ) -> dict[str, Any]:
     quota_1 = _num(final.get("quota_1"))
     quota_2 = _num(final.get("quota_2"))
+    quota_x_cecchino = _num(final.get("quota_x"))
     if quota_1 is None:
         quota_1 = _num(inputs_block.get("quota_1"))
     if quota_2 is None:
         quota_2 = _num(inputs_block.get("quota_2"))
+    if quota_x_cecchino is None:
+        quota_x_cecchino = _num(inputs_block.get("quota_x"))
+
+    quota_x_book = _num(displayed.get("quota_x_book"))
+    if quota_x_book is None:
+        quota_x_book = _num(inputs_block.get("quota_x_book"))
+    book_source = displayed.get("x_mean_book_source")
+    book_real = displayed.get("x_mean_book_real")
+    x_status = displayed.get("x_mean_source_status")
 
     formula_symbolic = (
+        "SEZIONE A — INPUT\n"
+        "Quota 1 Cecchino, Quota 2 Cecchino, Quota X Book, Quota X Cecchino\n"
+        "\n"
+        "SEZIONE B — F36 BASE\n"
         "F36_signed = Quota_2 − Quota_1\n"
         "F36_abs = |F36_signed|\n"
-        "Indice geometria = score discreto da F36_abs "
+        "Indice F36 base = score discreto da F36_abs "
         "(≤0,50→100; ≤1,00→80; ≤1,50→60; altrimenti→40)\n"
-        "Direzione: signed > 0 → lato 1; signed < 0 → lato 2"
+        "\n"
+        "SEZIONE C — QUOTA MEDIA X\n"
+        "Quota Media X = (Quota Book X + Quota Cecchino X) / 2\n"
+        f"delta = {X_MEAN_THRESHOLD} − Quota Media X\n"
+        f"forza = clamp(|delta| / {X_MEAN_FULL_EFFECT_DISTANCE}, 0, 1)\n"
+        f"correzione = ±{X_MEAN_MAX_ADJUSTMENT} × forza "
+        "(sotto 3,60 → equilibrio; >= 3,60 → squilibrio)\n"
+        "\n"
+        "SEZIONE D — RISULTATO FINALE\n"
+        "Indice finale = clamp(Indice F36 base + correzione, 0, 100)\n"
+        "Classi finali: >=90 Equilibrio forte; >=70 Equilibrio; >=50 Transizione; <50 Squilibrio"
     )
 
     inputs = [
         _input(
             key="quota_1",
-            label="Quota 1",
+            label="Quota 1 Cecchino",
             value=quota_1,
             display_value=_fmt_it(quota_1),
             source_path="cecchino_output_json.final.quota_1",
@@ -327,11 +379,30 @@ def _explain_geometry(
         ),
         _input(
             key="quota_2",
-            label="Quota 2",
+            label="Quota 2 Cecchino",
             value=quota_2,
             display_value=_fmt_it(quota_2),
             source_path="cecchino_output_json.final.quota_2",
             derivation="Quota Cecchino segno 2",
+        ),
+        _input(
+            key="quota_x_book",
+            label="Quota X Book",
+            value=quota_x_book,
+            display_value=_fmt_it(quota_x_book),
+            source_path="kpi_panel_json.rows[SEL_DRAW].quota_book",
+            derivation=(
+                f"Book FT X (source={book_source or '—'}; "
+                f"real={book_real}; status={x_status or '—'})"
+            ),
+        ),
+        _input(
+            key="quota_x_cecchino",
+            label="Quota X Cecchino",
+            value=quota_x_cecchino if _is_valid_ft_draw_quote(quota_x_cecchino) else None,
+            display_value=_fmt_it(quota_x_cecchino) if _is_valid_ft_draw_quote(quota_x_cecchino) else "—",
+            source_path="cecchino_output_json.final.quota_x",
+            derivation="Quota Cecchino segno X (FT)",
         ),
     ]
 
@@ -346,11 +417,17 @@ def _explain_geometry(
             "question": displayed.get("question") or "Quanto è equilibrata la struttura della partita?",
             "description": (
                 "Misura quanto la struttura della partita è equilibrata o sbilanciata "
-                "usando la distanza tra le quote laterali Cecchino (F36)."
+                "usando F36 base e, quando disponibile, la correzione Quota Media X."
             ),
             "purpose": "Descrivere la geometria 1/2 senza aggregarla agli altri pilastri.",
             "formula_symbolic": formula_symbolic,
             "formula_applied": [],
+            "formula_sections": {
+                "A_input": "Quote laterali e quote X non disponibili.",
+                "B_f36_base": "F36 base non calcolabile.",
+                "C_quota_media_x": "Quota Media X non applicata.",
+                "D_final": "Risultato finale non disponibile.",
+            },
             "inputs": inputs,
             "components": [_component_from_pillar(c) for c in (displayed.get("components") or [])],
             "displayed_result": {
@@ -368,6 +445,7 @@ def _explain_geometry(
             "classification_trace": [],
             "reason_summary": "Dati F36 non disponibili.",
             "formula_version": BALANCE_VERSION,
+            "audit_version": AUDIT_VERSION,
             "source_paths": ["cecchino_output_json.final.quota_1", "cecchino_output_json.final.quota_2"],
             "warnings": list(displayed.get("warnings") or ["f36_unavailable"]),
         }
@@ -375,58 +453,146 @@ def _explain_geometry(
     f36_signed = float(quota_2) - float(quota_1)
     f36_abs = abs(f36_signed)
     classified = _classify_f36(f36_abs, f36_signed)
-    audit_score = classified.get("score")
-    audit_label = classified.get("label")
+    base_index = float(classified.get("score"))
+    base_label = classified.get("label")
+    base_class_key = classified.get("class_key")
     audit_direction = _f36_side_from_signed(f36_signed)
 
-    inputs.extend(
-        [
-            _input(
-                key="f36_signed",
-                label="F36",
-                value=round(f36_signed, 4),
-                display_value=_fmt_it(f36_signed, 4),
-                source_path="derived:quota_2-quota_1",
-                derivation="Quota 2 − Quota 1",
-            ),
-            _input(
-                key="f36_abs",
-                label="|F36|",
-                value=round(f36_abs, 4),
-                display_value=_fmt_it(f36_abs, 4),
-                source_path="derived:abs(f36_signed)",
-                derivation="Valore assoluto di F36",
-            ),
-        ]
+    # Quota Media X
+    cec_ok = _is_valid_ft_draw_quote(quota_x_cecchino)
+    book_ok = (
+        book_real is not False
+        and x_status == "available"
+        and _is_valid_ft_draw_quote(quota_x_book)
     )
+    # Prefer displayed pillar values when present (already validated by builder)
+    if displayed.get("calculation_quality") == "f36_with_x_mean":
+        book_ok = _is_valid_ft_draw_quote(displayed.get("quota_x_book") or quota_x_book)
+        cec_ok = _is_valid_ft_draw_quote(displayed.get("quota_x_cecchino") or quota_x_cecchino)
+        quota_x_book = _num(displayed.get("quota_x_book")) or quota_x_book
+        quota_x_cecchino = _num(displayed.get("quota_x_cecchino")) or quota_x_cecchino
 
-    formula_applied = [
-        f"F36 = Quota 2 − Quota 1",
-        f"F36 = {_fmt_it(quota_2)} − {_fmt_it(quota_1)}",
-        f"F36 = {_fmt_it(f36_signed, 4)}",
-        f"|F36| = {_fmt_it(f36_abs, 4)}",
-        f"Indice geometria = {audit_score}",
-        f"Classe = {audit_label}",
-        f"Direzione = lato {audit_direction}" if audit_direction else "Direzione = equilibrio (F36 = 0)",
-    ]
+    quota_x_media = None
+    x_adj = 0.0
+    x_strength = None
+    x_delta = None
+    x_direction = None
+    if book_ok and cec_ok:
+        quota_x_media = (float(quota_x_book) + float(quota_x_cecchino)) / 2.0
+        adj = _compute_x_mean_adjustment(quota_x_media)
+        x_delta = adj["x_mean_delta"]
+        x_strength = adj["x_mean_strength"]
+        x_direction = adj["x_mean_direction"]
+        x_adj = float(adj["x_mean_adjustment"])
 
+    adjusted_raw = base_index + x_adj
+    adjusted_index = clamp_index(adjusted_raw, 0.0, 100.0)
+    if displayed.get("calculation_quality") == "f36_base_only" or quota_x_media is None:
+        adjusted_index = base_index
+        adjusted_raw = base_index
+        x_adj = 0.0
+        final_label = base_label
+        final_key = base_class_key
+    else:
+        adj_cls = _classify_adjusted_f36_index(adjusted_index)
+        final_label = adj_cls["label"]
+        final_key = adj_cls["class_key"]
+
+    # Prefer displayed adjusted values for consistency check against UI
     disp_val = displayed.get("index")
     disp_class = displayed.get("class_label")
     disp_dir = displayed.get("direction")
+    if displayed.get("adjusted_index") is not None:
+        # Recompute from same inputs as builder when possible
+        pass
+
+    formula_applied = [
+        "— SEZIONE A: INPUT —",
+        f"Quota 1 Cecchino = {_fmt_it(quota_1)}",
+        f"Quota 2 Cecchino = {_fmt_it(quota_2)}",
+        f"Quota X Book = {_fmt_it(quota_x_book) if book_ok else 'non disponibile / non reale'}",
+        f"Quota X Cecchino = {_fmt_it(quota_x_cecchino) if cec_ok else 'non disponibile'}",
+        "— SEZIONE B: F36 BASE —",
+        "F36_signed = Quota 2 − Quota 1",
+        f"F36_signed = {_fmt_it(quota_2)} − {_fmt_it(quota_1)} = {_fmt_it(f36_signed, 4)}",
+        f"F36_abs = {_fmt_it(f36_abs, 4)}",
+        f"Indice F36 base = {base_index}",
+        f"Classe F36 base = {base_label}",
+        "— SEZIONE C: QUOTA MEDIA X —",
+    ]
+    if quota_x_media is not None:
+        formula_applied.extend(
+            [
+                f"Quota Media X = ({_fmt_it(quota_x_book)} + {_fmt_it(quota_x_cecchino)}) / 2",
+                f"Quota Media X = {_fmt_it(quota_x_media, 4)}",
+                f"delta = {_fmt_it(X_MEAN_THRESHOLD)} − {_fmt_it(quota_x_media, 4)} = {_fmt_it(x_delta, 4)}",
+                f"forza = clamp(|{_fmt_it(x_delta, 4)}| / {_fmt_it(X_MEAN_FULL_EFFECT_DISTANCE)}, 0, 1) "
+                f"= {_fmt_it(x_strength, 4)}",
+                f"direzione = {x_direction}",
+                f"correzione = {_fmt_it(x_adj, 2)}",
+            ]
+        )
+    else:
+        formula_applied.append(
+            "Quota Media X non disponibile: correzione = 0 (F36 base preservato)."
+        )
+    clamped = adjusted_raw != adjusted_index and quota_x_media is not None
+    formula_applied.extend(
+        [
+            "— SEZIONE D: RISULTATO FINALE —",
+            f"Indice grezzo = {base_index} + {_fmt_it(x_adj, 2)} = {_fmt_it(adjusted_raw, 4)}",
+            f"Indice finale = clamp(..., 0, 100) = {_fmt_it(adjusted_index)}",
+            f"Classe base = {base_label}",
+            f"Classe finale = {final_label}",
+            f"Cambio classe = {'sì' if base_label != final_label else 'no'}",
+            f"Clamp applicato = {'sì' if clamped else 'no'}",
+            "Rounding = 2 decimali sull'indice finale",
+        ]
+    )
+
+    formula_sections = {
+        "A_input": (
+            f"q1={_fmt_it(quota_1)}; q2={_fmt_it(quota_2)}; "
+            f"book_x={_fmt_it(quota_x_book) if book_ok else '—'}; "
+            f"cec_x={_fmt_it(quota_x_cecchino) if cec_ok else '—'}"
+        ),
+        "B_f36_base": (
+            f"signed={_fmt_it(f36_signed, 4)}; abs={_fmt_it(f36_abs, 4)}; "
+            f"index={base_index}; class={base_label}"
+        ),
+        "C_quota_media_x": (
+            f"media={_fmt_it(quota_x_media, 4)}; threshold={_fmt_it(X_MEAN_THRESHOLD)}; "
+            f"strength={_fmt_it(x_strength, 4)}; adj={_fmt_it(x_adj, 2)}; dir={x_direction or '—'}"
+            if quota_x_media is not None
+            else "non applicata (F36 base preservato)"
+        ),
+        "D_final": (
+            f"raw={_fmt_it(adjusted_raw, 4)}; final={_fmt_it(adjusted_index)}; "
+            f"class={final_label}; class_change={base_label != final_label}"
+        ),
+    }
+
     consistency = _merge_consistency(
-        _consistency(disp_val, audit_score, abs_tol=1e-9, rounding_tol=0.01),
-        _consistency_class(disp_class, audit_label),
+        _consistency(disp_val, adjusted_index, abs_tol=1e-9, rounding_tol=0.01),
+        _consistency_class(disp_class, final_label),
         _consistency_class(disp_dir, audit_direction),
     )
 
     reason = (
-        f"Con |F36| = {_fmt_it(f36_abs, 4)} la geometria rientra nella classe «{audit_label}» "
-        f"(indice {audit_score})"
+        f"F36 base |diff|={_fmt_it(f36_abs, 4)} → classe «{base_label}» (indice {base_index}). "
     )
-    if audit_direction:
-        reason += f", con inclinazione strutturale verso il lato {audit_direction}."
+    if quota_x_media is not None:
+        reason += (
+            f"Quota Media X={_fmt_it(quota_x_media)} → correzione {_fmt_it(x_adj, 2)}; "
+            f"indice finale {_fmt_it(adjusted_index)} («{final_label}»)."
+        )
     else:
-        reason += "."
+        reason += "Quota Media X non disponibile: mantenuta la valutazione F36 originaria."
+
+    classification_trace = (
+        _f36_classification_trace(f36_abs, base_label)
+        + _adjusted_f36_classification_trace(adjusted_index, final_label)
+    )
 
     return {
         "pillar_key": "geometry",
@@ -437,16 +603,19 @@ def _explain_geometry(
         "badge": "UFFICIALE",
         "question": displayed.get("question") or "Quanto è equilibrata la struttura della partita?",
         "description": (
-            "Misura quanto la struttura della partita è equilibrata o sbilanciata "
-            "usando la distanza tra le quote laterali Cecchino (F36 = Quota 2 − Quota 1)."
+            "Misura la geometria 1/2 con F36 base (quote laterali Cecchino) e, "
+            "quando le quote X Book e Cecchino sono valide, applica una correzione "
+            "progressiva da Quota Media X rispetto alla soglia 3,60."
         ),
         "purpose": (
-            "Isolare la geometria 1/2. Non è convinzione del modello né probabilità di pareggio; "
+            "Isolare la geometria 1/2 corretta dalla Quota Media X. "
+            "Non è convinzione del modello né probabilità di pareggio; "
             "non va confrontata numericamente con gli altri indici."
         ),
         "interpretation": displayed.get("reading"),
         "formula_symbolic": formula_symbolic,
         "formula_applied": formula_applied,
+        "formula_sections": formula_sections,
         "inputs": inputs,
         "components": [_component_from_pillar(c) for c in (displayed.get("components") or [])],
         "displayed_result": {
@@ -454,22 +623,41 @@ def _explain_geometry(
             "display_value": str(disp_val) if disp_val is not None else None,
             "class": disp_class,
             "direction": disp_dir,
+            "base_index": displayed.get("base_index"),
+            "base_class": displayed.get("base_class_label"),
+            "adjusted_index": displayed.get("adjusted_index"),
+            "adjusted_class": displayed.get("adjusted_class_label"),
         },
         "canonical_audit_result": {
-            "value": audit_score,
-            "class": audit_label,
+            "value": adjusted_index,
+            "class": final_label,
             "direction": audit_direction,
             "f36_signed": round(f36_signed, 4),
             "f36_abs": round(f36_abs, 4),
-            "class_key": classified.get("class_key"),
+            "base_index": base_index,
+            "base_class": base_label,
+            "base_class_key": base_class_key,
+            "quota_x_media": round(quota_x_media, 4) if quota_x_media is not None else None,
+            "x_mean_adjustment": round(x_adj, 4),
+            "x_mean_strength": round(x_strength, 4) if x_strength is not None else None,
+            "x_mean_direction": x_direction,
+            "adjusted_index_raw": round(adjusted_raw, 4),
+            "adjusted_index": adjusted_index,
+            "adjusted_class": final_label,
+            "adjusted_class_key": final_key,
+            "class_key": final_key,
+            "gap_coherence_f36_input": base_index,
         },
         "consistency": consistency,
-        "classification_trace": _f36_classification_trace(f36_abs, audit_label),
+        "classification_trace": classification_trace,
         "reason_summary": reason,
         "formula_version": BALANCE_VERSION,
+        "audit_version": AUDIT_VERSION,
         "source_paths": [
             "cecchino_output_json.final.quota_1",
             "cecchino_output_json.final.quota_2",
+            "cecchino_output_json.final.quota_x",
+            "kpi_panel_json.rows[SEL_DRAW].quota_book",
             "balance_v5.pillars.f36",
         ],
         "warnings": list(displayed.get("warnings") or []),
@@ -835,7 +1023,13 @@ def _explain_coherence(
     f36_score = None
     geo_can = geometry_audit.get("canonical_audit_result") or {}
     if isinstance(geo_can, dict):
-        f36_score = _num(geo_can.get("value"))
+        # gap_coherence_f36_input = f36_base_index (NON l'indice corretto del Pilastro 1)
+        f36_score = _num(geo_can.get("gap_coherence_f36_input"))
+        if f36_score is None:
+            f36_score = _num(geo_can.get("base_index"))
+        if f36_score is None:
+            # Legacy audit V1: value era lo score F36 base
+            f36_score = _num(geo_can.get("value"))
     f36_direction = geo_can.get("direction") if isinstance(geo_can, dict) else None
 
     gap_pp = probability_gap_1_2_pp(p1, p2)
@@ -852,7 +1046,8 @@ def _explain_coherence(
     formula_symbolic = (
         "gap_pp = |P1 − P2|\n"
         "prob_balance = 100 × (1 − |P1 − P2| / (P1 + P2))\n"
-        "indice_coerenza = 100 − |f36_score − prob_balance|\n"
+        "indice_coerenza = 100 − |f36_base_index − prob_balance|\n"
+        "gap_coherence_f36_input = f36_base_index (non l'indice F36 corretto)\n"
         "Classi: <20 Non Confermato; <40 Debole; <60 Parziale; <80 Confermato; ≥80 Fortemente Confermato"
     )
 
@@ -873,11 +1068,11 @@ def _explain_coherence(
         ),
         _input(
             key="f36_score",
-            label="Indice geometria (F36 score)",
+            label="Indice F36 base (input Coerenza)",
             value=f36_score,
             display_value=_fmt_it(f36_score, 0) if f36_score is not None else "—",
-            source_path="balance_v5.pillars.f36.index",
-            derivation="Score discreto del pilastro Geometria",
+            source_path="balance_v5.pillars.f36.base_index",
+            derivation="gap_coherence_f36_input = f36_base_index (non pillars.f36.index corretto)",
         ),
         _input(
             key="probability_gap_1_2_pp",

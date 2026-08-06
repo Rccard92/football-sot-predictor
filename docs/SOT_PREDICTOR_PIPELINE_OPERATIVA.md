@@ -630,9 +630,21 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 5. Today Detail: non montare `CecchinoGoalIntensityAnalysisPanel` (v4); titolo v5 esatto `Intensità Goal Avanzata - v5 Preview research`.
 6. Nessun bump versione; nessun Preview Balance; legacy ICM/Signals intatti.
 
+## Equilibrio vs Squilibrio v5 — Quota Media X sul Pilastro 1 (2026-08-06)
+
+1. Versione formula: `cecchino_balance_v5_v3` (moduli: `cecchino_balance_v5.py`).
+2. F36 base invariato: `signed = q2−q1`, score 100/80/60/40; esposto come `base_index`.
+3. Quota Media X = (Quota Book X FT da KPI `SEL_DRAW` + Quota Cecchino X) / 2; solo quote reali (>1, non derivate, non X PT/DC).
+4. Correzione: soglia 3,60; distanza full effect 0,60; max ±20; `index` = clamp(base+adj, 0–100).
+5. Classi finali continue: ≥90 Equilibrio forte; ≥70 Equilibrio; ≥50 Transizione; <50 Squilibrio.
+6. Pilastro 4: `gap_coherence_f36_input = f36_base_index` (non l’indice corretto).
+7. Monitoring: `cecchino_balance_v5_monitoring_snapshot_v2`; snapshot V1 restano leggibili.
+8. Audit: `cecchino_balance_explanations_v2` (4 sezioni sul Pilastro 1).
+9. Detail Today / FE: `CecchinoBalanceV5Panel` mostra indice/classe finali; componenti V3; payload V2 senza crash.
+
 ## Equilibrio vs Squilibrio v5 — canonico (2026-07-19)
 
-1. Detail Today espone solo `balance_v5` (`cecchino_balance_v5_v2`).
+1. Detail Today espone solo `balance_v5` (oggi `cecchino_balance_v5_v3`; storici possono avere `_v2`).
 2. FE: `CecchinoBalanceV5Panel` — quattro card + sintesi strutturale + scostamento mercato.
 3. Non reintrodurre Preview né candidati research duplicati.
 4. ICM/Segnali restano sull’adapter `balance_analysis` (valori numerici invariati).

@@ -5,14 +5,19 @@ Consolidamento finale di:
 - B) Logica legacy completa da cecchino_balance_analysis (v4)
 - C) Builder pubblico v5 con 4 pilastri (F36, Dominanza, Credibilità X, Gap)
 
-Version string: cecchino_balance_v5_v2
+Version string: cecchino_balance_v5_v3
 
 Questo è l'unico modulo da usare per le analisi di Equilibrio vs Squilibrio.
 Non chiamare i vecchi moduli preview/research_candidates per evitare duplicazioni.
+
+v3 — Pilastro 1: F36 base invariato + correzione progressiva Quota Media X
+(Book X + Cecchino X) / 2 rispetto alla soglia 3,60. Gli altri pilastri
+restano invariati; il Pilastro 4 continua a usare f36_base_index.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from app.services.cecchino.cecchino_selection_keys import (
@@ -27,7 +32,7 @@ from app.services.cecchino.cecchino_selection_keys import (
 # VERSIONI
 # ============================================================================
 
-VERSION = "cecchino_balance_v5_v2"
+VERSION = "cecchino_balance_v5_v3"
 """Versione ufficiale Balance v5."""
 
 LEGACY_VERSION = "cecchino_balance_analysis_v4"
@@ -36,6 +41,28 @@ LEGACY_VERSION = "cecchino_balance_analysis_v4"
 PILLAR_ORDER = ["f36", "dominance", "draw_credibility", "gap_coherence"]
 """Ordine canonico dei 4 pilastri."""
 
+# ============================================================================
+# QUOTA MEDIA X — correzione Pilastro 1 (v3)
+# ============================================================================
+
+X_MEAN_THRESHOLD = 3.60
+"""Soglia neutrale Quota Media X: sotto rafforza equilibrio, >= rafforza squilibrio."""
+
+X_MEAN_FULL_EFFECT_DISTANCE = 0.60
+"""Distanza dalla soglia a cui la correzione raggiunge ±X_MEAN_MAX_ADJUSTMENT."""
+
+X_MEAN_MAX_ADJUSTMENT = 20.0
+"""Correzione massima sull'indice F36 (± punti indice)."""
+
+_DERIVED_BOOK_SOURCE_MARKERS = (
+    "derived",
+    "synthetic",
+    "reconstructed",
+    "model",
+    "from_1x2",
+    "from_betfair_1x2",
+    "diagnostic",
+)
 
 # ============================================================================
 # SEZIONE A) CANONICAL MATH (da research_candidates)
@@ -286,6 +313,116 @@ def _classify_f36(f36_abs: float, f36_signed: float) -> dict[str, Any]:
         "label": label,
         "class_key": class_key,
         "direction_note": direction_note,
+    }
+
+
+def _is_valid_ft_draw_quote(q: float | None) -> bool:
+    """Quota FT X valida: numerica, finita, > 1."""
+    if q is None:
+        return False
+    try:
+        v = float(q)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(v) and v > 1.0
+
+
+def _classify_adjusted_f36_index(index: float) -> dict[str, Any]:
+    """Classificazione continua dell'indice F36 corretto (v3).
+
+    Le soglie preservano le classi dei valori base 100/80/60/40 a correzione zero.
+    """
+    if index >= 90:
+        return {"label": "Equilibrio forte", "class_key": "strong_balance"}
+    if index >= 70:
+        return {"label": "Equilibrio", "class_key": "balance"}
+    if index >= 50:
+        return {"label": "Transizione", "class_key": "transition"}
+    return {"label": "Squilibrio", "class_key": "imbalance"}
+
+
+def _compute_x_mean_adjustment(quota_x_media: float) -> dict[str, Any]:
+    """Correzione progressiva simmetrica da Quota Media X.
+
+    quota_x_media < 3.60 → reinforces_balance (+adjustment)
+    quota_x_media >= 3.60 → reinforces_imbalance (−adjustment; a 3.60 strength=0)
+    """
+    x_mean_delta = X_MEAN_THRESHOLD - float(quota_x_media)
+    x_mean_strength = min(1.0, max(0.0, abs(x_mean_delta) / X_MEAN_FULL_EFFECT_DISTANCE))
+    if quota_x_media < X_MEAN_THRESHOLD:
+        direction = "reinforces_balance"
+        x_mean_adjustment = X_MEAN_MAX_ADJUSTMENT * x_mean_strength
+    else:
+        direction = "reinforces_imbalance"
+        x_mean_adjustment = -X_MEAN_MAX_ADJUSTMENT * x_mean_strength
+    return {
+        "x_mean_delta": x_mean_delta,
+        "x_mean_strength": x_mean_strength,
+        "x_mean_direction": direction,
+        "x_mean_adjustment": x_mean_adjustment,
+    }
+
+
+def _resolve_quota_x_book_for_f36(draw_row: dict[str, Any] | None) -> dict[str, Any]:
+    """Risolve Quota Book X FT dalla riga KPI SEL_DRAW per la correzione F36.
+
+    Rifiuta quote derivate, sintetiche, diagnostic_only o non reali.
+    Non usa X PT, Doppia Chance, né derivazioni da 1/2.
+    """
+    if not isinstance(draw_row, dict) or not draw_row:
+        return {
+            "quota": None,
+            "book_source": None,
+            "book_real": False,
+            "source_status": "unavailable",
+            "reason_code": "x_mean_book_quote_unavailable",
+        }
+
+    book_source = str(
+        draw_row.get("book_source")
+        or draw_row.get("odds_source")
+        or draw_row.get("quote_source")
+        or draw_row.get("source")
+        or ""
+    )
+    quota = _num(draw_row.get("quota_book"))
+
+    explicit_derived = bool(
+        draw_row.get("derived_quote")
+        or draw_row.get("not_real_book_quote")
+        or draw_row.get("force_derived_quote")
+        or draw_row.get("diagnostic_only") is True
+        or draw_row.get("execution_quote_real") is False
+    )
+    src_l = book_source.lower()
+    source_derived = any(m in src_l for m in _DERIVED_BOOK_SOURCE_MARKERS)
+
+    if explicit_derived or source_derived:
+        return {
+            "quota": quota if _is_valid_ft_draw_quote(quota) else None,
+            "book_source": book_source or None,
+            "book_real": False,
+            "source_status": "not_real",
+            "reason_code": "x_mean_book_quote_not_real",
+        }
+
+    if not _is_valid_ft_draw_quote(quota):
+        return {
+            "quota": None,
+            "book_source": book_source or None,
+            "book_real": False,
+            "source_status": "unavailable",
+            "reason_code": "x_mean_book_quote_unavailable"
+            if quota is None
+            else "x_mean_quote_invalid",
+        }
+
+    return {
+        "quota": float(quota),
+        "book_source": book_source or "kpi_panel",
+        "book_real": True,
+        "source_status": "available",
+        "reason_code": None,
     }
 
 
@@ -1091,33 +1228,111 @@ def _f36_side_from_signed(signed: Any) -> str | None:
 
 
 def _f36_structural_reading_v5(f36: dict[str, Any]) -> str:
-    """Lettura strutturale F36 per pilastro v5 (nessuna predizione, solo geometria)."""
+    """Lettura strutturale F36 per pilastro v5 (nessuna predizione, solo geometria).
+
+    v3: integra la correzione Quota Media X quando applicata.
+    """
     class_key = str(f36.get("class_key") or "")
+    base_class_key = str(f36.get("base_class_key") or class_key)
     side = _f36_side_from_signed(f36.get("signed"))
+    x_dir = f36.get("x_mean_direction")
+    x_media = f36.get("quota_x_media")
+    quality = f36.get("calculation_quality")
 
-    if class_key == "imbalance":
+    def _base_reading(ck: str) -> str:
+        if ck == "imbalance":
+            if side:
+                return (
+                    f"La distanza tra le quote laterali descrive una struttura "
+                    f"sbilanciata verso il lato {side}."
+                )
+            return "La distanza tra le quote laterali descrive una struttura sbilanciata."
+        if ck == "transition":
+            if side:
+                return (
+                    "Le quote laterali mostrano una distanza intermedia, "
+                    f"con inclinazione strutturale verso il lato {side}."
+                )
+            return (
+                "Le quote laterali mostrano una distanza intermedia "
+                "tra equilibrio e squilibrio."
+            )
         if side:
             return (
-                f"La distanza tra le quote laterali descrive una struttura "
-                f"sbilanciata verso il lato {side}."
+                "Le quote laterali risultano relativamente vicine, "
+                f"con una lieve inclinazione verso il lato {side}."
             )
-        return "La distanza tra le quote laterali descrive una struttura sbilanciata."
-
-    if class_key == "transition":
-        if side:
-            return (
-                "Le quote laterali mostrano una distanza intermedia, "
-                f"con inclinazione strutturale verso il lato {side}."
-            )
-        return "Le quote laterali mostrano una distanza intermedia tra equilibrio e squilibrio."
-
-    # strong_balance / balance
-    if side:
         return (
-            "Le quote laterali risultano relativamente vicine, "
-            f"con una lieve inclinazione verso il lato {side}."
+            "Le quote laterali risultano vicine e la struttura della partita "
+            "appare equilibrata."
         )
-    return "Le quote laterali risultano vicine e la struttura della partita appare equilibrata."
+
+    strength = f36.get("x_mean_strength")
+    if quality == "f36_base_only" or x_media is None:
+        base = _base_reading(base_class_key or class_key)
+        if quality == "f36_base_only":
+            return (
+                f"{base} Quota Media X non disponibile: "
+                "mantenuta la valutazione F36 originaria."
+            )
+        return base
+
+    # Soglia esatta 3,60: strength 0 → lettura F36 base senza salto artificiale
+    if strength is not None and float(strength) == 0.0:
+        return _base_reading(base_class_key or class_key)
+
+    media_txt = f"{float(x_media):.2f}".replace(".", ",")
+    thr_txt = f"{X_MEAN_THRESHOLD:.2f}".replace(".", ",")
+
+    if x_dir == "reinforces_balance":
+        if base_class_key in ("imbalance", "transition"):
+            return (
+                f"F36 segnala {'squilibrio' if base_class_key == 'imbalance' else 'transizione'}, "
+                f"mentre la Quota Media X di {media_txt} (inferiore alla soglia {thr_txt}) "
+                "introduce un segnale correttivo verso l'equilibrio."
+            )
+        return (
+            "Le quote laterali descrivono una struttura equilibrata. "
+            f"La Quota Media X di {media_txt}, inferiore alla soglia {thr_txt}, "
+            "rafforza la lettura di equilibrio."
+        )
+
+    if x_dir == "reinforces_imbalance":
+        if base_class_key in ("strong_balance", "balance") and float(x_media) > X_MEAN_THRESHOLD:
+            return (
+                "Le quote laterali risultano vicine, ma la Quota Media X di "
+                f"{media_txt} è superiore alla soglia {thr_txt} e riduce la forza "
+                "dell'equilibrio apparente."
+            )
+        if base_class_key == "imbalance":
+            return (
+                "F36 segnala squilibrio e la Quota Media X elevata conferma "
+                "ulteriormente la struttura sbilanciata."
+            )
+        return (
+            f"La Quota Media X di {media_txt} è superiore alla soglia {thr_txt} "
+            "e rafforza la lettura di squilibrio strutturale."
+        )
+
+    return _base_reading(class_key)
+
+
+def _fmt_signed_adjustment(adj: float | None) -> str | None:
+    if adj is None:
+        return None
+    return f"{adj:+.2f}".replace(".", ",")
+
+
+def _x_mean_direction_label(direction: str | None, strength: float | None) -> str | None:
+    if direction is None:
+        return None
+    if strength is not None and float(strength) == 0.0:
+        return "0,00 soglia neutrale"
+    if direction == "reinforces_balance":
+        return "equilibrio"
+    if direction == "reinforces_imbalance":
+        return "squilibrio"
+    return direction
 
 
 def _pillar_f36_v5(
@@ -1128,44 +1343,234 @@ def _pillar_f36_v5(
     f36_score: float | None,
     f36_label: str | None,
     f36_class_key: str | None = None,
+    *,
+    quota_x_cecchino: float | None = None,
+    quota_x_book_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pilastro F36 v5 (official)."""
+    """Pilastro F36 v5 (official) — v3: base F36 + correzione Quota Media X."""
     if None in (quota_1, quota_2, f36_abs, f36_signed, f36_score, f36_label):
         return {
             "key": "f36",
             "title": "Geometria della partita",
             "question": "Quanto è equilibrata la struttura della partita?",
             "status": "unavailable",
+            "version": VERSION,
             "index": None,
             "class_label": None,
+            "class_key": None,
             "reading": "Dati F36 non disponibili.",
             "direction": None,
+            "calculation_quality": "unavailable",
             "components": [],
             "warnings": ["f36_unavailable"],
         }
 
+    book_info = quota_x_book_info or {}
+    quota_x_book = book_info.get("quota") if book_info.get("book_real") else None
+    book_source = book_info.get("book_source")
+    book_real = bool(book_info.get("book_real"))
+    book_reason = book_info.get("reason_code")
+
+    base_index = float(f36_score)
+    base_class_label = f36_label
+    base_class_key = f36_class_key
+
+    warnings: list[str] = []
+    x_mean_source_status = "unavailable"
+    quota_x_media: float | None = None
+    x_mean_delta: float | None = None
+    x_mean_strength: float | None = None
+    x_mean_direction: str | None = None
+    x_mean_adjustment = 0.0
+    calculation_quality = "f36_base_only"
+
+    cecchino_ok = _is_valid_ft_draw_quote(quota_x_cecchino)
+    book_ok = book_real and _is_valid_ft_draw_quote(quota_x_book)
+
+    if not cecchino_ok:
+        warnings.append("x_mean_cecchino_quote_unavailable")
+        if quota_x_cecchino is not None and not _is_valid_ft_draw_quote(quota_x_cecchino):
+            warnings.append("x_mean_quote_invalid")
+    if book_info.get("source_status") == "not_real":
+        warnings.append("x_mean_book_quote_not_real")
+        x_mean_source_status = "not_real"
+    elif not book_ok:
+        warnings.append(book_reason or "x_mean_book_quote_unavailable")
+
+    if cecchino_ok and book_ok:
+        quota_x_media = (float(quota_x_book) + float(quota_x_cecchino)) / 2.0
+        adj = _compute_x_mean_adjustment(quota_x_media)
+        x_mean_delta = adj["x_mean_delta"]
+        x_mean_strength = adj["x_mean_strength"]
+        x_mean_direction = adj["x_mean_direction"]
+        x_mean_adjustment = float(adj["x_mean_adjustment"])
+        x_mean_source_status = "available"
+        calculation_quality = "f36_with_x_mean"
+        # Esporre anche la quota book usata
+        quota_x_book_out = float(quota_x_book)
+    else:
+        warnings.append("x_mean_adjustment_not_applied_f36_preserved")
+        quota_x_book_out = float(quota_x_book) if book_ok else (
+            float(book_info["quota"])
+            if book_info.get("quota") is not None and _is_valid_ft_draw_quote(book_info.get("quota"))
+            else None
+        )
+        # Non mostrare quote inventate: se non reale, non esporre come input valido
+        if not book_ok:
+            quota_x_book_out = None if not book_real else (
+                float(quota_x_book) if _is_valid_ft_draw_quote(quota_x_book) else None
+            )
+        if not book_real and book_info.get("source_status") == "not_real":
+            quota_x_book_out = None
+
+    adjusted_index_raw = base_index + x_mean_adjustment
+    adjusted_index = clamp_index(adjusted_index_raw, 0.0, 100.0)
+    adj_class = _classify_adjusted_f36_index(adjusted_index)
+    adjusted_class_label = adj_class["label"]
+    adjusted_class_key = adj_class["class_key"]
+
+    # Se correzione non applicata, classe finale = classe base
+    if calculation_quality == "f36_base_only":
+        adjusted_class_label = base_class_label
+        adjusted_class_key = base_class_key
+        adjusted_index = base_index
+        adjusted_index_raw = base_index
+
     direction = _f36_side_from_signed(f36_signed)
     reading = _f36_structural_reading_v5({
-        "class_key": f36_class_key,
+        "class_key": adjusted_class_key,
+        "base_class_key": base_class_key,
         "signed": f36_signed,
+        "x_mean_direction": x_mean_direction,
+        "quota_x_media": quota_x_media,
+        "x_mean_strength": x_mean_strength,
+        "x_mean_source_status": x_mean_source_status,
+        "calculation_quality": calculation_quality,
     })
+
+    dir_label = _x_mean_direction_label(x_mean_direction, x_mean_strength)
+    strength_pct = (
+        round(float(x_mean_strength) * 100.0, 2) if x_mean_strength is not None else None
+    )
+    adj_display = _fmt_signed_adjustment(
+        round(x_mean_adjustment, 2) if calculation_quality == "f36_with_x_mean" else 0.0
+    )
+    if calculation_quality == "f36_with_x_mean" and dir_label and x_mean_strength is not None:
+        if float(x_mean_strength) == 0.0:
+            corr_text = "0,00 soglia neutrale"
+        else:
+            corr_text = f"{adj_display} {dir_label}"
+    elif calculation_quality == "f36_base_only":
+        corr_text = None
+        adj_display = None
+    else:
+        corr_text = adj_display
+
+    components = [
+        _component("quota_1", "Quota 1 Cecchino", quota_1, unit="quota"),
+        _component("quota_2", "Quota 2 Cecchino", quota_2, unit="quota"),
+        _component("f36_diff", "Differenza F36 |q1−q2|", f36_abs, unit="index"),
+        _component("f36_base_index", "Indice F36 base", base_index, unit="index"),
+        _component("f36_base_class", "Classe F36 base", base_class_label, unit="text"),
+        _component(
+            "quota_x_book",
+            "Quota X Book",
+            quota_x_book_out,
+            unit="quota",
+            status="available" if quota_x_book_out is not None else "missing",
+        ),
+        _component(
+            "quota_x_cecchino",
+            "Quota X Cecchino",
+            float(quota_x_cecchino) if cecchino_ok else None,
+            unit="quota",
+            status="available" if cecchino_ok else "missing",
+        ),
+        _component(
+            "quota_x_media",
+            "Quota Media X",
+            round(quota_x_media, 2) if quota_x_media is not None else None,
+            unit="quota",
+            status="available" if quota_x_media is not None else "missing",
+        ),
+        _component(
+            "x_mean_threshold",
+            "Soglia Quota Media X",
+            X_MEAN_THRESHOLD,
+            unit="quota",
+        ),
+        _component(
+            "x_mean_direction",
+            "Direzione correttiva",
+            dir_label if calculation_quality == "f36_with_x_mean" else None,
+            unit="text",
+            status="available" if calculation_quality == "f36_with_x_mean" else "missing",
+        ),
+        _component(
+            "x_mean_strength_pct",
+            "Intensità correzione",
+            strength_pct if calculation_quality == "f36_with_x_mean" else None,
+            unit="pct",
+            status="available" if calculation_quality == "f36_with_x_mean" else "missing",
+        ),
+        _component(
+            "x_mean_adjustment",
+            "Correzione applicata",
+            corr_text if corr_text is not None else adj_display,
+            unit="text",
+            status="available" if calculation_quality == "f36_with_x_mean" else "missing",
+        ),
+        _component("adjusted_index", "Indice equilibrio finale", adjusted_index, unit="index"),
+        _component("adjusted_class", "Classe finale", adjusted_class_label, unit="text"),
+    ]
+
+    # Deduplicate warnings preserving order
+    seen: set[str] = set()
+    uniq_warnings: list[str] = []
+    for w in warnings:
+        if w and w not in seen:
+            seen.add(w)
+            uniq_warnings.append(w)
 
     return {
         "key": "f36",
         "title": "Geometria della partita",
         "question": "Quanto è equilibrata la struttura della partita?",
         "status": "official",
-        "index": f36_score,
-        "class_label": f36_label,
+        "version": VERSION,
+        "index": adjusted_index,
+        "class_label": adjusted_class_label,
+        "class_key": adjusted_class_key,
         "reading": reading,
         "direction": direction,
-        "components": [
-            _component("quota_1", "Quota 1 Cecchino", quota_1, unit="quota"),
-            _component("quota_2", "Quota 2 Cecchino", quota_2, unit="quota"),
-            _component("f36_diff", "Differenza F36 |q1−q2|", f36_abs, unit="index"),
-            _component("f36_class", "Classe", f36_label, unit="text"),
-        ],
-        "warnings": [],
+        "calculation_quality": calculation_quality,
+        "warnings": uniq_warnings,
+        # F36 base
+        "f36_signed": round(float(f36_signed), 4),
+        "f36_abs": round(float(f36_abs), 4),
+        "base_index": base_index,
+        "base_class_label": base_class_label,
+        "base_class_key": base_class_key,
+        # Quota Media X
+        "quota_x_book": quota_x_book_out,
+        "quota_x_cecchino": float(quota_x_cecchino) if cecchino_ok else None,
+        "quota_x_media": round(quota_x_media, 4) if quota_x_media is not None else None,
+        "x_mean_threshold": X_MEAN_THRESHOLD,
+        "x_mean_delta": round(x_mean_delta, 4) if x_mean_delta is not None else None,
+        "x_mean_strength": round(x_mean_strength, 4) if x_mean_strength is not None else None,
+        "x_mean_direction": x_mean_direction if calculation_quality == "f36_with_x_mean" else None,
+        "x_mean_adjustment": round(x_mean_adjustment, 4)
+        if calculation_quality == "f36_with_x_mean"
+        else 0.0,
+        "x_mean_source_status": x_mean_source_status,
+        "x_mean_book_source": book_source,
+        "x_mean_book_real": book_real if book_info else False,
+        # Finale
+        "adjusted_index_raw": round(adjusted_index_raw, 4),
+        "adjusted_index": adjusted_index,
+        "adjusted_class_label": adjusted_class_label,
+        "adjusted_class_key": adjusted_class_key,
+        "components": components,
     }
 
 
@@ -1529,11 +1934,38 @@ def _build_structural_summary_v5(
     dominance_label: str | None,
     draw_label: str | None,
     gap_label: str | None,
+    *,
+    f36_base_label: str | None = None,
+    x_mean_adjustment: float | None = None,
 ) -> str:
-    """Composizione deterministica da 4 pilastri, no aggregate score, no betting advice."""
+    """Composizione deterministica da 4 pilastri, no aggregate score, no betting advice.
+
+    v3: usa la classe finale del Pilastro 1 come «Geometria»; dettaglio F36 base se utile.
+    """
     parts = []
     if f36_label:
-        parts.append(f"F36: {f36_label}")
+        parts.append(f"Geometria: {f36_label}")
+        if (
+            f36_base_label
+            and x_mean_adjustment is not None
+            and abs(float(x_mean_adjustment)) > 1e-9
+            and f36_base_label != f36_label
+        ):
+            adj_txt = f"{float(x_mean_adjustment):+.2f}".replace(".", ",")
+            parts[-1] = (
+                f"Geometria: {f36_label} "
+                f"(F36 base: {f36_base_label}; correzione Quota Media X: {adj_txt})"
+            )
+        elif (
+            f36_base_label
+            and x_mean_adjustment is not None
+            and abs(float(x_mean_adjustment)) > 1e-9
+        ):
+            adj_txt = f"{float(x_mean_adjustment):+.2f}".replace(".", ",")
+            parts[-1] = (
+                f"Geometria: {f36_label} "
+                f"(F36 base: {f36_base_label}; correzione Quota Media X: {adj_txt})"
+            )
     if dominance_label:
         parts.append(f"Dominanza: {dominance_label}")
     if draw_label:
@@ -1633,6 +2065,8 @@ def build_cecchino_balance_v5(
     quota_book_2 = _num(rows.get(SEL_AWAY, {}).get("quota_book"))
     quota_book_under = _num(rows.get(SEL_UNDER_2_5, {}).get("quota_book"))
     quota_book_over = _num(rows.get(SEL_OVER_2_5, {}).get("quota_book"))
+    draw_row = rows.get(SEL_DRAW) or {}
+    quota_x_book_info = _resolve_quota_x_book_for_f36(draw_row)
 
     def _implied_pct(q: float | None) -> float | None:
         if q is None or q <= 1:
@@ -1667,14 +2101,21 @@ def build_cecchino_balance_v5(
     x_rank, _ = x_rank_from_probs(prob_1_norm, prob_x_norm, prob_2_norm)
     gap_pp = probability_gap_1_2_pp(prob_1_norm, prob_2_norm)
 
+    # F36 base score — usato dal Pilastro 4 (gap_coherence_f36_input)
+    f36_base_index = f36_dict.get("score")
+    f36_base_label = f36_dict.get("label")
+    f36_base_class_key = f36_dict.get("class_key")
+
     pillar_f36 = _pillar_f36_v5(
         quota_1=quota_1,
         quota_2=quota_2,
         f36_abs=f36_abs,
         f36_signed=f36_signed,
-        f36_score=f36_dict.get("score"),
-        f36_label=f36_dict.get("label"),
-        f36_class_key=f36_dict.get("class_key"),
+        f36_score=f36_base_index,
+        f36_label=f36_base_label,
+        f36_class_key=f36_base_class_key,
+        quota_x_cecchino=quota_x,
+        quota_x_book_info=quota_x_book_info,
     )
 
     pillar_dominance = _pillar_dominance_v5(
@@ -1695,16 +2136,18 @@ def build_cecchino_balance_v5(
         over_odd=over_odd,
         under_pct=under_pct,
         over_pct=over_pct,
-        f36_label=f36_dict.get("label"),
+        f36_label=f36_base_label,
         dominant_sign=dominant_sign,
     )
 
+    # gap_coherence_f36_input = f36_base_index (NON l'indice corretto del Pilastro 1)
+    gap_coherence_f36_input = f36_base_index
     pillar_gap = _pillar_gap_v5(
         prob_1=prob_1_norm,
         prob_2=prob_2_norm,
         gap_pp=gap_pp,
-        f36_score=f36_dict.get("score"),
-        f36_class_key=f36_dict.get("class_key"),
+        f36_score=gap_coherence_f36_input,
+        f36_class_key=f36_base_class_key,
     )
 
     market_deviation = _build_market_deviation_v5(
@@ -1729,6 +2172,8 @@ def build_cecchino_balance_v5(
         dominance_label=pillar_dominance.get("class_label"),
         draw_label=pillar_draw.get("class_label"),
         gap_label=pillar_gap.get("class_label"),
+        f36_base_label=pillar_f36.get("base_class_label"),
+        x_mean_adjustment=pillar_f36.get("x_mean_adjustment"),
     )
 
     warnings: list[str] = []
@@ -1745,6 +2190,8 @@ def build_cecchino_balance_v5(
             "quota_1": quota_1,
             "quota_x": quota_x,
             "quota_2": quota_2,
+            "quota_x_book": pillar_f36.get("quota_x_book"),
+            "quota_x_media": pillar_f36.get("quota_x_media"),
             "prob_1": prob_1_raw,
             "prob_x": prob_x_raw,
             "prob_2": prob_2_raw,
@@ -1753,6 +2200,7 @@ def build_cecchino_balance_v5(
             "prob_2_norm": prob_2_norm,
             "under_odd": under_odd,
             "over_odd": over_odd,
+            "gap_coherence_f36_input": gap_coherence_f36_input,
         },
         "pillars": {
             "f36": pillar_f36,

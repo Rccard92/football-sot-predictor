@@ -41,6 +41,21 @@ export function HomeWinsBalanceSnapshotPanel({ snapshot }: Props) {
       <div className="mt-3 grid gap-x-6 sm:grid-cols-2">
         <Row label="F36 index" value={snapshot.f36_index} />
         <Row label="F36 class" value={snapshot.f36_class} />
+        {snapshot.f36_base_index != null ? (
+          <Row label="F36 base index" value={snapshot.f36_base_index} />
+        ) : null}
+        {snapshot.f36_base_class != null ? (
+          <Row label="F36 base class" value={snapshot.f36_base_class} />
+        ) : null}
+        {snapshot.quota_x_media != null ? (
+          <Row label="Quota Media X" value={snapshot.quota_x_media} />
+        ) : null}
+        {snapshot.x_mean_adjustment != null ? (
+          <Row label="Correzione X" value={snapshot.x_mean_adjustment} />
+        ) : null}
+        {snapshot.x_mean_source_status != null ? (
+          <Row label="X source status" value={snapshot.x_mean_source_status} />
+        ) : null}
         <Row label="Dominance index" value={snapshot.dominance_index} />
         <Row label="Dominance class" value={snapshot.dominance_class} />
         <Row

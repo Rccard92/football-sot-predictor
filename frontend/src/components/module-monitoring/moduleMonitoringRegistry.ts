@@ -54,7 +54,7 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
     description:
       'Monitoraggio descrittivo dei pilastri F36, Dominanza, Credibilità X e Gap.',
     operationalStatus: 'Ufficiale monitorato',
-    versionLabel: 'cecchino_balance_v5_v2',
+    versionLabel: 'cecchino_balance_v5_v3',
     accent: 'balance',
     icon: 'target',
     defaultView: 'overview',

@@ -387,9 +387,9 @@ def test_16_preview_available_after_repair():
         identity_consistency=consistency,
     )
     assert preview["status"] == "ok"
-    assert preview["version"] == "cecchino_balance_v5_v2"
+    assert preview["version"] == "cecchino_balance_v5_v3"
     assert "fixture_identity_mismatch" not in (preview.get("warnings") or [])
-    assert jsonable_encoder(preview)["version"] == "cecchino_balance_v5_v2"
+    assert jsonable_encoder(preview)["version"] == "cecchino_balance_v5_v3"
 
 
 def test_17_timezone_europe_rome_shows_17_july_0030():

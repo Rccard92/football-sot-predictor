@@ -1,4 +1,4 @@
-"""Test Equilibrio vs Squilibrio v5 — modulo canonico cecchino_balance_v5_v2."""
+"""Test Equilibrio vs Squilibrio v5 — modulo canonico cecchino_balance_v5_v3."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ from app.services.cecchino.cecchino_balance_analysis import (
 from app.services.cecchino.cecchino_balance_v5 import (
     PILLAR_ORDER,
     VERSION,
+    X_MEAN_FULL_EFFECT_DISTANCE,
+    X_MEAN_MAX_ADJUSTMENT,
+    X_MEAN_THRESHOLD,
+    _classify_adjusted_f36_index,
+    _compute_x_mean_adjustment,
     build_cecchino_balance_v5,
     classify_conviction,
     classify_gap_coherence,
@@ -29,6 +34,7 @@ from app.services.cecchino.cecchino_icm_analysis import build_cecchino_icm_analy
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
@@ -72,6 +78,7 @@ def _kpi_with_book():
                 "market_key": SEL_HOME,
                 "quota_cecchino": 2.1,
                 "quota_book": 2.2,
+                "book_source": "betfair_panel",
                 "prob_book": 0.40,
                 "prob_cecchino": 0.42,
             },
@@ -79,6 +86,7 @@ def _kpi_with_book():
                 "market_key": SEL_DRAW,
                 "quota_cecchino": 3.4,
                 "quota_book": 3.5,
+                "book_source": "betfair_panel",
                 "prob_book": 0.28,
                 "prob_cecchino": 0.28,
             },
@@ -86,6 +94,7 @@ def _kpi_with_book():
                 "market_key": SEL_AWAY,
                 "quota_cecchino": 3.6,
                 "quota_book": 3.7,
+                "book_source": "betfair_panel",
                 "prob_book": 0.27,
                 "prob_cecchino": 0.30,
             },
@@ -93,6 +102,31 @@ def _kpi_with_book():
             {"market_key": SEL_OVER_2_5, "quota_cecchino": 2.05, "quota_book": 2.1},
         ],
     }
+
+
+def _kpi_draw_book(quota_book_x: float | None, **draw_extra):
+    """KPI minimale con sola riga DRAW personalizzabile."""
+    rows = [
+        {
+            "market_key": SEL_HOME,
+            "quota_book": 2.2,
+            "book_source": "betfair_panel",
+        },
+        {
+            "market_key": SEL_AWAY,
+            "quota_book": 3.7,
+            "book_source": "betfair_panel",
+        },
+    ]
+    if quota_book_x is not None or draw_extra:
+        row = {
+            "market_key": SEL_DRAW,
+            "quota_book": quota_book_x,
+            "book_source": "betfair_panel",
+        }
+        row.update(draw_extra)
+        rows.insert(1, row)
+    return {"version": "cecchino_kpi_v2_betfair", "rows": rows}
 
 
 def test_f36_01_formula_invariata():
@@ -117,7 +151,9 @@ def test_f36_02_soglie():
         (1.80, 4.00, 40, "Squilibrio"),
     ]
     for q1, q2, score, label in cases:
+        # Senza KPI: indice = base F36 (nessuna correzione X)
         v5 = build_cecchino_balance_v5(cecchino_final=_final(quota_1=q1, quota_2=q2))
+        assert v5["pillars"]["f36"]["base_index"] == score
         assert v5["pillars"]["f36"]["index"] == score
         assert v5["pillars"]["f36"]["class_label"] == label
 
@@ -159,7 +195,8 @@ def test_draw_cred_11_18():
     assert dc["status"] == "descriptive_official"
     assert dc["index"] == pytest.approx(40.0)
     assert dc["class_label"] == "Pareggio forte"
-    assert "book" not in json.dumps(dc).lower()
+    # Book non entra nella matematica del Pilastro 3
+    assert "quota_book" not in json.dumps(dc).lower()
     reading = (dc.get("reading") or "").lower()
     for phrase in BETTING_PHRASES:
         assert phrase not in reading
@@ -193,17 +230,20 @@ def test_market_24_28():
     assert "distanza" in reading or "scostamento" in reading or "non stabilisce" in reading
     pairs = {p["key"]: p for p in md["pairs"]}
     assert "1" in pairs and "x" in pairs and "2" in pairs
-    for key in PILLAR_ORDER:
-        assert "book" not in json.dumps(v5["pillars"][key]).lower()
+    # Book non entra nei pilastri 2–4; il Pilastro 1 V3 può citare Quota X Book
+    for key in ("dominance", "draw_credibility", "gap_coherence"):
+        assert "quota_book" not in json.dumps(v5["pillars"][key]).lower()
+    assert v5["pillars"]["f36"].get("quota_x_book") is not None
 
 
 def test_api_29_33():
     v5 = build_cecchino_balance_v5(cecchino_final=_final())
-    assert VERSION == "cecchino_balance_v5_v2"
+    assert VERSION == "cecchino_balance_v5_v3"
     assert v5["version"] == VERSION
     assert set(v5["pillars"].keys()) == set(PILLAR_ORDER)
     assert v5["pillar_order"] == PILLAR_ORDER
     assert isinstance(v5.get("structural_summary"), str) and v5["structural_summary"]
+    assert v5["structural_summary"].startswith("Geometria:")
     blocked = build_cecchino_balance_v5(
         cecchino_final=_final(),
         identity_consistency={"status": "inconsistent", "warnings": ["x"]},
@@ -461,3 +501,257 @@ def test_goal_markets_separate_from_final():
     assert pairs["under_2_5"]["quota_cecchino"] == pytest.approx(1.85)
     assert pairs["over_2_5"]["quota_cecchino"] == pytest.approx(2.05)
     assert pairs["under_2_5"]["prob_cecchino_norm"] is not None
+
+
+# ---------------------------------------------------------------------------
+# V3 — Quota Media X
+# ---------------------------------------------------------------------------
+
+
+def test_x_mean_constants():
+    assert X_MEAN_THRESHOLD == 3.60
+    assert X_MEAN_FULL_EFFECT_DISTANCE == 0.60
+    assert X_MEAN_MAX_ADJUSTMENT == 20.0
+
+
+def test_x_mean_adjustment_math_cases_a_to_g():
+    # A — soglia neutrale
+    a = _compute_x_mean_adjustment(3.60)
+    assert a["x_mean_strength"] == 0.0
+    assert a["x_mean_adjustment"] == 0.0
+    assert a["x_mean_direction"] == "reinforces_imbalance"
+
+    # B — media 3.30 → +10
+    b = _compute_x_mean_adjustment(3.30)
+    assert b["x_mean_strength"] == pytest.approx(0.50)
+    assert b["x_mean_adjustment"] == pytest.approx(10.0)
+    assert b["x_mean_direction"] == "reinforces_balance"
+
+    # C — media <= 3.00 → +20
+    c = _compute_x_mean_adjustment(3.00)
+    assert c["x_mean_strength"] == pytest.approx(1.0)
+    assert c["x_mean_adjustment"] == pytest.approx(20.0)
+
+    # D — media 3.90 → −10
+    d = _compute_x_mean_adjustment(3.90)
+    assert d["x_mean_strength"] == pytest.approx(0.50)
+    assert d["x_mean_adjustment"] == pytest.approx(-10.0)
+    assert d["x_mean_direction"] == "reinforces_imbalance"
+
+    # E — media >= 4.20 → −20
+    e = _compute_x_mean_adjustment(4.20)
+    assert e["x_mean_strength"] == pytest.approx(1.0)
+    assert e["x_mean_adjustment"] == pytest.approx(-20.0)
+
+
+def test_x_mean_classification_continuous_preserves_base():
+    assert _classify_adjusted_f36_index(100)["label"] == "Equilibrio forte"
+    assert _classify_adjusted_f36_index(80)["label"] == "Equilibrio"
+    assert _classify_adjusted_f36_index(60)["label"] == "Transizione"
+    assert _classify_adjusted_f36_index(40)["label"] == "Squilibrio"
+    assert _classify_adjusted_f36_index(90)["label"] == "Equilibrio forte"
+    assert _classify_adjusted_f36_index(89.99)["label"] == "Equilibrio"
+    assert _classify_adjusted_f36_index(70)["label"] == "Equilibrio"
+    assert _classify_adjusted_f36_index(50)["label"] == "Transizione"
+    assert _classify_adjusted_f36_index(49.99)["label"] == "Squilibrio"
+
+
+def test_x_mean_applied_case_b_index_90():
+    # F36 base 80 (diff 0.80), book 3.20 + cecchino 3.40 → media 3.30 → +10 → 90
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(3.20),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["base_index"] == 80
+    assert f36["quota_x_media"] == pytest.approx(3.30)
+    assert f36["x_mean_strength"] == pytest.approx(0.50)
+    assert f36["x_mean_adjustment"] == pytest.approx(10.0)
+    assert f36["index"] == pytest.approx(90.0)
+    assert f36["class_label"] == "Equilibrio forte"
+    assert f36["calculation_quality"] == "f36_with_x_mean"
+
+
+def test_x_mean_applied_case_d_index_70():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=4.00),
+        kpi_panel=_kpi_draw_book(3.80),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["base_index"] == 80
+    assert f36["quota_x_media"] == pytest.approx(3.90)
+    assert f36["x_mean_adjustment"] == pytest.approx(-10.0)
+    assert f36["index"] == pytest.approx(70.0)
+    assert f36["class_label"] == "Equilibrio"
+
+
+def test_x_mean_neutral_threshold_no_jump():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.60),
+        kpi_panel=_kpi_draw_book(3.60),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["quota_x_media"] == pytest.approx(3.60)
+    assert f36["x_mean_adjustment"] == pytest.approx(0.0)
+    assert f36["index"] == f36["base_index"] == 80
+
+
+def test_x_mean_clamp_upper():
+    # base 100 +20 → 100
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.50, quota_2=2.90, quota_x=2.80),
+        kpi_panel=_kpi_draw_book(2.80),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["base_index"] == 100
+    assert f36["x_mean_adjustment"] == pytest.approx(20.0)
+    assert f36["adjusted_index_raw"] == pytest.approx(120.0)
+    assert f36["index"] == pytest.approx(100.0)
+
+
+def test_x_mean_clamp_lower():
+    # base 40 −20 → 20
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=1.80, quota_2=4.00, quota_x=4.50),
+        kpi_panel=_kpi_draw_book(4.50),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["base_index"] == 40
+    assert f36["x_mean_adjustment"] == pytest.approx(-20.0)
+    assert f36["index"] == pytest.approx(20.0)
+    assert f36["class_label"] == "Squilibrio"
+
+
+def test_x_mean_missing_book_preserves_base():
+    v5 = build_cecchino_balance_v5(cecchino_final=_final(quota_1=2.00, quota_2=2.80))
+    f36 = v5["pillars"]["f36"]
+    assert f36["base_index"] == 80
+    assert f36["index"] == 80
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert f36["x_mean_source_status"] == "unavailable"
+    assert f36["quota_x_media"] is None
+    assert "x_mean_adjustment_not_applied_f36_preserved" in f36["warnings"]
+    assert "non disponibile" in (f36["reading"] or "").lower()
+
+
+def test_x_mean_missing_cecchino_preserves_base():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=None),
+        kpi_panel=_kpi_draw_book(3.20),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["index"] == f36["base_index"] == 80
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert "x_mean_cecchino_quote_unavailable" in f36["warnings"]
+
+
+def test_x_mean_invalid_book_le_1():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(1.0),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert f36["index"] == 80
+
+
+def test_x_mean_derived_book_rejected():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(3.20, book_source="derived_from_betfair_1x2"),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert f36["x_mean_source_status"] == "not_real"
+    assert "x_mean_book_quote_not_real" in f36["warnings"]
+    assert f36["index"] == 80
+
+
+def test_x_mean_diagnostic_only_rejected():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(3.20, diagnostic_only=True),
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert f36["index"] == 80
+
+
+def test_x_mean_ignores_draw_pt():
+    kpi = {
+        "rows": [
+            {
+                "market_key": SEL_DRAW_PT,
+                "quota_book": 2.50,
+                "book_source": "betfair_panel",
+            }
+        ]
+    }
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=kpi,
+    )
+    f36 = v5["pillars"]["f36"]
+    assert f36["calculation_quality"] == "f36_base_only"
+    assert f36["index"] == 80
+
+
+def test_gap_uses_f36_base_not_adjusted():
+    """Pilastro 4 riceve f36_base_index anche quando l'indice corretto differisce."""
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(3.20),
+    )
+    f36 = v5["pillars"]["f36"]
+    gap = v5["pillars"]["gap_coherence"]
+    assert f36["index"] != f36["base_index"]
+    assert v5["inputs"]["gap_coherence_f36_input"] == f36["base_index"]
+    pb = probability_balance_index(
+        v5["inputs"]["prob_1_norm"], v5["inputs"]["prob_2_norm"]
+    )
+    expected = gap_coherence_index(f36["base_index"], pb)
+    assert gap["index"] == pytest.approx(expected)
+    # Se usasse l'indice corretto, il gap sarebbe diverso
+    wrong = gap_coherence_index(f36["index"], pb)
+    assert gap["index"] != pytest.approx(wrong)
+
+
+def test_other_pillars_invariant_with_x_mean():
+    """A parità di input, P2/P3/P4 e probs restano identici con o senza book X reale."""
+    final = _final(quota_1=2.00, quota_2=2.80, quota_x=3.40)
+    without = build_cecchino_balance_v5(cecchino_final=final)
+    with_x = build_cecchino_balance_v5(
+        cecchino_final=final, kpi_panel=_kpi_draw_book(3.20)
+    )
+    for key in ("dominance", "draw_credibility", "gap_coherence"):
+        assert without["pillars"][key]["index"] == with_x["pillars"][key]["index"]
+        assert without["pillars"][key]["class_label"] == with_x["pillars"][key]["class_label"]
+    for k in ("prob_1_norm", "prob_x_norm", "prob_2_norm"):
+        assert without["inputs"][k] == with_x["inputs"][k]
+    # Solo F36 index finale cambia
+    assert without["pillars"]["f36"]["base_index"] == with_x["pillars"]["f36"]["base_index"]
+    assert without["pillars"]["f36"]["index"] != with_x["pillars"]["f36"]["index"]
+
+
+def test_f36_components_order_v3():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final=_final(quota_1=2.00, quota_2=2.80, quota_x=3.40),
+        kpi_panel=_kpi_draw_book(3.20),
+    )
+    keys = [c["key"] for c in v5["pillars"]["f36"]["components"]]
+    assert keys == [
+        "quota_1",
+        "quota_2",
+        "f36_diff",
+        "f36_base_index",
+        "f36_base_class",
+        "quota_x_book",
+        "quota_x_cecchino",
+        "quota_x_media",
+        "x_mean_threshold",
+        "x_mean_direction",
+        "x_mean_strength_pct",
+        "x_mean_adjustment",
+        "adjusted_index",
+        "adjusted_class",
+    ]

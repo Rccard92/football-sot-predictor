@@ -437,3 +437,65 @@ def test_compact_snapshot_excludes_ft():
     assert "score_fulltime_home" not in compact
     assert "ft_home" not in compact
     assert compact["snapshot_version"] == BALANCE_MONITORING_SNAPSHOT_VERSION
+
+
+def test_compact_snapshot_v3_x_mean_fields():
+    bal = {
+        "status": "ok",
+        "version": "cecchino_balance_v5_v3",
+        "inputs": {"prob_1_norm": 40, "prob_x_norm": 30, "prob_2_norm": 30},
+        "pillars": {
+            "f36": {
+                "index": 90,
+                "class_label": "Equilibrio forte",
+                "base_index": 80,
+                "base_class_label": "Equilibrio",
+                "adjusted_index": 90,
+                "adjusted_class_label": "Equilibrio forte",
+                "quota_x_book": 3.2,
+                "quota_x_cecchino": 3.4,
+                "quota_x_media": 3.3,
+                "x_mean_threshold": 3.6,
+                "x_mean_delta": 0.3,
+                "x_mean_strength": 0.5,
+                "x_mean_direction": "reinforces_balance",
+                "x_mean_adjustment": 10.0,
+                "x_mean_source_status": "available",
+            },
+            "dominance": {"index": 10, "class_label": "Debole"},
+            "draw_credibility": {"index": 30, "class_label": "Pareggio possibile"},
+            "gap_coherence": {"index": 70, "class_label": "Confermato"},
+        },
+        "warnings": [],
+    }
+    compact = compact_balance_v5_monitoring_snapshot(
+        bal, scan_date=date(2026, 8, 6), kickoff=None, pre_match_verified=True
+    )
+    assert compact["snapshot_version"] == "cecchino_balance_v5_monitoring_snapshot_v2"
+    assert compact["balance_version"] == "cecchino_balance_v5_v3"
+    assert compact["f36_index"] == 90
+    assert compact["f36_base_index"] == 80
+    assert compact["f36_base_class"] == "Equilibrio"
+    assert compact["f36_adjusted_index"] == 90
+    assert compact["quota_x_media"] == 3.3
+    assert compact["x_mean_adjustment"] == 10.0
+    assert compact["x_mean_source_status"] == "available"
+    assert compact["pre_match_verified"] is True
+    assert "ft_home" not in compact
+    assert "score_fulltime_home" not in compact
+
+
+def test_legacy_v2_snapshot_readable_without_x_mean():
+    """Snapshot V2 storici restano leggibili (campi X assenti → None via .get)."""
+    legacy = {
+        "status": "ok",
+        "snapshot_version": "cecchino_balance_v5_monitoring_snapshot_v1",
+        "balance_version": "cecchino_balance_v5_v2",
+        "f36_index": 80,
+        "f36_class": "Equilibrio",
+        "pre_match_verified": True,
+    }
+    assert legacy.get("f36_base_index") is None
+    assert legacy.get("quota_x_media") is None
+    assert legacy.get("x_mean_adjustment") is None
+    assert legacy["f36_index"] == 80
