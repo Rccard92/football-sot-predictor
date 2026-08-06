@@ -107,6 +107,15 @@ from app.services.cecchino_data_lab.historical_purchasability_v31_replay_analyti
 from app.services.cecchino_data_lab.historical_purchasability_operational import (
     get_operational_purchasability_config,
 )
+from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_service import (
+    build_goal_intensity_benchmark_export,
+    build_goal_intensity_benchmark_preflight,
+    cancel_goal_intensity_benchmark_job,
+    get_goal_intensity_benchmark_job,
+    list_goal_intensity_benchmark_jobs_for_run,
+    resume_goal_intensity_benchmark_job,
+    start_goal_intensity_benchmark_job,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -1797,3 +1806,131 @@ def historical_scan_report(
         )
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+# ---------------------------------------------------------------------------
+# Goal Intensity V4 vs V5 historical benchmark (derived job)
+# ---------------------------------------------------------------------------
+
+
+@admin_router.post("/historical/runs/{run_id}/goal-intensity-benchmark/preflight")
+def goal_intensity_benchmark_preflight(
+    run_id: int,
+    body: dict[str, Any] | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Preflight read-only. Nessuna scrittura su run/snapshot."""
+    payload = body or {}
+    try:
+        result = build_goal_intensity_benchmark_preflight(
+            db,
+            run_id,
+            bundle_version=str(
+                payload.get("bundle_version")
+                or "cecchino_goal_intensity_v5_candidate_bundle_v2_1"
+            ),
+            pilot_size=int(payload.get("pilot_size") or 300),
+            random_seed=int(payload.get("random_seed") or 42),
+        )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/historical/runs/{run_id}/goal-intensity-benchmark/jobs")
+def goal_intensity_benchmark_start(
+    run_id: int,
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia pilot o full job (202). Non esegue il lavoro nella request sincrona."""
+    payload = body or {}
+    try:
+        result = start_goal_intensity_benchmark_job(
+            db,
+            run_id,
+            mode=str(payload.get("mode") or ""),
+            bundle_version=str(
+                payload.get("bundle_version")
+                or "cecchino_goal_intensity_v5_candidate_bundle_v2_1"
+            ),
+            pilot_size=int(payload.get("pilot_size") or 300),
+            random_seed=int(payload.get("random_seed") or 42),
+            batch_size=int(payload.get("batch_size") or 100),
+            pilot_job_id=(
+                int(payload["pilot_job_id"])
+                if payload.get("pilot_job_id") is not None
+                else None
+            ),
+            confirm=payload.get("confirm"),
+            background=True,
+        )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@router.get("/historical/runs/{run_id}/goal-intensity-benchmark/jobs")
+def goal_intensity_benchmark_list(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        jobs = list_goal_intensity_benchmark_jobs_for_run(db, run_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder({"jobs": jobs}))
+
+
+@admin_router.get("/goal-intensity-benchmark/jobs/{job_id}")
+@router.get("/goal-intensity-benchmark/jobs/{job_id}")
+def goal_intensity_benchmark_status(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_goal_intensity_benchmark_job(db, job_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/goal-intensity-benchmark/jobs/{job_id}/cancel")
+def goal_intensity_benchmark_cancel(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = cancel_goal_intensity_benchmark_job(db, job_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/goal-intensity-benchmark/jobs/{job_id}/resume")
+def goal_intensity_benchmark_resume(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = resume_goal_intensity_benchmark_job(db, job_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@router.get("/goal-intensity-benchmark/jobs/{job_id}/export")
+@admin_router.get("/goal-intensity-benchmark/jobs/{job_id}/export")
+def goal_intensity_benchmark_export(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    try:
+        data, filename = build_goal_intensity_benchmark_export(db, job_id)
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

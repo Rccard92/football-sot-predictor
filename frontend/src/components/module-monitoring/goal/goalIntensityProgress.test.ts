@@ -89,6 +89,16 @@ describe('Phase 2C variants helpers', () => {
     expect(phase2cFreezeDisabled({ status: 'preview', freeze_allowed: true })).toBe(false)
   })
 
+  it('freeze disabilitato se bundle già congelato', () => {
+    expect(
+      phase2cFreezeDisabled({
+        freeze_allowed: true,
+        status: 'preview',
+        existing_candidate_bundle: { id: 12, definition_hash: 'abc' },
+      }),
+    ).toBe(true)
+  })
+
   it('confirm token canonico e testi non promozionali', () => {
     expect(PHASE_2C_FREEZE_CONFIRM).toBe('FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1')
     const banned = ['modello vincente', 'giocata consigliata', 'profittevole']

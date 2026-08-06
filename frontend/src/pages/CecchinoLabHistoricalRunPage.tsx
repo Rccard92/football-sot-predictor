@@ -7,6 +7,7 @@ import { HistoricalRunDerivedRebuild } from '../components/cecchino-data-lab/his
 import { HistoricalRunExclusions } from '../components/cecchino-data-lab/historical-run/HistoricalRunExclusions'
 import { HistoricalRunFilterBar } from '../components/cecchino-data-lab/historical-run/HistoricalRunFilterBar'
 import { HistoricalRunGoalIntensity } from '../components/cecchino-data-lab/historical-run/HistoricalRunGoalIntensity'
+import { HistoricalRunGoalIntensityBenchmark } from '../components/cecchino-data-lab/historical-run/HistoricalRunGoalIntensityBenchmark'
 import { HistoricalRunHeader } from '../components/cecchino-data-lab/historical-run/HistoricalRunHeader'
 import { HistoricalRunLiveProgress } from '../components/cecchino-data-lab/historical-run/HistoricalRunLiveProgress'
 import { HistoricalRunMarketOverview } from '../components/cecchino-data-lab/historical-run/HistoricalRunMarketOverview'
@@ -306,6 +307,18 @@ export function CecchinoLabHistoricalRunPage() {
             <HistoricalRunDerivedRebuild
               runId={runId}
               onApplied={() => void loadOverview()}
+            />
+            <HistoricalRunGoalIntensityBenchmark
+              runId={runId}
+              runStatus={overview.data.run?.status}
+              seasonLabel={overview.data.run?.season_label}
+              snapshotsTotal={
+                typeof overview.data.progress?.matches_total === 'number'
+                  ? overview.data.progress.matches_total
+                  : typeof overview.data.active_eligible_sample === 'number'
+                    ? overview.data.active_eligible_sample
+                    : null
+              }
             />
 
             <section>

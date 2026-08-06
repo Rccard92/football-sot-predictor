@@ -48,8 +48,9 @@ Admin:
 
 - Conservati GI_A / GI_B; archiviati MT1 / without_volatility; nuovi GI_E / GI_F
 - Bundle v2.1 non operativo (`is_active=false`); parent v1.1 resta attivo
-- Tab FE «Varianti Phase 2C»; testi neutri (nessuna promozione)
+- Tab FE «Varianti Phase 2C»; testi neutri (nessuna promozione); se bundle già congelato → pulsante disabilitato + ID/hash
 - Migration `20260806200000` (status String(64)); freeze produzione richiede `alembic upgrade head`
+- Historical Lab job: `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1` + migration `20260806213000` (preflight/pilot/full; independence; zero API/refit/promotion)
 
 ## Phase 2B (campione ≥200)
 

@@ -7,6 +7,13 @@
 - Impatto: parent v1.1 invariato e attivo; Signals blocked; freeze produzione non eseguito nel task.
 - Verifica: dry-run → revisione holdout/pesi → freeze con token dopo `alembic upgrade head`.
 
+## Feat — Historical Goal Intensity V4 vs V5 benchmark jobs (2026-08-06)
+
+- Perché: serve infrastruttura di confronto frozen su run Lab storica (es. 2021/22) senza API, scan o promozione.
+- Cosa: job `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1`; loader frozen v2.1; independence; pilot/full; migration `20260806213000`; UI hub + freeze disabilitato se già congelato.
+- Impatto: run/snapshot immutabili; nessun refit; V4 solo lambda persistita; nessuna job produzione in questo commit.
+- Verifica: test unitari + Vitest + build; post-deploy `alembic upgrade head` poi preflight→pilot→full su run completed.
+
 ## Feat — Prospective Goal Intensity V4–V5 Phase 2B benchmark (2026-08-06)
 
 - Perché: campione prospettico ≥200 completed pronto per revisione manuale Phase 2B; UI Readiness/Overview incoerenti (card a zero, mix global/period, maturity divergente).

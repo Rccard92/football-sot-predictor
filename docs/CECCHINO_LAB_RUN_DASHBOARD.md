@@ -1,5 +1,9 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
+## Nota — Benchmark Goal Intensity V4 vs V5 (2026-08-06)
+
+Sezione hub su run completed: preflight read-only, independence badge, pilot 300, full gated, cancel/resume, export ZIP. Job version `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1`. Bundle frozen v2.1 non live. Overlap sviluppo → etichetta `historical_diagnostic_replay` (non external validation). Nessuna modifica run/snapshot.
+
 ## Nota — Segnali Cecchino V3 + Lab A–F (2026-08-06)
 
 Contratto operativo: formula `cecchino_signals_matrix_v3_draw_dfg_decimal2` + consenso `cecchino_signal_consensus_v1_min_two` + audit `cecchino_signal_explanations_v3`. Raw SI ≠ `is_acquired`. Lab A–F: `cecchino_lab_signals_af_v2_current_v3_consensus` acquired-only; KPI/dashboard mercati **19**. Derived rebuild senza full scan: confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` (provenance `derived_refresh`, no overwrite `source_git_commit`). Monitoraggio Today resta su `/monitoraggio-segnali`; overview STEP 4A/4B invariati nel layout.

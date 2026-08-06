@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal — Historical benchmark job V4 vs V5 (2026-08-06)
+
+Job derivata `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1` su run Cecchino Lab completed. Bundle richiesto `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (`frozen_external_benchmark_candidate`, `is_active=false`) via `get_frozen_goal_intensity_candidate_bundle` (mai `get_active_bundle`). Cinque modelli: V4 + GI_A/B/E/F; MT1/without_volatility solo `archived_not_selected`. Preflight read-only, pilot 300 deterministico (seed 42), full gated su pilot tecnico. Tabelle `cecchino_lab_goal_intensity_benchmark_jobs` / `_rows` (migration `20260806213000`). Independence protocol (external / partial / full / unknown): overlap → `historical_diagnostic_replay`. Zero API, zero scan restart, zero writes sulla run base, nessun refit, nessuna promozione automatica. UI hub run + freeze Phase 2C disabilitato se già congelato.
+
 ## Intensità Goal Avanzata v5 — Phase 2C candidate bundle (2026-08-06)
 
 Protocollo `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1`. Conservati GI_A / GI_B; archiviati MT1 e without_volatility (evidenza Phase 2B). Nuovi candidati GI_E (ricalibrazione Primary) e GI_F (Ridge non-negativa sui pillar). Split temporale 50/20/30; holdout inviolabile (access=1). Bundle target `cecchino_goal_intensity_v5_candidate_bundle_v2_1` status `frozen_external_benchmark_candidate`, `is_active=false`. Parent `cecchino_goal_intensity_v5_preview_v1_1` resta attivo. Migration `20260806200000` allarga `status` a String(64). Nessuna attivazione live, Signals blocked, nessuna run 2021/22. Dry-run GET + freeze POST con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.

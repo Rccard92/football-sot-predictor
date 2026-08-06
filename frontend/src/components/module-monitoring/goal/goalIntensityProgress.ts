@@ -125,9 +125,17 @@ export const BENCHMARK_MODEL_LABELS: Record<string, string> = {
 }
 
 export function phase2cFreezeDisabled(
-  data: { freeze_allowed?: boolean; status?: string } | null | undefined,
+  data:
+    | {
+        freeze_allowed?: boolean
+        status?: string
+        existing_candidate_bundle?: unknown
+      }
+    | null
+    | undefined,
 ): boolean {
   if (!data) return true
+  if (data.existing_candidate_bundle) return true
   if (data.freeze_allowed === false) return true
   if (data.status === 'blocked') return true
   return false

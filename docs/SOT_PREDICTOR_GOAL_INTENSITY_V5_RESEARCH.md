@@ -76,6 +76,10 @@ Protocollo `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1` sulla 
 - Endpoint: `GET …/phase-2c-candidates`; `POST …/admin/…/phase-2c-candidates/freeze` con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.
 - Tab FE «Varianti Phase 2C»; export `phase_2c_*`. Nessuna attivazione live / Signals / run 2021/22.
 
+### Historical external benchmark job (2026-08-06)
+
+Job Lab `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1`: confronta V4 + GI_A/B/E/F sul frozen v2.1 senza fit. Independence protocol distingue `external_validation` vs `historical_diagnostic_replay`. Pilot/full persistiti; coorte paired comune; export ZIP. Nessuna promozione automatica.
+
 ## Fase 1D.1 — Calibrazione e valutazione corretta (2026-07-18)
 
 Versione `cecchino_goal_intensity_v5_candidate_indices_v1_1`. Score grezzi invariati (ECDF/formule). Corretti: Brier/logloss su probabilità logistic train-only (non score/100); paired/ablation su predizioni calibrate; expanding CV su GI_A–D, MT1 e LOO × 4 target; protocollo prospettico con `first_prospective_scan_date` = giorno dopo freeze; gate readiness v1_1; export `calibrated_predictions` e `temporal_fold_metrics`.

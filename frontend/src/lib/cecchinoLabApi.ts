@@ -3182,3 +3182,191 @@ export const HISTORICAL_RUN_REPORT_MENU: Array<{
     sizeWarning: true,
   },
 ]
+
+// ---------------------------------------------------------------------------
+// Goal Intensity V4 vs V5 historical benchmark
+// ---------------------------------------------------------------------------
+
+export const GI_HISTORICAL_BENCHMARK_BUNDLE_VERSION =
+  'cecchino_goal_intensity_v5_candidate_bundle_v2_1'
+export const GI_HISTORICAL_BENCHMARK_PILOT_CONFIRM =
+  'RUN_GOAL_INTENSITY_HISTORICAL_BENCHMARK_PILOT'
+export const GI_HISTORICAL_BENCHMARK_FULL_CONFIRM =
+  'RUN_GOAL_INTENSITY_HISTORICAL_BENCHMARK_FULL'
+export const GI_HISTORICAL_BENCHMARK_POLL_MS = 2500
+export const GI_HISTORICAL_BENCHMARK_DEFAULT_PILOT_SIZE = 300
+export const GI_HISTORICAL_BENCHMARK_DEFAULT_SEED = 42
+
+export type GiHistoricalBenchmarkJobStatus =
+  | 'preview'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancel_requested'
+  | 'cancelled'
+
+export type GiHistoricalBenchmarkPreflight = {
+  status: string
+  run: {
+    id: number
+    status: string
+    season?: string | null
+    snapshots_found?: number
+    source_git_commit?: string | null
+  }
+  bundle: {
+    id: number
+    version: string
+    status: string
+    is_active: boolean
+    definition_hash?: string | null
+    intended_use?: string | null
+  }
+  independence: {
+    status?: string
+    scientific_label?: string
+    overlap_count?: number
+    overlap_pct?: number
+    details?: Record<string, unknown>
+  }
+  availability: {
+    v4_rebuildable?: number
+    v5_features_rebuildable?: number
+    five_models_rebuildable?: number
+    paired_complete_estimate?: number
+    blocked?: boolean
+    missing_by_reason?: Record<string, number>
+  }
+  pilot: {
+    requested?: number
+    selected?: number
+    selection_hash?: string
+    selection_protocol?: string
+    competition_distribution?: Record<string, number>
+    month_distribution?: Record<string, number>
+    kickoff_range?: { min?: string | null; max?: string | null }
+    random_seed?: number
+  }
+  checks: {
+    external_api_calls?: number
+    full_scan_required?: boolean
+    base_run_writes?: number
+    bundle_refit?: boolean
+    result_used_in_prediction?: boolean
+  }
+  pilot_allowed?: boolean
+  full_allowed_after_pilot?: boolean
+  blocking_reasons?: string[]
+  warnings?: string[]
+  job_version?: string
+  models?: string[]
+}
+
+export type GiHistoricalBenchmarkJob = {
+  job_id?: number
+  id: number
+  historical_run_id: number
+  bundle_id: number
+  job_version: string
+  mode: 'pilot' | 'full' | string
+  status: GiHistoricalBenchmarkJobStatus | string
+  independence_status?: string | null
+  progress_pct?: number | null
+  processed_snapshots?: number
+  selected_snapshots?: number
+  paired_complete?: number
+  skipped?: number
+  errors?: number
+  cancel_requested?: boolean
+  summary_json?: Record<string, unknown> | null
+  missing_by_reason_json?: Record<string, number> | null
+  params_json?: Record<string, unknown> | null
+  preflight_json?: GiHistoricalBenchmarkPreflight | null
+  selection_hash?: string
+  started_at?: string | null
+  completed_at?: string | null
+  error_json?: Record<string, unknown> | null
+}
+
+export function goalIntensityBenchmarkPreflight(
+  runId: number,
+  body?: {
+    bundle_version?: string
+    pilot_size?: number
+    random_seed?: number
+  },
+): Promise<GiHistoricalBenchmarkPreflight> {
+  return postJson(
+    `/api/admin/cecchino-lab/historical/runs/${runId}/goal-intensity-benchmark/preflight`,
+    {
+      bundle_version: body?.bundle_version ?? GI_HISTORICAL_BENCHMARK_BUNDLE_VERSION,
+      pilot_size: body?.pilot_size ?? GI_HISTORICAL_BENCHMARK_DEFAULT_PILOT_SIZE,
+      random_seed: body?.random_seed ?? GI_HISTORICAL_BENCHMARK_DEFAULT_SEED,
+    },
+  )
+}
+
+export function startGoalIntensityBenchmarkJob(
+  runId: number,
+  body: {
+    mode: 'pilot' | 'full'
+    confirm: string
+    bundle_version?: string
+    pilot_size?: number
+    random_seed?: number
+    pilot_job_id?: number
+    batch_size?: number
+  },
+): Promise<GiHistoricalBenchmarkJob> {
+  return postJson(
+    `/api/admin/cecchino-lab/historical/runs/${runId}/goal-intensity-benchmark/jobs`,
+    {
+      bundle_version: body.bundle_version ?? GI_HISTORICAL_BENCHMARK_BUNDLE_VERSION,
+      pilot_size: body.pilot_size ?? GI_HISTORICAL_BENCHMARK_DEFAULT_PILOT_SIZE,
+      random_seed: body.random_seed ?? GI_HISTORICAL_BENCHMARK_DEFAULT_SEED,
+      ...body,
+    },
+  )
+}
+
+export function getGoalIntensityBenchmarkJob(
+  jobId: number,
+): Promise<GiHistoricalBenchmarkJob> {
+  return requestJson(`/api/cecchino-lab/goal-intensity-benchmark/jobs/${jobId}`)
+}
+
+export function listGoalIntensityBenchmarkJobs(
+  runId: number,
+): Promise<{ jobs: GiHistoricalBenchmarkJob[] }> {
+  return requestJson(`/api/cecchino-lab/historical/runs/${runId}/goal-intensity-benchmark/jobs`)
+}
+
+export function cancelGoalIntensityBenchmarkJob(
+  jobId: number,
+): Promise<GiHistoricalBenchmarkJob> {
+  return postJson(`/api/admin/cecchino-lab/goal-intensity-benchmark/jobs/${jobId}/cancel`, {})
+}
+
+export function resumeGoalIntensityBenchmarkJob(
+  jobId: number,
+): Promise<GiHistoricalBenchmarkJob> {
+  return postJson(`/api/admin/cecchino-lab/goal-intensity-benchmark/jobs/${jobId}/resume`, {})
+}
+
+export function downloadGoalIntensityBenchmarkExport(jobId: number): Promise<Blob> {
+  const base = getApiBase()
+  return fetch(`${base}/api/cecchino-lab/goal-intensity-benchmark/jobs/${jobId}/export`, {
+    credentials: 'include',
+  }).then(async (res) => {
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text || `Export failed (${res.status})`)
+    }
+    return res.blob()
+  })
+}
+
+export function isGiHistoricalBenchmarkJobActive(status: string | null | undefined): boolean {
+  return status === 'queued' || status === 'running' || status === 'cancel_requested'
+}

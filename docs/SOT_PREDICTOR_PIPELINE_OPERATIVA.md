@@ -323,6 +323,15 @@ flowchart TD
 2. Tab **Varianti Phase 2C** → Analizza varianti (dry-run): split, pesi GI_F, metriche holdout.
 3. Revisione manuale; poi Congela bundle benchmark con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.
 4. Verificare parent v1.1 ancora attivo; bundle v2.1 `is_active=false`; Signals blocked; nessuna scansione nuova su v2.1.
+5. Se bundle già congelato: UI mostra «Bundle congelato» e disabilita freeze ripetuti.
+
+## Intensità Goal — Historical benchmark Lab (2026-08-06)
+
+1. `alembic upgrade head` (include `20260806213000`).
+2. Hub run completed → sezione Benchmark Goal Intensity V4 vs V5.
+3. Analizza fattibilità (preflight) → leggere independence/coverage.
+4. Avvia pilot 300 → verifica paired/missing/checks.
+5. Avvia full solo dopo pilot completed; export ZIP; nessuna promozione.
 
 ## Intensità Goal Avanzata v5 — Phase 2B (2026-08-06)
 

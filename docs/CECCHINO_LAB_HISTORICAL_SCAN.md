@@ -1,5 +1,9 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## Benchmark Goal Intensity V4 vs V5 storico (2026-08-06)
+
+Job derivata su run completed (non riavvia lo scan). Bundle `cecchino_goal_intensity_v5_candidate_bundle_v2_1` frozen non attivo. Preflight read-only; pilot 300 seed 42; full gated. Independence: se overlap → `historical_diagnostic_replay`. V4 solo da lambda/expected goals già persistiti (altrimenti `missing_persisted_v4_expected_goals`). Zero API esterne; `base_run_writes=0`. Migration `20260806213000`.
+
 ## Segnali Cecchino V3 — contratto operativo + Lab (2026-08-06)
 
 Nota operativa condivisa Today/Monitoraggio/Lab:

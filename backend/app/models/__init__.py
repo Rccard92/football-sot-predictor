@@ -36,6 +36,12 @@ from app.models.cecchino_lab_purchasability_v3_replay_run import (
 from app.models.cecchino_lab_purchasability_v3_replay_result import (
     CecchinoLabPurchasabilityV3ReplayResult,
 )
+from app.models.cecchino_lab_goal_intensity_benchmark_job import (
+    CecchinoLabGoalIntensityBenchmarkJob,
+)
+from app.models.cecchino_lab_goal_intensity_benchmark_row import (
+    CecchinoLabGoalIntensityBenchmarkRow,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -113,6 +119,8 @@ __all__ = [
     "CecchinoLabHistoricalMarketResult",
     "CecchinoLabPurchasabilityV3ReplayRun",
     "CecchinoLabPurchasabilityV3ReplayResult",
+    "CecchinoLabGoalIntensityBenchmarkJob",
+    "CecchinoLabGoalIntensityBenchmarkRow",
     "Competition",
     "Fixture",
     "FixtureLineup",

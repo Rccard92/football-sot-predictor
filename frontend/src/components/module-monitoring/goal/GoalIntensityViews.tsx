@@ -1317,10 +1317,44 @@ export function GoalIntensityPhase2CView({ dateFrom, dateTo, competitionId }: Vi
           onClick={() => setConfirmOpen(true)}
           disabled={freezeDisabled || !data}
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="phase2c-freeze-button"
         >
-          Congela bundle benchmark
+          {data?.existing_candidate_bundle ? 'Bundle congelato' : 'Congela bundle benchmark'}
         </button>
       </div>
+
+      {data?.existing_candidate_bundle ? (
+        <div
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-950"
+          data-testid="phase2c-frozen-banner"
+        >
+          <p className="font-medium">Bundle congelato</p>
+          <p className="mt-1">
+            ID:{' '}
+            <span className="font-mono">
+              {String(
+                (data.existing_candidate_bundle as Record<string, unknown>).id ??
+                  (data.existing_candidate_bundle as Record<string, unknown>).bundle_id ??
+                  '—',
+              )}
+            </span>
+          </p>
+          <p className="mt-1">
+            Definition hash:{' '}
+            <span className="font-mono break-all">
+              {String(
+                (data.existing_candidate_bundle as Record<string, unknown>).definition_hash ??
+                  (data.existing_candidate_bundle as Record<string, unknown>)
+                    .candidate_definition_hash ??
+                  '—',
+              )}
+            </span>
+          </p>
+          <p className="mt-1 text-emerald-800">
+            Freeze ripetuti dalla UI disabilitati. Il backend resta idempotente.
+          </p>
+        </div>
+      ) : null}
 
       {confirmOpen && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
