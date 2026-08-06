@@ -8,7 +8,25 @@ type Props = {
   modelKey: string
 }
 
-const METRICS: Array<{ key: keyof SignalsBucket; label: string; format?: (v: unknown) => string }> = [
+type MetricDef = {
+  key: keyof SignalsBucket
+  label: string
+  format?: (v: unknown) => string
+}
+
+const METRICS: MetricDef[] = [
+  { key: 'formula_activations', label: 'Conferme formula' },
+  { key: 'unique_acquired_signs', label: 'Segni acquisiti unici' },
+  { key: 'fixtures_with_acquired_signs', label: 'Partite con almeno un segno acquisito' },
+  {
+    key: 'average_confirmations_per_acquired_sign',
+    label: 'Media conferme per segno acquisito',
+    format: (v) => (v == null ? '—' : Number(v).toFixed(2)),
+  },
+  {
+    key: 'groups_rejected_insufficient_consensus',
+    label: 'Gruppi respinti per consenso insufficiente',
+  },
   { key: 'activations', label: 'Segnali accesi' },
   { key: 'settled', label: 'Valutati' },
   { key: 'won', label: 'Vinti' },
@@ -64,7 +82,7 @@ export function SignalsMetricRibbon({ overall, selectedModel, modelKey }: Props)
                   className={`mt-1 text-xl font-semibold tabular-nums ${
                     isDelta && key === 'void_margin'
                       ? voidMarginClass(raw as number | null)
-                      :                     isDelta && key === 'taken_profit_indicator'
+                      : isDelta && key === 'taken_profit_indicator'
                         ? voidMarginClass(raw as number | null)
                         : 'text-slate-900'
                   }`}

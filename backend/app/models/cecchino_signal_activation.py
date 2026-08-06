@@ -84,3 +84,17 @@ class CecchinoSignalActivation(Base, TimestampMixin):
 
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Versioning formula + consenso acquisizione (nullable per legacy)
+    signal_formula_version: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    consensus_policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    formula_source_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    consensus_source_group: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    consensus_eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    consensus_available_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consensus_required_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consensus_yes_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consensus_yes_columns_json: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    consensus_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_acquired: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    acquisition_status: Mapped[str | None] = mapped_column(String(64), nullable=True)

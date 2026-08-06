@@ -1,4 +1,8 @@
-import type { SignalsBucket, SignalsSummaryResponse } from '../../lib/cecchinoSignalsApi'
+import type { SignalActivationRow, SignalsBucket, SignalsSummaryResponse } from '../../lib/cecchinoSignalsApi'
+import {
+  CURRENT_SIGNAL_FORMULA_VERSION,
+  LEGACY_SIGNAL_FORMULA_VERSION,
+} from '../../lib/cecchinoSignalsApi'
 
 export {
   formatOdds,
@@ -12,6 +16,106 @@ export {
   statusLabel,
   voidMarginClass,
 } from '../cecchino/signals/signalsHeatmapUtils'
+
+export function formatSignalFormulaVersion(value: string | null | undefined): string {
+  if (!value || value === LEGACY_SIGNAL_FORMULA_VERSION || value === 'legacy' || value === 'v1') {
+    return 'legacy'
+  }
+  if (value === CURRENT_SIGNAL_FORMULA_VERSION || value === 'current' || value === 'v2') {
+    return 'corrente'
+  }
+  return value
+}
+
+export function formatConsensusScalar(value: unknown): string {
+  if (value == null) return '—'
+  if (typeof value === 'boolean') return value ? 'Sì' : 'No'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '—'
+  if (typeof value === 'string') return value.trim() ? value : '—'
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => formatConsensusScalar(item))
+      .filter((item) => item && item !== '—')
+    return parts.length ? parts.join(', ') : '—'
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '—'
+  }
+}
+
+export function formatConsensusYesColumns(
+  columns: SignalActivationRow['consensus_yes_columns'],
+): string {
+  if (columns == null) return '—'
+  const list = Array.isArray(columns)
+    ? columns
+    : typeof columns === 'string'
+      ? columns
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
+      : []
+  if (!list.length) return '—'
+  return list
+    .map((col) => String(col).replace(/^EXCEL_/, 'Excel '))
+    .join(', ')
+}
+
+export function formatConsensusRatio(row: Pick<
+  SignalActivationRow,
+  'consensus_yes_count' | 'consensus_available_count'
+>): string {
+  const yes = row.consensus_yes_count
+  const available = row.consensus_available_count
+  if (yes == null && available == null) return '—'
+  return `${yes ?? 0}/${available ?? 0}`
+}
+
+export function acquisitionStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'acquired_consensus':
+      return 'Acquisito'
+    case 'rejected_insufficient_consensus':
+      return 'Conferma insufficiente'
+    case 'acquired_single_formula_exempt':
+      return 'Esente 1/2'
+    case 'legacy_unclassified':
+      return 'Legacy'
+    case 'no_raw_signal':
+      return 'Nessun SI grezzo'
+    default:
+      return status?.trim() ? status : '—'
+  }
+}
+
+export function acquisitionStatusBadgeClass(status: string | null | undefined): string {
+  switch (status) {
+    case 'acquired_consensus':
+      return 'bg-emerald-100 text-emerald-800'
+    case 'rejected_insufficient_consensus':
+      return 'bg-amber-100 text-amber-900'
+    case 'acquired_single_formula_exempt':
+      return 'bg-sky-100 text-sky-800'
+    case 'legacy_unclassified':
+      return 'bg-slate-200 text-slate-700'
+    default:
+      return 'bg-slate-100 text-slate-600'
+  }
+}
+
+export function acquiredBadgeLabel(isAcquired: boolean | null | undefined): string {
+  if (isAcquired === true) return 'Acquisito'
+  if (isAcquired === false) return 'Non acquisito'
+  return '—'
+}
+
+export function acquiredBadgeClass(isAcquired: boolean | null | undefined): string {
+  if (isAcquired === true) return 'bg-emerald-100 text-emerald-800'
+  if (isAcquired === false) return 'bg-rose-100 text-rose-800'
+  return 'bg-slate-100 text-slate-600'
+}
 
 export type ModelAccent = {
   ring: string

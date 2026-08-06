@@ -1,5 +1,9 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## Monitoraggio Segnali Cecchino — consenso V2 (2026-08-06)
+
+Nota operativa (pagina `/monitoraggio-segnali`, non Lab Run): formule X V2 + consenso min-two; backfill offline versionato; default UI `current`+`acquired`. Il Lab scan storico non è modificato da questa feature.
+
 ## Segnali KPI operativi — 19 mercati (2026-08-06)
 
 Nota operativa (pagina `/segnali-kpi`, non Lab Run): Heatmap allineata ai 19 mercati Pannello KPI; settlement PT/FT completo; filtri Acquistabilità V3/V3.1 su snapshot pre-match storicizzati. Il Lab storico KPI (STEP 4A/4B) resta separato e non è modificato da questa estensione.

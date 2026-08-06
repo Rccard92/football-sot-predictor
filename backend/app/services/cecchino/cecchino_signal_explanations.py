@@ -15,8 +15,18 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
+from app.services.cecchino.cecchino_signal_consensus import (
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    GROUP_AVAILABLE_COLUMNS,
+    LEGACY_SIGNAL_FORMULA_VERSION,
+    SIGNAL_CONSENSUS_POLICY_VERSION,
+    SINGLE_FORMULA_EXEMPT_GROUPS,
+    compute_consensus_for_matrix_row,
+    normalize_formula_version,
+)
+from app.services.cecchino.cecchino_signal_target_mapping import map_row_key_to_signal_group
 
-AUDIT_VERSION = "cecchino_signal_explanations_v1"
+AUDIT_VERSION = "cecchino_signal_explanations_v2"
 
 Ctx = dict[str, Any]
 Leaf = dict[str, Any]
@@ -454,11 +464,11 @@ def _eval_under_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
 def _eval_draw_d(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
     q1, q2, d = _num(ctx["q1"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
     leaves = [
-        _leaf(condition_key="f36_lt_0_6", label="F36 < 0,60", left_label="F36", left_value=d,
-              operator="<", right_label="Soglia", right_value=0.6, passed=_cmp(d, "<", 0.6),
+        _leaf(condition_key="f36_lt_0_80", label="F36 < 0,80", left_label="F36", left_value=d,
+              operator="<", right_label="Soglia", right_value=0.80, passed=_cmp(d, "<", 0.80),
               source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_gt_m0_57", label="F36 > −0,57", left_label="F36", left_value=d,
-              operator=">", right_label="Soglia", right_value=-0.57, passed=_cmp(d, ">", -0.57),
+        _leaf(condition_key="f36_gt_m0_80", label="F36 > −0,80", left_label="F36", left_value=d,
+              operator=">", right_label="Soglia", right_value=-0.80, passed=_cmp(d, ">", -0.80),
               source_path="signals_matrix.inputs.diff_1_2"),
         _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
               operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
@@ -491,11 +501,14 @@ def _eval_draw_e(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
 def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
     q1, qx, q2, d = _num(ctx["q1"]), _num(ctx["qx"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
     leaves = [
-        _leaf(condition_key="qx_le_2_4", label="F33 ≤ 2,40", left_label="F33", left_value=qx,
-              operator="<=", right_label="Soglia", right_value=2.4, passed=_cmp(qx, "<=", 2.4),
+        _leaf(condition_key="qx_le_2_90", label="F33 ≤ 2,90", left_label="F33", left_value=qx,
+              operator="<=", right_label="Soglia", right_value=2.90, passed=_cmp(qx, "<=", 2.90),
               source_path="signals_matrix.inputs.qx"),
-        _leaf(condition_key="f36_gt_m1_7", label="F36 > −1,70", left_label="F36", left_value=d,
-              operator=">", right_label="Soglia", right_value=-1.7, passed=_cmp(d, ">", -1.7),
+        _leaf(condition_key="f36_le_1_70", label="F36 ≤ 1,70", left_label="F36", left_value=d,
+              operator="<=", right_label="Soglia", right_value=1.70, passed=_cmp(d, "<=", 1.70),
+              source_path="signals_matrix.inputs.diff_1_2"),
+        _leaf(condition_key="f36_ge_m1_70", label="F36 ≥ −1,70", left_label="F36", left_value=d,
+              operator=">=", right_label="Soglia", right_value=-1.70, passed=_cmp(d, ">=", -1.70),
               source_path="signals_matrix.inputs.diff_1_2"),
         _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
               operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
@@ -508,14 +521,14 @@ def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
 def _eval_draw_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
     q1, qx, q2, d = _num(ctx["q1"]), _num(ctx["qx"]), _num(ctx["q2"]), _num(ctx["diff_1_2"])
     leaves = [
-        _leaf(condition_key="qx_le_3", label="F33 ≤ 3", left_label="F33", left_value=qx,
-              operator="<=", right_label="Soglia", right_value=3.0, passed=_cmp(qx, "<=", 3.0),
+        _leaf(condition_key="qx_le_3_50", label="F33 ≤ 3,50", left_label="F33", left_value=qx,
+              operator="<=", right_label="Soglia", right_value=3.50, passed=_cmp(qx, "<=", 3.50),
               source_path="signals_matrix.inputs.qx"),
-        _leaf(condition_key="f36_lt_2", label="F36 < 2", left_label="F36", left_value=d,
-              operator="<", right_label="Soglia", right_value=2.0, passed=_cmp(d, "<", 2.0),
+        _leaf(condition_key="f36_le_1_20", label="F36 ≤ 1,20", left_label="F36", left_value=d,
+              operator="<=", right_label="Soglia", right_value=1.20, passed=_cmp(d, "<=", 1.20),
               source_path="signals_matrix.inputs.diff_1_2"),
-        _leaf(condition_key="f36_gt_m1_6", label="F36 > −1,60", left_label="F36", left_value=d,
-              operator=">", right_label="Soglia", right_value=-1.6, passed=_cmp(d, ">", -1.6),
+        _leaf(condition_key="f36_ge_m1_20", label="F36 ≥ −1,20", left_label="F36", left_value=d,
+              operator=">=", right_label="Soglia", right_value=-1.20, passed=_cmp(d, ">=", -1.20),
               source_path="signals_matrix.inputs.diff_1_2"),
         _leaf(condition_key="q1_ge_q2", label="F32 ≥ F34", left_label="F32", left_value=q1,
               operator=">=", right_label="F34", right_value=q2, passed=_cmp(q1, ">=", q2),
@@ -900,28 +913,28 @@ SIGNAL_RULE_REGISTRY: list[dict[str, Any]] = [
           "Variante Under più selettiva.",
           "Under 2.5 FT", _eval_under_g),
     _rule("draw", "excel_d", "D42",
-          '=IF(AND(F36<0.6,F36>-0.57,F32>=F34),"SI","NO")',
-          "F36 < 0,60 AND F36 > −0,57 AND F32 ≥ F34",
-          "Pareggio quando F36 è vicino a zero e quota 1 ≥ quota 2.",
-          "Intercettare equilibri da pareggio.",
+          '=IF(AND(F36<0.80,F36>-0.80,F32>=F34),"SI","NO")',
+          "F36 < 0,80 AND F36 > −0,80 AND F32 ≥ F34",
+          "Pareggio quando F36 è entro ±0,80 (stretti) e quota 1 ≥ quota 2.",
+          "Intercettare equilibri da pareggio (formula V2).",
           "Segno X FT", _eval_draw_d),
     _rule("draw", "excel_e", "E42",
           '=IF(AND(F33<3.3,F36<=1.47,F36>=-1.4,F32>=F34),"SI","NO")',
           "F33 < 3,30 AND F36 ≤ 1,47 AND F36 ≥ −1,40 AND F32 ≥ F34",
           "Pareggio con X non cara e F36 in range.",
-          "Variante X con tetto su F33.",
+          "Variante X con tetto su F33 (invariata rispetto a V1).",
           "Segno X FT", _eval_draw_e),
     _rule("draw", "excel_f", "F42",
-          '=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),"SI","NO")',
-          "F33 ≤ 2,40 AND F36 > −1,70 AND F32 ≥ F34",
-          "Pareggio con X molto bassa.",
-          "Segnale X aggressivo su quota X.",
+          '=IF(AND(F33<=2.90,F36<=1.70,F36>=-1.70,F32>=F34),"SI","NO")',
+          "F33 ≤ 2,90 AND F36 ≤ 1,70 AND F36 ≥ −1,70 AND F32 ≥ F34",
+          "Pareggio con X ≤ 2,90 e F36 entro ±1,70 inclusivi.",
+          "Segnale X V2 su quota X e banda F36.",
           "Segno X FT", _eval_draw_f),
     _rule("draw", "excel_g", "G42",
-          '=IF(AND(F33<=3,F36<2,F36>-1.6,F32>=F34),"SI","NO")',
-          "F33 ≤ 3 AND F36 < 2 AND F36 > −1,60 AND F32 ≥ F34",
-          "Pareggio con X ≤ 3 e F36 in banda ampia.",
-          "Variante X intermedia.",
+          '=IF(AND(F33<=3.50,F36<=1.20,F36>=-1.20,F32>=F34),"SI","NO")',
+          "F33 ≤ 3,50 AND F36 ≤ 1,20 AND F36 ≥ −1,20 AND F32 ≥ F34",
+          "Pareggio con X ≤ 3,50 e F36 entro ±1,20 inclusivi.",
+          "Variante X V2 intermedia.",
           "Segno X FT", _eval_draw_g),
     _rule("over_over_pt", "excel_d", "D45",
           '=IF(AND(OR(F36>1.7,F36<-1.5),F33>=6),"SI","NO")',
@@ -1219,6 +1232,61 @@ def build_signal_explanations(row: CecchinoTodayFixture) -> dict[str, Any]:
         "level_rule": "ALTA >= 0.75; MEDIA >= 0.5; BASSA < 0.5",
     }
 
+    stored_formula_version = normalize_formula_version(
+        matrix.get("formula_version") if isinstance(matrix.get("formula_version"), str) else None,
+    )
+    if stored_formula_version != CURRENT_SIGNAL_FORMULA_VERSION:
+        warnings.append(
+            f"formula_version_mismatch:stored={stored_formula_version};"
+            f"audit_canonical={CURRENT_SIGNAL_FORMULA_VERSION}",
+        )
+        partial = True
+
+    consensus_sections: list[dict[str, Any]] = []
+    matrix_rows = matrix.get("rows") if isinstance(matrix.get("rows"), list) else []
+    for mrow in matrix_rows:
+        if not isinstance(mrow, dict):
+            continue
+        group = map_row_key_to_signal_group(str(mrow.get("key") or ""))
+        if not group:
+            continue
+        consensus = mrow.get("consensus") if isinstance(mrow.get("consensus"), dict) else None
+        if consensus is None:
+            consensus = compute_consensus_for_matrix_row(mrow)
+        available = list(GROUP_AVAILABLE_COLUMNS.get(group, ()))
+        consensus_sections.append(
+            {
+                "title": "CONSENSO DEL SEGNO",
+                "signal_group": group,
+                "row_key": mrow.get("key"),
+                "row_label": mrow.get("label"),
+                "available_formulas": available,
+                "yes_columns": consensus.get("consensus_yes_columns") or [],
+                "yes_count": consensus.get("consensus_yes_count"),
+                "required_count": consensus.get("consensus_required_count"),
+                "exempt": group in SINGLE_FORMULA_EXEMPT_GROUPS,
+                "consensus_passed": consensus.get("consensus_passed"),
+                "acquisition_status": consensus.get("acquisition_status"),
+                "is_acquired": consensus.get("is_acquired"),
+                "policy_version": consensus.get("consensus_policy_version")
+                or SIGNAL_CONSENSUS_POLICY_VERSION,
+                "reason": (
+                    "Segno acquisito per consenso minimo"
+                    if consensus.get("acquisition_status") == "acquired_consensus"
+                    else (
+                        "Segno acquisito per esenzione 1/2 (unica formula)"
+                        if consensus.get("acquisition_status") == "acquired_single_formula_exempt"
+                        else (
+                            "Conferme insufficienti: SI grezzi non acquisiti"
+                            if consensus.get("acquisition_status")
+                            == "rejected_insufficient_consensus"
+                            else "Nessuna formula SI"
+                        )
+                    )
+                ),
+            },
+        )
+
     return {
         "status": "partial" if partial else "ok",
         "audit_version": AUDIT_VERSION,
@@ -1226,6 +1294,10 @@ def build_signal_explanations(row: CecchinoTodayFixture) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "no_operational_recalculation": True,
         "diagnostic_re_evaluation_only": True,
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+        "stored_formula_version": stored_formula_version,
+        "legacy_formula_version": LEGACY_SIGNAL_FORMULA_VERSION,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
         "fixture": {
             "today_fixture_id": int(row.id),
             "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
@@ -1238,11 +1310,15 @@ def build_signal_explanations(row: CecchinoTodayFixture) -> dict[str, Any]:
         "matrix": {
             "source": matrix.get("source"),
             "status": matrix.get("status"),
+            "formula_version": matrix.get("formula_version") or stored_formula_version,
+            "consensus_policy_version": matrix.get("consensus_policy_version")
+            or SIGNAL_CONSENSUS_POLICY_VERSION,
             "inputs": inputs,
             "reliability": reliability_block,
             "excel_mapping": matrix.get("excel_mapping"),
             "warnings": list(matrix.get("warnings") or []),
         },
+        "signal_consensus": consensus_sections,
         "active_cell_count": len(cells),
         "excluded_cells": "cells_without_SI_NO",
         "cells": cells,

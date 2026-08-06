@@ -1,4 +1,10 @@
-import { EVAL_STATUSES, SIGNAL_GROUPS, SOURCE_COLUMNS } from '../../lib/cecchinoSignalsApi'
+import {
+  ACQUISITION_FILTER_OPTIONS,
+  EVAL_STATUSES,
+  SIGNAL_FORMULA_VERSION_OPTIONS,
+  SIGNAL_GROUPS,
+  SOURCE_COLUMNS,
+} from '../../lib/cecchinoSignalsApi'
 
 type Props = {
   dateFrom: string
@@ -8,6 +14,9 @@ type Props = {
   evaluationStatus: string
   countryName: string
   leagueName: string
+  signalFormulaVersion: string
+  acquisitionFilter: string
+  consensusYesCountMin: number | undefined
   loading: boolean
   actionLoading: boolean
   onDateFromChange: (v: string) => void
@@ -17,6 +26,9 @@ type Props = {
   onEvaluationStatusChange: (v: string) => void
   onCountryNameChange: (v: string) => void
   onLeagueNameChange: (v: string) => void
+  onSignalFormulaVersionChange: (v: string) => void
+  onAcquisitionFilterChange: (v: string) => void
+  onConsensusYesCountMinChange: (v: number | undefined) => void
   onRefresh: () => void
   onBacktest: () => void
   onRevaluate: () => void
@@ -37,6 +49,9 @@ export function SignalsLabFilters({
   evaluationStatus,
   countryName,
   leagueName,
+  signalFormulaVersion,
+  acquisitionFilter,
+  consensusYesCountMin,
   loading,
   actionLoading,
   onDateFromChange,
@@ -46,6 +61,9 @@ export function SignalsLabFilters({
   onEvaluationStatusChange,
   onCountryNameChange,
   onLeagueNameChange,
+  onSignalFormulaVersionChange,
+  onAcquisitionFilterChange,
+  onConsensusYesCountMinChange,
   onRefresh,
   onBacktest,
   onRevaluate,
@@ -120,6 +138,66 @@ export function SignalsLabFilters({
           />
         </label>
       </div>
+
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Filtro Segnali Cecchino
+        </p>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <label className="text-xs font-medium text-slate-600">
+            Formula
+            <select
+              aria-label="Formula"
+              value={signalFormulaVersion}
+              onChange={(e) => onSignalFormulaVersionChange(e.target.value)}
+              className={inputClass}
+            >
+              {SIGNAL_FORMULA_VERSION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Acquisizione
+            <select
+              aria-label="Acquisizione"
+              value={acquisitionFilter}
+              onChange={(e) => onAcquisitionFilterChange(e.target.value)}
+              className={inputClass}
+            >
+              {ACQUISITION_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            Conferme minime
+            <input
+              aria-label="Conferme minime"
+              type="number"
+              min={0}
+              step={1}
+              value={consensusYesCountMin ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value.trim()
+                if (!raw) {
+                  onConsensusYesCountMinChange(undefined)
+                  return
+                }
+                const parsed = Number(raw)
+                onConsensusYesCountMinChange(Number.isFinite(parsed) ? parsed : undefined)
+              }}
+              placeholder="opzionale"
+              className={inputClass}
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
@@ -157,7 +235,7 @@ export function SignalsLabFilters({
       </div>
       <p className="mt-2 text-xs text-slate-500">
         Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino e soglia minima)
-        già presenti nel DB e non consuma API.
+        già presenti nel DB e non consuma API. Default: formula corrente e segni acquisiti.
       </p>
     </section>
   )

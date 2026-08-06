@@ -4,7 +4,15 @@ import { Link } from 'react-router-dom'
 import type { SignalActivationRow } from '../../lib/cecchinoSignalsApi'
 import type { HeatmapCellSelection } from './SignalsHeatmapLab'
 import {
+  acquiredBadgeClass,
+  acquiredBadgeLabel,
+  acquisitionStatusBadgeClass,
+  acquisitionStatusLabel,
+  formatConsensusRatio,
+  formatConsensusScalar,
+  formatConsensusYesColumns,
   formatOdds,
+  formatSignalFormulaVersion,
   formatSignalLabel,
   formatSuccessRate,
   formatTakenProfit,
@@ -121,6 +129,8 @@ function HeatmapDrawerContent({
                 <p className="text-xs text-slate-500">
                   {row.scan_date} · {statusLabel(row.evaluation_status)}
                   {row.ft_score ? ` · FT ${row.ft_score}` : ''}
+                  {' · '}
+                  {formatConsensusRatio(row)}
                 </p>
               </li>
             ))}
@@ -162,6 +172,84 @@ function ActivationDrawerContent({ row }: { row: SignalActivationRow }) {
           <StatRow label="Motivo" value={row.evaluation_reason} />
         )}
       </dl>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Consenso / acquisizione
+        </p>
+        <dl className="space-y-2 text-sm">
+          <StatRow
+            label="Formula version"
+            value={formatSignalFormulaVersion(row.signal_formula_version)}
+          />
+          <StatRow
+            label="Formula version (raw)"
+            value={formatConsensusScalar(row.signal_formula_version)}
+          />
+          <StatRow
+            label="Consensus policy"
+            value={formatConsensusScalar(row.consensus_policy_version)}
+          />
+          <StatRow
+            label="Formula source mode"
+            value={formatConsensusScalar(row.formula_source_mode)}
+          />
+          <StatRow
+            label="Consensus source group"
+            value={formatConsensusScalar(row.consensus_source_group)}
+          />
+          <StatRow
+            label="Consensus eligible"
+            value={formatConsensusScalar(row.consensus_eligible)}
+          />
+          <StatRow
+            label="Consensus available"
+            value={formatConsensusScalar(row.consensus_available_count)}
+          />
+          <StatRow
+            label="Consensus required"
+            value={formatConsensusScalar(row.consensus_required_count)}
+          />
+          <StatRow
+            label="Consensus yes"
+            value={formatConsensusScalar(row.consensus_yes_count)}
+          />
+          <StatRow label="Consenso N/M" value={formatConsensusRatio(row)} />
+          <StatRow
+            label="Colonne SI"
+            value={formatConsensusYesColumns(row.consensus_yes_columns)}
+          />
+          <StatRow
+            label="Consensus passed"
+            value={formatConsensusScalar(row.consensus_passed)}
+          />
+          <StatRow
+            label="Acquisition status"
+            value={
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${acquisitionStatusBadgeClass(row.acquisition_status)}`}
+              >
+                {acquisitionStatusLabel(row.acquisition_status)}
+              </span>
+            }
+          />
+          <StatRow
+            label="Is acquired"
+            value={
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${acquiredBadgeClass(row.is_acquired)}`}
+              >
+                {acquiredBadgeLabel(row.is_acquired)}
+              </span>
+            }
+          />
+          <StatRow
+            label="Raw signal value"
+            value={formatConsensusScalar(row.raw_signal_value)}
+          />
+        </dl>
+      </div>
+
       <Link
         to={`/cecchino-today?fixture=${row.today_fixture_id}&date=${row.scan_date}`}
         className="inline-flex rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"

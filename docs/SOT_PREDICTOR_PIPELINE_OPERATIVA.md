@@ -786,6 +786,13 @@ Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-o
 - UI Monitoring + Lab: pannello editabile con conferma range > 7 giorni e sezione Avanzate (rebuild KPI offline).
 - **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live (nessuna API esterna in backtest).
 
+## Cecchino — Consenso + formule X V2 (2026-08-06)
+
+- Backfill V2 offline da snapshot pre-match; `only_missing` richiede formula version corrente.
+- Sync: `persisted_live_matrix`; backtest A–F: `offline_weight_model_recompute`.
+- Filtri Monitoraggio: `signal_formula_version`, `acquisition_filter` (default current+acquired).
+- Alembic: `20260806170000` dopo `20260806143000`.
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 - Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.

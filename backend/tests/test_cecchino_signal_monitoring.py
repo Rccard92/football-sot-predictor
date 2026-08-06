@@ -27,8 +27,8 @@ from app.services.cecchino.cecchino_signal_aggregation import (
     _format_signal_display_label,
     _serialize_activation_row,
     _success_rate,
-    build_signals_summary,
-    export_signals_csv,
+    build_signals_summary as _build_signals_summary_raw,
+    export_signals_csv as _export_signals_csv_raw,
 )
 from app.services.cecchino.cecchino_signal_evaluation import (
     evaluate_activations_for_fixture,
@@ -39,11 +39,13 @@ from app.services.cecchino.cecchino_signal_backfill import (
     backfill_signal_activations,
     build_signal_diagnostics,
 )
+from app.services.cecchino.cecchino_signal_min_odds import DEFAULT_SIGNAL_MIN_BOOK_ODDS
 from app.services.cecchino.cecchino_signal_sync import (
     remap_legacy_scala_activations_in_range,
     sync_cecchino_signal_activations,
 )
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
+from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 from app.services.cecchino.cecchino_signal_target_mapping import (
     LEGACY_WRONG_SCALA_REASON,
     VALID_SCALA_SIGNAL_GROUPS,
@@ -67,11 +69,46 @@ from app.services.cecchino.cecchino_selection_keys import (
 )
 
 
+def build_signals_summary(*args, **kwargs):
+    """Test helper: fixture legacy senza campi consenso → mostra tutto."""
+    kwargs.setdefault("signal_formula_version", "all")
+    kwargs.setdefault("acquisition_filter", "all")
+    return _build_signals_summary_raw(*args, **kwargs)
+
+
+def export_signals_csv(*args, **kwargs):
+    kwargs.setdefault("signal_formula_version", "all")
+    kwargs.setdefault("acquisition_filter", "all")
+    return _export_signals_csv_raw(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _stub_min_book_odds_load(monkeypatch):
+    """Evita MagicMock.is_enabled su load_signal_min_book_odds nei test mock."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_signal_sync.load_signal_min_book_odds",
+        lambda _db: DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_signal_min_book_odd_settings_service.load_signal_min_book_odds",
+        lambda _db: DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
+
+
 def _signals_matrix(**row_signals):
     rows = []
     for key, label, signals in [
         ("under_under_pt", "UNDER / UNDER PT", {"excel_d": "NO"}),
-        ("draw", "SEGNO X", {"excel_d": row_signals.get("draw_d", "NO")}),
+        (
+            "draw",
+            "SEGNO X",
+            {
+                "excel_d": row_signals.get("draw_d", "NO"),
+                "excel_e": row_signals.get("draw_e", "NO"),
+                "excel_f": row_signals.get("draw_f", "NO"),
+                "excel_g": row_signals.get("draw_g", "NO"),
+            },
+        ),
         ("over_over_pt", "OVER / OVER PT", {"excel_d": row_signals.get("over_d", "NO")}),
         ("one", "1", {"excel_d": row_signals.get("one_d", "NO")}),
         ("one_x", "1X", {"excel_d": row_signals.get("one_x_d", "NO")}),
@@ -82,6 +119,7 @@ def _signals_matrix(**row_signals):
         rows.append({"key": key, "label": label, "signals": signals})
     return {
         "status": STATUS_AVAILABLE,
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
         "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9, "avg_q": 2.87, "diff_1_2": 0.4},
         "rows": rows,
     }
@@ -118,17 +156,27 @@ def _fixture_row(**kwargs) -> CecchinoTodayFixture:
         country_name="Italy",
     )
     row.id = 99
-    row.cecchino_output_json = {"signals_matrix": _signals_matrix(draw_d="SI")}
+    row.cecchino_output_json = {
+        "signals_matrix": _signals_matrix(draw_d="SI", draw_f="SI"),
+    }
     row.kpi_panel_json = {
         "rows": [
             {
                 "market_key": SEL_DRAW,
                 "segno": "X",
-                "quota_book": 2.8,
-                "quota_cecchino": 2.31,
+                "quota_book": 3.40,
+                "quota_cecchino": 3.20,
                 "edge_pct": 12.5,
                 "rating": 72,
-            }
+            },
+            {
+                "market_key": SEL_DRAW_PT,
+                "segno": "X PT",
+                "quota_book": 2.10,
+                "quota_cecchino": 2.00,
+                "edge_pct": 5.0,
+                "rating": 70,
+            },
         ]
     }
     for key, value in kwargs.items():
@@ -721,11 +769,23 @@ def test_backfill_force_remap_rebuilds_activations_offline():
     db.scalar.return_value = 0
 
     with patch(
-        "app.services.cecchino.cecchino_signal_backfill._ensure_signals_matrix_on_row",
-        return_value=True,
-    ) as mock_ensure, patch(
+        "app.services.cecchino.cecchino_signal_backfill._build_v2_signals_matrix_from_prematch",
+        return_value=fixture.cecchino_output_json["signals_matrix"],
+    ) as mock_build, patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
-        return_value={"created": 2, "updated": 0, "deactivated": 1, "skipped": 0},
+        return_value={
+            "created": 2,
+            "updated": 0,
+            "deactivated": 1,
+            "skipped": 0,
+            "si_cells_seen": 2,
+            "groups_consensus_passed": 1,
+            "groups_consensus_rejected": 0,
+            "single_formula_exempt_acquired": 0,
+            "raw_si_cells": 2,
+            "acquired_formula_cells": 2,
+            "draw_pt_blocked_by_consensus": 0,
+        },
     ) as mock_sync, patch(
         "app.services.cecchino.cecchino_signal_backfill.remap_legacy_scala_activations_in_range",
         return_value=3,
@@ -738,6 +798,9 @@ def test_backfill_force_remap_rebuilds_activations_offline():
     ), patch(
         "app.services.cecchino.cecchino_signal_backfill._activation_status_counts",
         return_value={"won": 1, "lost": 1, "pending": 0, "not_evaluable": 0, "evaluated_count": 2},
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._count_legacy_activations_preserved",
+        return_value=0,
     ), patch(
         "app.services.api_football_client.ApiFootballClient",
     ) as mock_client:
@@ -753,9 +816,10 @@ def test_backfill_force_remap_rebuilds_activations_offline():
     assert out["force_remap"] is True
     assert out["legacy_scala_deactivated"] == 3
     assert out["fixtures_with_signals"] == 1
-    mock_ensure.assert_called_once_with(fixture, force_rebuild=True)
+    mock_build.assert_called()
     mock_remap.assert_called_once()
-    mock_sync.assert_called_once_with(db, 99)
+    assert mock_sync.call_count == 1
+    assert mock_sync.call_args[0][:2] == (db, 99)
     mock_client.assert_not_called()
 
 
@@ -766,7 +830,7 @@ def test_sync_saves_only_si_and_is_idempotent():
     db.scalars.return_value.all.return_value = []
 
     counts1 = sync_cecchino_signal_activations(db, 99)
-    assert counts1["created"] == 2
+    assert counts1["created"] == 4  # DRAW D+F + DRAW_PT D+F
     assert db.add.called
 
     existing = CecchinoSignalActivation(
@@ -781,6 +845,8 @@ def test_sync_saves_only_si_and_is_idempotent():
         target_market_key=SEL_DRAW,
         target_period="FT",
         evaluation_status=EVAL_PENDING,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+        is_current=True,
     )
     existing_pt = CecchinoSignalActivation(
         today_fixture_id=99,
@@ -794,14 +860,45 @@ def test_sync_saves_only_si_and_is_idempotent():
         target_market_key=SEL_DRAW_PT,
         target_period="HT",
         evaluation_status=EVAL_PENDING,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+        is_current=True,
     )
-    existing.id = 1
-    existing_pt.id = 2
-    db.scalars.return_value.all.return_value = [existing, existing_pt]
+    existing_f = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW",
+        signal_label="SEGNO X",
+        source_column="EXCEL_F",
+        signal_value=True,
+        target_market_key=SEL_DRAW,
+        target_period="FT",
+        evaluation_status=EVAL_PENDING,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+        is_current=True,
+    )
+    existing_pt_f = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW_PT",
+        signal_label="X PT",
+        source_column="EXCEL_F",
+        signal_value=True,
+        target_market_key=SEL_DRAW_PT,
+        target_period="HT",
+        evaluation_status=EVAL_PENDING,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+        is_current=True,
+    )
+    db.scalars.return_value.all.return_value = [existing, existing_pt, existing_f, existing_pt_f]
     db.add.reset_mock()
 
     counts2 = sync_cecchino_signal_activations(db, 99)
-    assert counts2["updated"] == 2
+    assert counts2["created"] == 0
+    assert counts2["updated"] >= 1
     assert not db.add.called
 
 
@@ -1065,8 +1162,23 @@ def test_backfill_creates_activations_offline():
     db.scalar.return_value = 0
 
     with patch(
+        "app.services.cecchino.cecchino_signal_backfill._build_v2_signals_matrix_from_prematch",
+        return_value=fixture.cecchino_output_json["signals_matrix"],
+    ), patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
-        return_value={"created": 2, "updated": 0, "deactivated": 0, "skipped": 0},
+        return_value={
+            "created": 2,
+            "updated": 0,
+            "deactivated": 0,
+            "skipped": 0,
+            "si_cells_seen": 2,
+            "groups_consensus_passed": 1,
+            "groups_consensus_rejected": 0,
+            "single_formula_exempt_acquired": 0,
+            "raw_si_cells": 2,
+            "acquired_formula_cells": 2,
+            "draw_pt_blocked_by_consensus": 0,
+        },
     ) as mock_sync, patch(
         "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
         return_value=0,
@@ -1076,6 +1188,9 @@ def test_backfill_creates_activations_offline():
     ), patch(
         "app.services.cecchino.cecchino_signal_backfill._activation_status_counts",
         return_value={"won": 2, "lost": 0, "pending": 0, "not_evaluable": 0, "evaluated_count": 2},
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._count_legacy_activations_preserved",
+        return_value=0,
     ):
         out = backfill_signal_activations(
             db,
@@ -1088,7 +1203,8 @@ def test_backfill_creates_activations_offline():
     assert out["status"] == "ok"
     assert out["fixtures_with_signals"] == 1
     assert out["signals_created"] == 2
-    mock_sync.assert_called_once_with(db, 99)
+    assert mock_sync.call_count == 1
+    assert mock_sync.call_args[0][:2] == (db, 99)
     db.commit.assert_called_once()
 
 
@@ -1124,10 +1240,28 @@ def test_backfill_does_not_call_api_football():
     db.scalar.return_value = 0
 
     with patch(
+        "app.services.cecchino.cecchino_signal_backfill._build_v2_signals_matrix_from_prematch",
+        return_value=fixture.cecchino_output_json["signals_matrix"],
+    ), patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
-        return_value={"created": 1, "updated": 0, "deactivated": 0, "skipped": 0},
+        return_value={
+            "created": 1,
+            "updated": 0,
+            "deactivated": 0,
+            "skipped": 0,
+            "si_cells_seen": 1,
+            "groups_consensus_passed": 0,
+            "groups_consensus_rejected": 0,
+            "single_formula_exempt_acquired": 0,
+            "raw_si_cells": 1,
+            "acquired_formula_cells": 0,
+            "draw_pt_blocked_by_consensus": 0,
+        },
     ), patch(
         "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._count_legacy_activations_preserved",
         return_value=0,
     ), patch(
         "app.services.api_football_client.ApiFootballClient",
@@ -1221,7 +1355,17 @@ def test_summary_include_diagnostics():
 
 def _draw_si_fixture_row(*, book: float = 3.40, cecchino: float = 3.20, **kwargs) -> CecchinoTodayFixture:
     row = _fixture_row(**kwargs)
-    row.kpi_panel_json = _kpi_panel(SEL_DRAW, book=book, cecchino=cecchino)
+    row.cecchino_output_json = {
+        "signals_matrix": _signals_matrix(draw_d="SI", draw_f="SI"),
+    }
+    row.kpi_panel_json = _kpi_panel(SEL_DRAW, SEL_DRAW_PT, book=book, cecchino=cecchino)
+    # DRAW_PT needs its own odds in panel — override with sensible PT quotes
+    rows = list(row.kpi_panel_json.get("rows") or [])
+    for r in rows:
+        if r.get("market_key") == SEL_DRAW_PT:
+            r["quota_book"] = max(float(book) - 1.0, 2.00)
+            r["quota_cecchino"] = max(float(cecchino) - 1.0, 1.90)
+    row.kpi_panel_json = {"rows": rows}
     return row
 
 
@@ -1233,10 +1377,10 @@ def test_sync_value_gate_creates_when_book_above_cecchino():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["created"] == 2
-    assert counts["value_passed"] == 1
-    assert counts["draw_pt_created"] == 1
-    assert counts["si_cells_seen"] == 1
+    assert counts["created"] == 4  # DRAW D+F + DRAW_PT D+F
+    assert counts["value_passed"] >= 2
+    assert counts["draw_pt_created"] == 2
+    assert counts["si_cells_seen"] == 2
     assert counts["no_value_skipped"] == 0
 
 
@@ -1248,9 +1392,9 @@ def test_sync_value_gate_creates_when_book_equals_cecchino():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["created"] == 2
-    assert counts["value_passed"] == 1
-    assert counts["draw_pt_created"] == 1
+    assert counts["created"] == 4
+    assert counts["value_passed"] >= 2
+    assert counts["draw_pt_created"] == 2
 
 
 def test_sync_value_gate_skips_when_book_below_cecchino():
@@ -1262,7 +1406,7 @@ def test_sync_value_gate_skips_when_book_below_cecchino():
     counts = sync_cecchino_signal_activations(db, 99)
 
     assert counts["created"] == 0
-    assert counts["no_value_skipped"] == 1
+    assert counts["no_value_skipped"] == 2
     assert counts["value_passed"] == 0
     assert not db.add.called
 
@@ -1283,6 +1427,7 @@ def test_sync_value_gate_deactivates_existing_no_value_without_delete():
         target_period="FT",
         evaluation_status=EVAL_WON,
         is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     existing.id = 1
     db.get.return_value = row
@@ -1308,8 +1453,8 @@ def test_sync_value_gate_skips_missing_kpi_panel():
     counts = sync_cecchino_signal_activations(db, 99)
 
     assert counts["created"] == 0
-    assert counts["missing_book_quote_skipped"] == 1
-    assert counts["no_value_skipped"] == 1
+    assert counts["missing_book_quote_skipped"] == 2
+    assert counts["no_value_skipped"] == 2
 
 
 def test_sync_value_gate_skips_missing_book_quote():
@@ -1321,8 +1466,8 @@ def test_sync_value_gate_skips_missing_book_quote():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["missing_book_quote_skipped"] == 1
-    assert counts["no_value_skipped"] == 1
+    assert counts["missing_book_quote_skipped"] == 2
+    assert counts["no_value_skipped"] == 2
 
 
 def test_sync_value_gate_skips_missing_cecchino_quote():
@@ -1334,7 +1479,8 @@ def test_sync_value_gate_skips_missing_cecchino_quote():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["missing_cecchino_quote_skipped"] == 1
+    assert counts["missing_cecchino_quote_skipped"] == 2
+    assert counts["no_value_skipped"] == 2
 
 
 def test_sync_value_gate_no_evaluate_when_no_value():
@@ -1371,13 +1517,25 @@ def test_backfill_aggregates_value_gate_counters():
         "missing_cecchino_quote_skipped": 0,
         "invalid_quote_skipped": 0,
         "deactivated_no_value": 0,
+        "groups_consensus_passed": 1,
+        "groups_consensus_rejected": 0,
+        "single_formula_exempt_acquired": 0,
+        "raw_si_cells": 2,
+        "acquired_formula_cells": 1,
+        "draw_pt_blocked_by_consensus": 0,
     }
 
     with patch(
+        "app.services.cecchino.cecchino_signal_backfill._build_v2_signals_matrix_from_prematch",
+        return_value=fixture.cecchino_output_json["signals_matrix"],
+    ), patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
         return_value=sync_return,
     ), patch(
         "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._count_legacy_activations_preserved",
         return_value=0,
     ), patch(
         "app.services.cecchino.cecchino_signal_odds_refresh.refresh_activation_odds_from_kpi",

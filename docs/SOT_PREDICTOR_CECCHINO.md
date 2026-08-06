@@ -1056,6 +1056,16 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 - Backend: `cecchino_signals_matrix.py`, `cecchino_signal_goal_refs.py`; legenda: `cecchinoSignalFormulaLegend.ts`.
 - E39 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore. *(F39/G39 aggiornate in step successivo.)*
 
+## Cecchino — Consenso segnali + formule X V2 (2026-08-06)
+
+- **Formule X (V2):** D42 `F36<0.80 ∧ F36>-0.80 ∧ F32≥F34`; F42 `F33≤2.90 ∧ F36∈[-1.70,1.70] ∧ F32≥F34`; G42 `F33≤3.50 ∧ F36∈[-1.20,1.20] ∧ F32≥F34`; **E42 invariata**.
+- **Versioning:** `cecchino_signals_matrix_v1_legacy` / `cecchino_signals_matrix_v2_draw_dfg`; policy `cecchino_signal_consensus_v1_min_two`; audit `cecchino_signal_explanations_v2`.
+- **Consenso (Opzione B):** gruppi multi-formula richiedono ≥2 SI distinti per acquisire il segno; HOME/AWAY esenti (1 formula); SCALA conta solo per 1X/X2; DRAW_PT eredita DRAW e non aumenta il conteggio.
+- **Raw ≠ acquisito:** celle SI/NO restano; activation V2 persistono SI grezzi; `is_acquired` / `acquisition_status` distinguono acquisiti vs `rejected_insufficient_consensus`.
+- **Persistenza:** migration `20260806170000`; unique key include `COALESCE(signal_formula_version, legacy)`; sync V2 non tocca V1.
+- **Monitoraggio:** default `formula=current` + `acquisition=acquired`; metriche `formula_activations` vs `unique_acquired_signs`.
+- **Invariato:** value gate, settlement, altre formule, Balance/KPI/Rating/Edge; nessun leakage post-match; nessuno storico eliminato.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 - Formula D42 (SEGNO X, Excel D): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).

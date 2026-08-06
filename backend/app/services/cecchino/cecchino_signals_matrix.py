@@ -10,9 +10,25 @@ from typing import Any
 
 from app.services.cecchino.cecchino_balance_analysis import compute_dominance_pp
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE, STATUS_INSUFFICIENT_DATA
+from app.services.cecchino.cecchino_signal_consensus import (
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    LEGACY_SIGNAL_FORMULA_VERSION,
+    SIGNAL_CONSENSUS_POLICY_VERSION,
+    attach_consensus_to_matrix_rows,
+)
 
 EXCEL_SOURCE = "AutomazioneCecchino.xlsm"
 WARNING_MISSING_QUOTAS = "signals_matrix:missing_final_quotas"
+
+# Re-export versioning canoniche
+__all__ = [
+    "LEGACY_SIGNAL_FORMULA_VERSION",
+    "CURRENT_SIGNAL_FORMULA_VERSION",
+    "SIGNAL_CONSENSUS_POLICY_VERSION",
+    "build_signals_matrix",
+    "EXCEL_SOURCE",
+    "WARNING_MISSING_QUOTAS",
+]
 
 SiNo = str  # "SI" | "NO"
 
@@ -65,6 +81,8 @@ def build_signals_matrix(
         return {
             "status": STATUS_INSUFFICIENT_DATA,
             "source": EXCEL_SOURCE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+            "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
             "excel_mapping": {
                 "q1": "F32",
                 "qx": "F33",
@@ -142,19 +160,24 @@ def build_signals_matrix(
         and under_2_5_cecchino_odd <= 2,
     )
 
-    # SEGNO X
-    x_d = _si_no(diff_1_2 < 0.6 and diff_1_2 > -0.57 and q1 >= q2)
+    # SEGNO X (V2: D/F/G aggiornate; E invariata)
+    x_d = _si_no(diff_1_2 < 0.80 and diff_1_2 > -0.80 and q1 >= q2)
     x_e = _si_no(
         qx < 3.3
         and diff_1_2 <= 1.47
         and diff_1_2 >= -1.4
         and q1 >= q2,
     )
-    x_f = _si_no(qx <= 2.4 and diff_1_2 > -1.7 and q1 >= q2)
+    x_f = _si_no(
+        qx <= 2.90
+        and diff_1_2 <= 1.70
+        and diff_1_2 >= -1.70
+        and q1 >= q2,
+    )
     x_g = _si_no(
-        qx <= 3
-        and diff_1_2 < 2
-        and diff_1_2 > -1.6
+        qx <= 3.50
+        and diff_1_2 <= 1.20
+        and diff_1_2 >= -1.20
         and q1 >= q2,
     )
 
@@ -279,9 +302,13 @@ def build_signals_matrix(
         },
     ]
 
+    attach_consensus_to_matrix_rows(rows)
+
     return {
         "status": STATUS_AVAILABLE,
         "source": EXCEL_SOURCE,
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
         "excel_mapping": {
             "q1": "F32",
             "qx": "F33",

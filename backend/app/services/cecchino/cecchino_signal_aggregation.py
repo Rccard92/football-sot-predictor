@@ -20,12 +20,25 @@ from app.models.cecchino_signal_activation import (
 )
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY, format_model_weights_display
+from app.services.cecchino.cecchino_signal_consensus import (
+    ACQ_ACQUIRED_CONSENSUS,
+    ACQ_LEGACY_UNCLASSIFIED,
+    ACQ_REJECTED_INSUFFICIENT,
+    ACQ_SINGLE_FORMULA_EXEMPT,
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    LEGACY_SIGNAL_FORMULA_VERSION,
+    normalize_formula_version,
+)
 from app.services.cecchino.cecchino_signal_display_order import (
     display_label_for_signal_group,
     signal_group_sort_key,
 )
 from app.services.cecchino.cecchino_signal_min_odds import get_min_book_odd
 from app.services.cecchino.cecchino_signal_value_gate import VALUE_REASON_OK, signal_has_value_from_kpi_context
+
+
+DEFAULT_SIGNAL_FORMULA_VERSION_FILTER = "current"
+DEFAULT_ACQUISITION_FILTER = "acquired"
 
 
 def _export_value_gate_fields(
@@ -190,6 +203,107 @@ def _enrich_taken_odds_metrics(bucket: dict[str, Any], rows: list[Any]) -> dict[
     }
 
 
+def _unique_acquired_sign_metrics(rows: list[Any]) -> dict[str, Any]:
+    """Dedup segni acquisiti: fixture+model+formula_version+signal_group+target."""
+    unique_keys: set[tuple[Any, ...]] = set()
+    fixtures: set[int] = set()
+    confirmations: list[int] = []
+    rejected_groups = 0
+    for row in rows:
+        status = getattr(row, "acquisition_status", None)
+        if status == ACQ_REJECTED_INSUFFICIENT:
+            rejected_groups += 1
+        is_acq = getattr(row, "is_acquired", None)
+        if is_acq is not True:
+            continue
+        fv = normalize_formula_version(getattr(row, "signal_formula_version", None))
+        key = (
+            int(row.today_fixture_id) if row.today_fixture_id is not None else None,
+            str(row.model_key or ""),
+            fv,
+            str(row.signal_group or ""),
+            str(row.target_market_key or ""),
+        )
+        if key not in unique_keys:
+            unique_keys.add(key)
+            if row.today_fixture_id is not None:
+                fixtures.add(int(row.today_fixture_id))
+            yes_count = getattr(row, "consensus_yes_count", None)
+            if yes_count is not None:
+                confirmations.append(int(yes_count))
+    unique_count = len(unique_keys)
+    avg_conf = (
+        round(sum(confirmations) / len(confirmations), 2) if confirmations else None
+    )
+    return {
+        "formula_activations": len(rows),
+        "unique_acquired_signs": unique_count,
+        "fixtures_with_acquired_signs": len(fixtures),
+        "average_confirmations_per_acquired_sign": avg_conf,
+        "groups_rejected_insufficient_consensus": rejected_groups,
+    }
+
+
+def _apply_formula_version_filter(query, signal_formula_version: str | None):
+    raw = (signal_formula_version or DEFAULT_SIGNAL_FORMULA_VERSION_FILTER).strip()
+    if raw == "all":
+        return query
+    if raw in ("legacy", "v1"):
+        return query.where(
+            or_(
+                CecchinoSignalActivation.signal_formula_version.is_(None),
+                CecchinoSignalActivation.signal_formula_version == LEGACY_SIGNAL_FORMULA_VERSION,
+                CecchinoSignalActivation.signal_formula_version == "legacy",
+                CecchinoSignalActivation.signal_formula_version == "v1",
+            ),
+        )
+    if raw in ("current", "v2"):
+        return query.where(
+            CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+        )
+    return query.where(
+        CecchinoSignalActivation.signal_formula_version == normalize_formula_version(raw),
+    )
+
+
+def _apply_acquisition_filter(query, acquisition_filter: str | None):
+    raw = (acquisition_filter or DEFAULT_ACQUISITION_FILTER).strip()
+    if raw == "all":
+        return query
+    if raw == "acquired":
+        return query.where(
+            or_(
+                CecchinoSignalActivation.acquisition_status == ACQ_ACQUIRED_CONSENSUS,
+                CecchinoSignalActivation.acquisition_status == ACQ_SINGLE_FORMULA_EXEMPT,
+                CecchinoSignalActivation.is_acquired.is_(True),
+            ),
+        )
+    if raw == "consensus_passed":
+        return query.where(
+            CecchinoSignalActivation.acquisition_status == ACQ_ACQUIRED_CONSENSUS,
+        )
+    if raw == "consensus_rejected":
+        return query.where(
+            CecchinoSignalActivation.acquisition_status == ACQ_REJECTED_INSUFFICIENT,
+        )
+    if raw == "single_formula_exempt":
+        return query.where(
+            CecchinoSignalActivation.acquisition_status == ACQ_SINGLE_FORMULA_EXEMPT,
+        )
+    if raw == "legacy_unclassified":
+        return query.where(
+            or_(
+                CecchinoSignalActivation.is_acquired.is_(None),
+                CecchinoSignalActivation.acquisition_status == ACQ_LEGACY_UNCLASSIFIED,
+                and_(
+                    CecchinoSignalActivation.acquisition_status.is_(None),
+                    CecchinoSignalActivation.signal_formula_version.is_(None),
+                ),
+            ),
+        )
+    return query
+
+
 def _base_query(
     db: Session,
     *,
@@ -203,6 +317,9 @@ def _base_query(
     evaluation_status: str | None = None,
     only_current: bool = True,
     all_models: bool = False,
+    signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
+    acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
+    consensus_yes_count_min: int | None = None,
 ):
     query = select(CecchinoSignalActivation).where(
         CecchinoSignalActivation.scan_date >= date_from,
@@ -224,6 +341,12 @@ def _base_query(
         query = query.where(CecchinoSignalActivation.country_name == country_name)
     if evaluation_status:
         query = query.where(CecchinoSignalActivation.evaluation_status == evaluation_status)
+    query = _apply_formula_version_filter(query, signal_formula_version)
+    query = _apply_acquisition_filter(query, acquisition_filter)
+    if consensus_yes_count_min is not None and consensus_yes_count_min >= 0:
+        query = query.where(
+            CecchinoSignalActivation.consensus_yes_count >= int(consensus_yes_count_min),
+        )
     query = query.where(
         not_(
             and_(
@@ -252,6 +375,9 @@ def build_signals_summary(
     only_current: bool = True,
     include_diagnostics: bool = False,
     all_models: bool = False,
+    signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
+    acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
+    consensus_yes_count_min: int | None = None,
 ) -> dict[str, Any]:
     # When all_models=True, model_key filter is skipped
     mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
@@ -266,6 +392,9 @@ def build_signals_summary(
         "evaluation_status": evaluation_status,
         "only_current": only_current,
         "all_models": all_models,
+        "signal_formula_version": signal_formula_version or DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
+        "acquisition_filter": acquisition_filter or DEFAULT_ACQUISITION_FILTER,
+        "consensus_yes_count_min": consensus_yes_count_min,
     }
     rows = list(
         db.scalars(
@@ -281,6 +410,9 @@ def build_signals_summary(
                 evaluation_status=evaluation_status,
                 only_current=only_current,
                 all_models=all_models,
+                signal_formula_version=signal_formula_version,
+                acquisition_filter=acquisition_filter,
+                consensus_yes_count_min=consensus_yes_count_min,
             ),
         ).all(),
     )
@@ -315,6 +447,7 @@ def build_signals_summary(
         league_name=league_name,
         country_name=country_name,
     )
+    overall.update(_unique_acquired_sign_metrics(rows))
 
     by_signal_map: dict[str, list[Any]] = {}
     by_column_map: dict[str, list[Any]] = {}
@@ -385,6 +518,9 @@ def list_signal_activations(
     limit: int = 100,
     offset: int = 0,
     all_models: bool = False,
+    signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
+    acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
+    consensus_yes_count_min: int | None = None,
 ) -> dict[str, Any]:
     # When all_models=True, model_key filter is skipped
     mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
@@ -400,6 +536,9 @@ def list_signal_activations(
         evaluation_status=evaluation_status,
         only_current=only_current,
         all_models=all_models,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(
@@ -544,6 +683,19 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "is_current": row.is_current,
         "activation_timestamp": activation_timestamp,
         "counts_in_avg_won_odds": _counts_in_avg_won_odds(row),
+        "signal_formula_version": getattr(row, "signal_formula_version", None),
+        "consensus_policy_version": getattr(row, "consensus_policy_version", None),
+        "formula_source_mode": getattr(row, "formula_source_mode", None),
+        "consensus_source_group": getattr(row, "consensus_source_group", None),
+        "consensus_eligible": getattr(row, "consensus_eligible", None),
+        "consensus_available_count": getattr(row, "consensus_available_count", None),
+        "consensus_required_count": getattr(row, "consensus_required_count", None),
+        "consensus_yes_count": getattr(row, "consensus_yes_count", None),
+        "consensus_yes_columns": getattr(row, "consensus_yes_columns_json", None),
+        "consensus_passed": getattr(row, "consensus_passed", None),
+        "is_acquired": getattr(row, "is_acquired", None),
+        "acquisition_status": getattr(row, "acquisition_status", None),
+        "raw_signal_value": getattr(row, "raw_signal_value", None),
     }
 
 
@@ -559,6 +711,9 @@ def export_signals_csv(
     country_name: str | None = None,
     evaluation_status: str | None = None,
     only_current: bool = True,
+    signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
+    acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
+    consensus_yes_count_min: int | None = None,
 ) -> str:
     from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
         load_signal_min_book_odds,
@@ -579,6 +734,9 @@ def export_signals_csv(
         only_current=only_current,
         limit=100_000,
         offset=0,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     summary = build_signals_summary(
         db,
@@ -591,6 +749,9 @@ def export_signals_csv(
         country_name=country_name,
         evaluation_status=evaluation_status,
         only_current=only_current,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     overall = summary.get("overall") or {}
     output = io.StringIO()

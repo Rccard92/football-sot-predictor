@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add signal consensus gate and update draw formulas (2026-08-06)
+
+- Perché: aggiornare D/F/G del SEGNO X alle soglie Giovanni e acquisire i segni multi-formula solo con almeno due conferme SI, senza perdere la matrice grezza né lo storico V1.
+- Cosa: formule X V2; helper consenso Opzione B; campi activation + migration `20260806170000`; sync/backfill/backtest versionati; filtri Monitoraggio `signal_formula_version`/`acquisition_filter` (default current+acquired); metriche segni unici; DRAW_PT gated dal consenso DRAW; test BE/FE.
+- Cosa non fa: E42 invariata; value gate/settlement/altre formule invariati; nessun overwrite JSON storico automatico; sync V2 non modifica V1; nessuna nuova dipendenza; nessun backfill produzione senza autorizzazione.
+
 ## Fix — Complete KPI signals purchasability snapshots (2026-08-06)
 
 - Perché: `registry_status` V3.1 era estratto dall’adapter ma perso in persistenza/API/FE/export; Quota Book accettava valori ≤1 e non-finiti (NaN/Inf).

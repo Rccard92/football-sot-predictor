@@ -1,5 +1,12 @@
 import type { SignalActivationRow } from '../../lib/cecchinoSignalsApi'
 import {
+  acquiredBadgeClass,
+  acquiredBadgeLabel,
+  acquisitionStatusBadgeClass,
+  acquisitionStatusLabel,
+  formatConsensusRatio,
+  formatConsensusYesColumns,
+  formatSignalFormulaVersion,
   formatSignalLabel,
   formatTargetLabel,
   statusBadgeClass,
@@ -25,6 +32,11 @@ export function SignalsActivationsLab({ items, onRowClick }: Props) {
             <th className="px-3 py-2">Match</th>
             <th className="px-3 py-2">Campionato</th>
             <th className="px-3 py-2">Segnale</th>
+            <th className="px-3 py-2">Formula</th>
+            <th className="px-3 py-2">Consenso</th>
+            <th className="px-3 py-2">Colonne SI</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Acquisizione</th>
             <th className="px-3 py-2">Colonna</th>
             <th className="px-3 py-2">Target</th>
             <th className="px-3 py-2">Esito</th>
@@ -43,6 +55,29 @@ export function SignalsActivationsLab({ items, onRowClick }: Props) {
               <td className="px-3 py-2.5 font-medium text-slate-900">{row.match}</td>
               <td className="px-3 py-2.5 text-slate-600">{row.league_name ?? '—'}</td>
               <td className="px-3 py-2.5">{formatSignalLabel(row.signal_group, row.signal_label)}</td>
+              <td className="px-3 py-2.5 text-slate-700">
+                {formatSignalFormulaVersion(row.signal_formula_version)}
+              </td>
+              <td className="px-3 py-2.5 tabular-nums font-medium text-slate-800">
+                {formatConsensusRatio(row)}
+              </td>
+              <td className="px-3 py-2.5 text-slate-600">
+                {formatConsensusYesColumns(row.consensus_yes_columns)}
+              </td>
+              <td className="px-3 py-2.5">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${acquisitionStatusBadgeClass(row.acquisition_status)}`}
+                >
+                  {acquisitionStatusLabel(row.acquisition_status)}
+                </span>
+              </td>
+              <td className="px-3 py-2.5">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${acquiredBadgeClass(row.is_acquired)}`}
+                >
+                  {acquiredBadgeLabel(row.is_acquired)}
+                </span>
+              </td>
               <td className="px-3 py-2.5">{row.source_column.replace('EXCEL_', 'Excel ')}</td>
               <td className="px-3 py-2.5">{formatTargetLabel(row)}</td>
               <td className="px-3 py-2.5">

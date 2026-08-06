@@ -1,4 +1,4 @@
-"""Backfill e diagnostics segnali Cecchino — offline-only."""
+"""Backfill e diagnostics segnali Cecchino — offline-only (formula V2 + consenso)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 from datetime import date
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import (
@@ -19,6 +19,14 @@ from app.models.cecchino_signal_activation import (
 )
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
+from app.services.cecchino.cecchino_signal_consensus import (
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    FORMULA_SOURCE_RECOMPUTED_PREMATCH,
+    LEGACY_SIGNAL_FORMULA_VERSION,
+    SIGNAL_CONSENSUS_POLICY_VERSION,
+    consensus_by_group_from_matrix,
+    normalize_formula_version,
+)
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_sync import (
     remap_legacy_scala_activations_in_range,
@@ -27,12 +35,24 @@ from app.services.cecchino.cecchino_signal_sync import (
 from app.services.cecchino.cecchino_signal_min_odds import list_min_book_odds_for_api
 from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
-from app.services.cecchino.cecchino_signal_goal_refs import resolve_under_2_5_cecchino_odd_from_fixture
+from app.services.cecchino.cecchino_signal_goal_refs import (
+    rebuild_signals_matrix_for_output,
+    resolve_under_2_5_cecchino_odd_from_fixture,
+)
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 logger = logging.getLogger(__name__)
 
 DATE_FILTER_FIELD = "scan_date"
+
+_CONSENSUS_SYNC_COUNTER_KEYS: tuple[str, ...] = (
+    "groups_consensus_passed",
+    "groups_consensus_rejected",
+    "single_formula_exempt_acquired",
+    "raw_si_cells",
+    "acquired_formula_cells",
+    "draw_pt_blocked_by_consensus",
+)
 
 
 def _fixtures_in_range(db: Session, date_from: date, date_to: date) -> list[CecchinoTodayFixture]:
@@ -72,18 +92,29 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
+def _build_v2_signals_matrix_from_prematch(row: CecchinoTodayFixture) -> dict[str, Any] | None:
+    """Ricostruisce la matrice V2 in memoria da snapshot pre-match (senza mutare JSON)."""
     output = row.cecchino_output_json
     if not isinstance(output, dict):
-        return False
+        return None
+    kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
+    matrix = rebuild_signals_matrix_for_output(
+        output,
+        sample_home_away_split=_sample_from_stats(row.stats_snapshot_json),
+        kpi_panel=kpi_panel,
+    )
+    if isinstance(matrix, dict) and matrix.get("status") == STATUS_AVAILABLE:
+        return matrix
+
+    # Fallback su quote finali + under da fixture (sempre V2 via build_signals_matrix)
     final = output.get("final") or {}
     if not isinstance(final, dict) or final.get("status") != STATUS_AVAILABLE:
-        return False
+        return None
     q1 = _num(final.get("quota_1"))
     qx = _num(final.get("quota_x"))
     q2 = _num(final.get("quota_2"))
     if q1 is None or qx is None or q2 is None:
-        return False
+        return None
     matrix = build_signals_matrix(
         q1=q1,
         qx=qx,
@@ -95,6 +126,17 @@ def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
         under_2_5_cecchino_odd=resolve_under_2_5_cecchino_odd_from_fixture(row),
     )
     if matrix.get("status") != STATUS_AVAILABLE:
+        return None
+    return matrix
+
+
+def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
+    """Ricostruisce e persiste signals_matrix sul JSON (solo percorsi diagnostics/live)."""
+    matrix = _build_v2_signals_matrix_from_prematch(row)
+    if matrix is None:
+        return False
+    output = row.cecchino_output_json
+    if not isinstance(output, dict):
         return False
     output = dict(output)
     output["signals_matrix"] = matrix
@@ -110,16 +152,99 @@ def _ensure_signals_matrix_on_row(row: CecchinoTodayFixture, *, force_rebuild: b
     return _rebuild_signals_matrix_on_row(row)
 
 
-def _fixture_has_current_activations(db: Session, today_fixture_id: int) -> bool:
+def _fixture_has_current_formula_activations(
+    db: Session,
+    today_fixture_id: int,
+    *,
+    formula_version: str = CURRENT_SIGNAL_FORMULA_VERSION,
+) -> bool:
+    """True solo se esistono activation correnti della formula version richiesta (V2)."""
+    fv = normalize_formula_version(formula_version)
     count = db.scalar(
         select(func.count())
         .select_from(CecchinoSignalActivation)
         .where(
             CecchinoSignalActivation.today_fixture_id == int(today_fixture_id),
             CecchinoSignalActivation.is_current.is_(True),
+            CecchinoSignalActivation.signal_formula_version == fv,
         ),
     )
     return int(count or 0) > 0
+
+
+def _fixture_has_current_activations(db: Session, today_fixture_id: int) -> bool:
+    """Compat: verifica presence V2 corrente (legacy non basta)."""
+    return _fixture_has_current_formula_activations(db, today_fixture_id)
+
+
+def _count_legacy_activations_preserved(
+    db: Session,
+    date_from: date,
+    date_to: date,
+) -> int:
+    count = db.scalar(
+        select(func.count())
+        .select_from(CecchinoSignalActivation)
+        .where(
+            CecchinoSignalActivation.scan_date >= date_from,
+            CecchinoSignalActivation.scan_date <= date_to,
+            or_(
+                CecchinoSignalActivation.signal_formula_version.is_(None),
+                CecchinoSignalActivation.signal_formula_version == LEGACY_SIGNAL_FORMULA_VERSION,
+                CecchinoSignalActivation.signal_formula_version == "legacy",
+                CecchinoSignalActivation.signal_formula_version == "v1",
+            ),
+        ),
+    )
+    return int(count or 0)
+
+
+def _count_unique_acquired_signs(
+    db: Session,
+    date_from: date,
+    date_to: date,
+    *,
+    formula_version: str = CURRENT_SIGNAL_FORMULA_VERSION,
+) -> int:
+    fv = normalize_formula_version(formula_version)
+    rows = list(
+        db.scalars(
+            select(CecchinoSignalActivation).where(
+                CecchinoSignalActivation.scan_date >= date_from,
+                CecchinoSignalActivation.scan_date <= date_to,
+                CecchinoSignalActivation.is_current.is_(True),
+                CecchinoSignalActivation.signal_formula_version == fv,
+                CecchinoSignalActivation.is_acquired.is_(True),
+                CecchinoSignalActivation.signal_value.is_(True),
+            ),
+        ).all(),
+    )
+    keys = {
+        (
+            int(r.today_fixture_id),
+            str(r.model_key or ""),
+            str(r.signal_group or ""),
+            str(r.target_market_key or ""),
+        )
+        for r in rows
+        if getattr(r, "today_fixture_id", None) is not None
+        and getattr(r, "signal_group", None) is not None
+    }
+    return len(keys)
+
+
+def _unique_acquired_keys_from_matrix(matrix: dict[str, Any], fixture_id: int) -> set[tuple]:
+    keys: set[tuple] = set()
+    for group, consensus in consensus_by_group_from_matrix(matrix).items():
+        if consensus.get("is_acquired"):
+            keys.add((int(fixture_id), str(group)))
+    return keys
+
+
+def _merge_consensus_sync_counters(base: dict[str, int], other: dict[str, Any]) -> None:
+    merge_sync_value_counters(base, other)
+    for key in _CONSENSUS_SYNC_COUNTER_KEYS:
+        base[key] = int(base.get(key, 0)) + int(other.get(key, 0) or 0)
 
 
 def _activation_status_counts(
@@ -128,6 +253,7 @@ def _activation_status_counts(
     date_to: date,
     *,
     only_current: bool = True,
+    formula_version: str | None = None,
 ) -> dict[str, int]:
     query = select(CecchinoSignalActivation.evaluation_status, func.count()).where(
         CecchinoSignalActivation.scan_date >= date_from,
@@ -136,6 +262,11 @@ def _activation_status_counts(
     )
     if only_current:
         query = query.where(CecchinoSignalActivation.is_current.is_(True))
+    if formula_version is not None:
+        query = query.where(
+            CecchinoSignalActivation.signal_formula_version
+            == normalize_formula_version(formula_version),
+        )
     query = query.group_by(CecchinoSignalActivation.evaluation_status)
     rows = db.execute(query).all()
     counts = {
@@ -266,7 +397,10 @@ def backfill_signal_activations(
     evaluate_after: bool = True,
     force_remap: bool = False,
     min_book_odds: dict | None = None,
+    persist_recomputed_matrix: bool = False,
+    formula_version: str = CURRENT_SIGNAL_FORMULA_VERSION,
 ) -> dict[str, Any]:
+    """Backfill activation V2 da snapshot pre-match; non sovrascrive JSON salvo opzione esplicita."""
     from decimal import Decimal
 
     from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
@@ -277,6 +411,10 @@ def backfill_signal_activations(
         min_book_odds = load_signal_min_book_odds(db)
     elif not isinstance(next(iter(min_book_odds.values()), None), Decimal):
         min_book_odds = {k: Decimal(str(v)) for k, v in min_book_odds.items()}
+
+    target_formula_version = normalize_formula_version(formula_version)
+    if target_formula_version != CURRENT_SIGNAL_FORMULA_VERSION:
+        target_formula_version = CURRENT_SIGNAL_FORMULA_VERSION
 
     fixtures = _fixtures_in_range(db, date_from, date_to)
     warnings: list[str] = []
@@ -303,30 +441,65 @@ def backfill_signal_activations(
         "lost": 0,
         "pending": 0,
         "not_evaluable": 0,
+        "groups_consensus_passed": 0,
+        "groups_consensus_rejected": 0,
+        "single_formula_exempt_acquired": 0,
+        "raw_si_cells": 0,
+        "acquired_formula_cells": 0,
+        "draw_pt_blocked_by_consensus": 0,
+        "unique_acquired_signs": 0,
+        "legacy_rows_preserved": 0,
     }
     processed_fixture_ids: list[int] = []
+    matrix_by_fixture: dict[int, dict[str, Any]] = {}
+    unique_acquired_keys: set[tuple] = set()
     effective_only_missing = only_missing and not force_remap
 
     for row in fixtures:
         if row.eligibility_status != ELIGIBILITY_ELIGIBLE:
             continue
-        if effective_only_missing and _fixture_has_current_activations(db, int(row.id)):
+        # only_missing: legacy non è sufficiente — serve V2 della formula richiesta
+        if effective_only_missing and _fixture_has_current_formula_activations(
+            db,
+            int(row.id),
+            formula_version=target_formula_version,
+        ):
             totals["fixtures_skipped"] += 1
             continue
-        if not _ensure_signals_matrix_on_row(row, force_rebuild=force_remap):
+
+        matrix = _build_v2_signals_matrix_from_prematch(row)
+        if matrix is None:
             warnings.append(f"fixture_{row.id}:no_signals_matrix")
             continue
 
+        if persist_recomputed_matrix:
+            output = row.cecchino_output_json
+            if isinstance(output, dict):
+                output = dict(output)
+                output["signals_matrix"] = matrix
+                row.cecchino_output_json = output
+        else:
+            totals["legacy_rows_preserved"] += 1
+
         totals["fixtures_with_signals"] += 1
-        processed_fixture_ids.append(int(row.id))
+        fid = int(row.id)
+        processed_fixture_ids.append(fid)
+        matrix_by_fixture[fid] = matrix
+        unique_acquired_keys |= _unique_acquired_keys_from_matrix(matrix, fid)
+
         if not force_remap:
             sync_counts = sync_cecchino_signal_activations(
-                db, int(row.id), min_book_odds=min_book_odds,
+                db,
+                fid,
+                signals_matrix=matrix,
+                min_book_odds=min_book_odds,
+                formula_source_mode=FORMULA_SOURCE_RECOMPUTED_PREMATCH,
+                formula_version=target_formula_version,
             )
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
-            merge_sync_value_counters(totals, sync_counts)
+            _merge_consensus_sync_counters(totals, sync_counts)
 
     legacy_scala_deactivated = 0
     if force_remap:
@@ -336,11 +509,19 @@ def backfill_signal_activations(
             date_to=date_to,
         )
         for fid in processed_fixture_ids:
-            sync_counts = sync_cecchino_signal_activations(db, fid, min_book_odds=min_book_odds)
+            matrix = matrix_by_fixture.get(fid)
+            sync_counts = sync_cecchino_signal_activations(
+                db,
+                fid,
+                signals_matrix=matrix,
+                min_book_odds=min_book_odds,
+                formula_source_mode=FORMULA_SOURCE_RECOMPUTED_PREMATCH,
+                formula_version=target_formula_version,
+            )
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
-            merge_sync_value_counters(totals, sync_counts)
+            _merge_consensus_sync_counters(totals, sync_counts)
 
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
 
@@ -354,6 +535,7 @@ def backfill_signal_activations(
         only_current=True,
     )
 
+    # Settlement dopo formula/consenso
     if evaluate_after:
         for fid in processed_fixture_ids:
             eval_counts = evaluate_activations_for_fixture(db, fid)
@@ -362,7 +544,13 @@ def backfill_signal_activations(
             totals["not_evaluable"] += eval_counts.get("not_evaluable", 0)
 
     if evaluate_after and processed_fixture_ids:
-        status_counts = _activation_status_counts(db, date_from, date_to, only_current=True)
+        status_counts = _activation_status_counts(
+            db,
+            date_from,
+            date_to,
+            only_current=True,
+            formula_version=target_formula_version,
+        )
         totals["won"] = status_counts["won"]
         totals["lost"] = status_counts["lost"]
         totals["pending"] = status_counts["pending"]
@@ -372,17 +560,42 @@ def backfill_signal_activations(
     totals["missing_value_quote"] = (
         totals["missing_book_quote_skipped"] + totals["missing_cecchino_quote_skipped"]
     )
+    totals["unique_acquired_signs"] = (
+        _count_unique_acquired_signs(
+            db,
+            date_from,
+            date_to,
+            formula_version=target_formula_version,
+        )
+        if processed_fixture_ids
+        else len(unique_acquired_keys)
+    )
+    # Activation legacy rimaste intatte (V1 non eliminata)
+    if not persist_recomputed_matrix:
+        # già incrementato per fixture processate; aggiungi conteggio activation legacy residue
+        totals["legacy_activation_rows_preserved"] = _count_legacy_activations_preserved(
+            db, date_from, date_to,
+        )
+    else:
+        totals["legacy_activation_rows_preserved"] = _count_legacy_activations_preserved(
+            db, date_from, date_to,
+        )
 
     db.commit()
     logger.info(
-        "cecchino_signal_backfill date_from=%s date_to=%s created=%s fixtures_with_signals=%s",
+        "cecchino_signal_backfill date_from=%s date_to=%s created=%s fixtures_with_signals=%s fv=%s",
         date_from.isoformat(),
         date_to.isoformat(),
         totals["signals_created"],
         totals["fixtures_with_signals"],
+        target_formula_version,
     )
     return {
         "status": "ok",
+        "formula_version": target_formula_version,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+        "formula_source_mode": FORMULA_SOURCE_RECOMPUTED_PREMATCH,
+        "persist_recomputed_matrix": persist_recomputed_matrix,
         **totals,
         "remapped": remapped,
         "legacy_scala_deactivated": legacy_scala_deactivated,

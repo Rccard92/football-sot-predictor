@@ -27,7 +27,12 @@ from app.services.cecchino.cecchino_signal_evaluation import (
     evaluate_market_selection,
     evaluate_signal_activation,
 )
+from app.services.cecchino.cecchino_signal_min_odds import DEFAULT_SIGNAL_MIN_BOOK_ODDS
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
+from app.services.cecchino.cecchino_signal_consensus import (
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    REASON_DRAW_PT_PARENT_CONSENSUS_BELOW,
+)
 from app.services.cecchino.cecchino_signal_target_mapping import (
     DRAW_PT_PARENT_DEACTIVATED_REASON,
     map_draw_pt_derived_target,
@@ -99,8 +104,16 @@ def _draw_si_fixture_row(
     row.cecchino_output_json = {
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
-            "rows": [{"key": "draw", "label": "SEGNO X", "signals": {"excel_d": "SI"}}],
+            # Consenso DRAW: almeno 2 SI per creare DRAW_PT
+            "rows": [
+                {
+                    "key": "draw",
+                    "label": "SEGNO X",
+                    "signals": {"excel_d": "SI", "excel_f": "SI", "excel_e": "NO", "excel_g": "NO"},
+                },
+            ],
         },
     }
     row.kpi_panel_json = _full_kpi_panel(
@@ -137,18 +150,19 @@ def test_sync_draw_value_pass_creates_draw_and_draw_pt():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 99)
+    counts = sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
-    assert counts["created"] == 2
-    assert counts["draw_pt_created"] == 1
-    assert db.add.call_count == 2
+    # 2 formule SI (D+F) + 2 DRAW_PT derivati
+    assert counts["created"] == 4
+    assert counts["draw_pt_created"] == 2
+    assert db.add.call_count == 4
     groups = {call.args[0].signal_group for call in db.add.call_args_list}
     assert groups == {"DRAW", "DRAW_PT"}
-    pt = next(call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT")
-    assert float(pt.quota_book) == pytest.approx(2.10)
-    assert float(pt.quota_cecchino) == pytest.approx(2.00)
-    assert pt.target_market_key == SEL_DRAW_PT
-    assert pt.target_period == "HT"
+    pts = [call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT"]
+    assert all(float(pt.quota_book) == pytest.approx(2.10) for pt in pts)
+    assert all(pt.target_market_key == SEL_DRAW_PT for pt in pts)
+    assert all(pt.target_period == "HT" for pt in pts)
+    assert all(pt.is_acquired is True for pt in pts)
 
 
 def test_sync_draw_pass_without_draw_pt_quotes_skips_pt():
@@ -157,9 +171,9 @@ def test_sync_draw_pass_without_draw_pt_quotes_skips_pt():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 99)
+    counts = sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
-    assert counts["created"] == 1
+    assert counts["created"] == 2  # D+F DRAW only
     assert counts["draw_pt_created"] == 0
     groups = {call.args[0].signal_group for call in db.add.call_args_list}
     assert groups == {"DRAW"}
@@ -171,7 +185,7 @@ def test_sync_draw_value_fail_creates_neither():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 99)
+    counts = sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
     assert counts["created"] == 0
     assert counts["draw_pt_created"] == 0
@@ -191,6 +205,7 @@ def test_sync_draw_value_fail_deactivates_draw_and_draw_pt():
         source_column="EXCEL_D",
         signal_value=True,
         is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     draw_pt = CecchinoSignalActivation(
         today_fixture_id=99,
@@ -202,15 +217,63 @@ def test_sync_draw_value_fail_deactivates_draw_and_draw_pt():
         source_column="EXCEL_D",
         signal_value=True,
         is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+    )
+    draw_f = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW",
+        signal_label="SEGNO X",
+        source_column="EXCEL_F",
+        signal_value=True,
+        is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+    )
+    draw_pt_f = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW_PT",
+        signal_label="X PT",
+        source_column="EXCEL_F",
+        signal_value=True,
+        is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     db.get.return_value = row
-    db.scalars.return_value.all.return_value = [draw, draw_pt]
+    db.scalars.return_value.all.return_value = [draw, draw_pt, draw_f, draw_pt_f]
 
-    sync_cecchino_signal_activations(db, 99)
+    sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
     assert draw.is_current is False
     assert draw_pt.is_current is False
+    assert draw_f.is_current is False
+    assert draw_pt_f.is_current is False
     assert draw_pt.evaluation_reason == DRAW_PT_PARENT_DEACTIVATED_REASON
+
+
+def test_sync_draw_one_si_blocks_draw_pt_by_consensus():
+    """Con 1/4 SI: DRAW grezzo persistito non acquisito; DRAW_PT non creato."""
+    db = MagicMock()
+    row = _draw_si_fixture_row()
+    row.cecchino_output_json["signals_matrix"]["rows"] = [
+        {"key": "draw", "label": "SEGNO X", "signals": {"excel_d": "SI", "excel_e": "NO", "excel_f": "NO", "excel_g": "NO"}},
+    ]
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
+
+    assert counts["created"] == 1
+    assert counts["draw_pt_created"] == 0
+    assert counts["draw_pt_blocked_by_consensus"] >= 1
+    act = db.add.call_args_list[0].args[0]
+    assert act.signal_group == "DRAW"
+    assert act.is_acquired is False
+    assert act.acquisition_status == "rejected_insufficient_consensus"
 
 
 def test_draw_pt_won_when_ht_draw():
@@ -259,11 +322,13 @@ def test_home_unchanged_not_transformed_to_one_x():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    sync_cecchino_signal_activations(db, 99)
+    sync_cecchino_signal_activations(db, 99, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
     added = db.add.call_args[0][0]
     assert added.signal_group == "HOME"
     assert added.signal_group != "ONE_X"
+    assert added.is_acquired is True
+    assert added.acquisition_status == "acquired_single_formula_exempt"
 
 
 def test_summary_signal_order():

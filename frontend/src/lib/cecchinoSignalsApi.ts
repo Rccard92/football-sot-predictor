@@ -17,7 +17,37 @@ export type SignalsBucket = {
   void_margin?: number | null
   taken_yield_index?: number | null
   taken_profit_indicator?: number | null
+  formula_activations?: number
+  unique_acquired_signs?: number
+  fixtures_with_acquired_signs?: number
+  average_confirmations_per_acquired_sign?: number | null
+  groups_rejected_insufficient_consensus?: number
 }
+
+export const DEFAULT_SIGNAL_FORMULA_VERSION = 'current'
+export const DEFAULT_ACQUISITION_FILTER = 'acquired'
+
+export const CURRENT_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v2_draw_dfg'
+export const LEGACY_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v1_legacy'
+
+export const SIGNAL_FORMULA_VERSION_OPTIONS = [
+  { value: 'current', label: 'Corrente' },
+  { value: 'legacy', label: 'Legacy' },
+  { value: 'all', label: 'Tutte' },
+] as const
+
+export const ACQUISITION_FILTER_OPTIONS = [
+  { value: 'acquired', label: 'Segni acquisiti' },
+  { value: 'consensus_passed', label: 'Consenso raggiunto' },
+  { value: 'consensus_rejected', label: 'Conferma insufficiente' },
+  { value: 'single_formula_exempt', label: 'Segni 1/2 esenti' },
+  { value: 'legacy_unclassified', label: 'Legacy non classificati' },
+  { value: 'all', label: 'Tutti i SI grezzi' },
+] as const
+
+export type SignalFormulaVersionFilter =
+  (typeof SIGNAL_FORMULA_VERSION_OPTIONS)[number]['value']
+export type AcquisitionFilter = (typeof ACQUISITION_FILTER_OPTIONS)[number]['value']
 
 export type SignalsDiagnostics = {
   date_from: string
@@ -116,6 +146,19 @@ export type SignalActivationRow = {
   rating: number | null
   is_current: boolean
   counts_in_avg_won_odds?: boolean
+  signal_formula_version?: string | null
+  consensus_policy_version?: string | null
+  formula_source_mode?: string | null
+  consensus_source_group?: string | null
+  consensus_eligible?: boolean | null
+  consensus_available_count?: number | null
+  consensus_required_count?: number | null
+  consensus_yes_count?: number | null
+  consensus_yes_columns?: string[] | string | null
+  consensus_passed?: boolean | null
+  is_acquired?: boolean | null
+  acquisition_status?: string | null
+  raw_signal_value?: boolean | null
 }
 
 export type SignalsActivationsResponse = {
@@ -136,6 +179,34 @@ export type SignalsFilters = {
   evaluation_status?: string
   only_current?: boolean
   include_diagnostics?: boolean
+  signal_formula_version?: string
+  acquisition_filter?: string
+  consensus_yes_count_min?: number
+}
+
+function signalsFilterQueryParams(
+  filters: SignalsFilters & { limit?: number; offset?: number },
+  options?: { includeDiagnostics?: boolean },
+): Record<string, string | number | boolean | undefined> {
+  return {
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
+    source_column: filters.source_column,
+    signal_group: filters.signal_group,
+    league_name: filters.league_name,
+    country_name: filters.country_name,
+    evaluation_status: filters.evaluation_status,
+    only_current: filters.only_current ?? true,
+    include_diagnostics: options?.includeDiagnostics
+      ? (filters.include_diagnostics ?? false)
+      : undefined,
+    signal_formula_version: filters.signal_formula_version ?? DEFAULT_SIGNAL_FORMULA_VERSION,
+    acquisition_filter: filters.acquisition_filter ?? DEFAULT_ACQUISITION_FILTER,
+    consensus_yes_count_min: filters.consensus_yes_count_min,
+    limit: filters.limit,
+    offset: filters.offset,
+  }
 }
 
 export type WeightModelSummary = {
@@ -198,18 +269,9 @@ export async function getCecchinoSignalsSummary(
   filters: SignalsFilters,
 ): Promise<SignalsSummaryResponse> {
   return adminGetJson<SignalsSummaryResponse>(
-    `/api/admin/cecchino/signals/summary${qs({
-      date_from: filters.date_from,
-      date_to: filters.date_to,
-      model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
-      source_column: filters.source_column,
-      signal_group: filters.signal_group,
-      league_name: filters.league_name,
-      country_name: filters.country_name,
-      evaluation_status: filters.evaluation_status,
-      only_current: filters.only_current ?? true,
-      include_diagnostics: filters.include_diagnostics ?? false,
-    })}`,
+    `/api/admin/cecchino/signals/summary${qs(
+      signalsFilterQueryParams(filters, { includeDiagnostics: true }),
+    )}`,
   )
 }
 
@@ -246,17 +308,11 @@ export async function getCecchinoSignalsActivations(
 ): Promise<SignalsActivationsResponse> {
   return adminGetJson<SignalsActivationsResponse>(
     `/api/admin/cecchino/signals/activations${qs({
-      date_from: filters.date_from,
-      date_to: filters.date_to,
-      model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
-      source_column: filters.source_column,
-      signal_group: filters.signal_group,
-      league_name: filters.league_name,
-      country_name: filters.country_name,
-      evaluation_status: filters.evaluation_status,
-      only_current: filters.only_current ?? true,
-      limit: filters.limit ?? 100,
-      offset: filters.offset ?? 0,
+      ...signalsFilterQueryParams({
+        ...filters,
+        limit: filters.limit ?? 100,
+        offset: filters.offset ?? 0,
+      }),
     })}`,
   )
 }
@@ -264,17 +320,9 @@ export async function getCecchinoSignalsActivations(
 export function buildCecchinoSignalsExportUrl(filters: SignalsFilters): string {
   const base = import.meta.env.VITE_API_BASE_URL || ''
   const prefix = String(base).replace(/\/$/, '')
-  return `${prefix}/api/admin/cecchino/signals/export.csv${qs({
-    date_from: filters.date_from,
-    date_to: filters.date_to,
-    model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
-    source_column: filters.source_column,
-    signal_group: filters.signal_group,
-    league_name: filters.league_name,
-    country_name: filters.country_name,
-    evaluation_status: filters.evaluation_status,
-    only_current: filters.only_current ?? true,
-  })}`
+  return `${prefix}/api/admin/cecchino/signals/export.csv${qs(
+    signalsFilterQueryParams(filters),
+  )}`
 }
 
 export async function revaluateCecchinoSignals(params: {

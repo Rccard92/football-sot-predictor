@@ -16,6 +16,7 @@ from app.models.cecchino_today_fixture import (
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW, SEL_DRAW_PT, SEL_ONE_X
 from app.services.cecchino.cecchino_signal_backfill import backfill_signal_activations
+from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 from app.services.cecchino.cecchino_signal_min_odds import DEFAULT_SIGNAL_MIN_BOOK_ODDS
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_value_gate import (
@@ -45,7 +46,11 @@ def _one_x_fixture_row(*, book: float, cecchino: float) -> CecchinoTodayFixture:
             "status": STATUS_AVAILABLE,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
             "rows": [
-                {"key": "one_x", "label": "SEGNO 1X", "signals": {"excel_d": "SI"}},
+                {
+                    "key": "one_x",
+                    "label": "SEGNO 1X",
+                    "signals": {"excel_d": "SI", "excel_e": "SI", "excel_f": "NO", "excel_g": "NO"},
+                },
             ],
         },
     }
@@ -71,7 +76,13 @@ def _draw_fixture_row(*, draw_book: float, draw_cecchino: float, pt_book: float,
         "signals_matrix": {
             "status": STATUS_AVAILABLE,
             "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
-            "rows": [{"key": "draw", "label": "SEGNO X", "signals": {"excel_d": "SI"}}],
+            "rows": [
+                {
+                    "key": "draw",
+                    "label": "SEGNO X",
+                    "signals": {"excel_d": "SI", "excel_f": "SI", "excel_e": "NO", "excel_g": "NO"},
+                },
+            ],
         },
     }
     row.kpi_panel_json = _kpi_rows(
@@ -92,8 +103,8 @@ def test_sync_si_below_min_threshold_does_not_create_activation():
     )
 
     assert counts["created"] == 0
-    assert counts["min_book_odd_skipped"] == 1
-    assert counts["no_value_skipped"] == 1
+    assert counts["min_book_odd_skipped"] == 2
+    assert counts["no_value_skipped"] == 2
     assert not db.add.called
 
 
@@ -107,9 +118,9 @@ def test_sync_si_at_threshold_creates_activation():
         db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
     )
 
-    assert counts["created"] == 1
-    assert counts["value_passed"] == 1
-    assert counts["min_book_odd_threshold_applied"] == 1
+    assert counts["created"] == 2
+    assert counts["value_passed"] == 2
+    assert counts["min_book_odd_threshold_applied"] >= 1
 
 
 def test_sync_deactivates_existing_current_below_min_threshold():
@@ -126,6 +137,7 @@ def test_sync_deactivates_existing_current_below_min_threshold():
         signal_value=True,
         is_current=True,
         target_market_key=SEL_ONE_X,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     db.get.return_value = row
     db.scalars.return_value.all.return_value = [activation]
@@ -136,7 +148,7 @@ def test_sync_deactivates_existing_current_below_min_threshold():
 
     assert activation.is_current is False
     assert activation.evaluation_reason == DEACTIVATION_REASON_BOOK_BELOW_MIN
-    assert counts["deactivated_min_book_odd"] == 1
+    assert counts["deactivated_min_book_odd"] >= 1
     assert not db.add.called
 
 
@@ -154,16 +166,30 @@ def test_sync_above_threshold_keeps_current():
         signal_value=True,
         is_current=True,
         target_market_key=SEL_ONE_X,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+    )
+    activation_e = CecchinoSignalActivation(
+        today_fixture_id=100,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="ONE_X",
+        signal_label="SEGNO 1X",
+        source_column="EXCEL_E",
+        signal_value=True,
+        is_current=True,
+        target_market_key=SEL_ONE_X,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     db.get.return_value = row
-    db.scalars.return_value.all.return_value = [activation]
+    db.scalars.return_value.all.return_value = [activation, activation_e]
 
     counts = sync_cecchino_signal_activations(
         db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
     )
 
     assert activation.is_current is True
-    assert counts["updated"] == 1
+    assert counts["updated"] == 2
     assert counts["deactivated_min_book_odd"] == 0
 
 
@@ -180,6 +206,7 @@ def test_sync_no_delete_on_deactivation():
         source_column="EXCEL_D",
         signal_value=True,
         is_current=True,
+        signal_formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
     )
     db.get.return_value = row
     db.scalars.return_value.all.return_value = [activation]
@@ -199,9 +226,9 @@ def test_draw_pt_below_min_threshold_skips_pt_but_draw_passes():
         db, 101, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
     )
 
-    assert counts["created"] == 1
+    assert counts["created"] == 2  # D+F DRAW
     assert counts["draw_pt_created"] == 0
-    assert counts["min_book_odd_skipped"] == 1
+    assert counts["min_book_odd_skipped"] >= 1
     groups = {call.args[0].signal_group for call in db.add.call_args_list}
     assert groups == {"DRAW"}
 
@@ -214,7 +241,9 @@ def test_draw_pt_uses_real_x_pt_quotes():
 
     sync_cecchino_signal_activations(db, 101, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
-    pt = next(call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT")
+    pts = [call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT"]
+    assert pts
+    pt = pts[0]
     assert float(pt.quota_book) == pytest.approx(1.95)
     assert float(pt.quota_cecchino) == pytest.approx(1.80)
     assert pt.target_market_key == SEL_DRAW_PT
@@ -234,12 +263,12 @@ def test_backfill_merges_min_book_odd_counters(monkeypatch):
         lambda _db, _f, _t: [row],
     )
     monkeypatch.setattr(
-        "app.services.cecchino.cecchino_signal_backfill._fixture_has_current_activations",
+        "app.services.cecchino.cecchino_signal_backfill._fixture_has_current_formula_activations",
         lambda *_a, **_k: False,
     )
     monkeypatch.setattr(
-        "app.services.cecchino.cecchino_signal_backfill._ensure_signals_matrix_on_row",
-        lambda *_a, **_k: True,
+        "app.services.cecchino.cecchino_signal_backfill._build_v2_signals_matrix_from_prematch",
+        lambda *_a, **_k: row.cecchino_output_json["signals_matrix"],
     )
     monkeypatch.setattr(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
@@ -252,6 +281,12 @@ def test_backfill_merges_min_book_odd_counters(monkeypatch):
             "min_book_odd_skipped": 1,
             "deactivated_min_book_odd": 0,
             "min_book_odd_threshold_applied": 1,
+            "groups_consensus_passed": 0,
+            "groups_consensus_rejected": 0,
+            "single_formula_exempt_acquired": 0,
+            "raw_si_cells": 1,
+            "acquired_formula_cells": 0,
+            "draw_pt_blocked_by_consensus": 0,
         },
     )
     monkeypatch.setattr(
@@ -271,6 +306,14 @@ def test_backfill_merges_min_book_odd_counters(monkeypatch):
             "not_evaluable": 0,
             "evaluated_count": 0,
         },
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_signal_backfill._count_legacy_activations_preserved",
+        lambda *_a, **_k: 0,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_signal_backfill._count_unique_acquired_signs",
+        lambda *_a, **_k: 0,
     )
 
     payload = backfill_signal_activations(

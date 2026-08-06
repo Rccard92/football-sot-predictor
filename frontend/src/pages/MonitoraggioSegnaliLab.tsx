@@ -102,6 +102,9 @@ export function MonitoraggioSegnaliLab() {
           evaluationStatus={lab.evaluationStatus}
           countryName={lab.countryName}
           leagueName={lab.leagueName}
+          signalFormulaVersion={lab.signalFormulaVersion}
+          acquisitionFilter={lab.acquisitionFilter}
+          consensusYesCountMin={lab.consensusYesCountMin}
           loading={lab.loading}
           actionLoading={lab.actionLoading}
           onDateFromChange={lab.setDateFrom}
@@ -111,6 +114,9 @@ export function MonitoraggioSegnaliLab() {
           onEvaluationStatusChange={lab.setEvaluationStatus}
           onCountryNameChange={lab.setCountryName}
           onLeagueNameChange={lab.setLeagueName}
+          onSignalFormulaVersionChange={lab.setSignalFormulaVersion}
+          onAcquisitionFilterChange={lab.setAcquisitionFilter}
+          onConsensusYesCountMinChange={lab.setConsensusYesCountMin}
           onRefresh={handleRefresh}
           onBacktest={() => void lab.runBacktest()}
           onRevaluate={() => void lab.runRevaluate()}

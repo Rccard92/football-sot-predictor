@@ -100,6 +100,9 @@ def cecchino_signals_summary(
     evaluation_status: str | None = Query(default=None),
     only_current: bool = Query(default=True),
     include_diagnostics: bool = Query(default=False),
+    signal_formula_version: str = Query(default="current"),
+    acquisition_filter: str = Query(default="acquired"),
+    consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
     payload = build_signals_summary(
@@ -114,6 +117,9 @@ def cecchino_signals_summary(
         evaluation_status=evaluation_status,
         only_current=only_current,
         include_diagnostics=include_diagnostics,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -131,6 +137,9 @@ def cecchino_signals_activations(
     only_current: bool = Query(default=True),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    signal_formula_version: str = Query(default="current"),
+    acquisition_filter: str = Query(default="acquired"),
+    consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
     payload = list_signal_activations(
@@ -146,6 +155,9 @@ def cecchino_signals_activations(
         only_current=only_current,
         limit=limit,
         offset=offset,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -161,6 +173,9 @@ def cecchino_signals_export_csv(
     country_name: str | None = Query(default=None),
     evaluation_status: str | None = Query(default=None),
     only_current: bool = Query(default=True),
+    signal_formula_version: str = Query(default="current"),
+    acquisition_filter: str = Query(default="acquired"),
+    consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
     csv_text = export_signals_csv(
@@ -174,6 +189,9 @@ def cecchino_signals_export_csv(
         country_name=country_name,
         evaluation_status=evaluation_status,
         only_current=only_current,
+        signal_formula_version=signal_formula_version,
+        acquisition_filter=acquisition_filter,
+        consensus_yes_count_min=consensus_yes_count_min,
     )
     return PlainTextResponse(
         content=csv_text,

@@ -2,6 +2,17 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Segnali Cecchino — formula V2 + consenso (2026-08-06)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Formula matrix legacy | `cecchino_signals_matrix_v1_legacy` |
+| Formula matrix current | `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X; E invariata) |
+| Consenso | `cecchino_signal_consensus_v1_min_two` (Opzione B) |
+| Audit explanations | `cecchino_signal_explanations_v2` |
+| Migration | `20260806170000` additiva (unique con formula version) |
+| Value gate / settlement | **invariati** |
+
 ## Segnali KPI — mercati e snapshot Acquistabilità (2026-08-06)
 
 | Artefatto | Versione / note |

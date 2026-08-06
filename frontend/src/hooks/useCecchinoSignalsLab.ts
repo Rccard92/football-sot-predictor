@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  DEFAULT_ACQUISITION_FILTER,
+  DEFAULT_SIGNAL_FORMULA_VERSION,
   DEFAULT_WEIGHT_MODEL_KEY,
   backtestCecchinoWeightModels,
   buildCecchinoSignalsExportUrl,
@@ -45,6 +47,9 @@ export function useCecchinoSignalsLab() {
   const [evaluationStatus, setEvaluationStatus] = useState('')
   const [countryName, setCountryName] = useState('')
   const [leagueName, setLeagueName] = useState('')
+  const [signalFormulaVersion, setSignalFormulaVersion] = useState(DEFAULT_SIGNAL_FORMULA_VERSION)
+  const [acquisitionFilter, setAcquisitionFilter] = useState(DEFAULT_ACQUISITION_FILTER)
+  const [consensusYesCountMin, setConsensusYesCountMin] = useState<number | undefined>(undefined)
   const [selectedModelKey, setSelectedModelKey] = useState(readStoredModelKey)
   const [modelsSummary, setModelsSummary] = useState<ModelsSummaryResponse | null>(null)
   const [summary, setSummary] = useState<SignalsSummaryResponse | null>(null)
@@ -65,6 +70,9 @@ export function useCecchinoSignalsLab() {
       league_name: leagueName || undefined,
       only_current: true,
       include_diagnostics: true,
+      signal_formula_version: signalFormulaVersion || DEFAULT_SIGNAL_FORMULA_VERSION,
+      acquisition_filter: acquisitionFilter || DEFAULT_ACQUISITION_FILTER,
+      consensus_yes_count_min: consensusYesCountMin,
     }),
     [
       dateFrom,
@@ -75,6 +83,9 @@ export function useCecchinoSignalsLab() {
       evaluationStatus,
       countryName,
       leagueName,
+      signalFormulaVersion,
+      acquisitionFilter,
+      consensusYesCountMin,
     ],
   )
 
@@ -210,6 +221,12 @@ export function useCecchinoSignalsLab() {
     setCountryName,
     leagueName,
     setLeagueName,
+    signalFormulaVersion,
+    setSignalFormulaVersion,
+    acquisitionFilter,
+    setAcquisitionFilter,
+    consensusYesCountMin,
+    setConsensusYesCountMin,
     selectedModelKey,
     selectedModel,
     modelsSummary,

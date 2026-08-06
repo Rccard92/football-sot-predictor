@@ -114,9 +114,10 @@ def test_under_excel_d_d39_formula(q1: float, q2: float, under_odd: float | None
     ("q1", "q2", "expected"),
     [
         (2.00, 2.30, "NO"),  # range OK ma q1 < q2
-        (2.30, 2.00, "SI"),  # range OK e q1 >= q2
+        (2.30, 2.00, "SI"),  # range OK e q1 >= q2 (diff=-0.3)
         (2.00, 2.00, "SI"),  # parità quote
-        (3.00, 2.00, "NO"),  # fuori range anche se q1 >= q2
+        (3.00, 2.00, "NO"),  # F36 = -1.0 fuori ±0.80
+        (2.00, 2.7999, "NO"),  # q1 < q2 anche se |F36|<0.80
     ],
 )
 def test_draw_excel_d_d42_formula(q1: float, q2: float, expected: str):
@@ -125,17 +126,37 @@ def test_draw_excel_d_d42_formula(q1: float, q2: float, expected: str):
     draw = _signals_by_key(result, "draw")
     assert draw["excel_d"] == expected
     assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+    assert result["formula_version"] == "cecchino_signals_matrix_v2_draw_dfg"
+
+
+@pytest.mark.parametrize(
+    ("q1", "q2", "expected"),
+    [
+        (2.7999, 2.0, "SI"),  # F36 = -0.7999, stretti OK
+        (2.8001, 2.0, "NO"),  # F36 ≈ -0.8001 → non >
+        (2.0, 2.7999, "NO"),  # q1 < q2
+        (2.0, 2.8001, "NO"),  # F36 ≈ 0.8001 → non <
+    ],
+)
+def test_draw_excel_d_d42_v2_boundaries(q1: float, q2: float, expected: str):
+    result = build_signals_matrix(q1=q1, qx=3.2, q2=q2, sample_home_away_split=16)
+    draw = _signals_by_key(result, "draw")
+    assert draw["excel_d"] == expected
 
 
 @pytest.mark.parametrize(
     ("q1", "qx", "q2", "expected"),
     [
-        (2.00, 2.30, 2.40, "NO"),  # range OK ma q1 < q2
-        (2.40, 2.30, 2.00, "SI"),  # q1 >= q2, qx <= 2.4, diff > -1.7
-        (2.00, 2.30, 2.00, "SI"),  # parità quote
-        (2.40, 2.50, 2.00, "NO"),  # qx > 2.4
-        (4.00, 2.30, 2.00, "NO"),  # F36 fuori range (diff = -2.0)
-        (3.80, 2.30, 2.00, "NO"),  # F36 <= -1.7 (diff = -1.8)
+        (2.00, 2.30, 2.40, "NO"),  # q1 < q2
+        (2.40, 2.90, 2.00, "SI"),  # qx <= 2.90, F36 in ±1.70
+        (2.00, 2.30, 2.00, "SI"),
+        (2.40, 2.9001, 2.00, "NO"),  # qx > 2.90
+        (4.00, 2.30, 2.00, "NO"),  # F36 = -2.0 < -1.70
+        (2.6999, 2.90, 1.00, "SI"),  # F36 ≈ -1.6999 inclusivo
+        (3.6999, 2.90, 2.00, "SI"),  # F36 ≈ -1.6999
+        (2.71, 2.90, 1.00, "NO"),  # F36 = -1.71
+        (2.00, 2.90, 3.71, "NO"),  # F36 = 1.71 and q1 < q2
+        (2.00, 2.90, 3.70, "NO"),  # F36=1.70 but q1 < q2
     ],
 )
 def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str):
@@ -152,8 +173,8 @@ def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str
         (2.00, 3.00, 2.30, "NO"),  # q1 < q2
         (2.30, 3.00, 2.00, "SI"),
         (2.30, 3.30, 2.00, "NO"),  # qx >= 3.3
-        (3.80, 3.00, 2.00, "NO"),  # diff = -1.8, fuori range
-        (2.00, 3.00, 3.60, "NO"),  # diff = 1.6, fuori range
+        (3.80, 3.00, 2.00, "NO"),  # diff = -1.8, fuori range E
+        (2.00, 3.00, 3.60, "NO"),  # diff = 1.6, fuori range E
     ],
 )
 def test_draw_excel_e_e42_formula(q1: float, qx: float, q2: float, expected: str):
@@ -168,10 +189,12 @@ def test_draw_excel_e_e42_formula(q1: float, qx: float, q2: float, expected: str
     ("q1", "qx", "q2", "expected"),
     [
         (2.00, 2.90, 2.30, "NO"),  # q1 < q2
-        (2.30, 2.90, 2.00, "SI"),
-        (2.30, 3.10, 2.00, "NO"),  # qx > 3
-        (3.70, 2.90, 2.00, "NO"),  # diff = -1.7, non > -1.6
-        (2.00, 2.90, 4.10, "NO"),  # diff = 2.1, non < 2
+        (2.30, 3.50, 2.00, "SI"),  # qx <= 3.50, F36 in ±1.20
+        (2.30, 3.5001, 2.00, "NO"),  # qx > 3.50
+        (3.50, 2.90, 2.00, "NO"),  # F36 = -1.50 < -1.20
+        (3.1999, 3.50, 2.00, "SI"),  # F36 ≈ -1.1999 inclusivo
+        (2.21, 3.50, 1.00, "NO"),  # F36 = -1.21
+        (2.1999, 3.50, 1.00, "SI"),  # F36 ≈ -1.1999
     ],
 )
 def test_draw_excel_g_g42_formula(q1: float, qx: float, q2: float, expected: str):
