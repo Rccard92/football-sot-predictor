@@ -7,12 +7,16 @@ import type { HistoricalPurchasabilityV3ReplayPreflight as Preflight } from '../
 
 const apiMock = vi.hoisted(() => ({
   getHistoricalPurchasabilityV3ReplayPreflight: vi.fn(),
+  getHistoricalPurchasabilityReplayPreflight: vi.fn(),
   listHistoricalScans: vi.fn(),
   startPurchasabilityV3Replay: vi.fn(),
+  startPurchasabilityReplay: vi.fn(),
   getPurchasabilityV3Replay: vi.fn(),
   cancelPurchasabilityV3Replay: vi.fn(),
   resumePurchasabilityV3Replay: vi.fn(),
   getPurchasabilityV3ReplayAnalytics: vi.fn(),
+  getPurchasabilityReplayAnalytics: vi.fn(),
+  getPurchasabilityV31Decision: vi.fn(),
   downloadPurchasabilityV3ReplayReport: vi.fn(),
 }))
 
@@ -23,12 +27,16 @@ vi.mock('../lib/cecchinoLabApi', async () => {
   return {
     ...actual,
     getHistoricalPurchasabilityV3ReplayPreflight: apiMock.getHistoricalPurchasabilityV3ReplayPreflight,
+    getHistoricalPurchasabilityReplayPreflight: apiMock.getHistoricalPurchasabilityReplayPreflight,
     listHistoricalScans: apiMock.listHistoricalScans,
     startPurchasabilityV3Replay: apiMock.startPurchasabilityV3Replay,
+    startPurchasabilityReplay: apiMock.startPurchasabilityReplay,
     getPurchasabilityV3Replay: apiMock.getPurchasabilityV3Replay,
     cancelPurchasabilityV3Replay: apiMock.cancelPurchasabilityV3Replay,
     resumePurchasabilityV3Replay: apiMock.resumePurchasabilityV3Replay,
     getPurchasabilityV3ReplayAnalytics: apiMock.getPurchasabilityV3ReplayAnalytics,
+    getPurchasabilityReplayAnalytics: apiMock.getPurchasabilityReplayAnalytics,
+    getPurchasabilityV31Decision: apiMock.getPurchasabilityV31Decision,
     downloadPurchasabilityV3ReplayReport: apiMock.downloadPurchasabilityV3ReplayReport,
   }
 })
@@ -201,6 +209,13 @@ function renderPage(path = '/cecchino-lab/purchasability-replay?run_id=3') {
 describe('CecchinoLabPurchasabilityReplayPage STEP 3A.2', () => {
   beforeEach(() => {
     apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockImplementation(
+      (...args: unknown[]) =>
+        apiMock.getHistoricalPurchasabilityV3ReplayPreflight(
+          ...(args as [number, { includeProbe?: boolean }?]),
+        ),
+    )
     apiMock.listHistoricalScans.mockReset()
     apiMock.listHistoricalScans.mockResolvedValue(sampleRuns)
   })
@@ -227,6 +242,7 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3A.2', () => {
     await waitFor(() => expect(screen.getByTestId('preflight-result')).toBeTruthy())
     expect(apiMock.getHistoricalPurchasabilityV3ReplayPreflight).toHaveBeenCalledWith(3, {
       includeProbe: false,
+      formulaVersion: 'v3',
     })
     expect(screen.getByTestId('preflight-status-badge').textContent).toMatch(/avvisi/i)
     expect(screen.getByTestId('preflight-resource-profile').textContent).toMatch(/streamed/)
@@ -287,6 +303,7 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3A.2', () => {
     await waitFor(() =>
       expect(apiMock.getHistoricalPurchasabilityV3ReplayPreflight).toHaveBeenLastCalledWith(3, {
         includeProbe: true,
+        formulaVersion: 'v3',
       }),
     )
     await waitFor(() => expect(screen.getByTestId('preflight-probe-card')).toBeTruthy())
@@ -441,6 +458,13 @@ async function reachGoState() {
 describe('CecchinoLabPurchasabilityReplayPage STEP 3B.1', () => {
   beforeEach(() => {
     apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockImplementation(
+      (...args: unknown[]) =>
+        apiMock.getHistoricalPurchasabilityV3ReplayPreflight(
+          ...(args as [number, { includeProbe?: boolean }?]),
+        ),
+    )
     apiMock.listHistoricalScans.mockReset()
     apiMock.startPurchasabilityV3Replay.mockReset()
     apiMock.getPurchasabilityV3Replay.mockReset()
@@ -752,6 +776,17 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3C.1 analytics', () => {
   beforeEach(() => {
     vi.useRealTimers()
     apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockImplementation(
+      (...args: unknown[]) =>
+        apiMock.getHistoricalPurchasabilityV3ReplayPreflight(
+          ...(args as [number, { includeProbe?: boolean }?]),
+        ),
+    )
+    apiMock.getPurchasabilityReplayAnalytics.mockReset()
+    apiMock.getPurchasabilityReplayAnalytics.mockImplementation(
+      (id: number) => apiMock.getPurchasabilityV3ReplayAnalytics(id),
+    )
     apiMock.listHistoricalScans.mockReset()
     apiMock.startPurchasabilityV3Replay.mockReset()
     apiMock.getPurchasabilityV3Replay.mockReset()
@@ -977,5 +1012,33 @@ describe('CecchinoLabPurchasabilityReplayPage STEP 3C.1 analytics', () => {
     await waitFor(() => expect(screen.getByTestId('v3-analytics-error')).toBeTruthy())
     expect(screen.getByTestId('v3-analytics-error').textContent).toMatch(/rete/i)
     expect(screen.getByTestId('v3-analytics-error').textContent).not.toBe('Failed to fetch')
+  })
+})
+
+describe('CecchinoLabPurchasabilityReplayPage V3.1 selector', () => {
+  beforeEach(() => {
+    apiMock.listHistoricalScans.mockReset()
+    apiMock.listHistoricalScans.mockResolvedValue(sampleRuns)
+    apiMock.getHistoricalPurchasabilityReplayPreflight.mockReset()
+    apiMock.getHistoricalPurchasabilityV3ReplayPreflight.mockReset()
+  })
+
+  afterEach(() => cleanup())
+
+  it('mostra selettore V3/V3.1 e non avvia preflight automaticamente', async () => {
+    renderPage()
+    await waitFor(() => expect(apiMock.listHistoricalScans).toHaveBeenCalled())
+    expect(screen.getByTestId('purchasability-formula-selector')).toBeTruthy()
+    expect(screen.getByTestId('formula-select-v3')).toBeTruthy()
+    expect(screen.getByTestId('formula-select-v31')).toBeTruthy()
+    expect(apiMock.getHistoricalPurchasabilityReplayPreflight).not.toHaveBeenCalled()
+  })
+
+  it('switch a V3.1 resetta stato e richiede preflight manuale', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('formula-select-v31')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('formula-select-v31'))
+    expect(screen.getByTestId('formula-select-v31').getAttribute('aria-pressed')).toBe('true')
+    expect(apiMock.getHistoricalPurchasabilityReplayPreflight).not.toHaveBeenCalled()
   })
 })

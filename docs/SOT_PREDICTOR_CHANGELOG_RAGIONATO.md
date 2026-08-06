@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Add purchasability v3.1 replay validation (Step 2B) (2026-08-06)
+
+- Perché: validare storicamente la V3.1 congelata con replay anti-leakage, analytics, Positive Signal Health e decisione GO/NO-GO versionata, senza tarare la formula né toccare Replay ID 1 / Run #3.
+- Cosa: registry formula-configurable; preflight/start/analytics/decision/promote V3.1; HR walk-forward; GO/NO-GO v1; config operativa (default V3); UI selettore V3/V3.1 sul replay; test sintetici.
+- Cosa non fa: nessuna migration; nessuna nuova dipendenza; nessun replay reale Railway in questo ambiente → **nessun GO dichiarato**, V3.1 resta shadow; V3 invariata e ancora default operativo.
+
 ## Fix — Restore eligibility and remove scan API guards (2026-08-06)
 
 - Perché: (A) il validatore eleggibilità riconosceva il pannello KPI V2 solo con la stringa obsoleta `cecchino_kpi_v2_betfair`, mentre il builder scrive `cecchino_kpi_v2_betfair_markets_v31_p1` → path legacy → falsi `excluded_kpi_not_calculable`. (B) la scansione veniva fermata da CAP locali (~1000 call/job, safe_stop, daily budget) prima della quota reale del provider.

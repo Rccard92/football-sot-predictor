@@ -4,9 +4,10 @@ import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShe
 import {
   cancelPurchasabilityV3Replay,
   downloadPurchasabilityV3ReplayReport,
-  getHistoricalPurchasabilityV3ReplayPreflight,
+  getHistoricalPurchasabilityReplayPreflight,
+  getPurchasabilityReplayAnalytics,
   getPurchasabilityV3Replay,
-  getPurchasabilityV3ReplayAnalytics,
+  getPurchasabilityV31Decision,
   historicalScanScopeLabel,
   historicalScanStatusLabel,
   isPurchasabilityV3ReplayActive,
@@ -15,11 +16,16 @@ import {
   PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION,
   PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION,
   PURCHASABILITY_V3_REPLAY_POLL_MS,
+  PURCHASABILITY_V31_FORMULA_VERSION,
+  PURCHASABILITY_V31_INTEGRITY_POLICY_VERSION,
+  PURCHASABILITY_V31_PREFLIGHT_SCHEMA_VERSION,
   resumePurchasabilityV3Replay,
+  startPurchasabilityReplay,
   startPurchasabilityV3Replay,
   type HistoricalPurchasabilityV3ReplayAnalytics,
   type HistoricalPurchasabilityV3ReplayPreflight,
   type HistoricalScanRun,
+  type PurchasabilityFormulaId,
   type PurchasabilityV3ReplayRun,
 } from '../lib/cecchinoLabApi'
 
@@ -137,10 +143,17 @@ function isReplayCompletedForAnalytics(status: string): boolean {
   return status === 'completed' || status === 'completed_with_warnings'
 }
 
-function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun }) {
-  const [analytics, setAnalytics] = useState<HistoricalPurchasabilityV3ReplayAnalytics | null>(
-    null,
-  )
+function ReplayAnalyticsSection({
+  replay,
+  formulaId = 'v3',
+}: {
+  replay: PurchasabilityV3ReplayRun
+  formulaId?: PurchasabilityFormulaId
+}) {
+  const [analytics, setAnalytics] = useState<
+    (HistoricalPurchasabilityV3ReplayAnalytics & Record<string, unknown>) | null
+  >(null)
+  const [decision, setDecision] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [downloadBusy, setDownloadBusy] = useState<'analysis' | 'full_archive' | null>(null)
@@ -149,8 +162,20 @@ function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun 
   const onGenerate = () => {
     setLoading(true)
     setError(null)
-    void getPurchasabilityV3ReplayAnalytics(replay.id)
-      .then((data) => setAnalytics(data))
+    setDecision(null)
+    void getPurchasabilityReplayAnalytics(replay.id, formulaId)
+      .then(async (data) => {
+        setAnalytics(data)
+        if (formulaId === 'v31') {
+          try {
+            const d = await getPurchasabilityV31Decision(replay.id)
+            setDecision(d)
+          } catch {
+            /* decision opzionale se analytics già la include */
+            if (data.decision) setDecision({ decision: data.decision })
+          }
+        }
+      })
       .catch((err) => setError(formatAnalyticsError(err)))
       .finally(() => setLoading(false))
   }
@@ -165,14 +190,29 @@ function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun 
 
   const universes = analytics?.universes
   const recon = analytics?.reconciliation
-  const markets = analytics?.by_market || {}
+  const markets = (analytics?.by_market || analytics?.markets || {}) as Record<
+    string,
+    {
+      scored?: number
+      gate_failed?: number
+      not_a_real_bet365_quote?: boolean
+      exclude_from_real_roi?: boolean
+      performance_real?: { stake_count?: number; profit_units?: number | null; roi_pct?: number | null }
+      performance_synthetic?: { stake_count?: number; profit_units?: number | null; roi_pct?: number | null }
+    }
+  >
+  const psh = (analytics?.positive_signal_health || {}) as Record<string, unknown>
+  const decisionObj = (decision?.decision || analytics?.decision || {}) as Record<string, unknown>
+  const isV31 = formulaId === 'v31'
 
   return (
     <section
       className="lab-card mt-4 rounded-xl p-4"
-      data-testid="purchasability-v3-replay-analytics"
+      data-testid={isV31 ? 'purchasability-v31-replay-analytics' : 'purchasability-v3-replay-analytics'}
     >
-      <h3 className="text-base font-semibold">Analisi Replay V3</h3>
+      <h3 className="text-base font-semibold">
+        {isV31 ? 'Analisi Replay V3.1' : 'Analisi Replay V3'}
+      </h3>
       <p className="mt-1 text-sm" style={{ color: 'var(--lab-muted)' }}>
         Riepilogo read-only sui risultati persistiti. Nessun ricalcolo formula. Caricamento
         manuale.
@@ -181,7 +221,7 @@ function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun 
         <button
           type="button"
           className="lab-btn lab-btn-primary rounded-md px-3 py-2 text-sm"
-          data-testid="generate-v3-analytics"
+          data-testid={isV31 ? 'generate-v31-analytics' : 'generate-v3-analytics'}
           disabled={loading}
           onClick={onGenerate}
         >
@@ -190,35 +230,96 @@ function ReplayAnalyticsSection({ replay }: { replay: PurchasabilityV3ReplayRun 
       </div>
 
       {error ? (
-        <p data-testid="v3-analytics-error" className="mt-3 text-sm" style={{ color: 'var(--lab-err)' }}>
+        <p
+          data-testid={isV31 ? 'v31-analytics-error' : 'v3-analytics-error'}
+          className="mt-3 text-sm"
+          style={{ color: 'var(--lab-err)' }}
+        >
           {error}
         </p>
       ) : null}
 
       {loading ? (
-        <p data-testid="v3-analytics-loading" className="mt-3 text-sm">
+        <p
+          data-testid={isV31 ? 'v31-analytics-loading' : 'v3-analytics-loading'}
+          className="mt-3 text-sm"
+        >
           Caricamento analytics…
         </p>
       ) : null}
 
       {analytics ? (
-        <div className="mt-4 space-y-3" data-testid="v3-analytics-result">
+        <div
+          className="mt-4 space-y-3"
+          data-testid={isV31 ? 'v31-analytics-result' : 'v3-analytics-result'}
+        >
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span
-              className={`lab-badge ${statusBadgeClass(analytics.status)}`}
-              data-testid="v3-analytics-status"
+              className={`lab-badge ${statusBadgeClass(String(analytics.status || 'ok'))}`}
+              data-testid={isV31 ? 'v31-analytics-status' : 'v3-analytics-status'}
             >
-              {analytics.status}
+              {String(analytics.status || 'ok')}
             </span>
-            <span data-testid="v3-recon-status">
-              Riconciliazione: {recon?.status || '—'}
+            <span data-testid={isV31 ? 'v31-recon-status' : 'v3-recon-status'}>
+              Riconciliazione: {String((recon as { status?: string } | undefined)?.status || '—')}
             </span>
           </div>
+
+          {isV31 && psh ? (
+            <div
+              data-testid="positive-signal-health"
+              className="rounded border border-[var(--lab-border)] p-3 text-sm"
+            >
+              <strong>Positive Signal Health</strong>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                <div>Scored reali: {String(psh.scored_real_count ?? '—')}</div>
+                <div>Alta (≥60): {String(psh.high_count ?? '—')}</div>
+                <div>Molto Alta (≥80): {String(psh.very_high_count ?? '—')}</div>
+                <div>Max score: {String(psh.max_score ?? '—')}</div>
+                <div>Coda positiva: {String(psh.positive_tail_detected ?? '—')}</div>
+                <div>Collapse negativo: {String(psh.all_negative_collapse ?? '—')}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {isV31 && decisionObj && Object.keys(decisionObj).length > 0 ? (
+            <div
+              data-testid="go-no-go-decision-card"
+              className="rounded border border-[var(--lab-border)] p-3 text-sm"
+            >
+              <strong>Decisione GO/NO-GO</strong>
+              <div className="mt-2 space-y-1">
+                <div data-testid="go-no-go-status">
+                  Stato: <strong>{String(decisionObj.decision || '—')}</strong>
+                </div>
+                <div>Promozione consentita: {String(decisionObj.promotion_allowed ?? false)}</div>
+                <div>
+                  Holdout indipendente:{' '}
+                  {String(
+                    ((analytics.temporal_split as Record<string, unknown> | undefined)
+                      ?.has_independent_holdout) ?? false,
+                  )}
+                </div>
+                <div>Replay ID: {replay.id}</div>
+                <div>Formula: {replay.formula_version || '—'}</div>
+                <div>Source Run: {replay.source_scan_run_id}</div>
+                {(Array.isArray(decisionObj.blockers) ? decisionObj.blockers : []).length > 0 ? (
+                  <div data-testid="go-no-go-blockers">
+                    Blockers: {(decisionObj.blockers as string[]).join(', ')}
+                  </div>
+                ) : null}
+                <div style={{ color: 'var(--lab-muted)' }}>
+                  {String(decisionObj.recommended_next_action || '')}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div
             className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3"
-            data-testid="v3-analytics-summary"
+            data-testid={isV31 ? 'v31-analytics-summary' : 'v3-analytics-summary'}
           >
-            <div>Righe: {universes?.ALL_EVALUATIONS ?? '—'}</div>
+            <div>Righe: {universes?.ALL_EVALUATIONS ?? (analytics as { coverage?: { evaluations_total?: number } }).coverage?.evaluations_total ?? '—'}</div>
             <div>Scored: {universes?.SCORED_EVALUATIONS ?? '—'}</div>
             <div>Gate falliti: {universes?.GATE_FAILED_EVALUATIONS ?? '—'}</div>
             <div>Unavailable: {universes?.UNAVAILABLE_EVALUATIONS ?? '—'}</div>
@@ -357,6 +458,29 @@ export function canStartPurchasabilityV3Replay(
   if ((probe.markets_error ?? 0) !== 0) return false
   if ((probe.markets_unclassified ?? 0) !== 0) return false
   if (!probeExpectedReturnedMatch(probe)) return false
+  return true
+}
+
+/** V3.1: consente start senza probe se preflight ready e classificazione completa. */
+export function canStartPurchasabilityV31Replay(
+  data: HistoricalPurchasabilityV3ReplayPreflight | null,
+): boolean {
+  if (!data) return false
+  if (data.status !== 'ready' && data.status !== 'ready_with_warnings') return false
+  const wl = data.workload
+  const theoretical = wl.theoretical_evaluations
+  const classified =
+    wl.classified_evaluations_total ??
+    wl.exact_replay_ready +
+      wl.ready_with_warning +
+      wl.gate_only_ready +
+      wl.not_replayable +
+      (wl.invalid_integrity ?? 0) +
+      (wl.ambiguous_market_join ?? 0)
+  const unclassified = wl.unclassified_evaluations ?? Math.max(0, theoretical - classified)
+  if (unclassified !== 0 || classified !== theoretical) return false
+  if ((wl.invalid_integrity ?? 0) !== 0) return false
+  if ((wl.ambiguous_market_join ?? 0) !== 0) return false
   return true
 }
 
@@ -882,6 +1006,7 @@ export function CecchinoLabPurchasabilityReplayPage() {
   const [runsLoading, setRunsLoading] = useState(true)
   const [runsError, setRunsError] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<number | null>(initialRunId)
+  const [formulaId, setFormulaId] = useState<PurchasabilityFormulaId>('v3')
   const [uiStatus, setUiStatus] = useState<UiStatus>('idle')
   const [data, setData] = useState<HistoricalPurchasabilityV3ReplayPreflight | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -968,13 +1093,26 @@ export function CecchinoLabPurchasabilityReplayPage() {
     stopPolling()
   }
 
+  const onSelectFormula = (fid: PurchasabilityFormulaId) => {
+    setFormulaId(fid)
+    setData(null)
+    setError(null)
+    setUiStatus('idle')
+    setReplay(null)
+    setReplayError(null)
+    setConfirmOpen(false)
+    setConfirmChecked(false)
+    stopPolling()
+  }
+
   const runSummary = useCallback(async () => {
     if (!selectedRunId || selectedRunId <= 0) return
     setUiStatus('loading_summary')
     setError(null)
     try {
-      const result = await getHistoricalPurchasabilityV3ReplayPreflight(selectedRunId, {
+      const result = await getHistoricalPurchasabilityReplayPreflight(selectedRunId, {
         includeProbe: false,
+        formulaVersion: formulaId,
       })
       setData(result)
       const st = result.status
@@ -988,15 +1126,16 @@ export function CecchinoLabPurchasabilityReplayPage() {
       setError(formatPreflightError(err))
       setUiStatus('error')
     }
-  }, [selectedRunId])
+  }, [selectedRunId, formulaId])
 
   const runProbe = useCallback(async () => {
     if (!selectedRunId || selectedRunId <= 0) return
     setUiStatus('loading_probe')
     setError(null)
     try {
-      const result = await getHistoricalPurchasabilityV3ReplayPreflight(selectedRunId, {
+      const result = await getHistoricalPurchasabilityReplayPreflight(selectedRunId, {
         includeProbe: true,
+        formulaVersion: formulaId,
       })
       setData(result)
       const st = result.status
@@ -1009,19 +1148,28 @@ export function CecchinoLabPurchasabilityReplayPage() {
       setError(formatPreflightError(err))
       setUiStatus('error')
     }
-  }, [selectedRunId])
+  }, [selectedRunId, formulaId])
 
   const onConfirmStart = useCallback(async () => {
     if (!selectedRunId || !confirmChecked) return
     setReplayBusy(true)
     setReplayError(null)
     try {
-      const result = await startPurchasabilityV3Replay(selectedRunId, {
-        confirmed: true,
-        expected_formula_version: PURCHASABILITY_V3_FORMULA_VERSION,
-        expected_preflight_schema_version: PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION,
-        expected_integrity_policy_version: PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION,
-      })
+      const result =
+        formulaId === 'v31'
+          ? await startPurchasabilityReplay(selectedRunId, {
+              confirmed: true,
+              formula_version: 'v31',
+              expected_formula_version: PURCHASABILITY_V31_FORMULA_VERSION,
+              expected_preflight_schema_version: PURCHASABILITY_V31_PREFLIGHT_SCHEMA_VERSION,
+              expected_integrity_policy_version: PURCHASABILITY_V31_INTEGRITY_POLICY_VERSION,
+            })
+          : await startPurchasabilityV3Replay(selectedRunId, {
+              confirmed: true,
+              expected_formula_version: PURCHASABILITY_V3_FORMULA_VERSION,
+              expected_preflight_schema_version: PURCHASABILITY_V3_PREFLIGHT_SCHEMA_VERSION,
+              expected_integrity_policy_version: PURCHASABILITY_V3_INTEGRITY_POLICY_VERSION,
+            })
       setReplay(result)
       setConfirmOpen(false)
       setConfirmChecked(false)
@@ -1034,7 +1182,7 @@ export function CecchinoLabPurchasabilityReplayPage() {
     } finally {
       setReplayBusy(false)
     }
-  }, [selectedRunId, confirmChecked, startPolling])
+  }, [selectedRunId, confirmChecked, startPolling, formulaId])
 
   const onCancelReplay = useCallback(async () => {
     if (!replay) return
@@ -1073,7 +1221,10 @@ export function CecchinoLabPurchasabilityReplayPage() {
     data != null &&
     (uiStatus === 'ready' || uiStatus === 'ready_with_warnings' || uiStatus === 'blocked')
   const loading = uiStatus === 'loading_summary' || uiStatus === 'loading_probe'
-  const canStart = canStartPurchasabilityV3Replay(data)
+  const canStart =
+    formulaId === 'v31'
+      ? canStartPurchasabilityV31Replay(data)
+      : canStartPurchasabilityV3Replay(data)
 
   return (
     <CecchinoLabShell>
@@ -1091,12 +1242,45 @@ export function CecchinoLabPurchasabilityReplayPage() {
           <h1 style={{ margin: 0, fontSize: '1.35rem' }}>Replay Acquistabilità</h1>
           <p style={{ margin: '0.45rem 0 0', color: 'var(--lab-muted)', maxWidth: '40rem' }}>
             Verifica se Acquistabilità può essere ricalcolata utilizzando gli snapshot pre-match già
-            congelati, senza ripetere la scansione storica.
+            congelati, senza ripetere la scansione storica. V3.1 resta shadow finché non c’è GO_FINAL.
           </p>
         </header>
 
         <section className="lab-card" style={{ padding: '1rem 1.1rem', marginBottom: '1rem' }}>
           <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.05rem' }}>Seleziona Run</h2>
+          <div
+            data-testid="purchasability-formula-selector"
+            style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}
+          >
+            <button
+              type="button"
+              className="lab-btn"
+              data-testid="formula-select-v3"
+              aria-pressed={formulaId === 'v3'}
+              onClick={() => onSelectFormula('v3')}
+              style={
+                formulaId === 'v3'
+                  ? { outline: '2px solid var(--lab-cyan)' }
+                  : undefined
+              }
+            >
+              V3 ufficiale
+            </button>
+            <button
+              type="button"
+              className="lab-btn"
+              data-testid="formula-select-v31"
+              aria-pressed={formulaId === 'v31'}
+              onClick={() => onSelectFormula('v31')}
+              style={
+                formulaId === 'v31'
+                  ? { outline: '2px solid var(--lab-cyan)' }
+                  : undefined
+              }
+            >
+              V3.1 shadow
+            </button>
+          </div>
           {runsLoading ? (
             <p style={{ color: 'var(--lab-muted)' }}>Caricamento elenco run…</p>
           ) : null}
@@ -1232,7 +1416,7 @@ export function CecchinoLabPurchasabilityReplayPage() {
         isReplayCompletedForAnalytics(
           String(replay.effective_status || replay.status),
         ) ? (
-          <ReplayAnalyticsSection replay={replay} />
+          <ReplayAnalyticsSection replay={replay} formulaId={formulaId} />
         ) : null}
 
         {confirmOpen && data && selectedRun ? (

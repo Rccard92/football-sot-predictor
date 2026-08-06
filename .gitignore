@@ -10,6 +10,7 @@ __pycache__/
 
 backend/.env
 backend/.venv
+backend/.runtime/
 
 frontend/dist
 frontend/node_modules

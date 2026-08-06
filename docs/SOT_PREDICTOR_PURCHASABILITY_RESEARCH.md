@@ -2,6 +2,37 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## V3.1 Fase 2B — Replay storico + GO/NO-GO (2026-08-06)
+
+Infrastruttura replay formula-configurable riusando tabelle/API V3 (nessuna migration).
+
+| Campo | Valore |
+|-------|--------|
+| Formula congelata | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
+| Decision version | `purchasability_v31_go_no_go_v1` |
+| Source Run diagnostico | Run #3 (2021/2022) — **non modificato** |
+| Replay V3 preservato | ID 1 — **non riusato** |
+| Replay V3.1 | nuovo ID (idempotency distinta su `formula_version`) |
+| HR | walk-forward as-of kickoff (anti-leakage; stesso kickoff isolato) |
+| Holdout indipendente | assente in Lab → decisione massima `GO_PROVISIONAL` |
+| Promozione | solo `GO_FINAL` + confirm token; default operativo resta **V3** |
+| Messaggio «MBARE, ACQUISTA» | solo post `GO_FINAL` operativo + Molto Alta + quota reale |
+
+Endpoint (contratti V3 invariati):
+- `GET …/purchasability-replay/preflight?formula_version=v3|v31`
+- `POST …/purchasability-replays` (body `formula_version`)
+- `GET …/purchasability-replays/{id}/analytics|decision|export`
+- `POST …/purchasability-replays/{id}/promote` (token `PROMOTE_V31_GO_FINAL`)
+- `GET …/purchasability/operational`
+
+**Replay reale su Railway non eseguito in questo ambiente** → nessun GO dichiarato, V3.1 resta shadow.
+
+Comandi operativi (produzione con DB storico):
+1. Preflight V3.1 su Run #3
+2. Start replay V3.1 (nuovo ID)
+3. Analytics + decision
+4. Promote solo se `decision=GO_FINAL`
+
 ## V3.1 Fase 2A — Shadow candidate empirica (2026-08-05)
 
 Candidate shadow parallela **non ufficiale** e **non promossa**.
@@ -52,9 +83,9 @@ Riuso `cecchino_historical_reliability_v1_1` (batch orchestratore, motore puro).
 
 Selettore «V3 attuale | V3.1 shadow»; default V3. Analisi formule su `purchasability_v31`.
 
-### Non dichiarato
+### Non dichiarato (2A)
 
-Né profittevolezza né promozione. Prossimo passo Fase 2B: replay storico V3.1 e Go/No-Go.
+Né profittevolezza né promozione in 2A. La Fase 2B aggiunge replay/GO-NO-GO; senza holdout indipendente e senza replay reale in CI la promozione resta bloccata.
 
 Smoke dry-run: `python -m app.jobs.smoke_purchasability_v31_audit --date-from … --date-to … --limit N`.
 

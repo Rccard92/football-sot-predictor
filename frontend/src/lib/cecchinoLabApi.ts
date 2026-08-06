@@ -2227,6 +2227,96 @@ export function resumePurchasabilityV3Replay(
   return postJson(`/api/admin/cecchino-lab/purchasability-v3-replays/${replayId}/resume`)
 }
 
+export const PURCHASABILITY_V31_FORMULA_VERSION =
+  'cecchino_purchasability_v31_fixed_discount_empirical_v1'
+export const PURCHASABILITY_V31_PREFLIGHT_SCHEMA_VERSION =
+  'cecchino_lab_purchasability_v31_replay_preflight_v1'
+export const PURCHASABILITY_V31_INTEGRITY_POLICY_VERSION =
+  'cecchino_lab_historical_reconstruction_integrity_v1'
+
+export type PurchasabilityFormulaId = 'v3' | 'v31'
+
+export function getHistoricalPurchasabilityReplayPreflight(
+  runId: number,
+  opts?: { includeProbe?: boolean; formulaVersion?: PurchasabilityFormulaId },
+): Promise<HistoricalPurchasabilityV3ReplayPreflight> {
+  const formula = opts?.formulaVersion || 'v3'
+  if (formula === 'v3') {
+    return getHistoricalPurchasabilityV3ReplayPreflight(runId, {
+      includeProbe: opts?.includeProbe,
+    })
+  }
+  const params = new URLSearchParams()
+  params.set('formula_version', 'v31')
+  if (opts?.includeProbe) params.set('include_probe', 'true')
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/purchasability-replay/preflight?${params}`,
+  )
+}
+
+export function startPurchasabilityReplay(
+  runId: number,
+  body: {
+    confirmed: true
+    formula_version: PurchasabilityFormulaId
+    expected_formula_version: string
+    expected_preflight_schema_version: string
+    expected_integrity_policy_version: string
+  },
+): Promise<PurchasabilityV3ReplayRun> {
+  if (body.formula_version === 'v3') {
+    return startPurchasabilityV3Replay(runId, {
+      confirmed: true,
+      expected_formula_version: body.expected_formula_version,
+      expected_preflight_schema_version: body.expected_preflight_schema_version,
+      expected_integrity_policy_version: body.expected_integrity_policy_version,
+    })
+  }
+  return postJson(`/api/admin/cecchino-lab/historical-scans/${runId}/purchasability-replays`, body)
+}
+
+export function getPurchasabilityReplayAnalytics(
+  replayId: number,
+  formulaVersion: PurchasabilityFormulaId = 'v3',
+): Promise<HistoricalPurchasabilityV3ReplayAnalytics & Record<string, unknown>> {
+  if (formulaVersion === 'v3') {
+    return getPurchasabilityV3ReplayAnalytics(replayId)
+  }
+  return requestJson(
+    `/api/cecchino-lab/purchasability-replays/${replayId}/analytics?formula_version=v31`,
+  )
+}
+
+export function getPurchasabilityV31Decision(
+  replayId: number,
+): Promise<Record<string, unknown>> {
+  return requestJson(`/api/cecchino-lab/purchasability-replays/${replayId}/decision`)
+}
+
+export function getPurchasabilityOperationalConfig(): Promise<{
+  operational_version: string
+  fallback_version: string
+  strong_buy_message_allowed?: boolean
+  v31_is_operational?: boolean
+  shadow_default?: boolean
+}> {
+  return requestJson('/api/cecchino-lab/purchasability/operational')
+}
+
+export function promotePurchasabilityV31(
+  replayId: number,
+  body: {
+    confirm_token: string
+    expected_formula_version: string
+    idempotency_key?: string
+  },
+): Promise<Record<string, unknown>> {
+  return postJson(
+    `/api/admin/cecchino-lab/purchasability-replays/${replayId}/promote`,
+    body,
+  )
+}
+
 export type HistoricalPurchasabilityV3ReplayPerformanceBucket = {
   stake_count: number
   profit_units: number | null

@@ -1,5 +1,12 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Acquistabilità V3.1 — Fase 2B replay + GO/NO-GO (2026-08-06)
+
+1. Preflight/start/analytics/decision con `formula_version=v31` (stesse tabelle replay V3).
+2. HR walk-forward; quote reali vs derivate separate; Run #3 e Replay ID 1 intatti.
+3. Decisione max senza holdout indipendente: `GO_PROVISIONAL` → V3.1 resta shadow.
+4. Promote solo con `GO_FINAL` + token; senza replay reale in questo ambiente non promuovere.
+
 ## Acquistabilità V3.1 — Fase 2A shadow candidate (2026-08-05)
 
 1. Scan/recompute: KPI → Fair Book → V3 (invariata) → HR batch as-of kickoff → V3.1 shadow → persist `purchasability_preview_v31`.

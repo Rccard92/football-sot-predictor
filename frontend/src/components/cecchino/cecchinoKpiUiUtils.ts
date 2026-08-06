@@ -505,6 +505,8 @@ export type PurchasabilityV31CellState = {
   score: number | null
   classLabel: string | null
   reasonCode: string | null
+  /** Solo post GO_FINAL operativo + Molto Alta + quota reale */
+  strongBuyReading?: string | null
 }
 
 const V31_NON_CALCULABLE_REASON_LABELS: Record<string, string> = {
@@ -538,11 +540,20 @@ export function resolvePurchasabilityV31CellState(
     reason_code?: string | null
     gate_status?: string | null
     input?: Record<string, number | string | boolean | null>
+    is_real_book_quote?: boolean | null
+    derived_quote?: boolean | null
   } | null | undefined,
-  opts?: { snapshotAvailable?: boolean; loading?: boolean },
+  opts?: {
+    snapshotAvailable?: boolean
+    loading?: boolean
+    /** True solo se V3.1 promossa con GO_FINAL */
+    operationalPromoted?: boolean
+    strongBuyAllowed?: boolean
+  },
 ): PurchasabilityV31CellState {
   const snapshotAvailable = opts?.snapshotAvailable !== false
   const loading = opts?.loading === true
+  const strongBuyAllowed = opts?.strongBuyAllowed === true && opts?.operationalPromoted === true
 
   if (loading) {
     return {
@@ -554,6 +565,7 @@ export function resolvePurchasabilityV31CellState(
       score: null,
       classLabel: null,
       reasonCode: null,
+      strongBuyReading: null,
     }
   }
 
@@ -567,6 +579,7 @@ export function resolvePurchasabilityV31CellState(
       score: null,
       classLabel: null,
       reasonCode: null,
+      strongBuyReading: null,
     }
   }
 
@@ -580,6 +593,7 @@ export function resolvePurchasabilityV31CellState(
       score: null,
       classLabel: null,
       reasonCode: null,
+      strongBuyReading: null,
     }
   }
 
@@ -601,6 +615,7 @@ export function resolvePurchasabilityV31CellState(
       score: null,
       classLabel: null,
       reasonCode,
+      strongBuyReading: null,
     }
   }
 
@@ -618,19 +633,40 @@ export function resolvePurchasabilityV31CellState(
       score: null,
       classLabel: null,
       reasonCode,
+      strongBuyReading: null,
     }
   }
 
+  const derived =
+    item.derived_quote === true || item.is_real_book_quote === false
+
   if (status === 'score' && item.score != null) {
+    const classLabel = item.class ?? null
+    let strongBuyReading: string | null = null
+    let subtitle: string | null = null
+    if (
+      strongBuyAllowed &&
+      !derived &&
+      item.score >= 80 &&
+      classLabel === 'Molto Alta'
+    ) {
+      strongBuyReading = 'MBARE, ACQUISTA'
+      subtitle = 'Valore molto alto confermato dal modello e dallo storico.'
+    } else if (strongBuyAllowed && !derived && classLabel === 'Alta') {
+      subtitle = 'Valore alto — acquisto consigliato'
+    } else if (strongBuyAllowed && !derived && classLabel === 'Media') {
+      subtitle = 'Valore moderato — valutare con prudenza'
+    }
     return {
       kind: 'score',
       primary: String(item.score),
-      subtitle: null,
+      subtitle,
       showScoreBadge: true,
       analyzable: true,
       score: item.score,
-      classLabel: item.class ?? null,
+      classLabel,
       reasonCode,
+      strongBuyReading,
     }
   }
 
@@ -644,6 +680,7 @@ export function resolvePurchasabilityV31CellState(
       score: item.score,
       classLabel: item.class ?? null,
       reasonCode,
+      strongBuyReading: null,
     }
   }
 
@@ -656,6 +693,7 @@ export function resolvePurchasabilityV31CellState(
     score: null,
     classLabel: null,
     reasonCode,
+    strongBuyReading: null,
   }
 }
 

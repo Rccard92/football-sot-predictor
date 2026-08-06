@@ -228,6 +228,17 @@ function PurchasabilityV31Cell({
         {state.classLabel ? (
           <span className="mt-0.5 block text-[9px] text-slate-300">{state.classLabel}</span>
         ) : null}
+        {state.strongBuyReading ? (
+          <span
+            className="mt-0.5 block text-[10px] font-bold text-emerald-300"
+            data-testid="purchasability-v31-strong-buy"
+          >
+            {state.strongBuyReading}
+          </span>
+        ) : null}
+        {state.subtitle ? (
+          <span className="mt-0.5 block text-[9px] text-slate-400">{state.subtitle}</span>
+        ) : null}
       </span>
     )
   }

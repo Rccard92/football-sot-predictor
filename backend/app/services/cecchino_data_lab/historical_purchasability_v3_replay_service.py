@@ -502,9 +502,30 @@ def _spawn_worker(replay_id: int) -> None:
         t_existing = _active_threads.get(replay_id)
         if t_existing and t_existing.is_alive():
             return
+
+        def _target(rid: int = replay_id) -> None:
+            from app.core.database import SessionLocal as _SL
+            from app.schemas.cecchino_purchasability_v31 import (
+                PURCHASABILITY_V31_FORMULA_VERSION as _V31,
+            )
+
+            db = _SL()
+            try:
+                run = db.get(CecchinoLabPurchasabilityV3ReplayRun, rid)
+                formula = str(getattr(run, "formula_version", "") or "")
+            finally:
+                db.close()
+            if formula == _V31:
+                from app.services.cecchino_data_lab.historical_purchasability_v31_replay_service import (
+                    execute_purchasability_v31_replay,
+                )
+
+                execute_purchasability_v31_replay(rid)
+            else:
+                execute_purchasability_v3_replay(rid)
+
         t = threading.Thread(
-            target=execute_purchasability_v3_replay,
-            args=(replay_id,),
+            target=_target,
             name=f"cecchino-lab-p3-replay-{replay_id}",
             daemon=True,
         )
@@ -1046,15 +1067,24 @@ def _classify_calc_bucket(row: dict[str, Any]) -> str:
     score = row.get("score")
     if status == "error":
         return "error"
-    if status == "source_not_replayable" or status == "unavailable":
+    if status in (
+        "source_not_replayable",
+        "unavailable",
+        "source_market_unavailable",
+        "non_calculable",
+    ):
         return "unavailable"
     if gate and gate != "passed" and score is None:
+        return "gate_failed"
+    if status == "gate_failed":
         return "gate_failed"
     if score is not None:
         return "scored"
     if status == "not_applicable":
         return "not_applicable"
-    if status == "available" or status == "partial":
+    if status == "available" or status == "partial" or status == "score":
+        if score is not None:
+            return "scored"
         return "unavailable"
     return "unclassified"
 

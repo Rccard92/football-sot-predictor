@@ -1,5 +1,17 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 2B — Replay Acquistabilità V3.1 (shadow validation) (2026-08-06)
+
+| Campo | Valore |
+|-------|--------|
+| Formula | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
+| Infra | riuso tabelle/API replay V3 (`formula_version` distingue) |
+| Mercati | 19 classificati; assenti → `source_market_unavailable` |
+| HR | walk-forward anti-leakage |
+| GO/NO-GO | `purchasability_v31_go_no_go_v1` |
+| Preservati | Run #3, Replay V3 ID 1 |
+| Promozione | solo `GO_FINAL` (non eseguita senza holdout/replay reale) |
+
 ## STEP 4B — KPI × Acquistabilità V3 + Segnali A–F (2026-08-02)
 
 | Voce | Valore |

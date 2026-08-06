@@ -14,6 +14,17 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Recupero | `POST /revalidate-day` poi `force_rescan` su `2026-08-08` |
 | Invariato | Formule Cecchino, V3, V3.1, filtri competizione |
 
+## Acquistabilità V3.1 — Fase 2B replay validation (2026-08-06)
+
+| Campo | Valore |
+|-------|--------|
+| Formula | `cecchino_purchasability_v31_fixed_discount_empirical_v1` (congelata) |
+| Decision | `purchasability_v31_go_no_go_v1` |
+| Replay V3 | ID 1 preservato |
+| Source | Run #3 preservato |
+| Stato | shadow (nessun GO_FINAL in questo deploy) |
+| Operativo | `operational_purchasability_version=v3` |
+
 ## Acquistabilità V3.1 — Fase 2A shadow candidate (2026-08-05)
 
 | Campo | Valore |

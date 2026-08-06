@@ -271,6 +271,7 @@ FORMULA_PAYLOAD_ALLOWED_FIELDS = (
     "derived_quote",
     "not_real_book_quote",
     "force_derived_quote",
+    "rating",  # gate V3.1 (pre-match); ignorato da V3
 )
 
 _cache_lock = threading.Lock()
@@ -960,6 +961,8 @@ def map_score_status_to_workload_key(score_status: str) -> str | None:
         return "ambiguous_market_join"
     if score_status == "unsupported_market":
         return None
+    if score_status == "source_market_unavailable":
+        return "not_replayable"
     return "not_replayable"
 
 def _fair_group_status(values: list[float | None]) -> str:

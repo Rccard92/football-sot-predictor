@@ -87,6 +87,23 @@ from app.services.cecchino_data_lab.historical_purchasability_v3_replay_export i
 from app.services.cecchino_data_lab.historical_purchasability_v3_replay_resolver import (
     resolve_official_purchasability_v3_replay,
 )
+from app.services.cecchino_data_lab.historical_purchasability_v31_replay_preflight import (
+    run_purchasability_v31_replay_preflight,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v31_replay_service import (
+    resume_purchasability_v31_replay,
+    start_purchasability_v31_replay,
+)
+from app.services.cecchino_data_lab.historical_purchasability_v31_replay_analytics_api import (
+    build_v31_export_rows,
+    get_purchasability_v31_decision,
+    get_purchasability_v31_replay_analytics,
+    promote_purchasability_v31_from_replay,
+    rollback_operational_to_v3,
+)
+from app.services.cecchino_data_lab.historical_purchasability_operational import (
+    get_operational_purchasability_config,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -1041,6 +1058,190 @@ def purchasability_v3_replay_report(
         )
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+def _lab_error(exc: CecchinoLabImportError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+        },
+    )
+
+
+@router.get("/historical-scans/{run_id}/purchasability-replay/preflight")
+def historical_purchasability_replay_preflight(
+    run_id: int,
+    formula_version: str = Query("v3"),
+    include_probe: bool = False,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Preflight replay formula-configurable (v3 | v31)."""
+    try:
+        fid = (formula_version or "v3").strip().lower().replace(".", "")
+        if fid in ("v31", "31", "v3_1"):
+            result = run_purchasability_v31_replay_preflight(
+                db, run_id, include_probe=include_probe
+            )
+        else:
+            result = run_purchasability_v3_replay_preflight(
+                db, run_id, include_probe=include_probe
+            )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/historical-scans/{run_id}/purchasability-replays")
+def purchasability_replay_start(
+    run_id: int,
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia replay V3 o V3.1 (formula_version / candidate nel body)."""
+    body = body or {}
+    fid = str(
+        body.get("formula_version")
+        or body.get("candidate")
+        or body.get("formula_id")
+        or "v3"
+    ).strip().lower().replace(".", "")
+    try:
+        if fid in ("v31", "31", "v3_1") or "v31" in fid:
+            result = start_purchasability_v31_replay(
+                db,
+                run_id,
+                confirmed=bool(body.get("confirmed") is True),
+                expected_formula_version=body.get("expected_formula_version"),
+                expected_preflight_schema_version=body.get(
+                    "expected_preflight_schema_version"
+                ),
+                expected_integrity_policy_version=body.get(
+                    "expected_integrity_policy_version"
+                ),
+                background=True,
+            )
+        else:
+            result = start_purchasability_v3_replay(
+                db,
+                run_id,
+                confirmed=bool(body.get("confirmed") is True),
+                expected_formula_version=body.get("expected_formula_version"),
+                expected_preflight_schema_version=body.get(
+                    "expected_preflight_schema_version"
+                ),
+                expected_integrity_policy_version=body.get(
+                    "expected_integrity_policy_version"
+                ),
+                background=True,
+            )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/purchasability-replays/{replay_id}/resume")
+def purchasability_replay_resume(
+    replay_id: int,
+    body: dict[str, Any] | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    body = body or {}
+    fid = str(body.get("formula_version") or body.get("candidate") or "").lower()
+    try:
+        run = get_purchasability_v3_replay(db, replay_id)
+        formula = str(run.get("formula_version") or "")
+        if "v31" in formula or fid in ("v31", "31"):
+            result = resume_purchasability_v31_replay(db, replay_id, background=True)
+        else:
+            result = resume_purchasability_v3_replay(db, replay_id, background=True)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@router.get("/purchasability-replays/{replay_id}/analytics")
+def purchasability_replay_analytics(
+    replay_id: int,
+    formula_version: str = Query("auto"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        run = get_purchasability_v3_replay(db, replay_id)
+        formula = str(run.get("formula_version") or "")
+        use_v31 = "v31" in formula or formula_version in ("v31", "31")
+        if use_v31:
+            result = get_purchasability_v31_replay_analytics(db, replay_id)
+        else:
+            result = get_purchasability_v3_replay_analytics(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/purchasability-replays/{replay_id}/decision")
+def purchasability_replay_decision(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_purchasability_v31_decision(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/purchasability-replays/{replay_id}/export")
+def purchasability_replay_export_v31(
+    replay_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = build_v31_export_rows(db, replay_id)
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/purchasability-replays/{replay_id}/promote")
+def purchasability_replay_promote(
+    replay_id: int,
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Promozione V3.1 solo con GO_FINAL + confirm token (mai via query param)."""
+    body = body or {}
+    try:
+        result = promote_purchasability_v31_from_replay(
+            db,
+            replay_id=replay_id,
+            confirm_token=str(body.get("confirm_token") or ""),
+            expected_formula_version=str(body.get("expected_formula_version") or ""),
+            idempotency_key=body.get("idempotency_key"),
+        )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/purchasability/rollback-v3")
+def purchasability_rollback_v3(body: dict[str, Any]) -> JSONResponse:
+    body = body or {}
+    try:
+        result = rollback_operational_to_v3(
+            confirm_token=str(body.get("confirm_token") or "")
+        )
+    except CecchinoLabImportError as exc:
+        return _lab_error(exc)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/purchasability/operational")
+def purchasability_operational_config() -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder(get_operational_purchasability_config()))
 
 
 @router.get("/historical-scans/{run_id}/dashboard/signals")

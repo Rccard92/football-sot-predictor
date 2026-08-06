@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     cecchino_auto_scan_transient_attempts: int = 2
     cecchino_auto_scan_transient_retry_delay_seconds: int = 60
 
+    # Acquistabilità operativa (default V3; V3.1 solo post GO_FINAL via JSON runtime)
+    operational_purchasability_version: str = "v3"
+    purchasability_fallback_version: str = "v3"
+    purchasability_validation_replay_id: int | None = None
+    purchasability_validation_source_run_id: int | None = None
+    purchasability_validation_decision: str | None = None
+    purchasability_validation_decision_version: str | None = None
+    purchasability_validation_formula_version: str | None = None
+    purchasability_validated_at: str | None = None
+    purchasability_validation_commit: str | None = None
+    purchasability_strong_buy_message_allowed: bool = False
+
     @property
     def admin_cron_secret(self) -> str:
         """Retrocompatibilità: stesso valore di cron_secret."""
