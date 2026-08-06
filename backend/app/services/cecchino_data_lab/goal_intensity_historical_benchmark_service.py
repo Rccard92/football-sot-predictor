@@ -139,7 +139,7 @@ def _load_snapshots(db: Session, run_id: int) -> list[CecchinoLabHistoricalMatch
     return list(
         db.scalars(
             select(CecchinoLabHistoricalMatchSnapshot)
-            .where(CecchinoLabHistoricalMatchSnapshot.historical_run_id == int(run_id))
+            .where(CecchinoLabHistoricalMatchSnapshot.run_id == int(run_id))
             .order_by(CecchinoLabHistoricalMatchSnapshot.id.asc())
         ).all()
     )

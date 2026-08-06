@@ -1018,3 +1018,234 @@ def test_pilot_gate_blocks_reconciliation_failed():
     assert ok is False
     assert "pilot_reconciliation_failed" in reasons
 
+
+# ---------------------------------------------------------------------------
+# Regression: snapshot load uses ORM run_id (not historical_run_id)
+# ---------------------------------------------------------------------------
+
+
+def test_historical_match_snapshot_model_exposes_run_id():
+    from app.models.cecchino_lab_goal_intensity_benchmark_job import (
+        CecchinoLabGoalIntensityBenchmarkJob,
+    )
+    from app.models.cecchino_lab_historical_match_snapshot import (
+        CecchinoLabHistoricalMatchSnapshot,
+    )
+
+    assert hasattr(CecchinoLabHistoricalMatchSnapshot, "run_id")
+    assert not hasattr(CecchinoLabHistoricalMatchSnapshot, "historical_run_id")
+    assert "run_id" in CecchinoLabHistoricalMatchSnapshot.__table__.c
+    assert "historical_run_id" not in CecchinoLabHistoricalMatchSnapshot.__table__.c
+    # Job model intentionally uses historical_run_id — must stay distinct
+    assert hasattr(CecchinoLabGoalIntensityBenchmarkJob, "historical_run_id")
+
+
+def test_load_snapshots_query_uses_run_id_and_orders_by_id():
+    """Chiama _load_snapshots reale (no patch) contro il modello ORM reale."""
+    from app.models.cecchino_lab_historical_match_snapshot import (
+        CecchinoLabHistoricalMatchSnapshot,
+    )
+
+    run_id = 42
+    ordered = [_snap(id=1, run_id=run_id), _snap(id=3, run_id=run_id)]
+    db = MagicMock()
+    captured: list = []
+
+    def _scalars(stmt):
+        captured.append(stmt)
+        result = MagicMock()
+        result.all.return_value = ordered
+        return result
+
+    db.scalars.side_effect = _scalars
+
+    out = svc._load_snapshots(db, run_id)
+
+    assert out == ordered
+    assert len(captured) == 1
+    stmt = captured[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "cecchino_lab_historical_match_snapshots.run_id" in compiled
+    assert "historical_run_id" not in compiled
+    assert str(run_id) in compiled
+    assert "order by" in compiled
+    assert "id" in compiled
+    # Filtro sulla colonna ORM reale run_id
+    assert stmt.whereclause.left.name == "run_id"
+    assert int(stmt.whereclause.right.value) == run_id
+    order_elems = list(stmt._order_by_clauses)
+    assert order_elems
+    assert "id" in " ".join(str(e) for e in order_elems).lower()
+    assert stmt.column_descriptions[0]["entity"] is CecchinoLabHistoricalMatchSnapshot
+
+
+def test_preflight_service_uses_real_load_snapshots_readonly():
+    """Preflight completed run: supera il load snapshot senza AttributeError; read-only."""
+    run_id = 7
+    run = SimpleNamespace(
+        id=run_id,
+        status="completed",
+        season_label="2021/22",
+        source_git_commit="abc123",
+    )
+    snaps = [
+        _snap(id=10, run_id=run_id),
+        _snap(id=11, run_id=run_id),
+    ]
+    bundle = _frozen_bundle()
+    db = MagicMock()
+    db.get.return_value = run
+
+    def _scalars(stmt):
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "run_id" in compiled
+        assert "historical_run_id" not in compiled
+        assert str(run_id) in compiled
+        result = MagicMock()
+        result.all.return_value = snaps
+        return result
+
+    db.scalars.side_effect = _scalars
+
+    independence = {
+        "status": INDEPENDENCE_EXTERNAL,
+        "details": {"run_fixture_ids_hash": "fx"},
+    }
+    with (
+        patch.object(svc, "get_frozen_goal_intensity_candidate_bundle", return_value=bundle),
+        patch.object(
+            svc,
+            "validate_frozen_candidate_bundle",
+            return_value={
+                "is_active": False,
+                "live_scoring_enabled": False,
+                "intended_use": "historical_external_benchmark_only",
+                "version": TARGET_BUNDLE_VERSION,
+            },
+        ),
+        patch.object(svc, "assess_independence", return_value=independence),
+        patch.object(
+            svc,
+            "_estimate_availability",
+            return_value={
+                "paired_complete_estimate": 2,
+                "v4_rebuildable": 2,
+                "five_models_probe_failed_completely": False,
+            },
+        ),
+        patch.object(
+            svc,
+            "select_pilot_snapshots",
+            return_value={
+                "selected": 2,
+                "requested": 2,
+                "snapshot_ids": [10, 11],
+                "selection_hash": "sel",
+            },
+        ),
+    ):
+        # _load_snapshots intentionally NOT patched — must use ORM run_id
+        out = svc.build_goal_intensity_benchmark_preflight(db, run_id)
+
+    assert out["status"] == "preview"
+    assert out["run"]["id"] == run_id
+    assert out["run"]["snapshots_found"] == 2
+    assert out["independence"]["status"] == INDEPENDENCE_EXTERNAL
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+    db.flush.assert_not_called()
+
+
+def test_preflight_route_no_500_readonly_zero_jobs():
+    """Route preflight: run completed + snapshot via run_id → 200, zero scritture."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.core.database import get_db
+    from app.routes import cecchino_lab
+
+    run_id = 3
+    run = SimpleNamespace(
+        id=run_id,
+        status="completed",
+        season_label="2021/22",
+        source_git_commit="deadbeef",
+    )
+    snaps = [_snap(id=1, run_id=run_id), _snap(id=2, run_id=run_id)]
+    bundle = _frozen_bundle()
+
+    app = FastAPI()
+    app.include_router(cecchino_lab.admin_router, prefix="/api")
+    db = MagicMock()
+    db.get.return_value = run
+
+    def _scalars(stmt):
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "historical_run_id" not in compiled
+        assert "run_id" in compiled
+        result = MagicMock()
+        result.all.return_value = snaps
+        return result
+
+    db.scalars.side_effect = _scalars
+
+    def override():
+        yield db
+
+    app.dependency_overrides[get_db] = override
+    client = TestClient(app)
+
+    with (
+        patch.object(svc, "get_frozen_goal_intensity_candidate_bundle", return_value=bundle),
+        patch.object(
+            svc,
+            "validate_frozen_candidate_bundle",
+            return_value={
+                "is_active": False,
+                "live_scoring_enabled": False,
+                "intended_use": "historical_external_benchmark_only",
+                "version": TARGET_BUNDLE_VERSION,
+            },
+        ),
+        patch.object(
+            svc,
+            "assess_independence",
+            return_value={
+                "status": INDEPENDENCE_EXTERNAL,
+                "details": {"run_fixture_ids_hash": "fx"},
+            },
+        ),
+        patch.object(
+            svc,
+            "_estimate_availability",
+            return_value={
+                "paired_complete_estimate": 2,
+                "v4_rebuildable": 2,
+                "five_models_probe_failed_completely": False,
+            },
+        ),
+        patch.object(
+            svc,
+            "select_pilot_snapshots",
+            return_value={
+                "selected": 2,
+                "requested": 2,
+                "snapshot_ids": [1, 2],
+                "selection_hash": "sel",
+            },
+        ),
+    ):
+        res = client.post(
+            f"/api/admin/cecchino-lab/historical/runs/{run_id}/goal-intensity-benchmark/preflight",
+            json={},
+        )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "preview"
+    assert body["run"]["snapshots_found"] == 2
+    assert body["run"]["id"] == run_id
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+    assert db.add.call_count == 0
+
