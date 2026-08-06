@@ -3232,9 +3232,17 @@ export type GiHistoricalBenchmarkPreflight = {
   }
   availability: {
     v4_rebuildable?: number
+    v4_persisted_available?: number
+    v4_reconstructed_available?: number
+    v4_total_available?: number
+    v4_reconstruction_input_mismatch?: number
+    v4_reconstruction_kpi_mismatch?: number
+    v4_missing_context_data?: number
     v5_features_rebuildable?: number
+    v5_rebuildable?: number
     five_models_rebuildable?: number
     paired_complete_estimate?: number
+    paired_coverage_pct?: number
     pilot_paired_estimate?: number
     blocked?: boolean
     missing_by_reason?: Record<string, number>
@@ -3259,8 +3267,18 @@ export type GiHistoricalBenchmarkPreflight = {
     base_run_writes?: number
     bundle_refit?: boolean
     result_used_in_prediction?: boolean
+    full_scan_restarted?: boolean
+    leakage_detected?: boolean
   }
+  v4_persisted_available?: number
+  v4_reconstructed_available?: number
+  v4_reconstruction_input_mismatch?: number
+  v4_reconstruction_kpi_mismatch?: number
+  v4_missing_context_data?: number
+  v4_total_available?: number
+  v5_rebuildable?: number
   paired_complete_estimate?: number
+  paired_coverage_pct?: number
   pilot_paired_estimate?: number
   five_models_probe_n?: number
   five_models_probe_ok?: number
@@ -3271,6 +3289,7 @@ export type GiHistoricalBenchmarkPreflight = {
   warnings?: string[]
   job_version?: string
   models?: string[]
+  v4_provenance_manifest?: Record<string, unknown>
 }
 
 export type GiHistoricalBenchmarkJob = {

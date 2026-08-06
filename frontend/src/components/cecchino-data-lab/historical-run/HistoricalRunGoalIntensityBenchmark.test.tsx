@@ -41,8 +41,16 @@ const allowedPreflight = {
   },
   availability: {
     v4_rebuildable: 5,
+    v4_persisted_available: 2,
+    v4_reconstructed_available: 3,
+    v4_total_available: 5,
+    v4_reconstruction_input_mismatch: 0,
+    v4_reconstruction_kpi_mismatch: 0,
+    v4_missing_context_data: 0,
     v5_features_rebuildable: 8,
+    v5_rebuildable: 8,
     paired_complete_estimate: 5,
+    paired_coverage_pct: 50,
     five_models_probe_n: 5,
     five_models_probe_ok: 5,
     blocked: false,
@@ -56,7 +64,12 @@ const allowedPreflight = {
     bundle_refit: false,
     result_used_in_prediction: false,
   },
+  v4_persisted_available: 2,
+  v4_reconstructed_available: 3,
+  v4_total_available: 5,
+  v5_rebuildable: 8,
   paired_complete_estimate: 5,
+  paired_coverage_pct: 50,
   pilot_paired_estimate: 4,
   five_models_probe_n: 5,
   five_models_probe_ok: 5,
@@ -103,11 +116,15 @@ describe('HistoricalRunGoalIntensityBenchmark', () => {
         /External independent/i,
       )
     })
-    expect(screen.getByTestId('gi-bench-preflight-panel').textContent).toContain(
-      'V4 rebuildable: 5',
-    )
+    expect(screen.getByTestId('gi-bench-v4-persisted').textContent).toContain('2')
+    expect(screen.getByTestId('gi-bench-v4-reconstructed').textContent).toContain('3')
+    expect(screen.getByTestId('gi-bench-v4-total').textContent).toContain('5')
+    expect(screen.getByTestId('gi-bench-v5-rebuildable').textContent).toContain('8')
     expect(screen.getByTestId('gi-bench-paired-estimate').textContent).toContain('5')
     expect(screen.getByTestId('gi-bench-five-models-probe').textContent).toContain('5/5')
+    expect(screen.getByTestId('gi-bench-v4-reconstruction-note').textContent).toMatch(
+      /formula V4 frozen/i,
+    )
     expect(screen.getByTestId('gi-bench-missing')).toBeTruthy()
   })
 

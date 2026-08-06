@@ -69,7 +69,7 @@ from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_metrics 
 from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_scoring import (
     MAIN_MODEL_IDS,
     extract_ft_target,
-    extract_v4_from_historical_snapshot,
+    extract_v4_with_provenance,
     extract_v5_features_from_snapshot,
     get_frozen_goal_intensity_candidate_bundle,
     prediction_input_hash,
@@ -78,6 +78,15 @@ from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_scoring 
 )
 from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_selection import (
     select_pilot_snapshots,
+)
+from app.services.cecchino_data_lab.goal_intensity_historical_v4_reconstruction import (
+    CONTEXT_BUILDER_VERSION,
+    GOAL_MARKET_FORMULA_VERSIONS,
+    RECONSTRUCTION_VERSION,
+    V4_FORMULA_VERSION,
+    CompetitionProxyCache,
+    is_persisted_v4_source,
+    is_reconstructed_v4_source,
 )
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 
@@ -442,26 +451,55 @@ def build_reconciliation(
 def _estimate_availability(
     snapshots: list[CecchinoLabHistoricalMatchSnapshot],
     bundle: Any,
+    *,
+    proxy_cache: CompetitionProxyCache | None = None,
+    source_code_commit: str | None = None,
 ) -> dict[str, Any]:
-    """Stima coverage senza scrivere. Scoring campione solo per verificare i cinque modelli."""
+    """Coverage deterministica read-only. Probe five-model su campione."""
     missing: Counter[str] = Counter()
-    v4_ok = v5_ok = paired_est = 0
+    v4_persisted = 0
+    v4_reconstructed = 0
+    v4_input_mismatch = 0
+    v4_kpi_mismatch = 0
+    v4_missing_context = 0
+    v5_ok = 0
+    paired_est = 0
     probe_ok = 0
     probe_n = 0
+
     for s in snapshots:
-        v4, v4_reason = extract_v4_from_historical_snapshot(s)
+        v4_result = extract_v4_with_provenance(
+            s,
+            proxy_cache=proxy_cache,
+            source_code_commit=source_code_commit,
+        )
+        v4 = v4_result.get("v4_payload")
+        v4_reason = v4_result.get("reason")
+        v4_source = v4_result.get("v4_source")
         feats, feat_reason = extract_v5_features_from_snapshot(s)
         target, tgt_reason = extract_ft_target(s.result_json)
-        if v4 is None:
-            missing[v4_reason or "missing_persisted_v4_expected_goals"] += 1
+
+        if v4 is not None:
+            if is_persisted_v4_source(v4_source):
+                v4_persisted += 1
+            elif is_reconstructed_v4_source(v4_source):
+                v4_reconstructed += 1
         else:
-            v4_ok += 1
+            missing[v4_reason or "missing_persisted_v4_expected_goals"] += 1
+            if v4_reason == "v4_reconstruction_input_mismatch":
+                v4_input_mismatch += 1
+            elif v4_reason == "v4_reconstruction_historical_kpi_mismatch":
+                v4_kpi_mismatch += 1
+            elif v4_reason == "v4_missing_context_data":
+                v4_missing_context += 1
+
         if feats is None or feat_reason == "incomplete_v5_features":
             missing[feat_reason or "missing_v5_features"] += 1
         else:
             v5_ok += 1
         if target is None:
             missing[tgt_reason or "missing_ft_result"] += 1
+
         candidate = (
             v4 is not None
             and feats is not None
@@ -482,6 +520,8 @@ def _estimate_availability(
                         missing["five_models_incomplete"] += 1
                 except Exception:
                     missing["scoring_error"] += 1
+
+    v4_total = v4_persisted + v4_reconstructed
     five_ok = paired_est if probe_n == 0 or probe_ok == probe_n else probe_ok
     probe_failed_completely = probe_n > 0 and probe_ok == 0
     if probe_failed_completely:
@@ -489,25 +529,42 @@ def _estimate_availability(
         paired_est = 0
         missing["five_models_probe_failed"] += 1
     blocked = paired_est == 0
+    n_snap = len(snapshots)
+    coverage = round(100.0 * paired_est / n_snap, 2) if n_snap else 0.0
     return {
-        "v4_rebuildable": v4_ok,
+        "v4_persisted_available": v4_persisted,
+        "v4_reconstructed_available": v4_reconstructed,
+        "v4_reconstruction_input_mismatch": v4_input_mismatch,
+        "v4_reconstruction_kpi_mismatch": v4_kpi_mismatch,
+        "v4_missing_context_data": v4_missing_context,
+        "v4_total_available": v4_total,
+        "v4_rebuildable": v4_total,
         "v5_features_rebuildable": v5_ok,
+        "v5_rebuildable": v5_ok,
         "five_models_rebuildable": five_ok,
         "paired_complete_estimate": paired_est,
+        "paired_coverage_pct": coverage,
         "blocked": blocked,
         "missing_by_reason": dict(sorted(missing.items())),
-        "snapshots_scanned": len(snapshots),
+        "snapshots_scanned": n_snap,
         "scoring_probe_n": probe_n,
         "scoring_probe_ok": probe_ok,
         "five_models_probe_n": probe_n,
         "five_models_probe_ok": probe_ok,
         "five_models_probe_failed_completely": probe_failed_completely,
+        "reconstruction_version": RECONSTRUCTION_VERSION,
+        "v4_formula_version": V4_FORMULA_VERSION,
+        "context_builder_version": CONTEXT_BUILDER_VERSION,
+        "proxy_cache_stats": proxy_cache.cache_hit_stats() if proxy_cache else None,
     }
 
 
 def _estimate_pilot_paired(
     snapshots: list[CecchinoLabHistoricalMatchSnapshot],
     pilot_ids: list[int],
+    *,
+    proxy_cache: CompetitionProxyCache | None = None,
+    source_code_commit: str | None = None,
 ) -> int:
     by_id = {int(s.id): s for s in snapshots}
     n = 0
@@ -515,7 +572,12 @@ def _estimate_pilot_paired(
         s = by_id.get(int(sid))
         if s is None:
             continue
-        v4, _ = extract_v4_from_historical_snapshot(s)
+        v4_result = extract_v4_with_provenance(
+            s,
+            proxy_cache=proxy_cache,
+            source_code_commit=source_code_commit,
+        )
+        v4 = v4_result.get("v4_payload")
         feats, feat_reason = extract_v5_features_from_snapshot(s)
         target, _ = extract_ft_target(s.result_json)
         if (
@@ -545,12 +607,25 @@ def build_goal_intensity_benchmark_preflight(
     independence = assess_independence(
         db=db, run=run, snapshots=snapshots, candidate_bundle=bundle
     )
-    availability = _estimate_availability(snapshots, bundle)
+    rev = resolve_code_revision()
+    source_commit = rev.get("git_commit")
+    proxy_cache = CompetitionProxyCache.build(db, season_label=str(run.season_label))
+    availability = _estimate_availability(
+        snapshots,
+        bundle,
+        proxy_cache=proxy_cache,
+        source_code_commit=source_commit,
+    )
     pilot = select_pilot_snapshots(
         snapshots, pilot_size=int(pilot_size), random_seed=int(random_seed)
     )
     pilot_ids = [int(x) for x in (pilot.get("snapshot_ids") or [])]
-    pilot_paired_estimate = _estimate_pilot_paired(snapshots, pilot_ids)
+    pilot_paired_estimate = _estimate_pilot_paired(
+        snapshots,
+        pilot_ids,
+        proxy_cache=proxy_cache,
+        source_code_commit=source_commit,
+    )
     availability["pilot_paired_estimate"] = pilot_paired_estimate
 
     blocking: list[str] = []
@@ -565,14 +640,28 @@ def build_goal_intensity_benchmark_preflight(
     if availability.get("five_models_probe_failed_completely"):
         blocking.append("five_models_probe_failed")
 
+    checks = {
+        "external_api_calls": 0,
+        "full_scan_required": False,
+        "base_run_writes": 0,
+        "bundle_refit": False,
+        "result_used_in_prediction": False,
+        "full_scan_restarted": False,
+        "leakage_detected": False,
+    }
+    if int(checks["external_api_calls"]) != 0 or int(checks["base_run_writes"]) != 0:
+        blocking.append("preflight_side_effects")
+
     pilot_allowed = len(blocking) == 0
     warnings: list[str] = []
     if int(availability.get("paired_complete_estimate") or 0) == 0:
         warnings.append("paired_complete_estimate_zero")
     if int(pilot_paired_estimate) == 0:
         warnings.append("pilot_paired_estimate_zero")
-    if int(availability.get("v4_rebuildable") or 0) == 0:
+    if int(availability.get("v4_persisted_available") or 0) == 0:
         warnings.append("no_persisted_v4_expected_goals_in_run")
+    if int(availability.get("v4_reconstructed_available") or 0) > 0:
+        warnings.append("v4_uses_historical_reconstruction_fallback")
 
     if not pilot_allowed:
         pilot_data_gate_status = "blocked"
@@ -616,14 +705,18 @@ def build_goal_intensity_benchmark_preflight(
             "kickoff_range": pilot.get("kickoff_range"),
             "random_seed": pilot.get("random_seed"),
         },
-        "checks": {
-            "external_api_calls": 0,
-            "full_scan_required": False,
-            "base_run_writes": 0,
-            "bundle_refit": False,
-            "result_used_in_prediction": False,
-        },
+        "checks": checks,
+        "v4_persisted_available": availability.get("v4_persisted_available"),
+        "v4_reconstructed_available": availability.get("v4_reconstructed_available"),
+        "v4_reconstruction_input_mismatch": availability.get(
+            "v4_reconstruction_input_mismatch"
+        ),
+        "v4_reconstruction_kpi_mismatch": availability.get("v4_reconstruction_kpi_mismatch"),
+        "v4_missing_context_data": availability.get("v4_missing_context_data"),
+        "v4_total_available": availability.get("v4_total_available"),
+        "v5_rebuildable": availability.get("v5_rebuildable"),
         "paired_complete_estimate": availability.get("paired_complete_estimate"),
+        "paired_coverage_pct": availability.get("paired_coverage_pct"),
         "pilot_paired_estimate": pilot_paired_estimate,
         "five_models_probe_n": availability.get("five_models_probe_n"),
         "five_models_probe_ok": availability.get("five_models_probe_ok"),
@@ -634,6 +727,21 @@ def build_goal_intensity_benchmark_preflight(
         "warnings": warnings,
         "job_version": JOB_VERSION,
         "models": list(MAIN_MODEL_IDS),
+        "v4_provenance_manifest": {
+            "historical_run_source_commit": run.source_git_commit,
+            "benchmark_source_commit": source_commit,
+            "v4_formula_version": V4_FORMULA_VERSION,
+            "reconstruction_version": RECONSTRUCTION_VERSION,
+            "context_builder_version": CONTEXT_BUILDER_VERSION,
+            "goal_market_formula_versions": dict(GOAL_MARKET_FORMULA_VERSIONS),
+            "base_run_writes": 0,
+            "external_api_calls": 0,
+            "full_scan_restarted": False,
+            "scientific_note": (
+                "Le V4 ricostruite applicano la formula V4 frozen agli input "
+                "pre-match storici certificati. La run originale non viene modificata."
+            ),
+        },
     }
 
 
@@ -1081,8 +1189,16 @@ def _process_one_snapshot(
     snap: CecchinoLabHistoricalMatchSnapshot,
     bundle: Any,
     bundle_hash: str,
+    proxy_cache: CompetitionProxyCache | None = None,
+    source_code_commit: str | None = None,
 ) -> dict[str, Any]:
-    v4, v4_reason = extract_v4_from_historical_snapshot(snap)
+    v4_result = extract_v4_with_provenance(
+        snap,
+        proxy_cache=proxy_cache,
+        source_code_commit=source_code_commit,
+    )
+    v4 = v4_result.get("v4_payload")
+    v4_reason = v4_result.get("reason")
     feats, feat_reason = extract_v5_features_from_snapshot(snap)
 
     prediction = None
@@ -1098,10 +1214,30 @@ def _process_one_snapshot(
         prediction = score_five_models_with_frozen_bundle(
             features=feats, v4_payload=v4, bundle=bundle
         )
+        prediction["v4_provenance"] = {
+            "v4_source": v4_result.get("v4_source"),
+            "reconstruction_version": v4_result.get("reconstruction_version"),
+            "v4_formula_version": v4_result.get("v4_formula_version") or V4_FORMULA_VERSION,
+            "context_builder_version": v4_result.get("context_builder_version"),
+            "expected_goals_total": v4_result.get("expected_goals_total"),
+            "goal_market_formula_versions": v4_result.get("goal_market_formula_versions"),
+            "input_hash": v4_result.get("input_hash"),
+            "reconstruction_hash": v4_result.get("reconstruction_hash"),
+            "source_code_commit": v4_result.get("source_code_commit") or source_code_commit,
+            "anti_leakage": v4_result.get("anti_leakage"),
+            "historical_kpi_consistency": v4_result.get("historical_kpi_consistency"),
+            "scientific_description": v4_result.get("scientific_description"),
+            "persisted_or_reconstructed": v4_result.get("persisted_or_reconstructed"),
+        }
         input_hash = prediction_input_hash(
             features=feats,
             bundle_definition_hash=bundle_hash,
             snapshot_id=int(snap.id),
+            v4_source=v4_result.get("v4_source"),
+            reconstruction_version=v4_result.get("reconstruction_version"),
+            v4_formula_version=v4_result.get("v4_formula_version") or V4_FORMULA_VERSION,
+            reconstruction_input_hash=v4_result.get("reconstruction_hash")
+            or v4_result.get("input_hash"),
         )
         if not prediction.get("five_models_available"):
             exclusion = "five_models_incomplete"
@@ -1124,6 +1260,7 @@ def _process_one_snapshot(
                 for mid in MAIN_MODEL_IDS
                 if prediction.get("models", {}).get(mid)
             },
+            "v4_source": (prediction.get("v4_provenance") or {}).get("v4_source"),
         }
 
     return {
@@ -1136,6 +1273,7 @@ def _process_one_snapshot(
         "prediction_payload_json": prediction,
         "target_payload_json": target,
         "evaluation_payload_json": evaluation,
+        "v4_source": v4_result.get("v4_source"),
     }
 
 
@@ -1188,6 +1326,15 @@ def _run_job_worker(job_id: int) -> None:
         batch_size = int(params.get("batch_size") or DEFAULT_BATCH_SIZE)
         batch_size = max(MIN_BATCH_SIZE, min(MAX_BATCH_SIZE, batch_size))
         bundle_hash = str(job.bundle_definition_hash or bundle.candidate_definition_hash)
+
+        run = db.get(CecchinoLabHistoricalScanRun, int(job.historical_run_id))
+        season_label = str(run.season_label) if run is not None else ""
+        proxy_cache = (
+            CompetitionProxyCache.build(db, season_label=season_label)
+            if season_label
+            else None
+        )
+        source_commit = job.source_git_commit
 
         done_rows = list(
             db.scalars(
@@ -1247,6 +1394,8 @@ def _run_job_worker(job_id: int) -> None:
                         snap=snap,
                         bundle=bundle,
                         bundle_hash=bundle_hash,
+                        proxy_cache=proxy_cache,
+                        source_code_commit=source_commit,
                     )
                     row = existing or CecchinoLabGoalIntensityBenchmarkRow(
                         job_id=int(job.id),
@@ -1350,6 +1499,13 @@ def _run_job_worker(job_id: int) -> None:
         errors = int(counters["errors"])
         processed = int(counters["processed"])
 
+        v4_source_counts: Counter[str] = Counter()
+        for r in paired_rows:
+            pred = r.prediction_payload_json if isinstance(r.prediction_payload_json, dict) else {}
+            prov = pred.get("v4_provenance") if isinstance(pred.get("v4_provenance"), dict) else {}
+            src = prov.get("v4_source") or "unavailable"
+            v4_source_counts[str(src)] += 1
+
         summary = {
             "job_version": JOB_VERSION,
             "mode": job.mode,
@@ -1362,6 +1518,18 @@ def _run_job_worker(job_id: int) -> None:
             "metrics": metrics,
             "breakdowns": breakdowns,
             "models": list(MAIN_MODEL_IDS),
+            "v4_provenance": {
+                "v4_source_counts": dict(sorted(v4_source_counts.items())),
+                "v4_formula_version": V4_FORMULA_VERSION,
+                "reconstruction_version": RECONSTRUCTION_VERSION,
+                "context_builder_version": CONTEXT_BUILDER_VERSION,
+                "goal_market_formula_versions": dict(GOAL_MARKET_FORMULA_VERSIONS),
+                "historical_run_source_commit": run.source_git_commit if run else None,
+                "benchmark_source_commit": job.source_git_commit,
+                "scientific_description_reconstructed": (
+                    "current V4 formula applied to frozen historical prematch inputs"
+                ),
+            },
             "checks": {
                 "external_api_calls": 0,
                 "full_scan_required": False,
@@ -1564,16 +1732,26 @@ def build_goal_intensity_benchmark_export(db: Session, job_id: int) -> tuple[byt
     manifest = {
         "base_run_id": run.id,
         "base_run_source_commit": run.source_git_commit,
+        "historical_run_source_commit": run.source_git_commit,
         "bundle_id": job.bundle_id,
         "bundle_version": REQUIRED_BUNDLE_VERSION,
         "bundle_definition_hash": job.bundle_definition_hash,
         "job_version": job.job_version,
         "job_source_commit": job.source_git_commit,
+        "benchmark_source_commit": job.source_git_commit,
         "independence_status": job.independence_status,
         "mode": job.mode,
         "seed": job.random_seed,
         "selection_hash": ((job.params_json or {}).get("selection") or {}).get("selection_hash"),
         "input_hashes": [r.input_hash for r in rows if r.input_hash],
+        "v4_formula_version": V4_FORMULA_VERSION,
+        "reconstruction_version": RECONSTRUCTION_VERSION,
+        "context_builder_version": CONTEXT_BUILDER_VERSION,
+        "goal_market_formula_versions": dict(GOAL_MARKET_FORMULA_VERSIONS),
+        "v4_provenance_note": (
+            "current V4 formula applied to frozen historical prematch inputs "
+            "when not persisted at original scan time"
+        ),
         "external_api_calls": 0,
         "base_run_writes": 0,
         "full_scan_restarted": False,

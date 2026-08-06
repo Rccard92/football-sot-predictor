@@ -62,6 +62,9 @@ from app.services.cecchino_data_lab.goal_intensity_historical_benchmark_selectio
     select_pilot_snapshots,
 )
 from app.services.cecchino_data_lab import goal_intensity_historical_benchmark_service as svc
+from app.services.cecchino_data_lab.goal_intensity_historical_v4_reconstruction import (
+    CompetitionProxyCache,
+)
 
 
 def _cal_block(intercept: float = 0.5, coef: float = 0.02) -> dict:
@@ -1126,6 +1129,10 @@ def test_preflight_service_uses_real_load_snapshots_readonly():
         patch.object(svc, "assess_independence", return_value=independence),
         patch.object(
             svc,
+            "CompetitionProxyCache",
+        ) as cache_cls,
+        patch.object(
+            svc,
             "_estimate_availability",
             return_value={
                 "paired_complete_estimate": 2,
@@ -1143,7 +1150,10 @@ def test_preflight_service_uses_real_load_snapshots_readonly():
                 "selection_hash": "sel",
             },
         ),
+        patch.object(svc, "_estimate_pilot_paired", return_value=2),
+        patch.object(svc, "resolve_code_revision", return_value={"git_commit": "abc"}),
     ):
+        cache_cls.build.return_value = CompetitionProxyCache()
         # _load_snapshots intentionally NOT patched — must use ORM run_id
         out = svc.build_goal_intensity_benchmark_preflight(db, run_id)
 
@@ -1215,6 +1225,7 @@ def test_preflight_route_no_500_readonly_zero_jobs():
                 "details": {"run_fixture_ids_hash": "fx"},
             },
         ),
+        patch.object(svc, "CompetitionProxyCache") as cache_cls,
         patch.object(
             svc,
             "_estimate_availability",
@@ -1234,7 +1245,10 @@ def test_preflight_route_no_500_readonly_zero_jobs():
                 "selection_hash": "sel",
             },
         ),
+        patch.object(svc, "_estimate_pilot_paired", return_value=2),
+        patch.object(svc, "resolve_code_revision", return_value={"git_commit": "deadbeef"}),
     ):
+        cache_cls.build.return_value = CompetitionProxyCache()
         res = client.post(
             f"/api/admin/cecchino-lab/historical/runs/{run_id}/goal-intensity-benchmark/preflight",
             json={},

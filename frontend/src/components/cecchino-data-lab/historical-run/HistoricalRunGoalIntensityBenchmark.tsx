@@ -256,6 +256,32 @@ export function HistoricalRunGoalIntensityBenchmark({
     pf?.paired_complete_estimate ?? pf?.availability?.paired_complete_estimate ?? 0
   const probeN = pf?.five_models_probe_n ?? pf?.availability?.five_models_probe_n ?? 0
   const probeOk = pf?.five_models_probe_ok ?? pf?.availability?.five_models_probe_ok ?? 0
+  const v4Persisted =
+    pf?.v4_persisted_available ?? pf?.availability?.v4_persisted_available ?? 0
+  const v4Reconstructed =
+    pf?.v4_reconstructed_available ?? pf?.availability?.v4_reconstructed_available ?? 0
+  const v4Total =
+    pf?.v4_total_available ??
+    pf?.availability?.v4_total_available ??
+    pf?.availability?.v4_rebuildable ??
+    0
+  const v5Rebuildable =
+    pf?.v5_rebuildable ??
+    pf?.availability?.v5_rebuildable ??
+    pf?.availability?.v5_features_rebuildable ??
+    0
+  const pairedCoverage =
+    pf?.paired_coverage_pct ?? pf?.availability?.paired_coverage_pct ?? null
+  const v4InputMismatch =
+    pf?.v4_reconstruction_input_mismatch ??
+    pf?.availability?.v4_reconstruction_input_mismatch ??
+    0
+  const v4KpiMismatch =
+    pf?.v4_reconstruction_kpi_mismatch ??
+    pf?.availability?.v4_reconstruction_kpi_mismatch ??
+    0
+  const v4MissingContext =
+    pf?.v4_missing_context_data ?? pf?.availability?.v4_missing_context_data ?? 0
 
   return (
     <section
@@ -427,9 +453,17 @@ export function HistoricalRunGoalIntensityBenchmark({
           className="mb-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4"
           data-testid="gi-bench-preflight-panel"
         >
-          <div>V4 rebuildable: {pf.availability?.v4_rebuildable ?? 0}</div>
-          <div>V5 rebuildable: {pf.availability?.v5_features_rebuildable ?? 0}</div>
-          <div data-testid="gi-bench-paired-estimate">Paired stimato: {pairedEstimate}</div>
+          <div data-testid="gi-bench-v4-persisted">V4 persistite: {v4Persisted}</div>
+          <div data-testid="gi-bench-v4-reconstructed">V4 ricostruibili: {v4Reconstructed}</div>
+          <div data-testid="gi-bench-v4-total">V4 totali disponibili: {v4Total}</div>
+          <div data-testid="gi-bench-v5-rebuildable">V5 ricostruibili: {v5Rebuildable}</div>
+          <div data-testid="gi-bench-paired-estimate">Paired stimati: {pairedEstimate}</div>
+          <div data-testid="gi-bench-paired-coverage">
+            Coverage: {pairedCoverage != null ? `${pairedCoverage}%` : '—'}
+          </div>
+          <div data-testid="gi-bench-v4-input-mismatch">Mismatch input: {v4InputMismatch}</div>
+          <div data-testid="gi-bench-v4-kpi-mismatch">Mismatch KPI storico: {v4KpiMismatch}</div>
+          <div data-testid="gi-bench-v4-missing-context">Missing context: {v4MissingContext}</div>
           <div data-testid="gi-bench-pilot-paired-estimate">
             Pilot paired: {pf.pilot_paired_estimate ?? pf.availability?.pilot_paired_estimate ?? 0}
           </div>
@@ -442,6 +476,16 @@ export function HistoricalRunGoalIntensityBenchmark({
           <div>External API: {pf.checks?.external_api_calls ?? 0}</div>
           <div>Pilot selected: {pf.pilot?.selected ?? 0}</div>
         </div>
+      ) : null}
+
+      {pf ? (
+        <p
+          className="mb-4 text-xs text-[var(--lab-muted)]"
+          data-testid="gi-bench-v4-reconstruction-note"
+        >
+          Le V4 ricostruite applicano la formula V4 frozen agli input pre-match storici certificati.
+          La run originale non viene modificata.
+        </p>
       ) : null}
 
       {pf && (pf.blocking_reasons?.length ?? 0) > 0 ? (

@@ -16,8 +16,7 @@ from app.models.cecchino_goal_intensity_v5_preview import (
 )
 from app.models.cecchino_lab_goal_intensity_benchmark_job import REQUIRED_BUNDLE_VERSION
 from app.services.cecchino.cecchino_goal_intensity_analysis import (
-    build_cecchino_goal_intensity_analysis_from_expected_goals,
-    _lambda_from_goal_markets,
+    VERSION as V4_FORMULA_VERSION,
 )
 from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import V4_MODEL_ID
 from app.services.cecchino.cecchino_goal_intensity_v5_phase_2c_candidates import (
@@ -40,6 +39,11 @@ from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import safe_float
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
+from app.services.cecchino_data_lab.goal_intensity_historical_v4_reconstruction import (
+    CompetitionProxyCache,
+    RECONSTRUCTION_VERSION,
+    extract_v4_certified,
+)
 
 MAIN_MODEL_IDS = (
     V4_MODEL_ID,
@@ -196,48 +200,31 @@ def extract_v5_features_from_snapshot(snapshot_like: Any) -> tuple[dict[str, flo
 
 def extract_v4_from_historical_snapshot(
     snapshot_like: Any,
+    *,
+    proxy_cache: CompetitionProxyCache | None = None,
+    source_code_commit: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Ordine §11: payload V4 → goal_markets lambda → equivalente certificato."""
-    candidates: list[dict[str, Any]] = []
-    for attr in (
-        "cecchino_output_json",
-        "goal_intensity_compatibility_json",
-        "module_availability_json",
-        "balance_v5_json",
-        "historical_kpi_json",
-        "input_snapshot_json",
-    ):
-        block = getattr(snapshot_like, attr, None)
-        if isinstance(block, dict):
-            candidates.append(block)
+    """Compat: restituisce (payload, reason). Usa extract_v4_certified (A→B→C→D)."""
+    result = extract_v4_certified(
+        snapshot_like,
+        proxy_cache=proxy_cache,
+        source_code_commit=source_code_commit,
+    )
+    return result.get("v4_payload"), result.get("reason")
 
-    for payload in candidates:
-        for key in ("goal_intensity_analysis", "goal_intensity_v4"):
-            block = payload.get(key)
-            if isinstance(block, dict):
-                eg = safe_float(block.get("expected_goals_total"))
-                if eg is not None and eg > 0:
-                    return build_cecchino_goal_intensity_analysis_from_expected_goals(eg), None
-        eg_direct = safe_float(payload.get("expected_goals_total"))
-        if eg_direct is not None and eg_direct > 0 and payload.get("version") == (
-            "cecchino_goal_intensity_v4_expected_goals"
-        ):
-            return build_cecchino_goal_intensity_analysis_from_expected_goals(eg_direct), None
-        gm = payload.get("goal_markets")
-        if isinstance(gm, dict):
-            lam = _lambda_from_goal_markets(gm)
-            if lam is not None and lam > 0:
-                return build_cecchino_goal_intensity_analysis_from_expected_goals(lam), None
-            # summary.lambda nested without summary wrapper
-            for _mk, v in gm.items():
-                if not isinstance(v, dict):
-                    continue
-                summary = v.get("summary") if isinstance(v.get("summary"), dict) else v
-                lam2 = safe_float(summary.get("lambda") if isinstance(summary, dict) else None)
-                if lam2 is not None and lam2 > 0:
-                    return build_cecchino_goal_intensity_analysis_from_expected_goals(lam2), None
 
-    return None, "missing_persisted_v4_expected_goals"
+def extract_v4_with_provenance(
+    snapshot_like: Any,
+    *,
+    proxy_cache: CompetitionProxyCache | None = None,
+    source_code_commit: str | None = None,
+) -> dict[str, Any]:
+    """Estrazione V4 certificata con provenienza (unica per preflight/pilot/full/resume)."""
+    return extract_v4_certified(
+        snapshot_like,
+        proxy_cache=proxy_cache,
+        source_code_commit=source_code_commit,
+    )
 
 
 def extract_ft_target(result_json: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -402,11 +389,23 @@ def prediction_input_hash(
     features: dict[str, Any],
     bundle_definition_hash: str,
     snapshot_id: int,
+    v4_source: str | None = None,
+    reconstruction_version: str | None = None,
+    v4_formula_version: str | None = None,
+    reconstruction_input_hash: str | None = None,
 ) -> str:
-    return _sha256_canonical(
-        {
-            "features": sanitize_prematch_features(features),
-            "bundle_definition_hash": bundle_definition_hash,
-            "snapshot_id": snapshot_id,
-        }
-    )
+    payload: dict[str, Any] = {
+        "features": sanitize_prematch_features(features),
+        "bundle_definition_hash": bundle_definition_hash,
+        "snapshot_id": snapshot_id,
+        "v4_formula_version": v4_formula_version or V4_FORMULA_VERSION,
+    }
+    if v4_source:
+        payload["v4_source"] = v4_source
+    if reconstruction_version:
+        payload["reconstruction_version"] = reconstruction_version
+    elif v4_source == "reconstructed_current_v4_from_frozen_historical_inputs":
+        payload["reconstruction_version"] = RECONSTRUCTION_VERSION
+    if reconstruction_input_hash:
+        payload["reconstruction_input_hash"] = reconstruction_input_hash
+    return _sha256_canonical(payload)
