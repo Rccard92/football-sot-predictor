@@ -94,10 +94,41 @@ export const BENCHMARK_MODEL_ORDER = [
   'GI_V4_EXPECTED_GOALS',
 ] as const
 
+export const PHASE_2C_ACTIVE_CANDIDATES = [
+  'GI_A_STRICT_CORE',
+  'GI_B_RECENCY',
+  'GI_E_PRIMARY_RECALIBRATED',
+  'GI_F_REGULARIZED_PILLARS',
+] as const
+
+export const PHASE_2C_ARCHIVED_CANDIDATES = [
+  'MT1_LONG_TERM',
+  'GI_A_without_volatility',
+] as const
+
+export const PHASE_2C_HOLDOUT_MODELS = [
+  'GI_V4_EXPECTED_GOALS',
+  'GI_A_STRICT_CORE',
+  'GI_B_RECENCY',
+  'GI_E_PRIMARY_RECALIBRATED',
+  'GI_F_REGULARIZED_PILLARS',
+] as const
+
 export const BENCHMARK_MODEL_LABELS: Record<string, string> = {
   GI_A_STRICT_CORE: 'Primary V5',
   GI_B_RECENCY: 'Challenger V5',
   MT1_LONG_TERM: 'Benchmark interno V5',
   GI_A_without_volatility: 'Senza volatilità V5',
   GI_V4_EXPECTED_GOALS: 'V4',
+  GI_E_PRIMARY_RECALIBRATED: 'Primary ricalibrato',
+  GI_F_REGULARIZED_PILLARS: 'Pilastri regolarizzati',
+}
+
+export function phase2cFreezeDisabled(
+  data: { freeze_allowed?: boolean; status?: string } | null | undefined,
+): boolean {
+  if (!data) return true
+  if (data.freeze_allowed === false) return true
+  if (data.status === 'blocked') return true
+  return false
 }

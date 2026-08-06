@@ -380,6 +380,223 @@ def _dedupe_by_fixture(
     return list(best.values())
 
 
+def _extract_raw_score(
+    snap: CecchinoGoalIntensityV5PreviewSnapshot,
+    candidate_id: str,
+) -> float | None:
+    cand = (snap.candidate_scores_payload or {}).get(candidate_id)
+    if isinstance(cand, dict):
+        raw = safe_float(cand.get("raw_score") if "raw_score" in cand else cand.get("score"))
+        if raw is not None:
+            return raw
+    if isinstance(cand, (int, float)):
+        return float(cand)
+    cal = (snap.calibrated_predictions_payload or {}).get(candidate_id)
+    if isinstance(cal, dict):
+        return safe_float(cal.get("raw_score"))
+    return None
+
+
+def load_goal_intensity_prospective_paired_observations(
+    db: Session,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    competition_id: int | None = None,
+    bundle: Any | None = None,
+    snapshots: list[CecchinoGoalIntensityV5PreviewSnapshot] | None = None,
+) -> dict[str, Any]:
+    """Coorte paired canonica V4/V5 prospettici (shared Phase 2B / 2C).
+
+    Nessuna run 2021/22, nessuna API esterna, nessun write.
+    Se `snapshots` è passato, evita una seconda query sul bundle.
+    """
+    active = bundle if bundle is not None else get_active_bundle(db)
+    if active is None:
+        return {
+            "status": "error",
+            "error": "bundle_missing",
+            "bundle": None,
+            "observations": [],
+            "completed_raw": 0,
+            "eligible": 0,
+            "duplicates_removed": 0,
+            "paired_total": 0,
+            "excluded_n": 0,
+            "missing_by_reason": {},
+            "v4_available": 0,
+            "cand_available": {cid: 0 for cid in MONITORED_CANDIDATES},
+            "all_v5_available": 0,
+            "max_result_ts": None,
+            "historical_run_used": False,
+            "external_api_calls": 0,
+        }
+
+    freeze_at = _ensure_utc(active.frozen_at)
+    guard = _prospective_guard(active)
+
+    if snapshots is None:
+        all_snaps = list(
+            db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == active.id
+                )
+            ).all()
+        )
+    else:
+        all_snaps = list(snapshots)
+    filtered = _filter_by_date_comp(
+        all_snaps,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
+
+    completed_raw_list = [
+        s
+        for s in filtered
+        if s.snapshot_status == SNAPSHOT_COMPLETED
+        and s.result_attached_at is not None
+        and s.total_goals_ft is not None
+    ]
+    completed_raw = len(completed_raw_list)
+
+    max_result_ts = None
+    for s in completed_raw_list:
+        if s.result_attached_at and (max_result_ts is None or s.result_attached_at > max_result_ts):
+            max_result_ts = s.result_attached_at
+
+    today_ids = {s.today_fixture_id for s in completed_raw_list if s.today_fixture_id is not None}
+    today_by_id: dict[int, CecchinoTodayFixture] = {}
+    if today_ids:
+        rows = list(
+            db.scalars(
+                select(CecchinoTodayFixture).where(CecchinoTodayFixture.id.in_(today_ids))
+            ).all()
+        )
+        today_by_id = {int(r.id): r for r in rows}
+
+    missing_reasons: Counter[str] = Counter()
+    eligible_pre: list[CecchinoGoalIntensityV5PreviewSnapshot] = []
+    for s in completed_raw_list:
+        ok, reason = _snapshot_prospective_ok(s, freeze_at=freeze_at, guard=guard)
+        if not ok:
+            missing_reasons[reason or "excluded"] += 1
+            continue
+        eligible_pre.append(s)
+
+    eligible_list = _dedupe_by_fixture(eligible_pre)
+    duplicates_removed = max(0, len(eligible_pre) - len(eligible_list))
+    if duplicates_removed:
+        missing_reasons["duplicate_fixture_snapshot_removed"] += duplicates_removed
+
+    observations: list[dict[str, Any]] = []
+    v4_available = 0
+    cand_available = {cid: 0 for cid in MONITORED_CANDIDATES}
+    all_v5_available = 0
+
+    for s in eligible_list:
+        today = today_by_id.get(int(s.today_fixture_id)) if s.today_fixture_id is not None else None
+        v4_payload, v4_reason = extract_v4_from_persisted_today(today)
+        v5_by_cand: dict[str, dict[str, float | None]] = {}
+        missing_cand = False
+        for cid in MONITORED_CANDIDATES:
+            pred = extract_v5_calibrated(s, cid)
+            if pred is None or pred.get("expected_total_goals") is None:
+                missing_cand = True
+                missing_reasons[f"missing_v5_candidate_{cid}"] += 1
+            else:
+                cand_available[cid] += 1
+                raw = _extract_raw_score(s, cid)
+                v5_by_cand[cid] = {**pred, "raw_score": raw}
+                if pred.get("probability_goals_ge_2") is None:
+                    missing_reasons[f"missing_v5_ge2_{cid}"] += 1
+                if pred.get("probability_goals_ge_3") is None:
+                    missing_reasons[f"missing_v5_ge3_{cid}"] += 1
+
+        if len(v5_by_cand) == len(MONITORED_CANDIDATES):
+            all_v5_available += 1
+
+        if v4_payload is None:
+            missing_reasons[v4_reason or "missing_persisted_v4_expected_goals"] += 1
+            continue
+        v4_available += 1
+        v4_eg = safe_float(v4_payload.get("expected_goals_total"))
+        if v4_eg is None or v4_eg <= 0:
+            missing_reasons["missing_persisted_v4_expected_goals"] += 1
+            continue
+
+        if missing_cand or len(v5_by_cand) < len(MONITORED_CANDIDATES):
+            continue
+
+        binary_ok = True
+        for cid in MONITORED_CANDIDATES:
+            p = v5_by_cand[cid]
+            if p.get("probability_goals_ge_2") is None or p.get("probability_goals_ge_3") is None:
+                binary_ok = False
+                break
+        p_ge2 = _v4_over_prob(v4_payload, "over_1_5")
+        p_ge3 = _v4_over_prob(v4_payload, "over_2_5")
+        if p_ge2 is None or p_ge3 is None:
+            missing_reasons["missing_v4_over_probabilities"] += 1
+            continue
+        if not binary_ok:
+            continue
+
+        y = float(s.total_goals_ft)  # type: ignore[arg-type]
+        ge2 = 1 if y >= 2 else 0
+        ge3 = 1 if y >= 3 else 0
+        btts = None
+        if s.btts_ft is not None:
+            btts = 1 if bool(s.btts_ft) else 0
+        elif s.goals_home_ft is not None and s.goals_away_ft is not None:
+            btts = 1 if int(s.goals_home_ft) > 0 and int(s.goals_away_ft) > 0 else 0
+
+        pillars = dict(s.pillar_scores_payload or {})
+        observations.append(
+            {
+                "snapshot_id": s.id,
+                "today_fixture_id": s.today_fixture_id,
+                "local_fixture_id": s.local_fixture_id,
+                "competition_id": s.competition_id,
+                "competition_name": s.competition_name,
+                "kickoff": s.kickoff,
+                "scan_date": s.scan_date,
+                "y_total": y,
+                "y_ge2": ge2,
+                "y_ge3": ge3,
+                "y_btts": btts,
+                "v4_eg": float(v4_eg),
+                "v4_p_ge2": float(p_ge2),
+                "v4_p_ge3": float(p_ge3),
+                "v5": v5_by_cand,
+                "pillars": pillars,
+            }
+        )
+
+    paired_total = len(observations)
+    excluded_n = max(0, completed_raw - paired_total)
+    # Riconciliazione: se excluded_n > 0 e reasons vuoto, non deve più accadere
+    # (dedup e filtri incrementano missing_by_reason).
+    return {
+        "status": "ok",
+        "bundle": active,
+        "observations": observations,
+        "completed_raw": completed_raw,
+        "eligible": len(eligible_list),
+        "duplicates_removed": duplicates_removed,
+        "paired_total": paired_total,
+        "excluded_n": excluded_n,
+        "missing_by_reason": dict(sorted(missing_reasons.items())),
+        "v4_available": v4_available,
+        "cand_available": cand_available,
+        "all_v5_available": all_v5_available,
+        "max_result_ts": max_result_ts,
+        "historical_run_used": False,
+        "external_api_calls": 0,
+    }
+
+
 def _continuous_metrics(preds: list[float], actuals: list[float]) -> dict[str, Any]:
     n = len(preds)
     if n == 0:
@@ -553,10 +770,9 @@ def build_goal_intensity_v4_v5_prospective_benchmark(
             }
         )
 
-    freeze_at = _ensure_utc(bundle.frozen_at)
-    guard = _prospective_guard(bundle)
     definition_hash = bundle.candidate_definition_hash
 
+    # Light peek for cache key (same as pre-refactor: completed raw + max result ts)
     all_snaps = list(
         db.scalars(
             select(CecchinoGoalIntensityV5PreviewSnapshot).where(
@@ -570,19 +786,16 @@ def build_goal_intensity_v4_v5_prospective_benchmark(
         date_to=date_to,
         competition_id=competition_id,
     )
-
-    # Completed V5 candidates for cohort (pre-dedupe diagnostics)
-    completed_raw = [
+    completed_raw_list = [
         s
         for s in filtered
         if s.snapshot_status == SNAPSHOT_COMPLETED
         and s.result_attached_at is not None
         and s.total_goals_ft is not None
     ]
-    completed_v5_total = len(completed_raw)
-
+    completed_v5_total = len(completed_raw_list)
     max_result_ts = None
-    for s in completed_raw:
+    for s in completed_raw_list:
         if s.result_attached_at and (max_result_ts is None or s.result_attached_at > max_result_ts):
             max_result_ts = s.result_attached_at
 
@@ -604,109 +817,33 @@ def build_goal_intensity_v4_v5_prospective_benchmark(
             out["cache_hit"] = True
             return out
 
-    today_ids = {s.today_fixture_id for s in completed_raw if s.today_fixture_id is not None}
-    today_by_id: dict[int, CecchinoTodayFixture] = {}
-    if today_ids:
-        rows = list(
-            db.scalars(
-                select(CecchinoTodayFixture).where(CecchinoTodayFixture.id.in_(today_ids))
-            ).all()
-        )
-        today_by_id = {int(r.id): r for r in rows}
-
-    missing_reasons: Counter[str] = Counter()
-    eligible: list[CecchinoGoalIntensityV5PreviewSnapshot] = []
-    for s in completed_raw:
-        ok, reason = _snapshot_prospective_ok(s, freeze_at=freeze_at, guard=guard)
-        if not ok:
-            missing_reasons[reason or "excluded"] += 1
-            continue
-        eligible.append(s)
-
-    eligible = _dedupe_by_fixture(eligible)
-
-    # Build paired observations
-    observations: list[dict[str, Any]] = []
-    v4_available = 0
-    cand_available = {cid: 0 for cid in MONITORED_CANDIDATES}
-    all_v5_available = 0
-
-    for s in eligible:
-        today = today_by_id.get(int(s.today_fixture_id)) if s.today_fixture_id is not None else None
-        v4_payload, v4_reason = extract_v4_from_persisted_today(today)
-        v5_by_cand: dict[str, dict[str, float | None]] = {}
-        missing_cand = False
-        for cid in MONITORED_CANDIDATES:
-            pred = extract_v5_calibrated(s, cid)
-            if pred is None or pred.get("expected_total_goals") is None:
-                missing_cand = True
-                missing_reasons[f"missing_v5_candidate_{cid}"] += 1
-            else:
-                cand_available[cid] += 1
-                v5_by_cand[cid] = pred
-                # binary may still be missing — track separately for paired_complete
-                if pred.get("probability_goals_ge_2") is None:
-                    missing_reasons[f"missing_v5_ge2_{cid}"] += 1
-                if pred.get("probability_goals_ge_3") is None:
-                    missing_reasons[f"missing_v5_ge3_{cid}"] += 1
-
-        if len(v5_by_cand) == len(MONITORED_CANDIDATES):
-            all_v5_available += 1
-
-        if v4_payload is None:
-            missing_reasons[v4_reason or "missing_persisted_v4_expected_goals"] += 1
-            continue
-        v4_available += 1
-        v4_eg = safe_float(v4_payload.get("expected_goals_total"))
-        if v4_eg is None or v4_eg <= 0:
-            missing_reasons["missing_persisted_v4_expected_goals"] += 1
-            continue
-
-        if missing_cand or len(v5_by_cand) < len(MONITORED_CANDIDATES):
-            continue
-
-        # Require binary probs for full paired row used in ranking tables
-        binary_ok = True
-        for cid in MONITORED_CANDIDATES:
-            p = v5_by_cand[cid]
-            if p.get("probability_goals_ge_2") is None or p.get("probability_goals_ge_3") is None:
-                binary_ok = False
-                break
-        p_ge2 = _v4_over_prob(v4_payload, "over_1_5")
-        p_ge3 = _v4_over_prob(v4_payload, "over_2_5")
-        if p_ge2 is None or p_ge3 is None:
-            missing_reasons["missing_v4_over_probabilities"] += 1
-            continue
-        if not binary_ok:
-            continue
-
-        y = float(s.total_goals_ft)  # type: ignore[arg-type]
-        ge2 = 1 if y >= 2 else 0
-        ge3 = 1 if y >= 3 else 0
-        btts = None
-        if s.btts_ft is not None:
-            btts = 1 if bool(s.btts_ft) else 0
-        elif s.goals_home_ft is not None and s.goals_away_ft is not None:
-            btts = 1 if int(s.goals_home_ft) > 0 and int(s.goals_away_ft) > 0 else 0
-
-        observations.append(
+    cohort_peek = load_goal_intensity_prospective_paired_observations(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        bundle=bundle,
+        snapshots=all_snaps,
+    )
+    if cohort_peek.get("status") != "ok":
+        return make_json_safe(
             {
-                "snapshot_id": s.id,
-                "today_fixture_id": s.today_fixture_id,
-                "local_fixture_id": s.local_fixture_id,
-                "y_total": y,
-                "y_ge2": ge2,
-                "y_ge3": ge3,
-                "y_btts": btts,
-                "v4_eg": float(v4_eg),
-                "v4_p_ge2": float(p_ge2),
-                "v4_p_ge3": float(p_ge3),
-                "v5": v5_by_cand,
+                "status": "error",
+                "error": cohort_peek.get("error") or "cohort_unavailable",
+                "version": GOAL_INTENSITY_V4_V5_PROSPECTIVE_BENCHMARK_VERSION,
+                "v4_version": V4_VERSION,
+                "v5_bundle_version": V5_BUNDLE_VERSION,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
 
-    paired_complete_n = len(observations)
-    excluded_n = max(0, completed_v5_total - paired_complete_n)
+    observations = cohort_peek["observations"]
+    paired_complete_n = int(cohort_peek["paired_total"])
+    excluded_n = int(cohort_peek["excluded_n"])
+    cand_available = cohort_peek["cand_available"]
+    v4_available = int(cohort_peek["v4_available"])
+    all_v5_available = int(cohort_peek["all_v5_available"])
+    missing_reasons = cohort_peek["missing_by_reason"]
     paired_coverage_pct = (
         _round(100.0 * paired_complete_n / completed_v5_total, 2) if completed_v5_total else 0.0
     )
@@ -816,8 +953,6 @@ def build_goal_intensity_v4_v5_prospective_benchmark(
         return out_list
 
     continuous_comparisons = _comps(abs_err, "mae") + _comps(sq_err, "mse_for_rmse")
-    # Also expose RMSE delta as sqrt not paired — keep MAE primary; add rmse pairwise on abs? Task asks MAE and RMSE deltas.
-    # For RMSE, paired bootstrap on squared-error mean difference is standard; report metric "rmse_via_mse_delta".
     ge2_comparisons = _comps(brier_ge2_comp, "brier")
     ge3_comparisons = _comps(brier_ge3_comp, "brier")
 
@@ -863,6 +998,7 @@ def build_goal_intensity_v4_v5_prospective_benchmark(
                 "all_v5_candidates_available": all_v5_available,
                 "paired_complete_n": paired_complete_n,
                 "excluded_n": excluded_n,
+                "duplicates_removed": int(cohort_peek["duplicates_removed"]),
                 "paired_coverage_pct": paired_coverage_pct,
                 "missing_by_reason": dict(sorted(missing_reasons.items())),
             },

@@ -5,6 +5,7 @@ import {
   GoalIntensityCandidatesView,
   GoalIntensityProspectiveResultsView,
   GoalIntensityBenchmarkView,
+  GoalIntensityPhase2CView,
   GoalIntensityCalibrationView,
   GoalIntensityStabilityView,
   GoalIntensityReadinessView,
@@ -54,6 +55,10 @@ export function GoalIntensityModulePanel({
 
   if (view === 'benchmark-v4-v5' || view === 'benchmark') {
     return <GoalIntensityBenchmarkView {...common} />
+  }
+
+  if (view === 'variants-phase-2c') {
+    return <GoalIntensityPhase2CView {...common} />
   }
 
   if (view === 'calibration') {

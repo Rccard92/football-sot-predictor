@@ -286,6 +286,52 @@ export async function getGoalIntensityV5Benchmark(
   return adminGetJson(`${BASE}/benchmark-v4-v5${qs(filters)}`, opts)
 }
 
+export type GoalIntensityV5Phase2C = {
+  status?: string
+  development_version?: string
+  target_bundle_version?: string
+  parent_bundle?: Record<string, unknown>
+  existing_candidate_bundle?: Record<string, unknown> | null
+  cohort?: Record<string, unknown>
+  splits?: Record<string, unknown>
+  candidates?: Record<string, unknown>
+  archived_candidates?: Record<string, unknown>
+  gi_f_selection?: Record<string, unknown>
+  holdout_metrics?: Record<string, unknown>
+  holdout_pairwise?: Array<Record<string, unknown>>
+  definition_hash?: string
+  fixture_ids_hash?: string
+  targets_hash?: string
+  checks?: Record<string, unknown>
+  freeze_allowed?: boolean
+  blocking_reasons?: string[]
+  dry_run?: boolean
+  [key: string]: unknown
+}
+
+export const PHASE_2C_FREEZE_CONFIRM = 'FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1'
+
+export async function getGoalIntensityV5Phase2CCandidates(
+  filters: GoalIntensityV5Filters,
+  opts?: { signal?: AbortSignal },
+): Promise<GoalIntensityV5Phase2C> {
+  return adminGetJson(`${BASE}/phase-2c-candidates${qs(filters)}`, opts)
+}
+
+export async function freezeGoalIntensityV5Phase2CBundle(body: {
+  dry_run: boolean
+  confirm?: string | null
+  date_from?: string
+  date_to?: string
+  competition_id?: number | null
+}): Promise<GoalIntensityV5Phase2C> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/goal-intensity-v5/phase-2c-candidates/freeze',
+    body,
+  )
+}
+
 export async function getGoalIntensityV5DataHealth(
   filters: GoalIntensityV5Filters,
   opts?: { signal?: AbortSignal },

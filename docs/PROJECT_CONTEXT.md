@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal Avanzata v5 — Phase 2C candidate bundle (2026-08-06)
+
+Protocollo `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1`. Conservati GI_A / GI_B; archiviati MT1 e without_volatility (evidenza Phase 2B). Nuovi candidati GI_E (ricalibrazione Primary) e GI_F (Ridge non-negativa sui pillar). Split temporale 50/20/30; holdout inviolabile (access=1). Bundle target `cecchino_goal_intensity_v5_candidate_bundle_v2_1` status `frozen_external_benchmark_candidate`, `is_active=false`. Parent `cecchino_goal_intensity_v5_preview_v1_1` resta attivo. Migration `20260806200000` allarga `status` a String(64). Nessuna attivazione live, Signals blocked, nessuna run 2021/22. Dry-run GET + freeze POST con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.
+
 ## Cutover — Segnali Cecchino V3 allineamento operativo (2026-08-06)
 
 Contratto canonico `get_current_signal_contract()`: formula `cecchino_signals_matrix_v3_draw_dfg_decimal2` + consenso `cecchino_signal_consensus_v1_min_two` + audit `cecchino_signal_explanations_v3`. Raw SI ≠ acquisito (`is_acquired=true`). Today current-only via `is_current_signal_matrix` + `signal_contract`. Evaluation / odds refresh / backfill / revaluate / backtest **V3-only** (`signal_formula_version`); V1/V2 archiviate invariate. Diagnostics versionate (contatori v1/v2/v3). Registro formule: `GET /api/admin/cecchino/signals/formula-registry` (FE non più unica fonte). Data Lab A–F acquired-only, module `cecchino_lab_signals_af_v2_current_v3_consensus`; KPI/settlement **19 mercati**; DRAW_PT eredita consenso da DRAW. Derived rebuild senza full scan: dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3`; zero API esterne; provenance in `derived_refresh`; **non** sovrascrive `source_git_commit`.

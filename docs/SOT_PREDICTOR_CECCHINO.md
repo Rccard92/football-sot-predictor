@@ -301,13 +301,15 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 
 | Campo | Valore |
 |-------|--------|
-| Bundle | `cecchino_goal_intensity_v5_preview_v1_1` (invariato) |
+| Bundle | `cecchino_goal_intensity_v5_preview_v1_1` (invariato, attivo) |
+| Bundle Phase 2C | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (non attivo, benchmark esterno) |
 | Facade | `cecchino_goal_intensity_v5` |
 | Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
 | Policy | `cecchino_goal_intensity_v5_readiness_policy_v1` |
 | Benchmark Phase 2B | `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1` |
-| Export | `cecchino_module_monitoring_exports_v11` + `benchmark_v4_v5_*` |
-| Stato | Preview · Phase 2B manual review eligible (se ≥200) · Signals blocked |
+| Protocollo Phase 2C | `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1` |
+| Export | `cecchino_module_monitoring_exports_v12` + `benchmark_v4_v5_*` + `phase_2c_*` |
+| Stato | Preview · Phase 2C research · Signals blocked |
 | Doc | `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` |
 
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)

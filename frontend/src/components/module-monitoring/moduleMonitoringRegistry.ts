@@ -89,6 +89,7 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
       { id: 'candidates', label: 'Candidati' },
       { id: 'prospective-results', label: 'Risultati prospettici' },
       { id: 'benchmark-v4-v5', label: 'Benchmark V4 vs V5' },
+      { id: 'variants-phase-2c', label: 'Varianti Phase 2C' },
       { id: 'calibration', label: 'Calibrazione' },
       { id: 'stability', label: 'Stabilità' },
       { id: 'readiness', label: 'Readiness' },

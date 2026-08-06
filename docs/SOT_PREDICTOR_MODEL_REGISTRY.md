@@ -70,14 +70,16 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Export pack | `cecchino_module_monitoring_exports_v11` |
-| Bundle | `cecchino_goal_intensity_v5_preview_v1_1` (frozen, invariato) |
+| Export pack | `cecchino_module_monitoring_exports_v12` |
+| Bundle parent | `cecchino_goal_intensity_v5_preview_v1_1` (frozen, attivo, invariato) |
+| Bundle Phase 2C | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (`frozen_external_benchmark_candidate`, `is_active=false`) |
+| Protocollo Phase 2C | `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1` |
 | Facade / monitoring | `cecchino_goal_intensity_v5_monitoring_v1` |
 | Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
 | Readiness policy | `cecchino_goal_intensity_v5_readiness_policy_v1` |
 | Benchmark Phase 2B | `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1` |
 | V4 | `cecchino_goal_intensity_v4_expected_goals` (invariata) |
-| Stato | Preview monitorata · ready_for_manual_review (se ≥200) · Signals blocked |
+| Stato | Preview monitorata · Phase 2C research · Signals blocked |
 
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
 

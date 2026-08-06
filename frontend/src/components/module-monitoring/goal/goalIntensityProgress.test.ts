@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   BENCHMARK_MODEL_ORDER,
+  PHASE_2C_ACTIVE_CANDIDATES,
+  PHASE_2C_ARCHIVED_CANDIDATES,
+  PHASE_2C_HOLDOUT_MODELS,
   coverageCount,
   evidenceLabelIt,
+  phase2cFreezeDisabled,
   progressDerived,
   resolveCompleted,
   resolveMinimum,
   resolvePending,
   resolveSnapshots,
 } from './goalIntensityProgress'
+import { PHASE_2C_FREEZE_CONFIRM } from '../../../lib/cecchinoGoalIntensityV5Api'
 
 describe('goalIntensityProgress field resolution', () => {
   it('risolve completed da prospective_progress.completed', () => {
@@ -48,6 +53,7 @@ describe('goalIntensityProgress field resolution', () => {
   it('evidence labels neutre', () => {
     expect(evidenceLabelIt('low', 'none')).toContain('non conclusiva')
     expect(evidenceLabelIt('insufficient_sample', null)).toContain('non disponibile')
+    expect(evidenceLabelIt('supported', 'left')).toContain('errore inferiore')
   })
 
   it('ordine modelli benchmark include cinque righe canoniche', () => {
@@ -57,5 +63,37 @@ describe('goalIntensityProgress field resolution', () => {
     expect(BENCHMARK_MODEL_ORDER).toContain('MT1_LONG_TERM')
     expect(BENCHMARK_MODEL_ORDER).toContain('GI_A_without_volatility')
     expect(BENCHMARK_MODEL_ORDER).toContain('GI_V4_EXPECTED_GOALS')
+  })
+})
+
+describe('Phase 2C variants helpers', () => {
+  it('quattro candidati attivi e due archiviati', () => {
+    expect(PHASE_2C_ACTIVE_CANDIDATES).toEqual([
+      'GI_A_STRICT_CORE',
+      'GI_B_RECENCY',
+      'GI_E_PRIMARY_RECALIBRATED',
+      'GI_F_REGULARIZED_PILLARS',
+    ])
+    expect(PHASE_2C_ARCHIVED_CANDIDATES).toEqual([
+      'MT1_LONG_TERM',
+      'GI_A_without_volatility',
+    ])
+    expect(PHASE_2C_HOLDOUT_MODELS).toHaveLength(5)
+    expect(PHASE_2C_HOLDOUT_MODELS).toContain('GI_V4_EXPECTED_GOALS')
+  })
+
+  it('freeze disabilitato se blocked o freeze_allowed false', () => {
+    expect(phase2cFreezeDisabled(null)).toBe(true)
+    expect(phase2cFreezeDisabled({ freeze_allowed: false })).toBe(true)
+    expect(phase2cFreezeDisabled({ status: 'blocked', freeze_allowed: true })).toBe(true)
+    expect(phase2cFreezeDisabled({ status: 'preview', freeze_allowed: true })).toBe(false)
+  })
+
+  it('confirm token canonico e testi non promozionali', () => {
+    expect(PHASE_2C_FREEZE_CONFIRM).toBe('FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1')
+    const banned = ['modello vincente', 'giocata consigliata', 'profittevole']
+    for (const w of banned) {
+      expect(evidenceLabelIt('supported', 'left').toLowerCase()).not.toContain(w)
+    }
   })
 })

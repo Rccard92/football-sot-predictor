@@ -158,7 +158,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v11"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v12"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -529,6 +529,15 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "benchmark_v4_v5_calibration_ge2.csv",
             "benchmark_v4_v5_calibration_ge3.csv",
             "benchmark_v4_v5_missing_reasons.csv",
+            "phase_2c_candidate_summary.json",
+            "phase_2c_split_manifest.json",
+            "phase_2c_validation_metrics.csv",
+            "phase_2c_holdout_metrics.csv",
+            "phase_2c_holdout_pairwise.csv",
+            "phase_2c_gi_f_weights.csv",
+            "phase_2c_calibrations.json",
+            "phase_2c_archived_candidates.json",
+            "phase_2c_bundle_definition.json",
         ],
     },
     "signals": {
@@ -2614,6 +2623,138 @@ def _goal_benchmark_export_files(benchmark: dict[str, Any]) -> dict[str, bytes]:
     return files
 
 
+def _goal_phase_2c_export_files(
+    phase2c: dict[str, Any],
+    bundle_status: dict[str, Any],
+) -> dict[str, bytes]:
+    """Materializza export Phase 2C (funziona anche pre-freeze)."""
+    summary = {
+        **{k: v for k, v in phase2c.items() if not str(k).startswith("_")},
+        **bundle_status,
+    }
+    files: dict[str, bytes] = {
+        "phase_2c_candidate_summary.json": _json_bytes(summary),
+        "phase_2c_split_manifest.json": _json_bytes(phase2c.get("splits") or {}),
+        "phase_2c_calibrations.json": _json_bytes(
+            {
+                "GI_E": ((phase2c.get("candidates") or {}).get("GI_E_PRIMARY_RECALIBRATED") or {}).get(
+                    "calibration"
+                ),
+                "GI_F": ((phase2c.get("candidates") or {}).get("GI_F_REGULARIZED_PILLARS") or {}).get(
+                    "calibration"
+                ),
+                "GI_A_parent_copy": True,
+                "GI_B_parent_copy": True,
+            }
+        ),
+        "phase_2c_archived_candidates.json": _json_bytes(phase2c.get("archived_candidates") or {}),
+        "phase_2c_bundle_definition.json": _json_bytes(
+            {
+                **(phase2c.get("bundle_payload_preview") or {}),
+                **bundle_status,
+                "definition_hash": phase2c.get("definition_hash"),
+                "fixture_ids_hash": phase2c.get("fixture_ids_hash"),
+                "targets_hash": phase2c.get("targets_hash"),
+                "development_version": phase2c.get("development_version"),
+                "target_bundle_version": phase2c.get("target_bundle_version"),
+                "parent_bundle": phase2c.get("parent_bundle"),
+            }
+        ),
+    }
+
+    val_rows = []
+    for r in ((phase2c.get("gi_f_selection") or {}).get("validation_results") or []):
+        val_rows.append(
+            {
+                "alpha": r.get("alpha"),
+                "status": r.get("status"),
+                "validation_mae": r.get("validation_mae"),
+                "validation_mean_brier_ge2_ge3": r.get("validation_mean_brier_ge2_ge3"),
+                "validation_brier_btts": r.get("validation_brier_btts"),
+                "error": r.get("error"),
+            }
+        )
+    files["phase_2c_validation_metrics.csv"] = _csv_bom(
+        val_rows,
+        [
+            "alpha",
+            "status",
+            "validation_mae",
+            "validation_mean_brier_ge2_ge3",
+            "validation_brier_btts",
+            "error",
+        ],
+    )
+
+    holdout_rows = []
+    for mid, m in (phase2c.get("holdout_metrics") or {}).items():
+        cont = m.get("continuous") or {}
+        holdout_rows.append(
+            {
+                "model_id": mid,
+                "n": cont.get("n"),
+                "mae": cont.get("mae"),
+                "rmse": cont.get("rmse"),
+                "bias": cont.get("bias"),
+                "pearson": cont.get("pearson"),
+                "spearman": cont.get("spearman"),
+                "brier_ge2": (m.get("goals_ge_2") or {}).get("brier"),
+                "brier_ge3": (m.get("goals_ge_3") or {}).get("brier"),
+                "brier_btts": (m.get("btts") or {}).get("brier"),
+            }
+        )
+    files["phase_2c_holdout_metrics.csv"] = _csv_bom(
+        holdout_rows,
+        [
+            "model_id",
+            "n",
+            "mae",
+            "rmse",
+            "bias",
+            "pearson",
+            "spearman",
+            "brier_ge2",
+            "brier_ge3",
+            "brier_btts",
+        ],
+    )
+
+    pairwise_rows = []
+    for c in phase2c.get("holdout_pairwise") or []:
+        pairwise_rows.append(
+            {
+                "left_id": c.get("left_id"),
+                "right_id": c.get("right_id"),
+                "metric": c.get("metric"),
+                "n": c.get("n"),
+                "delta": c.get("delta"),
+                "ci_lower": (c.get("ci") or {}).get("ci_lower"),
+                "ci_upper": (c.get("ci") or {}).get("ci_upper"),
+                "preferred_side": c.get("preferred_side"),
+                "evidence_level": c.get("evidence_level"),
+            }
+        )
+    files["phase_2c_holdout_pairwise.csv"] = _csv_bom(
+        pairwise_rows,
+        [
+            "left_id",
+            "right_id",
+            "metric",
+            "n",
+            "delta",
+            "ci_lower",
+            "ci_upper",
+            "preferred_side",
+            "evidence_level",
+        ],
+    )
+
+    weights = ((phase2c.get("gi_f_selection") or {}).get("weights") or {})
+    weight_rows = [{"pillar": k, "weight": v} for k, v in sorted(weights.items())]
+    files["phase_2c_gi_f_weights.csv"] = _csv_bom(weight_rows, ["pillar", "weight"])
+    return files
+
+
 def _build_goal_files(
     db: Session,
     *,
@@ -2804,6 +2945,42 @@ def _build_goal_files(
         )
         for name, payload in _goal_benchmark_export_files(benchmark).items():
             files[name] = payload
+
+        # Phase 2C candidate development exports
+        from app.services.cecchino.cecchino_goal_intensity_v5_phase_2c_candidates import (
+            TARGET_BUNDLE_VERSION,
+            develop_phase_2c_candidates,
+        )
+        from app.models.cecchino_goal_intensity_v5_preview import (
+            CecchinoGoalIntensityV5PreviewBundle,
+        )
+        from sqlalchemy import select as sa_select
+
+        phase2c = develop_phase_2c_candidates(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            use_cache=True,
+        )
+        if isinstance(phase2c, dict):
+            phase2c = dict(phase2c)
+            phase2c.pop("_bundle_payload", None)
+        frozen = db.scalars(
+            sa_select(CecchinoGoalIntensityV5PreviewBundle).where(
+                CecchinoGoalIntensityV5PreviewBundle.version == TARGET_BUNDLE_VERSION
+            )
+        ).first()
+        bundle_status = (
+            {
+                "bundle_status": frozen.status if frozen else "preview_not_frozen",
+                "bundle_id": frozen.id if frozen else None,
+                "definition_hash": frozen.candidate_definition_hash if frozen else phase2c.get("definition_hash"),
+                "is_active": bool(frozen.is_active) if frozen else False,
+            }
+        )
+        for name, payload in _goal_phase_2c_export_files(phase2c, bundle_status).items():
+            files[name] = payload
     except Exception as exc:
         logger.warning(
             "goal_readiness_export_failed error_code=%s", type(exc).__name__
@@ -2822,6 +2999,15 @@ def _build_goal_files(
             "benchmark_v4_v5_calibration_ge2.csv",
             "benchmark_v4_v5_calibration_ge3.csv",
             "benchmark_v4_v5_missing_reasons.csv",
+            "phase_2c_candidate_summary.json",
+            "phase_2c_split_manifest.json",
+            "phase_2c_validation_metrics.csv",
+            "phase_2c_holdout_metrics.csv",
+            "phase_2c_holdout_pairwise.csv",
+            "phase_2c_gi_f_weights.csv",
+            "phase_2c_calibrations.json",
+            "phase_2c_archived_candidates.json",
+            "phase_2c_bundle_definition.json",
         ):
             files.setdefault(name, _json_bytes({"status": "unavailable"}))
 

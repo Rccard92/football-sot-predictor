@@ -942,6 +942,32 @@ def goal_intensity_v5_benchmark_v4_v5(
     )
 
 
+@router.get("/goal-intensity-v5/phase-2c-candidates")
+def goal_intensity_v5_phase_2c_candidates(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Dry-run Phase 2C: split, GI_E/GI_F, holdout — nessuna scrittura."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_phase_2c_candidates import (
+        develop_phase_2c_candidates,
+    )
+
+    payload = develop_phase_2c_candidates(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        use_cache=True,
+    )
+    # Non esporre payload privato di freeze
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        payload.pop("_bundle_payload", None)
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
 @router.get("/goal-intensity-v5/data-health")
 def goal_intensity_v5_data_health(
     date_from: date | None = Query(None),

@@ -26,6 +26,7 @@ from app.models.mixins import TimestampMixin
 PREVIEW_BUNDLE_VERSION = "cecchino_goal_intensity_v5_preview_v1_1"
 BUNDLE_STATUS_ACTIVE = "active"
 BUNDLE_STATUS_SUPERSEDED = "superseded"
+BUNDLE_STATUS_FROZEN_EXTERNAL_BENCHMARK_CANDIDATE = "frozen_external_benchmark_candidate"
 
 SNAPSHOT_PENDING = "pending"
 SNAPSHOT_LOCKED = "locked"
@@ -51,7 +52,7 @@ class CecchinoGoalIntensityV5PreviewBundle(Base, TimestampMixin):
     retrospective_date_to: Mapped[date] = mapped_column(Date, nullable=False)
     first_prospective_scan_date: Mapped[date] = mapped_column(Date, nullable=False)
     frozen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default=BUNDLE_STATUS_ACTIVE)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default=BUNDLE_STATUS_ACTIVE)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
 
 

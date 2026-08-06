@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Prospective Goal Intensity Phase 2C candidate bundle (2026-08-06)
+
+- Perché: Phase 2B ha mostrato Primary/Challenger ancora utili, MT1 e without_volatility peggiori di V4 sul MAE con evidenza supportata; serve sviluppo controllato di varianti senza attivazione live.
+- Cosa: helper coorte paired condiviso; GI_E (raw≡GI_A, nuove calibrazioni); GI_F (ElasticNet L2 non-negativa sui 6 pillar); split 50/20/30; holdout una volta; freeze idempotente bundle v2.1 `is_active=false`; tab Varianti Phase 2C; export `phase_2c_*`; migration status String(64).
+- Impatto: parent v1.1 invariato e attivo; Signals blocked; freeze produzione non eseguito nel task.
+- Verifica: dry-run → revisione holdout/pesi → freeze con token dopo `alembic upgrade head`.
+
 ## Feat — Prospective Goal Intensity V4–V5 Phase 2B benchmark (2026-08-06)
 
 - Perché: campione prospettico ≥200 completed pronto per revisione manuale Phase 2B; UI Readiness/Overview incoerenti (card a zero, mix global/period, maturity divergente).

@@ -13,13 +13,16 @@ import type {
   GoalIntensityV5ExportStatus,
   GoalIntensityV5Filters,
   GoalIntensityV5Overview,
+  GoalIntensityV5Phase2C,
   GoalIntensityV5ProspectiveResults,
   GoalIntensityV5Readiness,
   GoalIntensityV5Stability,
 } from '../../../lib/cecchinoGoalIntensityV5Api'
 import {
+  PHASE_2C_FREEZE_CONFIRM,
   downloadGoalIntensityV5AnalysisPack,
   downloadGoalIntensityV5ReadinessDossier,
+  freezeGoalIntensityV5Phase2CBundle,
   getGoalIntensityV5Benchmark,
   getGoalIntensityV5Calibration,
   getGoalIntensityV5Candidates,
@@ -27,6 +30,7 @@ import {
   getGoalIntensityV5Dimensions,
   getGoalIntensityV5ExportStatus,
   getGoalIntensityV5Overview,
+  getGoalIntensityV5Phase2CCandidates,
   getGoalIntensityV5ProspectiveResults,
   getGoalIntensityV5Readiness,
   getGoalIntensityV5Stability,
@@ -36,8 +40,12 @@ import { fmtPct } from '../moduleMonitoringUi'
 import {
   BENCHMARK_MODEL_LABELS,
   BENCHMARK_MODEL_ORDER,
+  PHASE_2C_ACTIVE_CANDIDATES,
+  PHASE_2C_ARCHIVED_CANDIDATES,
+  PHASE_2C_HOLDOUT_MODELS,
   coverageCount,
   evidenceLabelIt,
+  phase2cFreezeDisabled,
   progressDerived,
   resolveCompleted,
   resolveMinimum,
@@ -1221,6 +1229,316 @@ export function GoalIntensityExportView({ dateFrom, dateTo, competitionId, cohor
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+export function GoalIntensityPhase2CView({ dateFrom, dateTo, competitionId }: ViewProps) {
+  const [data, setData] = useState<GoalIntensityV5Phase2C | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'idle' | 'analyze' | 'freeze'>('idle')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [archivedOpen, setArchivedOpen] = useState(false)
+
+  const load = async () => {
+    setBusy('analyze')
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await getGoalIntensityV5Phase2CCandidates({
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: competitionId,
+      })
+      setData(res)
+      toast.success('Analisi varianti Phase 2C completata')
+    } catch (err) {
+      setError(String(err))
+      toast.error('Errore analisi varianti Phase 2C')
+    } finally {
+      setBusy('idle')
+      setLoading(false)
+    }
+  }
+
+  const runFreeze = async () => {
+    if (phase2cFreezeDisabled(data)) return
+    setBusy('freeze')
+    try {
+      const res = await freezeGoalIntensityV5Phase2CBundle({
+        dry_run: false,
+        confirm: PHASE_2C_FREEZE_CONFIRM,
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: competitionId,
+      })
+      setData(res)
+      setConfirmOpen(false)
+      toast.success('Bundle benchmark congelato (non operativo)')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Freeze fallito')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  const cohort = (data?.cohort || {}) as Record<string, unknown>
+  const splits = (data?.splits || {}) as Record<string, Record<string, unknown>>
+  const parent = (data?.parent_bundle || {}) as Record<string, unknown>
+  const giF = (data?.gi_f_selection || {}) as Record<string, unknown>
+  const weights = (giF.weights || {}) as Record<string, number>
+  const holdout = (data?.holdout_metrics || {}) as Record<string, Record<string, unknown>>
+  const archived = (data?.archived_candidates || {}) as Record<string, Record<string, unknown>>
+  const checks = (data?.checks || {}) as Record<string, unknown>
+  const freezeDisabled = phase2cFreezeDisabled(data) || busy !== 'idle'
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-800">Varianti Phase 2C</h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Sviluppo candidati per benchmark esterno. Bundle non operativo: nessuna attivazione live,
+          Signals bloccati.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={busy !== 'idle'}
+          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+        >
+          {busy === 'analyze' ? 'Analisi…' : 'Analizza varianti'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          disabled={freezeDisabled || !data}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Congela bundle benchmark
+        </button>
+      </div>
+
+      {confirmOpen && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+          <p className="font-medium">Conferma freeze</p>
+          <p className="mt-1">
+            Token richiesto: <code className="font-mono">{PHASE_2C_FREEZE_CONFIRM}</code>
+          </p>
+          <p className="mt-1">
+            Il parent v1.1 resta attivo. Il nuovo bundle resta non operativo (`is_active=false`).
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void runFreeze()}
+              disabled={busy !== 'idle'}
+              className="rounded-lg bg-amber-700 px-3 py-1.5 text-white"
+            >
+              {busy === 'freeze' ? 'Congelamento…' : 'Conferma freeze'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              className="rounded-lg border border-amber-300 px-3 py-1.5"
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading && <LoadingSkeleton />}
+      {error && <EmptyState message={`Errore: ${error}`} />}
+
+      {data && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MonitoringMetricCard label="Parent bundle" value={String(parent.version ?? '—')} />
+            <MonitoringMetricCard
+              label="Target bundle"
+              value={String(data.target_bundle_version ?? '—')}
+            />
+            <MonitoringMetricCard
+              label="Parent attivo"
+              value={parent.remains_active ? 'sì' : 'no'}
+            />
+            <MonitoringMetricCard label="Live / Signals" value="no / blocked" />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
+            <p>
+              Intended use: <strong>historical_external_benchmark_only</strong> — bundle non
+              operativo.
+            </p>
+            <p className="mt-1">
+              Stato freeze: {data.existing_candidate_bundle ? 'congelato' : 'non congelato'} ·
+              freeze_allowed={String(data.freeze_allowed)} · holdout_access=
+              {String(checks.holdout_access_count ?? '—')}
+            </p>
+            {(data.blocking_reasons || []).length > 0 && (
+              <ul className="mt-2 list-disc pl-4 text-amber-800">
+                {(data.blocking_reasons || []).map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <MonitoringMetricCard label="Paired total" value={String(cohort.paired_total ?? '—')} />
+            <MonitoringMetricCard
+              label="Duplicates removed"
+              value={String(cohort.duplicates_removed ?? '—')}
+            />
+            <MonitoringMetricCard label="Train" value={String(splits.train?.n ?? '—')} />
+            <MonitoringMetricCard label="Validation" value={String(splits.validation?.n ?? '—')} />
+            <MonitoringMetricCard label="Holdout" value={String(splits.holdout?.n ?? '—')} />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs">
+            <h4 className="text-sm font-semibold text-slate-800">Quattro candidati V5</h4>
+            <ul className="mt-2 space-y-1 text-slate-700">
+              {PHASE_2C_ACTIVE_CANDIDATES.map((id) => (
+                <li key={id}>
+                  <span className="font-medium">{BENCHMARK_MODEL_LABELS[id] || id}</span> —{' '}
+                  {id}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <button
+              type="button"
+              className="text-sm font-semibold text-slate-800"
+              onClick={() => setArchivedOpen((v) => !v)}
+            >
+              Candidati archiviati {archivedOpen ? '▾' : '▸'}
+            </button>
+            {archivedOpen && (
+              <ul className="mt-2 space-y-2 text-xs text-slate-700">
+                {PHASE_2C_ARCHIVED_CANDIDATES.map((id) => {
+                  const row = archived[id] || {}
+                  return (
+                    <li key={id} className="rounded border border-slate-100 px-3 py-2">
+                      <p className="font-medium">{BENCHMARK_MODEL_LABELS[id] || id}</p>
+                      <p>status: {String(row.status ?? '—')}</p>
+                      <p>motivo: {String(row.reason ?? '—')}</p>
+                      <p>
+                        evidenza: {String(row.evidence_level ?? '—')} · delta=
+                        {String(row.delta ?? '—')}
+                      </p>
+                      <p>non selezionati per il benchmark attivo</p>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs">
+            <h4 className="text-sm font-semibold text-slate-800">GI_F — pesi regolarizzati</h4>
+            <p className="mt-1 text-slate-600">
+              selected alpha: {String(giF.selected_alpha ?? '—')}
+            </p>
+            <table className="mt-2 min-w-full text-left">
+              <thead>
+                <tr className="text-slate-500">
+                  <th className="py-1 pr-3">Pillar</th>
+                  <th className="py-1">Peso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(weights).map(([k, v]) => (
+                  <tr key={k} className="border-t border-slate-100">
+                    <td className="py-1 pr-3">{k}</td>
+                    <td className="py-1">{String(v)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">Modello</th>
+                  <th className="px-3 py-2">MAE</th>
+                  <th className="px-3 py-2">RMSE</th>
+                  <th className="px-3 py-2">Bias</th>
+                  <th className="px-3 py-2">Pearson</th>
+                  <th className="px-3 py-2">Spearman</th>
+                  <th className="px-3 py-2">Brier Over 1.5</th>
+                  <th className="px-3 py-2">Brier Over 2.5</th>
+                  <th className="px-3 py-2">Brier BTTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PHASE_2C_HOLDOUT_MODELS.map((mid) => {
+                  const m = holdout[mid] || {}
+                  const cont = (m.continuous || {}) as Record<string, unknown>
+                  const g2 = (m.goals_ge_2 || {}) as Record<string, unknown>
+                  const g3 = (m.goals_ge_3 || {}) as Record<string, unknown>
+                  const bt = (m.btts || {}) as Record<string, unknown>
+                  return (
+                    <tr key={mid} className="border-b border-slate-100">
+                      <td className="px-3 py-2 font-medium">
+                        {BENCHMARK_MODEL_LABELS[mid] || mid}
+                      </td>
+                      <td className="px-3 py-2">{cont.mae != null ? String(cont.mae) : '—'}</td>
+                      <td className="px-3 py-2">{cont.rmse != null ? String(cont.rmse) : '—'}</td>
+                      <td className="px-3 py-2">{cont.bias != null ? String(cont.bias) : '—'}</td>
+                      <td className="px-3 py-2">
+                        {cont.pearson != null ? String(cont.pearson) : '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        {cont.spearman != null ? String(cont.spearman) : '—'}
+                      </td>
+                      <td className="px-3 py-2">{g2.brier != null ? String(g2.brier) : '—'}</td>
+                      <td className="px-3 py-2">{g3.brier != null ? String(g3.brier) : '—'}</td>
+                      <td className="px-3 py-2">
+                        {bt.status === 'not_comparable'
+                          ? 'n/d'
+                          : bt.brier != null
+                            ? String(bt.brier)
+                            : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <h4 className="text-sm font-semibold text-slate-800">Evidenza pairwise holdout</h4>
+            <ul className="mt-2 space-y-2 text-xs text-slate-700">
+              {(data.holdout_pairwise || [])
+                .filter((c) => c.metric === 'mae')
+                .map((c, idx) => {
+                  const ci = (c.ci || {}) as Record<string, unknown>
+                  return (
+                    <li key={idx} className="rounded border border-slate-100 px-3 py-2">
+                      {BENCHMARK_MODEL_LABELS[String(c.left_id)] || String(c.left_id)} vs{' '}
+                      {BENCHMARK_MODEL_LABELS[String(c.right_id)] || String(c.right_id)} · delta=
+                      {String(c.delta ?? '—')} · CI [{String(ci.ci_lower ?? '—')},{' '}
+                      {String(ci.ci_upper ?? '—')}] ·{' '}
+                      {evidenceLabelIt(
+                        c.evidence_level as string,
+                        c.preferred_side as string,
+                      )}
+                    </li>
+                  )
+                })}
+            </ul>
+          </div>
+        </>
+      )}
     </div>
   )
 }

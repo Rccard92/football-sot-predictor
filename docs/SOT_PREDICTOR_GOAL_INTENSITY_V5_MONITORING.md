@@ -35,11 +35,21 @@ Prefix: `/api/cecchino/module-monitoring/goal-intensity-v5/`
 
 - `overview`, `dimensions`, `candidates`, `prospective-results`
 - `benchmark-v4-v5` (Phase 2B paired V4 vs quattro candidati V5)
+- `phase-2c-candidates` (Phase 2C dry-run: GI_E/GI_F, split, holdout)
 - `calibration`, `stability`, `readiness`, `data-health`
 - `export` → dossier `SOT_GOAL_INTENSITY_V5_READINESS_<FROM>_<TO>.zip`
-- Catch-all: `export-status`, `analysis-pack.zip` (forensic + `benchmark_v4_v5_*`)
+- Catch-all: `export-status`, `analysis-pack.zip` (forensic + `benchmark_v4_v5_*` + `phase_2c_*`)
 
-Admin: `POST …/admin/…/goal-intensity-v5/readiness/refresh` (solo cache/report).
+Admin:
+- `POST …/admin/…/goal-intensity-v5/readiness/refresh` (solo cache/report)
+- `POST …/admin/…/goal-intensity-v5/phase-2c-candidates/freeze` (`dry_run` + confirm `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`)
+
+## Phase 2C (varianti candidate bundle)
+
+- Conservati GI_A / GI_B; archiviati MT1 / without_volatility; nuovi GI_E / GI_F
+- Bundle v2.1 non operativo (`is_active=false`); parent v1.1 resta attivo
+- Tab FE «Varianti Phase 2C»; testi neutri (nessuna promozione)
+- Migration `20260806200000` (status String(64)); freeze produzione richiede `alembic upgrade head`
 
 ## Phase 2B (campione ≥200)
 

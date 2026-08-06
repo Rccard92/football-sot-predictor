@@ -317,6 +317,13 @@ flowchart TD
 5. Non ricalcolare moduli in lettura; campi mancanti restano unavailable.
 6. Fuori scope FASE 1: pattern mining / clustering / ROI.
 
+## Intensità Goal Avanzata v5 — Phase 2C (2026-08-06)
+
+1. `alembic upgrade head` (revision `20260806200000` — status String(64)).
+2. Tab **Varianti Phase 2C** → Analizza varianti (dry-run): split, pesi GI_F, metriche holdout.
+3. Revisione manuale; poi Congela bundle benchmark con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.
+4. Verificare parent v1.1 ancora attivo; bundle v2.1 `is_active=false`; Signals blocked; nessuna scansione nuova su v2.1.
+
 ## Intensità Goal Avanzata v5 — Phase 2B (2026-08-06)
 
 1. Verificare Readiness: completed/pending/snapshots/minimum non a zero; badge campione minimo superato.

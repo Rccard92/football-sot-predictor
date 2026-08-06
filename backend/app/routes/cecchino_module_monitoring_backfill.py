@@ -288,3 +288,48 @@ def historical_backfill_status(
         competition_id=competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+class GoalIntensityPhase2CFreezeBody(BaseModel):
+    dry_run: bool = True
+    confirm: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    competition_id: int | None = None
+
+
+@admin_router.post("/goal-intensity-v5/phase-2c-candidates/freeze")
+def goal_intensity_phase_2c_candidates_freeze(
+    body: GoalIntensityPhase2CFreezeBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5_phase_2c_candidates import (
+        PHASE_2C_FREEZE_CONFIRM_TOKEN,
+        freeze_candidate_bundle,
+    )
+
+    if not body.dry_run and body.confirm != PHASE_2C_FREEZE_CONFIRM_TOKEN:
+        raise HTTPException(status_code=400, detail="invalid_confirm_token")
+
+    try:
+        payload = freeze_candidate_bundle(
+            db,
+            dry_run=body.dry_run,
+            confirm=body.confirm,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            competition_id=body.competition_id,
+        )
+        if isinstance(payload, dict):
+            payload = dict(payload)
+            payload.pop("_bundle_payload", None)
+        if payload.get("status") == "error" and payload.get("error") == "invalid_confirm_token":
+            raise HTTPException(status_code=400, detail="invalid_confirm_token")
+        return JSONResponse(content=jsonable_encoder(payload))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"phase_2c_freeze_failed:{type(exc).__name__}",
+        ) from exc

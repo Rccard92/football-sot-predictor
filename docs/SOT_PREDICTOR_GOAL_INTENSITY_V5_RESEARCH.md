@@ -62,6 +62,20 @@ Benchmark read-only `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1`:
 - endpoint `GET …/goal-intensity-v5/benchmark-v4-v5`; tab FE «Benchmark V4 vs V5»; export `benchmark_v4_v5_*`;
 - **nessun** uso del run storico 2021/22, nessuna API esterna, nessuna modifica formule/bundle/definition hash, nessuna migrazione.
 
+## Fase 2C — Candidati GI_E / GI_F + bundle benchmark esterno (2026-08-06)
+
+Protocollo `cecchino_goal_intensity_v5_phase_2c_candidate_development_v1` sulla stessa coorte paired Phase 2B (helper condiviso `load_goal_intensity_prospective_paired_observations`).
+
+- Conservati: `GI_A_STRICT_CORE` (original_primary), `GI_B_RECENCY` (original_challenger) — raw e calibrazioni parent copiate.
+- Archiviati (non cancellati): `MT1_LONG_TERM`, `GI_A_without_volatility` — evidenza MAE vs V4 da benchmark Phase 2B.
+- `GI_E_PRIMARY_RECALIBRATED`: raw ≡ GI_A; nuove calibrazioni linear/logistic train→val→refit train+val; holdout 1×.
+- `GI_F_REGULARIZED_PILLARS`: Ridge L2 non-negativa (`ElasticNet` l1_ratio=0, positive) sui sei pillar; grid alpha `[0.01,0.1,1,10,100]`; selezione lexicografica MAE→Brier ge2/ge3→Brier BTTS→alpha desc.
+- Split temporale date-aware 50/20/30; holdout inviolabile (`holdout_access_count=1`).
+- Bundle `cecchino_goal_intensity_v5_candidate_bundle_v2_1`: status `frozen_external_benchmark_candidate`, `is_active=false`, intended use historical external benchmark only. Parent v1.1 resta `is_active=true`.
+- Migration `20260806200000`: `status` VARCHAR(32)→(64). Freeze dedicato (non `freeze_preview_bundle`).
+- Endpoint: `GET …/phase-2c-candidates`; `POST …/admin/…/phase-2c-candidates/freeze` con token `FREEZE_GOAL_INTENSITY_V5_CANDIDATE_BUNDLE_V2_1`.
+- Tab FE «Varianti Phase 2C»; export `phase_2c_*`. Nessuna attivazione live / Signals / run 2021/22.
+
 ## Fase 1D.1 — Calibrazione e valutazione corretta (2026-07-18)
 
 Versione `cecchino_goal_intensity_v5_candidate_indices_v1_1`. Score grezzi invariati (ECDF/formule). Corretti: Brier/logloss su probabilità logistic train-only (non score/100); paired/ablation su predizioni calibrate; expanding CV su GI_A–D, MT1 e LOO × 4 target; protocollo prospettico con `first_prospective_scan_date` = giorno dopo freeze; gate readiness v1_1; export `calibrated_predictions` e `temporal_fold_metrics`.
