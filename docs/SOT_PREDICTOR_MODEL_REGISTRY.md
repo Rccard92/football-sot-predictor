@@ -75,7 +75,9 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Facade / monitoring | `cecchino_goal_intensity_v5_monitoring_v1` |
 | Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
 | Readiness policy | `cecchino_goal_intensity_v5_readiness_policy_v1` |
-| Stato | Preview monitorata · Signals blocked |
+| Benchmark Phase 2B | `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1` |
+| V4 | `cecchino_goal_intensity_v4_expected_goals` (invariata) |
+| Stato | Preview monitorata · ready_for_manual_review (se ≥200) · Signals blocked |
 
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
 

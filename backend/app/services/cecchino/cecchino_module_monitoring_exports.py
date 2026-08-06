@@ -523,6 +523,12 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "goal_dimensions_summary.json",
             "goal_candidates_summary.json",
             "goal_versions.json",
+            "benchmark_v4_v5_summary.json",
+            "benchmark_v4_v5_models.csv",
+            "benchmark_v4_v5_pairwise.csv",
+            "benchmark_v4_v5_calibration_ge2.csv",
+            "benchmark_v4_v5_calibration_ge3.csv",
+            "benchmark_v4_v5_missing_reasons.csv",
         ],
     },
     "signals": {
@@ -1090,11 +1096,13 @@ def build_goal_intensity_module_overview(
     pending_count = 0
     completed_count = 0
     monitoring_status = None
+    monitoring: dict[str, Any] | None = None
     min_sample = None
     first_effective_date = None
     last_effective_date = None
     snapshot_collection_progress = None
     completed_results_progress = None
+    all_snaps: list[Any] = []
     if bundle is None:
         warnings.insert(0, "Bundle Goal Intensity v5 attivo assente")
     else:
@@ -1138,16 +1146,44 @@ def build_goal_intensity_module_overview(
             completed_results_progress = min(1.0, completed_count / min_sample)
     if eligible == 0:
         warnings.insert(0, "Nessuna fixture eleggibile nel periodo")
-    scientific_maturity = (
-        "raccolta_dati"
-        if completed_count == 0
-        else "validazione_in_corso"
+
+    # Maturità scientifica allineata alla readiness policy (campione globale).
+    global_completed = (
+        sum(1 for s in all_snaps if s.result_attached_at is not None) if bundle is not None else 0
     )
+    phase = {}
+    blocking: list[str] = []
+    recommended_next_step = "continue_prospective_monitoring"
+    if bundle is not None:
+        phase = (monitoring or {}).get("phase_2b_readiness") or {}
+        if not phase and monitoring_status:
+            # monitoring already built above
+            pass
+        blocking = list(phase.get("blocking_issues") or [])
+        recommended_next_step = phase.get("recommended_next_step") or recommended_next_step
+
+    if bundle is None or global_completed == 0:
+        scientific_maturity = "prospective_collecting" if bundle is not None else "raccolta_dati"
+    elif global_completed < (min_sample or 200):
+        scientific_maturity = "insufficient_completed_sample"
+    elif blocking:
+        scientific_maturity = "review_required"
+    else:
+        scientific_maturity = "ready_for_manual_review"
+        recommended_next_step = (
+            phase.get("recommended_next_step") or "phase_2b_replacement_review"
+        )
+
     return make_json_safe(
         {
             "module_key": "goal-intensity-v5",
             "status": "preview_research" if bundle is not None else "blocked",
             "scientific_maturity": scientific_maturity,
+            "scientific_maturity_label_it": (
+                "Pronto per revisione manuale"
+                if scientific_maturity == "ready_for_manual_review"
+                else None
+            ),
             "version": bundle.version if bundle is not None else None,
             "coverage": None,
             "fixtures": eligible if eligible else None,
@@ -1158,10 +1194,14 @@ def build_goal_intensity_module_overview(
             "prospective_snapshots": snapshots_count if bundle is not None else None,
             "pending_snapshots": pending_count if bundle is not None else None,
             "completed_snapshots": completed_count if bundle is not None else None,
+            "global_completed_snapshots": global_completed if bundle is not None else None,
             "minimum_sample": min_sample,
             "snapshot_collection_progress": snapshot_collection_progress,
             "completed_results_progress": completed_results_progress,
             "monitoring_status": monitoring_status,
+            "recommended_next_step": recommended_next_step,
+            "signals_integration_status": "blocked",
+            "current_decision": "continue_monitoring",
             "first_effective_date": first_effective_date,
             "last_effective_date": last_effective_date,
             "last_snapshot_at": last_effective_date,
@@ -2481,6 +2521,99 @@ def _build_balance_files(
     }
 
 
+def _goal_benchmark_export_files(benchmark: dict[str, Any]) -> dict[str, bytes]:
+    """Materializza i file export Phase 2B V4–V5 dal payload benchmark."""
+    files: dict[str, bytes] = {
+        "benchmark_v4_v5_summary.json": _json_bytes(benchmark),
+    }
+    cont = (benchmark.get("continuous_total_goals") or {}).get("metrics_by_model") or {}
+    ge2 = (benchmark.get("goals_ge_2") or {}).get("metrics_by_model") or {}
+    ge3 = (benchmark.get("goals_ge_3") or {}).get("metrics_by_model") or {}
+    model_rows = []
+    for mid, m in cont.items():
+        model_rows.append(
+            {
+                "model_id": mid,
+                "role": m.get("role"),
+                "label": m.get("label"),
+                "n": m.get("n"),
+                "mae": m.get("mae"),
+                "rmse": m.get("rmse"),
+                "mean_error": m.get("mean_error"),
+                "pearson": m.get("pearson"),
+                "spearman": m.get("spearman"),
+                "brier_ge2": (ge2.get(mid) or {}).get("brier"),
+                "brier_ge3": (ge3.get(mid) or {}).get("brier"),
+            }
+        )
+    files["benchmark_v4_v5_models.csv"] = _csv_bom(
+        model_rows,
+        [
+            "model_id",
+            "role",
+            "label",
+            "n",
+            "mae",
+            "rmse",
+            "mean_error",
+            "pearson",
+            "spearman",
+            "brier_ge2",
+            "brier_ge3",
+        ],
+    )
+    pairwise_rows = []
+    for block_name in ("continuous_total_goals", "goals_ge_2", "goals_ge_3"):
+        for c in (benchmark.get(block_name) or {}).get("comparisons") or []:
+            pairwise_rows.append(
+                {
+                    "block": block_name,
+                    "left_id": c.get("left_id"),
+                    "right_id": c.get("right_id"),
+                    "metric": c.get("metric"),
+                    "n": c.get("n"),
+                    "delta": c.get("delta"),
+                    "ci_lower": (c.get("ci") or {}).get("ci_lower"),
+                    "ci_upper": (c.get("ci") or {}).get("ci_upper"),
+                    "preferred_side": c.get("preferred_side"),
+                    "evidence_level": c.get("evidence_level"),
+                }
+            )
+    files["benchmark_v4_v5_pairwise.csv"] = _csv_bom(
+        pairwise_rows,
+        [
+            "block",
+            "left_id",
+            "right_id",
+            "metric",
+            "n",
+            "delta",
+            "ci_lower",
+            "ci_upper",
+            "preferred_side",
+            "evidence_level",
+        ],
+    )
+
+    def _cal_rows(block_key: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        metrics = (benchmark.get(block_key) or {}).get("metrics_by_model") or {}
+        for mid, m in metrics.items():
+            for b in m.get("calibration_bins") or []:
+                rows.append({"model_id": mid, **b})
+        return rows
+
+    cal_headers = ["model_id", "bin", "lo", "hi", "n", "mean_pred", "mean_actual", "abs_gap"]
+    files["benchmark_v4_v5_calibration_ge2.csv"] = _csv_bom(_cal_rows("goals_ge_2"), cal_headers)
+    files["benchmark_v4_v5_calibration_ge3.csv"] = _csv_bom(_cal_rows("goals_ge_3"), cal_headers)
+    missing = (benchmark.get("cohort") or {}).get("missing_by_reason") or {}
+    files["benchmark_v4_v5_missing_reasons.csv"] = _csv_bom(
+        [{"reason": k, "count": v} for k, v in sorted(missing.items())],
+        ["reason", "count"],
+    )
+    return files
+
+
 def _build_goal_files(
     db: Session,
     *,
@@ -2658,6 +2791,19 @@ def _build_goal_files(
                 "monitoring_export_pack": MONITORING_EXPORT_VERSION,
             }
         )
+        # Phase 2B prospective V4–V5 benchmark exports
+        from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+            build_goal_intensity_v4_v5_prospective_benchmark,
+        )
+
+        benchmark = build_goal_intensity_v4_v5_prospective_benchmark(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        for name, payload in _goal_benchmark_export_files(benchmark).items():
+            files[name] = payload
     except Exception as exc:
         logger.warning(
             "goal_readiness_export_failed error_code=%s", type(exc).__name__
@@ -2670,6 +2816,12 @@ def _build_goal_files(
             "goal_dimensions_summary.json",
             "goal_candidates_summary.json",
             "goal_versions.json",
+            "benchmark_v4_v5_summary.json",
+            "benchmark_v4_v5_models.csv",
+            "benchmark_v4_v5_pairwise.csv",
+            "benchmark_v4_v5_calibration_ge2.csv",
+            "benchmark_v4_v5_calibration_ge3.csv",
+            "benchmark_v4_v5_missing_reasons.csv",
         ):
             files.setdefault(name, _json_bytes({"status": "unavailable"}))
 

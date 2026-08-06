@@ -305,8 +305,9 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 | Facade | `cecchino_goal_intensity_v5` |
 | Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
 | Policy | `cecchino_goal_intensity_v5_readiness_policy_v1` |
-| Export | `cecchino_module_monitoring_exports_v10` |
-| Stato | Preview monitorata · Signals blocked |
+| Benchmark Phase 2B | `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1` |
+| Export | `cecchino_module_monitoring_exports_v11` + `benchmark_v4_v5_*` |
+| Stato | Preview · Phase 2B manual review eligible (se ≥200) · Signals blocked |
 | Doc | `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` |
 
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)

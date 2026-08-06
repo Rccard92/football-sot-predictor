@@ -317,11 +317,18 @@ flowchart TD
 5. Non ricalcolare moduli in lettura; campi mancanti restano unavailable.
 6. Fuori scope FASE 1: pattern mining / clustering / ROI.
 
+## Intensità Goal Avanzata v5 — Phase 2B (2026-08-06)
+
+1. Verificare Readiness: completed/pending/snapshots/minimum non a zero; badge campione minimo superato.
+2. Overview: metriche globali e di periodo separate; maturità «Pronto per revisione manuale».
+3. Tab **Benchmark V4 vs V5**: coorte paired, cinque modelli, evidenza pairwise, BTTS V4 non comparabile.
+4. Export pack include `benchmark_v4_v5_*`; Signals resta blocked; nessuna API esterna / run 2021/22.
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 1. Today detail: campo canonico `goal_intensity_v5` (alias preview deprecated).
 2. `/monitoraggio-moduli` → Goal Intensity → viste Overview…Export (no tab research).
-3. Readiness: Signals blocked, decision `continue_monitoring` fino a 200 completed.
+3. Readiness: Signals blocked, decision `continue_monitoring`; a ≥200 → Phase 2B manual review.
 4. Export forensic = `cecchino_module_monitoring_exports_v11`; dossier ZIP da tab Readiness.
 5. Redirect `/cecchino/ricerca-intensita-goal` → overview Goal.
 6. Formule/bundle/hash/Signals invariati; v4 resta nel JSON (non in UI).

@@ -342,7 +342,10 @@ def build_overview(
         for s in all_snaps
         if s.snapshot_status == SNAPSHOT_COMPLETED and s.result_attached_at
     ]
-    n_completed = normalized.get("completed_snapshots", len(completed))
+    n_completed = int(normalized.get("completed_snapshots", len(completed)) or 0)
+    phase = monitoring.get("phase_2b_readiness") or {}
+    blocking = list(phase.get("blocking_issues") or [])
+    recommended_next_step = phase.get("recommended_next_step")
     if len(all_snaps) == 0:
         maturity = "prospective_not_started"
         maturity_it = "Raccolta prospettica non iniziata"
@@ -352,9 +355,29 @@ def build_overview(
     elif n_completed < MINIMUM_PROSPECTIVE_MATCHES:
         maturity = "insufficient_completed_sample"
         maturity_it = "Campione completed insufficiente"
+    elif blocking:
+        maturity = "review_required"
+        maturity_it = "Revisione richiesta"
+    elif n_completed >= MINIMUM_PROSPECTIVE_MATCHES and not blocking:
+        maturity = "ready_for_manual_review"
+        maturity_it = "Pronto per revisione manuale"
     else:
         maturity = "validation_in_progress"
         maturity_it = "Valutazione in corso"
+
+    if recommended_next_step is None:
+        if n_completed < MINIMUM_PROSPECTIVE_MATCHES:
+            recommended_next_step = "continue_prospective_monitoring"
+        elif blocking:
+            recommended_next_step = "revise_candidate_definition"
+        else:
+            recommended_next_step = "phase_2b_replacement_review"
+
+    next_step_labels = {
+        "continue_prospective_monitoring": "Continua raccolta prospettica",
+        "revise_candidate_definition": "Revisiona definizione candidati",
+        "phase_2b_replacement_review": "Revisione manuale Phase 2B",
+    }
 
     scan_dates = sorted(s.scan_date for s in all_snaps if s.scan_date)
     completed_dates = sorted(
@@ -363,6 +386,8 @@ def build_overview(
         if s.result_attached_at or s.scan_date
     )
     summary = _bundle_summary(bundle, db)
+    global_cov = normalized.get("coverage_global") or {}
+    period_cov = normalized.get("coverage_in_period") or {}
     return make_json_safe(
         {
             "status": "ok",
@@ -375,12 +400,27 @@ def build_overview(
             "signals_integration_status": "blocked",
             "signals_integration_status_label_it": "Bloccata",
             "current_decision": "continue_monitoring",
-            "current_decision_label_it": "Continua monitoraggio",
-            "coverage_global": normalized.get("coverage_global"),
-            "coverage_in_period": normalized.get("coverage_in_period"),
+            "current_decision_label_it": (
+                "Continua monitoraggio fino alla revisione manuale"
+                if maturity == "ready_for_manual_review"
+                else "Continua monitoraggio"
+            ),
+            "recommended_next_step": recommended_next_step,
+            "recommended_next_step_label_it": next_step_labels.get(
+                str(recommended_next_step), str(recommended_next_step)
+            ),
+            "manual_review_status": (
+                "eligible" if maturity == "ready_for_manual_review" else "not_eligible"
+            ),
+            "coverage_global": global_cov,
+            "coverage_in_period": period_cov,
             "coverage": {
                 "snapshots_global": normalized.get("total_snapshots", len(all_snaps)),
                 "snapshots_in_period": len(period),
+                "pending_global": global_cov.get("pending"),
+                "pending_in_period": period_cov.get("pending"),
+                "completed_global": global_cov.get("completed"),
+                "completed_in_period": period_cov.get("completed"),
                 "pending": normalized.get("pending_snapshots", 0),
                 "completed": normalized.get("completed_snapshots", n_completed),
                 "incomplete_or_error": int(normalized.get("incomplete_snapshots", 0))
@@ -403,6 +443,7 @@ def build_overview(
                     (scan_dates[-1] - scan_dates[0]).days + 1 if len(scan_dates) >= 2 else len(scan_dates)
                 ),
             },
+            "phase_2b_readiness": phase,
             "monitoring_normalized": normalized,
             "prospective_monitoring": monitoring,
             "filters": {

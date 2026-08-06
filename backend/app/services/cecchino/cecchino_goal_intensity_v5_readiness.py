@@ -53,6 +53,14 @@ _cache: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
 def clear_goal_intensity_v5_readiness_cache() -> None:
     with _cache_lock:
         _cache.clear()
+    try:
+        from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+            clear_goal_intensity_v4_v5_benchmark_cache,
+        )
+
+        clear_goal_intensity_v4_v5_benchmark_cache()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _gate(
@@ -226,6 +234,20 @@ def build_goal_intensity_v5_readiness(
 
     phase = monitoring.get("phase_2b_readiness") or {}
     blocking = list(phase.get("blocking_issues") or [])
+    recommended_next_step = phase.get("recommended_next_step")
+    if recommended_next_step is None:
+        if completed_n < MIN_PROSPECTIVE_COMPLETED:
+            recommended_next_step = "continue_prospective_monitoring"
+        elif blocking:
+            recommended_next_step = "revise_candidate_definition"
+        else:
+            recommended_next_step = "phase_2b_replacement_review"
+
+    next_step_labels = {
+        "continue_prospective_monitoring": "Continua raccolta prospettica",
+        "revise_candidate_definition": "Revisiona definizione candidati",
+        "phase_2b_replacement_review": "Revisione manuale Phase 2B",
+    }
 
     if all_n == 0:
         maturity = "prospective_not_started"
@@ -245,6 +267,39 @@ def build_goal_intensity_v5_readiness(
     else:
         maturity = "validation_in_progress"
         maturity_it = "Valutazione in corso"
+
+    # Benchmark Phase 2B (informativo; non altera Signals)
+    phase_2b_benchmark: dict[str, Any] = {
+        "status": "skipped_below_minimum",
+        "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
+        "paired_complete_n": 0,
+        "recommended_next_step": recommended_next_step,
+    }
+    if completed_n >= MIN_PROSPECTIVE_COMPLETED:
+        try:
+            from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+                build_goal_intensity_v4_v5_prospective_benchmark,
+                build_phase_2b_benchmark_summary,
+            )
+
+            benchmark_payload = build_goal_intensity_v4_v5_prospective_benchmark(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+            phase_2b_benchmark = build_phase_2b_benchmark_summary(benchmark_payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "phase_2b_benchmark_failed error_code=%s", type(exc).__name__
+            )
+            phase_2b_benchmark = {
+                "status": "unavailable",
+                "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
+                "paired_complete_n": 0,
+                "blocking_reasons": [type(exc).__name__],
+                "recommended_next_step": recommended_next_step,
+            }
 
     first_completed = None
     earliest = None
@@ -277,7 +332,15 @@ def build_goal_intensity_v5_readiness(
             "signals_integration_status": "blocked",
             "signals_integration_status_label_it": "Bloccata",
             "current_decision": "continue_monitoring",
-            "current_decision_label_it": "Continua monitoraggio",
+            "current_decision_label_it": (
+                "Continua monitoraggio fino alla revisione manuale"
+                if maturity == "ready_for_manual_review"
+                else "Continua monitoraggio"
+            ),
+            "recommended_next_step": recommended_next_step,
+            "recommended_next_step_label_it": next_step_labels.get(
+                str(recommended_next_step), str(recommended_next_step)
+            ),
             "manual_review_status": (
                 "eligible" if maturity == "ready_for_manual_review" else "not_eligible"
             ),
@@ -291,6 +354,14 @@ def build_goal_intensity_v5_readiness(
                 "error": error_n,
                 "snapshots": all_n,
                 "minimum": MIN_PROSPECTIVE_COMPLETED,
+                "progress_pct": round(
+                    (completed_n / MIN_PROSPECTIVE_COMPLETED) * 100.0, 2
+                )
+                if MIN_PROSPECTIVE_COMPLETED
+                else 0.0,
+                "remaining": max(0, MIN_PROSPECTIVE_COMPLETED - completed_n),
+                "excess": max(0, completed_n - MIN_PROSPECTIVE_COMPLETED),
+                "minimum_reached": completed_n >= MIN_PROSPECTIVE_COMPLETED,
                 "first_snapshot_at": (normalized.get("coverage_global") or {}).get("first_snapshot"),
                 "first_completed_at": first_completed,
                 "earliest_theoretical_review_at": earliest,
@@ -298,8 +369,10 @@ def build_goal_intensity_v5_readiness(
             "coverage_global": normalized.get("coverage_global"),
             "coverage_in_period": normalized.get("coverage_in_period"),
             "monitoring_normalized": normalized,
+            "phase_2b_benchmark": phase_2b_benchmark,
             "scientific": {
                 "phase_2b_readiness": phase,
+                "phase_2b_benchmark": phase_2b_benchmark,
                 "blocking_issues": blocking,
                 "calibration": build_calibration(db, date_from=date_from, date_to=date_to),
                 "candidates": build_candidates(db, date_from=date_from, date_to=date_to),
@@ -369,6 +442,7 @@ def build_goal_intensity_v5_dossier_files(
         "goal_warning.json": _jb(
             {"blocking_issues": (readiness.get("scientific") or {}).get("blocking_issues")}
         ),
+        "benchmark_v4_v5_summary.json": _jb(readiness.get("phase_2b_benchmark")),
         "metadata.json": _jb(
             {
                 "readiness_version": GOAL_INTENSITY_V5_READINESS_VERSION,

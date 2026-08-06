@@ -4,6 +4,7 @@ import {
   GoalIntensityDimensionsView,
   GoalIntensityCandidatesView,
   GoalIntensityProspectiveResultsView,
+  GoalIntensityBenchmarkView,
   GoalIntensityCalibrationView,
   GoalIntensityStabilityView,
   GoalIntensityReadinessView,
@@ -49,6 +50,10 @@ export function GoalIntensityModulePanel({
 
   if (view === 'prospective-results') {
     return <GoalIntensityProspectiveResultsView {...common} />
+  }
+
+  if (view === 'benchmark-v4-v5' || view === 'benchmark') {
+    return <GoalIntensityBenchmarkView {...common} />
   }
 
   if (view === 'calibration') {

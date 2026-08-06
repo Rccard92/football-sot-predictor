@@ -917,6 +917,31 @@ def goal_intensity_v5_readiness(
     )
 
 
+@router.get("/goal-intensity-v5/benchmark-v4-v5")
+def goal_intensity_v5_benchmark_v4_v5(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    source_cohort: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+        build_goal_intensity_v4_v5_prospective_benchmark,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_goal_intensity_v4_v5_prospective_benchmark(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                source_cohort=source_cohort,
+            )
+        )
+    )
+
+
 @router.get("/goal-intensity-v5/data-health")
 def goal_intensity_v5_data_health(
     date_from: date | None = Query(None),

@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type {
+  GoalIntensityV5Benchmark,
   GoalIntensityV5Calibration,
   GoalIntensityV5Candidates,
   GoalIntensityV5DataHealth,
@@ -19,6 +20,7 @@ import type {
 import {
   downloadGoalIntensityV5AnalysisPack,
   downloadGoalIntensityV5ReadinessDossier,
+  getGoalIntensityV5Benchmark,
   getGoalIntensityV5Calibration,
   getGoalIntensityV5Candidates,
   getGoalIntensityV5DataHealth,
@@ -31,6 +33,17 @@ import {
 } from '../../../lib/cecchinoGoalIntensityV5Api'
 import { MonitoringMetricCard } from '../MonitoringMetricCard'
 import { fmtPct } from '../moduleMonitoringUi'
+import {
+  BENCHMARK_MODEL_LABELS,
+  BENCHMARK_MODEL_ORDER,
+  coverageCount,
+  evidenceLabelIt,
+  progressDerived,
+  resolveCompleted,
+  resolveMinimum,
+  resolvePending,
+  resolveSnapshots,
+} from './goalIntensityProgress'
 
 type ViewProps = {
   dateFrom: string
@@ -97,27 +110,30 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
   if (error) return <EmptyState message={`Errore: ${error}`} />
   if (!data) return <EmptyState message="Dati non disponibili" />
 
-  const covGlobal = (data.coverage_global || data.coverage) as Record<string, unknown> | undefined
-  const covPeriod = (data.coverage_in_period || data.coverage) as Record<string, unknown> | undefined
+  const covGlobal = (data.coverage_global || {}) as Record<string, unknown>
+  const covPeriod = (data.coverage_in_period || {}) as Record<string, unknown>
+  const coverageLegacy = (data.coverage || {}) as Record<string, unknown>
   const globalSnapshots =
-    (covGlobal?.snapshots as number | undefined) ??
-    (data.global_snapshots as number | undefined) ??
-    (data.coverage as { snapshots_global?: number } | undefined)?.snapshots_global
+    coverageCount(covGlobal, 'snapshots') ??
+    (coverageLegacy.snapshots_global as number | undefined) ??
+    (data.global_snapshots as number | undefined)
+  const globalCompleted =
+    coverageCount(covGlobal, 'completed') ??
+    (coverageLegacy.completed_global as number | undefined)
+  const globalPending =
+    coverageCount(covGlobal, 'pending') ??
+    (coverageLegacy.pending_global as number | undefined)
   const periodSnapshots =
-    (covPeriod?.snapshots as number | undefined) ??
-    (data.snapshots_in_period as number | undefined) ??
-    (data.prospective_snapshots as number | undefined)
-  const completedSnapshots =
-    (covGlobal?.completed as number | undefined) ??
-    (data.completed_snapshots as number | undefined) ??
-    (data.coverage as { completed?: number } | undefined)?.completed
-  const pendingSnapshots =
-    (covGlobal?.pending as number | undefined) ??
-    (data.pending_snapshots as number | undefined) ??
-    (data.coverage as { pending?: number } | undefined)?.pending
+    coverageCount(covPeriod, 'snapshots') ??
+    (coverageLegacy.snapshots_in_period as number | undefined) ??
+    (data.snapshots_in_period as number | undefined)
+  const periodCompleted = coverageCount(covPeriod, 'completed')
+  const periodPending =
+    coverageCount(covPeriod, 'pending') ??
+    (coverageLegacy.pending_in_period as number | undefined)
   const minimumSample =
+    (coverageLegacy.minimum_prospective_matches as number | undefined) ??
     (data.minimum_sample as number | undefined) ??
-    (data.coverage as { minimum_prospective_matches?: number } | undefined)?.minimum_prospective_matches ??
     200
 
   return (
@@ -125,43 +141,59 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-800">Goal Intensity v5 Overview</h3>
         <p className="mt-1 text-xs text-slate-600">
-          Snapshot prospettici per analisi candidati su quattro dimensioni distinte.
+          Copertura globale e di periodo tenute separate. Signals sempre bloccati.
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MonitoringMetricCard label="Versione" value={data.version || 'goal_intensity_v5'} />
         <MonitoringMetricCard
-          label="Snapshot globali"
-          value={globalSnapshots == null ? '—' : String(globalSnapshots)}
+          label="Stato operativo"
+          value={String(data.operational_status_label_it || data.operational_status || 'Preview monitorata')}
         />
         <MonitoringMetricCard
-          label="Snapshot nel periodo"
-          value={periodSnapshots == null ? '—' : String(periodSnapshots)}
+          label="Maturità scientifica"
+          value={String(
+            data.scientific_maturity_label_it ||
+              data.scientific_maturity ||
+              '—',
+          )}
         />
         <MonitoringMetricCard
-          label="Completed"
-          value={completedSnapshots == null ? '—' : String(completedSnapshots)}
+          label="Prossimo passaggio"
+          value={String(
+            data.recommended_next_step_label_it ||
+              data.recommended_next_step ||
+              '—',
+          )}
+        />
+        <MonitoringMetricCard
+          label="Integrazione Signals"
+          value={String(data.signals_integration_status_label_it || data.signals_integration_status || 'Bloccata')}
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MonitoringMetricCard
-          label="Pending"
-          value={pendingSnapshots == null ? '—' : String(pendingSnapshots)}
-        />
-        <MonitoringMetricCard
-          label="Progressione raccolta"
-          value={data.snapshot_collection_progress == null ? '—' : fmtPct(data.snapshot_collection_progress)}
-        />
-        <MonitoringMetricCard
-          label="Risultati completati"
-          value={data.completed_results_progress == null ? '—' : fmtPct(data.completed_results_progress)}
-        />
-        <MonitoringMetricCard
-          label="Campione minimo"
-          value={String(minimumSample)}
-        />
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Copertura globale</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MonitoringMetricCard label="Snapshot globali" value={globalSnapshots == null ? '—' : String(globalSnapshots)} />
+          <MonitoringMetricCard label="Completed globali" value={globalCompleted == null ? '—' : String(globalCompleted)} />
+          <MonitoringMetricCard label="Pending globali" value={globalPending == null ? '—' : String(globalPending)} />
+          <MonitoringMetricCard label="Campione minimo" value={String(minimumSample)} />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Copertura nel periodo</h4>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard label="Snapshot nel periodo" value={periodSnapshots == null ? '—' : String(periodSnapshots)} />
+          <MonitoringMetricCard label="Completed nel periodo" value={periodCompleted == null ? '—' : String(periodCompleted)} />
+          <MonitoringMetricCard label="Pending nel periodo" value={periodPending == null ? '—' : String(periodPending)} />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        Decisione automatica:{' '}
+        {String(data.current_decision_label_it || data.current_decision || 'Continua monitoraggio')}
       </div>
 
       {(Boolean(covGlobal?.first_snapshot) || Boolean(covGlobal?.last_snapshot)) && (
@@ -171,12 +203,6 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
           {covPeriod?.last_snapshot != null && (
             <> · Periodo fino a {String(covPeriod.last_snapshot)}</>
           )}
-        </p>
-      )}
-
-      {(data.first_effective_date || data.last_effective_date) && (
-        <p className="text-xs text-slate-500">
-          Date effettive: {data.first_effective_date || '—'} → {data.last_effective_date || '—'}
         </p>
       )}
 
@@ -683,9 +709,23 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
   if (!data) return <EmptyState message="Dati non disponibili" />
 
   const gates = readinessGateList(data)
-  const progress = (data.prospective_progress || data.monitoring_normalized) as
-    | Record<string, unknown>
-    | undefined
+  const progressRaw = (data.prospective_progress || {}) as Record<string, unknown>
+  const normalized = (data.monitoring_normalized || {}) as Record<string, unknown>
+  const completed = resolveCompleted(progressRaw, normalized)
+  const pending = resolvePending(progressRaw, normalized)
+  const snapshots = resolveSnapshots(progressRaw, normalized)
+  const minimum = resolveMinimum(progressRaw, normalized, 200)
+  const derived = progressDerived(completed, minimum)
+  const progressPct =
+    typeof progressRaw.progress_pct === 'number' ? progressRaw.progress_pct : derived.progress_pct
+  const remaining =
+    typeof progressRaw.remaining === 'number' ? progressRaw.remaining : derived.remaining
+  const excess = typeof progressRaw.excess === 'number' ? progressRaw.excess : derived.excess
+  const minimumReached =
+    typeof progressRaw.minimum_reached === 'boolean'
+      ? progressRaw.minimum_reached
+      : derived.minimum_reached
+  const benchmark = (data.phase_2b_benchmark || {}) as Record<string, unknown>
 
   return (
     <div className="space-y-4">
@@ -696,24 +736,33 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
         </p>
       </div>
 
-      {progress && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard
-            label="Completed"
-            value={String(progress.completed_n ?? progress.completed_snapshots ?? 0)}
-          />
-          <MonitoringMetricCard
-            label="Pending"
-            value={String(progress.pending_n ?? progress.pending_snapshots ?? 0)}
-          />
-          <MonitoringMetricCard
-            label="Minimo prospettico"
-            value={String(progress.minimum_prospective_matches ?? 200)}
-          />
-          <MonitoringMetricCard
-            label="Totale snapshot"
-            value={String(progress.total_snapshots ?? 0)}
-          />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MonitoringMetricCard label="Completed" value={String(completed)} />
+        <MonitoringMetricCard label="Pending" value={String(pending)} />
+        <MonitoringMetricCard label="Minimo prospettico" value={String(minimum)} />
+        <MonitoringMetricCard label="Totale snapshot" value={String(snapshots)} />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MonitoringMetricCard label="% sul minimo" value={`${progressPct.toFixed(1)}%`} />
+        <MonitoringMetricCard
+          label="Eccedenza vs minimo"
+          value={excess > 0 ? String(excess) : '0'}
+        />
+        <MonitoringMetricCard
+          label="Residue al minimo"
+          value={remaining > 0 ? String(remaining) : '0'}
+        />
+        <MonitoringMetricCard
+          label="Campione minimo"
+          value={minimumReached ? 'Superato' : 'Non raggiunto'}
+        />
+      </div>
+
+      {minimumReached && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+          Badge: Campione minimo superato
+          {remaining === 0 ? ' · Non mancano partite per il minimo' : null}
         </div>
       )}
 
@@ -738,14 +787,39 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
           value={String(data.scientific_maturity_label_it || data.scientific_maturity || '—')}
         />
         <MonitoringMetricCard
+          label="Prossimo passaggio"
+          value={String(
+            data.recommended_next_step_label_it ||
+              data.recommended_next_step ||
+              '—',
+          )}
+        />
+        <MonitoringMetricCard
           label="Integrazione Signals"
           value={String(data.signals_integration_status_label_it || data.signals_integration_status || 'Bloccata')}
         />
-        <MonitoringMetricCard
-          label="Decisione"
-          value={String(data.current_decision_label_it || data.current_decision || 'Continua monitoraggio')}
-        />
       </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        Decisione automatica:{' '}
+        {String(data.current_decision_label_it || data.current_decision || 'Continua monitoraggio')}
+      </div>
+
+      {benchmark && Object.keys(benchmark).length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <h4 className="text-sm font-semibold text-slate-800">Sintesi benchmark Phase 2B</h4>
+          <p className="mt-1 text-xs text-slate-600">
+            Status: {String(benchmark.status || '—')} · Paired:{' '}
+            {String(benchmark.paired_complete_n ?? '—')} · Coverage:{' '}
+            {benchmark.paired_coverage_pct != null
+              ? `${String(benchmark.paired_coverage_pct)}%`
+              : '—'}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Next step: {String(benchmark.recommended_next_step || data.recommended_next_step || '—')}
+          </p>
+        </div>
+      )}
 
       {gates.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -783,6 +857,189 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
           </ul>
         </div>
       )}
+    </div>
+  )
+}
+
+export function GoalIntensityBenchmarkView({ dateFrom, dateTo, competitionId, cohortFilter }: ViewProps) {
+  const [data, setData] = useState<GoalIntensityV5Benchmark | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [qualityOpen, setQualityOpen] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void (async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await getGoalIntensityV5Benchmark(
+          {
+            date_from: dateFrom,
+            date_to: dateTo,
+            competition_id: competitionId,
+            source_cohort: cohortFilter,
+          },
+          { signal: controller.signal },
+        )
+        setData(res)
+      } catch (err) {
+        if (controller.signal.aborted) return
+        setError(String(err))
+        toast.error('Errore caricamento benchmark V4–V5')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
+    })()
+    return () => controller.abort()
+  }, [dateFrom, dateTo, competitionId, cohortFilter])
+
+  if (loading) return <LoadingSkeleton />
+  if (error) return <EmptyState message={`Errore: ${error}`} />
+  if (!data || data.status !== 'ok') {
+    return <EmptyState message="Benchmark non disponibile" />
+  }
+
+  const cohort = (data.cohort || {}) as Record<string, unknown>
+  const cont = data.continuous_total_goals?.metrics_by_model || {}
+  const ge2 = data.goals_ge_2?.metrics_by_model || {}
+  const ge3 = data.goals_ge_3?.metrics_by_model || {}
+  const comparisons = (data.continuous_total_goals?.comparisons || []).filter(
+    (c) => c.metric === 'mae',
+  )
+  const missing = (cohort.missing_by_reason || {}) as Record<string, number>
+  const quality = (data.quality_checks || {}) as Record<string, unknown>
+  const interp = (data.scientific_interpretation || {}) as Record<string, unknown>
+  const btts = (data.btts || {}) as Record<string, unknown>
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-800">Benchmark V4 vs V5</h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Confronto paired prospettico sulla stessa coorte completed. Non è un consiglio di scommessa.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <MonitoringMetricCard label="V5 completed" value={String(cohort.completed_v5_total ?? '—')} />
+        <MonitoringMetricCard label="V4 disponibili" value={String(cohort.v4_available ?? '—')} />
+        <MonitoringMetricCard label="Paired completi" value={String(cohort.paired_complete_n ?? '—')} />
+        <MonitoringMetricCard
+          label="Coverage paired"
+          value={cohort.paired_coverage_pct != null ? `${String(cohort.paired_coverage_pct)}%` : '—'}
+        />
+        <MonitoringMetricCard label="Esclusi" value={String(cohort.excluded_n ?? '—')} />
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="min-w-full text-left text-xs">
+          <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+            <tr>
+              <th className="px-3 py-2 font-medium">Modello</th>
+              <th className="px-3 py-2 font-medium">n paired</th>
+              <th className="px-3 py-2 font-medium">MAE</th>
+              <th className="px-3 py-2 font-medium">RMSE</th>
+              <th className="px-3 py-2 font-medium">Bias</th>
+              <th className="px-3 py-2 font-medium">Pearson</th>
+              <th className="px-3 py-2 font-medium">Spearman</th>
+              <th className="px-3 py-2 font-medium">Brier Over 1.5</th>
+              <th className="px-3 py-2 font-medium">Brier Over 2.5</th>
+            </tr>
+          </thead>
+          <tbody>
+            {BENCHMARK_MODEL_ORDER.map((mid) => {
+              const m = cont[mid] || {}
+              const g2 = ge2[mid] || {}
+              const g3 = ge3[mid] || {}
+              return (
+                <tr key={mid} className="border-b border-slate-100">
+                  <td className="px-3 py-2 font-medium text-slate-800">
+                    {BENCHMARK_MODEL_LABELS[mid] || mid}
+                  </td>
+                  <td className="px-3 py-2">{String(m.n ?? '—')}</td>
+                  <td className="px-3 py-2">{m.mae != null ? String(m.mae) : '—'}</td>
+                  <td className="px-3 py-2">{m.rmse != null ? String(m.rmse) : '—'}</td>
+                  <td className="px-3 py-2">{m.mean_error != null ? String(m.mean_error) : '—'}</td>
+                  <td className="px-3 py-2">{m.pearson != null ? String(m.pearson) : '—'}</td>
+                  <td className="px-3 py-2">{m.spearman != null ? String(m.spearman) : '—'}</td>
+                  <td className="px-3 py-2">{g2.brier != null ? String(g2.brier) : '—'}</td>
+                  <td className="px-3 py-2">{g3.brier != null ? String(g3.brier) : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <h4 className="text-sm font-semibold text-slate-800">Evidenza pairwise (MAE)</h4>
+        <ul className="mt-3 space-y-2">
+          {comparisons.map((c, idx) => {
+            const ci = (c.ci || {}) as Record<string, unknown>
+            return (
+              <li key={idx} className="rounded-lg border border-slate-100 px-3 py-2 text-xs text-slate-700">
+                <span className="font-medium">
+                  {BENCHMARK_MODEL_LABELS[String(c.left_id)] || String(c.left_id)} vs{' '}
+                  {BENCHMARK_MODEL_LABELS[String(c.right_id)] || String(c.right_id)}
+                </span>
+                {' · '}delta={c.delta != null ? String(c.delta) : '—'}
+                {' · '}CI=[{String(ci.ci_lower ?? '—')}, {String(ci.ci_upper ?? '—')}]
+                {' · '}
+                {evidenceLabelIt(
+                  c.evidence_level as string | undefined,
+                  c.preferred_side as string | undefined,
+                )}
+                {' · '}evidenza={String(c.evidence_level || '—')}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        Interpretazione: {String(interp.summary_it || interp.status || '—')}
+        <br />
+        BTTS V4: {String(btts.v4_status || 'not_comparable')} (
+        {String(btts.v4_reason || 'v4_total_lambda_has_no_team_split_btts_probability')})
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-800"
+          onClick={() => setQualityOpen((v) => !v)}
+        >
+          Qualità benchmark
+          <span className="text-xs font-normal text-slate-500">{qualityOpen ? 'Nascondi' : 'Mostra'}</span>
+        </button>
+        {qualityOpen && (
+          <div className="space-y-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-700">
+            <p>Bundle: {String(data.v5_bundle_version || '—')}</p>
+            <p>Definition hash: {String(data.definition_hash || '—')}</p>
+            <p>V4 version: {String(data.v4_version || '—')}</p>
+            <p>Benchmark version: {String(data.version || '—')}</p>
+            <p>Snapshot completed: {String(cohort.completed_v5_total ?? '—')}</p>
+            <p>Paired: {String(cohort.paired_complete_n ?? '—')}</p>
+            <p>Esclusi: {String(cohort.excluded_n ?? '—')}</p>
+            <p>Target leakage check: {String(quality.target_leakage_check || '—')}</p>
+            <p>Snapshot pre-kickoff check: {String(quality.snapshot_pre_kickoff_check || '—')}</p>
+            <p>External API calls: {String(quality.external_api_calls ?? 0)}</p>
+            <p>Historical run used: {String(quality.historical_run_used ?? false)}</p>
+            <div>
+              <p className="font-medium">Missing by reason</p>
+              <ul className="mt-1 list-disc pl-4">
+                {Object.keys(missing).length === 0 && <li>Nessuna esclusione registrata</li>}
+                {Object.entries(missing).map(([reason, count]) => (
+                  <li key={reason}>
+                    {reason}: {count}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -865,11 +1122,19 @@ export function GoalIntensityExportView({ dateFrom, dateTo, competitionId, cohor
 
   useEffect(() => {
     const controller = new AbortController()
+    const requestFilters: GoalIntensityV5Filters = {
+      date_from: dateFrom,
+      date_to: dateTo,
+      competition_id: competitionId,
+      source_cohort: cohortFilter,
+    }
     void (async () => {
       setLoading(true)
       setError(null)
       try {
-        const res = await getGoalIntensityV5ExportStatus(filters, { signal: controller.signal })
+        const res = await getGoalIntensityV5ExportStatus(requestFilters, {
+          signal: controller.signal,
+        })
         setExportStatus(res)
       } catch (err) {
         if (controller.signal.aborted) return

@@ -47,7 +47,20 @@ Versione storica `cecchino_goal_intensity_v5_preview_v1` (superseduta da v1_1). 
 | Cache export 1D | `simple_export_cache_skipped=true` (rischio memoria/sessioni) |
 | v4 / betting | invariata / nessun segnale |
 
-Tabelle additive: `cecchino_goal_intensity_v5_preview_bundles`, `cecchino_goal_intensity_v5_preview_snapshots`. Script: `python -m scripts.freeze_goal_intensity_v5_preview_bundle`. FE tab «Preview Fase 2A». Phase 2B non automatica sotto 200 match.
+Tabelle additive: `cecchino_goal_intensity_v5_preview_bundles`, `cecchino_goal_intensity_v5_preview_snapshots`. Script: `python -m scripts.freeze_goal_intensity_v5_preview_bundle`. FE tab «Preview Fase 2A».
+
+## Fase 2B — Revisione manuale + benchmark prospettico V4–V5 (2026-08-06)
+
+Campione prospettico minimo (200 completed) superato: maturità scientifica canonica `ready_for_manual_review` / «Pronto per revisione manuale»; `recommended_next_step=phase_2b_replacement_review`; Signals resta `blocked`; decisione automatica `continue_monitoring`.
+
+Fix UI Module Monitoring: Readiness legge `prospective_progress.completed|pending|snapshots|minimum` (non più zero erronei); Overview separa coverage globale vs periodo; nessun mix Pending globale con metriche di periodo.
+
+Benchmark read-only `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1`:
+- coorte paired sulla stessa completed V5 post-freeze; V4 da lambda/`expected_goals` persistiti in `Today.cecchino_output_json.goal_markets` via builder puro; quattro candidati V5 da predizioni calibrate congelate;
+- target continuo `total_goals_ft`, Over 1.5 / Over 2.5; BTTS V4 `not_comparable`;
+- bootstrap paired deterministico (seed 42); interpretazione non promozionale;
+- endpoint `GET …/goal-intensity-v5/benchmark-v4-v5`; tab FE «Benchmark V4 vs V5»; export `benchmark_v4_v5_*`;
+- **nessun** uso del run storico 2021/22, nessuna API esterna, nessuna modifica formule/bundle/definition hash, nessuna migrazione.
 
 ## Fase 1D.1 — Calibrazione e valutazione corretta (2026-07-18)
 

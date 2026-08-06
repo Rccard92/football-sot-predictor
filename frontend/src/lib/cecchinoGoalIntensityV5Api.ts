@@ -103,6 +103,24 @@ export type GoalIntensityV5Readiness = {
   version?: string
   operational_status?: string
   scientific_maturity?: string
+  scientific_maturity_label_it?: string
+  recommended_next_step?: string
+  recommended_next_step_label_it?: string
+  signals_integration_status?: string
+  current_decision?: string
+  prospective_progress?: {
+    completed?: number
+    pending?: number
+    snapshots?: number
+    minimum?: number
+    progress_pct?: number
+    remaining?: number
+    excess?: number
+    minimum_reached?: boolean
+    [key: string]: unknown
+  }
+  monitoring_normalized?: Record<string, unknown>
+  phase_2b_benchmark?: Record<string, unknown>
   readiness_gates?: Array<{
     key: string
     label: string
@@ -110,6 +128,32 @@ export type GoalIntensityV5Readiness = {
     value?: unknown
     threshold?: unknown
   }>
+  warnings?: string[]
+  [key: string]: unknown
+}
+
+export type GoalIntensityV5Benchmark = {
+  status?: string
+  version?: string
+  v4_version?: string
+  v5_bundle_version?: string
+  definition_hash?: string
+  cohort?: Record<string, unknown>
+  continuous_total_goals?: {
+    metrics_by_model?: Record<string, Record<string, unknown>>
+    comparisons?: Array<Record<string, unknown>>
+  }
+  goals_ge_2?: {
+    metrics_by_model?: Record<string, Record<string, unknown>>
+    comparisons?: Array<Record<string, unknown>>
+  }
+  goals_ge_3?: {
+    metrics_by_model?: Record<string, Record<string, unknown>>
+    comparisons?: Array<Record<string, unknown>>
+  }
+  btts?: Record<string, unknown>
+  scientific_interpretation?: Record<string, unknown>
+  quality_checks?: Record<string, unknown>
   warnings?: string[]
   [key: string]: unknown
 }
@@ -233,6 +277,13 @@ export async function getGoalIntensityV5Readiness(
   opts?: { signal?: AbortSignal },
 ): Promise<GoalIntensityV5Readiness> {
   return adminGetJson(`${BASE}/readiness${qs(filters)}`, opts)
+}
+
+export async function getGoalIntensityV5Benchmark(
+  filters: GoalIntensityV5Filters,
+  opts?: { signal?: AbortSignal },
+): Promise<GoalIntensityV5Benchmark> {
+  return adminGetJson(`${BASE}/benchmark-v4-v5${qs(filters)}`, opts)
 }
 
 export async function getGoalIntensityV5DataHealth(

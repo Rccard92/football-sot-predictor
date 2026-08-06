@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Prospective Goal Intensity V4–V5 Phase 2B benchmark (2026-08-06)
+
+- Perché: campione prospettico ≥200 completed pronto per revisione manuale Phase 2B; UI Readiness/Overview incoerenti (card a zero, mix global/period, maturity divergente).
+- Cosa: fix risoluzione `prospective_progress`; maturity unica `ready_for_manual_review`; benchmark paired V4–V5 read-only (`cecchino_goal_intensity_v4_v5_prospective_benchmark_v1`); endpoint + tab + export; Signals resta blocked.
+- Cosa non fa: nessuna modifica bundle/formule V4/V5; nessun run 2021/22; nessuna API esterna; nessuna migrazione; nessuna promozione Signals.
+
 ## Docs — Allineamento documentazione cutover segnali V3 (2026-08-06)
 
 - Perché: i doc citavano ancora V2 come corrente, 14 mercati Lab, legenda statica FE e `signal_active=SI` come metrica operativa.

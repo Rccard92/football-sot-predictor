@@ -88,6 +88,7 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
       { id: 'dimensions', label: 'Dimensioni' },
       { id: 'candidates', label: 'Candidati' },
       { id: 'prospective-results', label: 'Risultati prospettici' },
+      { id: 'benchmark-v4-v5', label: 'Benchmark V4 vs V5' },
       { id: 'calibration', label: 'Calibrazione' },
       { id: 'stability', label: 'Stabilità' },
       { id: 'readiness', label: 'Readiness' },

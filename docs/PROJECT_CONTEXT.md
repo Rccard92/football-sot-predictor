@@ -130,9 +130,13 @@ Scan Today completata può fallire solo nel salvataggio accessorio Readiness (ti
 
 Pagina Cecchino `/monitoraggio-segno-1` + API `/api/cecchino/home-wins` sulla coorte storica **finished con FT casa > trasferta**. Selezione indipendente dal Segnale 1. Fonte unica `cecchino_today_fixtures` (nessuna tabella nuova). Snapshot-only (no ricalcolo KPI/Balance/GI). Export ZIP analisi ChatGPT. Pattern mining non in scope.
 
+## Intensità Goal Avanzata v5 — Phase 2B (2026-08-06)
+
+Campione prospettico minimo superato: maturità `ready_for_manual_review`, next step `phase_2b_replacement_review`, Signals blocked. Fix Readiness/Overview (global vs period). Benchmark paired V4–V5 prospettico read-only (`cecchino_goal_intensity_v4_v5_prospective_benchmark_v1`); V4 da lambda pre-match persistita; nessun run 2021/22; nessuna modifica formule. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`.
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
-Facade + Today `goal_intensity_v5` + readiness + API canoniche + export **v10** + workspace FE (no research tab). Bundle frozen invariato. Signals blocked. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
+Facade + Today `goal_intensity_v5` + readiness + API canoniche + export **v11** + workspace FE (no research tab). Bundle frozen invariato. Signals blocked. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
 
 ## Hotfix — Balance v11 export packaging (2026-07-21)
 

@@ -34,11 +34,20 @@ Dopo update-results: `attach_results_for_rows(..., commit=False)` fail-soft (nie
 Prefix: `/api/cecchino/module-monitoring/goal-intensity-v5/`
 
 - `overview`, `dimensions`, `candidates`, `prospective-results`
+- `benchmark-v4-v5` (Phase 2B paired V4 vs quattro candidati V5)
 - `calibration`, `stability`, `readiness`, `data-health`
 - `export` → dossier `SOT_GOAL_INTENSITY_V5_READINESS_<FROM>_<TO>.zip`
-- Catch-all: `export-status`, `analysis-pack.zip` (forensic v10)
+- Catch-all: `export-status`, `analysis-pack.zip` (forensic + `benchmark_v4_v5_*`)
 
 Admin: `POST …/admin/…/goal-intensity-v5/readiness/refresh` (solo cache/report).
+
+## Phase 2B (campione ≥200)
+
+- Maturità: `ready_for_manual_review` su overview, readiness e card modulo (allineate)
+- Next step: `phase_2b_replacement_review` («Revisione manuale Phase 2B»)
+- `current_decision=continue_monitoring`; Signals `blocked`
+- Coverage globale vs periodo esplicite; Readiness non mostra più zero su completed/pending
+- Benchmark: versione `cecchino_goal_intensity_v4_v5_prospective_benchmark_v1`; V4 da input pre-match persistiti; niente run 2021/22
 
 ## Readiness attesa (campione insufficiente)
 
@@ -52,7 +61,7 @@ Sotto i 200 completed: **non** «validato»; `earliest_theoretical_review_at=nul
 ## Frontend
 
 - Today: `CecchinoGoalIntensityV5Panel` — badge «Preview monitorata» + «Non collegato ai Segnali»
-- Workspace: viste overview · dimensioni · candidati · prospettici · calibrazione · stabilità · readiness · data-health · export
+- Workspace: viste overview · dimensioni · candidati · prospettici · **benchmark V4 vs V5** · calibrazione · stabilità · readiness · data-health · export
 - Redirect: `/cecchino/ricerca-intensita-goal` → `…/monitoraggio-moduli?module=goal-intensity-v5&view=overview`
 - Client: `cecchinoGoalIntensityV5Api.ts`
 
