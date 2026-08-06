@@ -6,6 +6,14 @@ Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_
 Acquistabilità ufficiale: **V3 replay** (`cecchino_lab_purchasability_v3_analytics_v2` / `…_export_v2`)
 Export V2 Lab (`cecchino_lab_purchasability_export_v1`): legacy tecnico isolato, non usato dai percorsi ufficiali
 
+## Segnali A–F / mercati — allineamento V3 (2026-08-06)
+
+- Formula/consenso/audit: `cecchino_signals_matrix_v3_draw_dfg_decimal2` + `cecchino_signal_consensus_v1_min_two` + `cecchino_signal_explanations_v3`
+- Module version Lab: `cecchino_lab_signals_af_v2_current_v3_consensus` — performance/settlement **acquired-only** (`is_acquired=true`); celle SI grezze solo diagnostica
+- DRAW_PT: consenso ereditato da DRAW
+- Mercati KPI/settlement nel report: **19** (`KPI_V2_ROW_DEFS`), non 14
+- Contratto helper: `get_current_signal_contract()`; derived rebuild Lab può riallineare signals/market results senza full scan (`REBUILD_CECCHINO_LAB_DERIVED_V3`, provenance `derived_refresh`, no overwrite `source_git_commit`)
+
 ## STEP 3C.2 — V3 unica Acquistabilità ufficiale (2026-08-02)
 
 - `module=purchasability` → ZIP V3 ufficiale (`cecchino-run-{run_id}-purchasability-v3.zip`)
@@ -167,7 +175,7 @@ Generazione: `SpooledTemporaryFile` + JSONL riga-per-riga + streaming HTTP (lâ�
 - `performance_universe = eligible_core`
 - `modules.goal_intensity = historical_partial_v1`
 - `modules.purchasability = historical_bet365_progressive_v1`
-- `modules.signals_matrix = imported_pure_models_A_F`
+- `modules.signals_matrix = imported_pure_models_A_F` (runtime Lab: `cecchino_lab_signals_af_v2_current_v3_consensus`, acquired-only)
 - `profit_policy.technical_sum_across_all_independent_market_rows.not_a_betting_strategy = true`
 - Bookmaker operativo Today: **Betfair**; replay storico: **Bet365**
 

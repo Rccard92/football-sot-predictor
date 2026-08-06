@@ -119,6 +119,8 @@ def test_refresh_activation_odds_from_kpi_offline():
     from app.models.cecchino_signal_activation import CecchinoSignalActivation
     from app.models.cecchino_today_fixture import CecchinoTodayFixture
 
+    from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
+
     activation = CecchinoSignalActivation(
         today_fixture_id=1,
         provider_fixture_id=100,
@@ -130,6 +132,7 @@ def test_refresh_activation_odds_from_kpi_offline():
     )
     activation.is_current = True
     activation.signal_value = True
+    activation.signal_formula_version = CURRENT_SIGNAL_FORMULA_VERSION
 
     fixture = CecchinoTodayFixture(
         id=1,
@@ -154,6 +157,9 @@ def test_refresh_activation_odds_from_kpi_offline():
         )
 
     assert result["odds_refreshed"] == 1
+    assert result["v3_candidates"] == 1
+    assert result["v3_refreshed"] == 1
+    assert result["archived_skipped_count"] == 0
     mock_apply.assert_called_once()
 
 

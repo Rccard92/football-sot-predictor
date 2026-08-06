@@ -728,13 +728,15 @@ def test_summary_excludes_home_away_scala_legacy():
 def test_diagnostics_legacy_wrong_scala_mapping_count():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
-    db.scalar.side_effect = [0, 0, 2]
+    # Ordine scalar in build_signal_diagnostics: 9 count versionati + legacy_wrong_scala.
+    db.scalar.side_effect = [0, 0, 0, 0, 0, 0, 0, 0, 0, 2]
     db.execute.return_value.all.return_value = []
 
     diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
 
     assert diag["legacy_wrong_scala_mapping_count"] == 2
     assert any("Ricalcola mapping segnali" in w for w in diag["warnings"])
+    assert diag["current_signal_activations_count"] == diag["v3_acquired_activations"]
 
 
 def test_matrix_d48_formula_generates_home_excel_d():
@@ -1149,14 +1151,17 @@ def test_diagnostics_detects_fixtures_without_activations():
     db = MagicMock()
     fixture = _fixture_row()
     db.scalars.return_value.all.return_value = [fixture]
-    db.scalar.side_effect = [0, 0, 0]
+    db.scalar.return_value = 0
     db.execute.return_value.all.return_value = []
 
     diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
     assert diag["legacy_wrong_scala_mapping_count"] == 0
     assert diag["today_fixtures_count"] == 1
     assert diag["fixtures_with_signal_matrix_count"] >= 1
+    assert diag["v3_matrices_available"] >= 1
     assert diag["signal_activations_count"] == 0
+    assert diag["v3_acquired_activations"] == 0
+    assert diag["current_signal_activations_count"] == 0
     assert diag["date_filter_field_used"] == "scan_date"
 
 
@@ -1562,7 +1567,7 @@ def test_backfill_aggregates_value_gate_counters():
 def test_diagnostics_includes_monitoring_note():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
-    db.scalar.side_effect = [0, 0, 0]
+    db.scalar.return_value = 0
     db.execute.return_value.all.return_value = []
 
     diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
@@ -1570,6 +1575,11 @@ def test_diagnostics_includes_monitoring_note():
     assert "monitoring_note" in diag
     assert "quota book >= quota Cecchino" in diag["monitoring_note"]
     assert diag["value_eligible_activations_count"] == diag["current_signal_activations_count"]
+    assert diag["current_signal_activations_count"] == diag["v3_acquired_activations"]
+    assert "v3_matrices_available" in diag
+    assert "legacy_v1_archived" in diag
+    assert "previous_v2_archived" in diag
+    assert "unversioned_archived" in diag
 
 
 def test_matrix_unchanged_by_value_gate():

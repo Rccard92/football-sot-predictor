@@ -197,6 +197,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           scanDate={detail.scan_date}
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
+          signalContract={detail.signal_contract ?? null}
         />
       )}
 

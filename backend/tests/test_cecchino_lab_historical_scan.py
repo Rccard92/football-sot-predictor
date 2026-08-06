@@ -376,61 +376,99 @@ def test_today_still_betfair_constant():
 
 
 def test_signal_extraction_none_one_many_and_multi_market():
+    from app.services.cecchino.cecchino_signal_consensus import (
+        CURRENT_SIGNAL_FORMULA_VERSION,
+        SIGNAL_CONSENSUS_POLICY_VERSION,
+        attach_consensus_to_matrix_rows,
+    )
     from app.services.cecchino_data_lab.historical_signal_extraction import (
         build_market_signal_index,
         iter_active_signal_cells,
+        iter_raw_si_signal_cells,
     )
 
-    empty = {"rows": [{"key": "one", "label": "1", "signals": {"excel_d": "NO", "excel_e": "NO"}}]}
+    def _current(rows: list) -> dict:
+        attach_consensus_to_matrix_rows(rows)
+        return {
+            "status": "available",
+            "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+            "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+            "rows": rows,
+        }
+
+    empty = _current(
+        [{"key": "one", "label": "1", "signals": {"excel_d": "NO", "excel_e": "NO"}}]
+    )
     assert iter_active_signal_cells(empty) == []
+    assert iter_raw_si_signal_cells(empty) == []
     assert build_market_signal_index(empty) == {}
 
-    one = {
-        "rows": [
+    one = _current(
+        [
             {
                 "key": "one",
                 "label": "1",
                 "signals": {"excel_d": "SI", "excel_e": "NO", "excel_f": "NO"},
             }
         ]
-    }
-    cells = iter_active_signal_cells(one)
+    )
+    cells = iter_raw_si_signal_cells(one)
     assert len(cells) == 1
     assert cells[0]["source_column"] == "EXCEL_D"
     idx = build_market_signal_index(one)
     assert "HOME" in idx
-    assert idx["HOME"]["signal_active"] is True
+    assert idx["HOME"]["signal_active"] is True  # esenzione singola formula
+    assert idx["HOME"]["acquired_signal_count"] == 1
+    assert idx["HOME"]["raw_si_count"] == 1
     assert idx["HOME"]["active_signal_count"] == 1
     assert idx["HOME"]["signal_family"] == "HOME"
-    assert idx["HOME"]["signal_sources_json"]["active_signal_count"] == 1
+    assert idx["HOME"]["signal_sources_json"]["raw_si_count"] == 1
 
-    multi_models = {
-        "rows": [
+    multi_models = _current(
+        [
             {
                 "key": "one_x",
                 "label": "1X",
                 "signals": {"excel_d": "SI", "excel_e": "SI", "scala_1x": "SI"},
             }
         ]
-    }
+    )
     idx2 = build_market_signal_index(multi_models)
-    assert idx2["ONE_X"]["active_signal_count"] == 3
+    assert idx2["ONE_X"]["raw_si_count"] == 3
+    assert idx2["ONE_X"]["signal_active"] is True
+    assert idx2["ONE_X"]["acquired_signal_count"] == 1
     assert len(idx2["ONE_X"]["signal_sources_json"]["sources"]) == 3
 
-    multi_markets = {
-        "rows": [
+    multi_markets = _current(
+        [
             {"key": "one", "label": "1", "signals": {"excel_d": "SI"}},
-            {"key": "under_under_pt", "label": "Under", "signals": {"excel_d": "SI", "excel_e": "SI"}},
+            {
+                "key": "under_under_pt",
+                "label": "Under",
+                "signals": {"excel_d": "SI", "excel_e": "SI"},
+            },
             {"key": "over_over_pt", "label": "Over", "signals": {"excel_f": "SI"}},
         ]
-    }
+    )
     idx3 = build_market_signal_index(multi_markets)
     assert set(idx3.keys()) >= {"HOME", "UNDER_2_5", "OVER_2_5"}
-    assert idx3["UNDER_2_5"]["active_signal_count"] == 2
+    assert idx3["UNDER_2_5"]["raw_si_count"] == 2
+    assert idx3["UNDER_2_5"]["signal_active"] is True
+    assert idx3["UNDER_2_5"]["acquired_signal_count"] == 1
     assert idx3["UNDER_2_5"]["signal_family"] == "UNDER_UNDER_PT"
+    # OVER con un solo SI: grezzo presente, non acquisito
+    assert idx3["OVER_2_5"]["raw_si_count"] == 1
+    assert idx3["OVER_2_5"]["signal_active"] is False
+    assert idx3["OVER_2_5"]["acquired_signal_count"] == 0
 
 
 def test_settlement_reads_nested_signals_not_flat_columns():
+    from app.services.cecchino.cecchino_signal_consensus import (
+        CURRENT_SIGNAL_FORMULA_VERSION,
+        SIGNAL_CONSENSUS_POLICY_VERSION,
+        attach_consensus_to_matrix_rows,
+    )
+
     m = _match(
         bet365_closing_home=2.0,
         bet365_closing_draw=3.5,
@@ -453,27 +491,33 @@ def test_settlement_reads_nested_signals_not_flat_columns():
         goal_markets={},
         quote_bundle=bundle,
     )
+    rows = [
+        {
+            "key": "one",
+            "label": "1",
+            "signals": {"excel_d": "SI", "excel_e": "NO"},
+            # flat SI would be wrong path — must be ignored
+            "excel_d": "SI",
+        }
+    ]
+    attach_consensus_to_matrix_rows(rows)
     signals = {
-        "rows": [
-            {
-                "key": "one",
-                "label": "1",
-                "signals": {"excel_d": "SI", "excel_e": "NO"},
-                # flat SI would be wrong path — must be ignored
-                "excel_d": "SI",
-            }
-        ]
+        "status": "available",
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+        "rows": rows,
     }
-    rows = settle_historical_markets(
+    settled = settle_historical_markets(
         match=m, kpi_panel=panel, quote_bundle=bundle, signals_json=signals
     )
-    home = next(r for r in rows if r["market_key"] == "HOME")
-    draw = next(r for r in rows if r["market_key"] == "DRAW")
+    home = next(r for r in settled if r["market_key"] == "HOME")
+    draw = next(r for r in settled if r["market_key"] == "DRAW")
     assert home["signal_active"] is True
-    assert home["signal_sources_json"]["active_signal_count"] == 1
+    assert home["acquired_signal_count"] == 1
+    assert home["raw_si_count"] == 1
     assert home["signal_family"] == "HOME"
     assert draw["signal_active"] is False
-    assert draw["signal_sources_json"]["active_signal_count"] == 0
+    assert draw["raw_si_count"] == 0
 
 
 def test_excluded_settlement_summary_zero_markets():

@@ -6,7 +6,6 @@ Funzione pura: quote finali Cecchino, probabilità 1X2 e sample casa/trasferta.
 from __future__ import annotations
 
 import math
-from decimal import Decimal
 from typing import Any
 
 from app.services.cecchino.cecchino_balance_analysis import compute_dominance_pp
@@ -22,6 +21,19 @@ from app.services.cecchino.cecchino_signal_decimal import (
     SIGNAL_FORMULA_DECIMAL_QUANTUM,
     canonical_signal_decimal,
     format_canonical_decimal,
+)
+from app.services.cecchino.cecchino_signal_draw_thresholds import (
+    DRAW_D_F36_LOWER,
+    DRAW_D_F36_UPPER,
+    DRAW_E_F36_LOWER,
+    DRAW_E_F36_UPPER,
+    DRAW_E_QX_UPPER,
+    DRAW_F_F36_LOWER,
+    DRAW_F_F36_UPPER,
+    DRAW_F_QX_UPPER,
+    DRAW_G_F36_LOWER,
+    DRAW_G_F36_UPPER,
+    DRAW_G_QX_UPPER,
 )
 
 EXCEL_SOURCE = "AutomazioneCecchino.xlsm"
@@ -180,26 +192,26 @@ def build_signals_matrix(
     draw_inputs_ok = f32_x is not None and f33_x is not None and f34_x is not None and f36_x is not None
     if draw_inputs_ok:
         x_d = _si_no(
-            f36_x < Decimal("0.80")
-            and f36_x > Decimal("-0.80")
+            f36_x < DRAW_D_F36_UPPER
+            and f36_x > DRAW_D_F36_LOWER
             and f32_x >= f34_x,
         )
         x_e = _si_no(
-            f33_x < Decimal("3.30")
-            and f36_x <= Decimal("1.47")
-            and f36_x >= Decimal("-1.40")
+            f33_x < DRAW_E_QX_UPPER
+            and f36_x <= DRAW_E_F36_UPPER
+            and f36_x >= DRAW_E_F36_LOWER
             and f32_x >= f34_x,
         )
         x_f = _si_no(
-            f33_x <= Decimal("2.90")
-            and f36_x <= Decimal("1.70")
-            and f36_x >= Decimal("-1.70")
+            f33_x <= DRAW_F_QX_UPPER
+            and f36_x <= DRAW_F_F36_UPPER
+            and f36_x >= DRAW_F_F36_LOWER
             and f32_x >= f34_x,
         )
         x_g = _si_no(
-            f33_x <= Decimal("3.50")
-            and f36_x <= Decimal("1.20")
-            and f36_x >= Decimal("-1.20")
+            f33_x <= DRAW_G_QX_UPPER
+            and f36_x <= DRAW_G_F36_UPPER
+            and f36_x >= DRAW_G_F36_LOWER
             and f32_x >= f34_x,
         )
     else:

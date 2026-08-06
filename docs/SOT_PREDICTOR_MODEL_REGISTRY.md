@@ -6,14 +6,22 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Formula matrix legacy | `cecchino_signals_matrix_v1_legacy` |
-| Formula matrix previous | `cecchino_signals_matrix_v2_draw_dfg` |
+| Formula matrix legacy | `cecchino_signals_matrix_v1_legacy` (archiviata) |
+| Formula matrix previous | `cecchino_signals_matrix_v2_draw_dfg` (archiviata) |
 | Formula matrix current | `cecchino_signals_matrix_v3_draw_dfg_decimal2` (DRAW Decimal 0.01 ROUND_HALF_UP; E invariata) |
-| Consenso | `cecchino_signal_consensus_v1_min_two` (Opzione B, invariata) |
+| Consenso | `cecchino_signal_consensus_v1_min_two` (Opzione B) |
 | Audit explanations | `cecchino_signal_explanations_v3` |
+| Contratto helper | `get_current_signal_contract()` — canonico; gate Today `is_current_signal_matrix` + `signal_contract` |
+| Semantica operativa | `acquired_only` — raw SI ≠ `is_acquired=true`; DRAW_PT eredita consenso DRAW |
+| Formula registry API | `GET /api/admin/cecchino/signals/formula-registry` (FE non più unica fonte) |
+| Lab A–F module | `cecchino_lab_signals_af_v2_current_v3_consensus` (acquired-only) |
+| Lab KPI / settlement | **19 mercati** (`KPI_V2_ROW_DEFS`) |
+| Derived rebuild | dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3`; provenance `derived_refresh`; no overwrite `source_git_commit` |
+| Evaluation / odds refresh | V3-only (`signal_formula_version` filter); backfill/revaluate/backtest ancora disponibili ma V3-only |
+| Diagnostics | versionate (contatori v1/v2/v3 archived vs V3 acquired) |
 | Migration | nessuna nuova — resta `20260806170000` |
-| Operativo | sync/monitoraggio/modelli A–F: **solo V3**; V1/V2 preservate nel DB |
-| Value gate / settlement | **invariati** |
+| Operativo | sync/monitoraggio/Today/A–F: **solo V3**; V1/V2 preservate nel DB invariate |
+| Value gate / settlement regole | **invariati** (universo mercati Lab = 19) |
 
 ## Segnali Cecchino — formula V2 + consenso (2026-08-06) — storico
 

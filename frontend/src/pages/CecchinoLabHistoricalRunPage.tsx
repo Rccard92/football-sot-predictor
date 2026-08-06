@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import { HistoricalRunBalance } from '../components/cecchino-data-lab/historical-run/HistoricalRunBalance'
 import { HistoricalRunCompetitions } from '../components/cecchino-data-lab/historical-run/HistoricalRunCompetitions'
+import { HistoricalRunDerivedRebuild } from '../components/cecchino-data-lab/historical-run/HistoricalRunDerivedRebuild'
 import { HistoricalRunExclusions } from '../components/cecchino-data-lab/historical-run/HistoricalRunExclusions'
 import { HistoricalRunFilterBar } from '../components/cecchino-data-lab/historical-run/HistoricalRunFilterBar'
 import { HistoricalRunGoalIntensity } from '../components/cecchino-data-lab/historical-run/HistoricalRunGoalIntensity'
@@ -302,6 +303,10 @@ export function CecchinoLabHistoricalRunPage() {
             />
             <HistoricalRunV1Pulse overview={overview.data} />
             <HistoricalRunModuleCoveragePanel coverage={overview.data.module_coverage} />
+            <HistoricalRunDerivedRebuild
+              runId={runId}
+              onApplied={() => void loadOverview()}
+            />
 
             <section>
               <h3 className="mb-2 text-lg font-semibold">Analisi disponibili</h3>

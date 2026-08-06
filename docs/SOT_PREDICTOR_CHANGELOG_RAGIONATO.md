@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Docs — Allineamento documentazione cutover segnali V3 (2026-08-06)
+
+- Perché: i doc citavano ancora V2 come corrente, 14 mercati Lab, legenda statica FE e `signal_active=SI` come metrica operativa.
+- Cosa: aggiornati PROJECT_CONTEXT, CECCHINO, MODEL_REGISTRY, PIPELINE, Lab scan/dashboard/report schema: formula `cecchino_signals_matrix_v3_draw_dfg_decimal2`, consenso min-two, audit v3, `get_current_signal_contract()`, raw SI ≠ `is_acquired`, Lab A–F `cecchino_lab_signals_af_v2_current_v3_consensus` acquired-only, KPI Lab 19 mercati, DRAW_PT eredita DRAW, Today/`signal_contract` current-only, evaluation/odds refresh V3-only, diagnostics v1/v2/v3, `GET …/formula-registry`, derived rebuild `REBUILD_CECCHINO_LAB_DERIVED_V3` (no full scan, no overwrite `source_git_commit`).
+- Cosa non fa: nessuna modifica codice/API/formule; solo documentazione.
+
 ## Fix — Canonicalize draw formulas and enforce current version (2026-08-06)
 
 - Perché: soglie DRAW D/E/F/G su float producevano errori di bordo (es. F36≈−0.80); sync rinominava matrici senza versione come correnti; Monitoraggio poteva mescolare V1/V2/`all`; `raw_signal_value` FE tipizzato boolean invece di `"SI"`.

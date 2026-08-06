@@ -20,6 +20,7 @@ from app.services.cecchino.cecchino_signal_consensus import (
     LEGACY_SIGNAL_FORMULA_VERSION,
     PREVIOUS_SIGNAL_FORMULA_VERSION,
     SIGNAL_CONSENSUS_POLICY_VERSION,
+    build_matrix_signal_contract,
     is_current_signal_matrix,
     normalize_formula_version,
 )
@@ -59,6 +60,26 @@ def test_normalize_formula_version_aliases():
 )
 def test_is_current_signal_matrix(matrix, expected: bool):
     assert is_current_signal_matrix(matrix) is expected
+
+
+def test_build_matrix_signal_contract_current_and_legacy():
+    current = build_matrix_signal_contract(
+        {"status": "available", "formula_version": CURRENT_SIGNAL_FORMULA_VERSION},
+    )
+    assert current["is_current_formula"] is True
+    assert current["reason_code"] is None
+    assert current["operational_semantics"] == "acquired_only"
+    assert current["detected_formula_version"] == CURRENT_SIGNAL_FORMULA_VERSION
+
+    legacy = build_matrix_signal_contract(
+        {"status": "available", "formula_version": LEGACY_SIGNAL_FORMULA_VERSION},
+    )
+    assert legacy["is_current_formula"] is False
+    assert legacy["reason_code"] == "signal_matrix_formula_version_not_current"
+
+    missing = build_matrix_signal_contract(None)
+    assert missing["is_current_formula"] is False
+    assert missing["reason_code"] == "signal_matrix_missing"
 
 
 @pytest.mark.parametrize(

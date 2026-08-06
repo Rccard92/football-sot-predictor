@@ -1,4 +1,12 @@
-import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
+import type {
+  CecchinoSignalContract,
+  CecchinoSignalRowConsensus,
+  CecchinoSignalsMatrix,
+} from '../../lib/cecchinoApi'
+import {
+  CURRENT_SIGNAL_FORMULA_VERSION,
+  SIGNAL_FORMULA_CURRENT_BADGE,
+} from '../../lib/cecchinoSignalsApi'
 
 type Props = {
   matrix: CecchinoSignalsMatrix
@@ -6,6 +14,7 @@ type Props = {
   analysisMode?: boolean
   onOpenCell?: (rowKey: string, columnKey: string) => void
   hasExplanation?: (rowKey: string, columnKey: string) => boolean
+  signalContract?: CecchinoSignalContract | null
 }
 
 function SiNoBadge({
@@ -33,6 +42,9 @@ function SiNoBadge({
       ? 'bg-emerald-100 text-emerald-800'
       : 'bg-slate-100 text-slate-600'
   const className = `inline-block min-w-[2.25rem] rounded-md px-2 py-0.5 text-center text-[11px] font-semibold uppercase ring-1 ${base}`
+  const title = isSi
+    ? 'SI grezzo di formula: non implica da solo segno acquisito'
+    : undefined
 
   if (interactive && onClick) {
     return (
@@ -40,6 +52,7 @@ function SiNoBadge({
         type="button"
         onClick={onClick}
         aria-label={ariaLabel}
+        title={title}
         className={`${className} cursor-pointer hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70`}
       >
         {value}
@@ -47,12 +60,50 @@ function SiNoBadge({
     )
   }
 
-  return <span className={className}>{value}</span>
+  return (
+    <span className={className} title={title}>
+      {value}
+    </span>
+  )
 }
 
 function signalVal(signals: Record<string, string>, key: string): string {
   const v = signals[key]
   return v === 'SI' || v === 'NO' ? v : '—'
+}
+
+function consensusOutcomeLabel(consensus: CecchinoSignalRowConsensus | null | undefined): string {
+  if (consensus == null) return '—'
+  switch (consensus.acquisition_status) {
+    case 'acquired_consensus':
+      return 'Acquisito'
+    case 'rejected_insufficient_consensus':
+      return 'Non acquisito — consenso insufficiente'
+    case 'acquired_single_formula_exempt':
+      return 'Esente — singola formula'
+    case 'no_raw_signal':
+      return 'Nessun segnale'
+    case 'legacy_unclassified':
+      return 'Legacy non classificato'
+    default:
+      if (consensus.is_acquired === true) return 'Acquisito'
+      return 'Nessun segnale'
+  }
+}
+
+function consensusOutcomeClass(consensus: CecchinoSignalRowConsensus | null | undefined): string {
+  switch (consensus?.acquisition_status) {
+    case 'acquired_consensus':
+      return 'bg-emerald-50 text-emerald-800 ring-emerald-200/70'
+    case 'acquired_single_formula_exempt':
+      return 'bg-sky-50 text-sky-800 ring-sky-200/70'
+    case 'rejected_insufficient_consensus':
+      return 'bg-amber-50 text-amber-900 ring-amber-200/70'
+    case 'no_raw_signal':
+      return 'bg-slate-50 text-slate-600 ring-slate-200/70'
+    default:
+      return 'bg-slate-50 text-slate-600 ring-slate-200/70'
+  }
 }
 
 const EXCEL_COLS = ['excel_d', 'excel_e', 'excel_f', 'excel_g'] as const
@@ -64,11 +115,31 @@ export function CecchinoSignalsMatrixPanel({
   analysisMode = false,
   onOpenCell,
   hasExplanation,
+  signalContract = null,
 }: Props) {
   const embedded = variant === 'embedded'
   const rows = matrix.rows ?? []
   const rel = matrix.reliability
   const inputs = matrix.inputs
+
+  const detectedVersion =
+    signalContract?.detected_formula_version ?? matrix.formula_version ?? null
+  const formulaVersion = detectedVersion ?? signalContract?.formula_version ?? null
+  const isCurrentFormula =
+    signalContract?.is_current_formula === true
+      ? true
+      : signalContract?.is_current_formula === false
+        ? false
+        : matrix.status === 'available' && formulaVersion === CURRENT_SIGNAL_FORMULA_VERSION
+  const showCurrentBadge = isCurrentFormula === true
+  const nonCurrentWarning =
+    !isCurrentFormula
+      ? `Matrice storica non corrente — esclusa dai flussi operativi${
+          formulaVersion ? ` (${formulaVersion})` : ''
+        }${
+          signalContract?.reason_code ? ` — ${signalContract.reason_code}` : ''
+        }.`
+      : null
 
   const outerClass = embedded
     ? 'space-y-4'
@@ -103,6 +174,25 @@ export function CecchinoSignalsMatrixPanel({
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-2">
+        {showCurrentBadge ? (
+          <span className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200/80">
+            {SIGNAL_FORMULA_CURRENT_BADGE}
+          </span>
+        ) : null}
+        {formulaVersion && !showCurrentBadge ? (
+          <span className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200/80">
+            Formula {formulaVersion}
+          </span>
+        ) : null}
+      </div>
+
+      {nonCurrentWarning ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {nonCurrentWarning}
+        </div>
+      ) : null}
+
       {inputs && (
         <p className="text-xs tabular-nums text-slate-600">
           F32={inputs.q1 != null ? Number(inputs.q1).toFixed(2) : '—'} · F33=
@@ -124,6 +214,7 @@ export function CecchinoSignalsMatrixPanel({
                 </th>
               ))}
               <th className="px-3 py-2.5 text-center">Scala</th>
+              <th className="px-3 py-2.5 text-center">Consenso</th>
             </tr>
           </thead>
           <tbody>
@@ -132,6 +223,7 @@ export function CecchinoSignalsMatrixPanel({
               const scalaKey =
                 row.key === 'one_x' ? 'scala_1x' : row.key === 'x_two' ? 'scala_x2' : null
               const scala = scalaKey ? signalVal(sig, scalaKey) : '—'
+              const outcome = consensusOutcomeLabel(row.consensus)
               return (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-3 py-2 font-medium text-slate-800">{row.label}</td>
@@ -145,12 +237,24 @@ export function CecchinoSignalsMatrixPanel({
                       ? renderBadge(row.key, scalaKey, scala, row.label)
                       : '—'}
                   </td>
+                  <td className="px-3 py-2 text-center">
+                    <span
+                      className={`inline-block max-w-[11rem] rounded-md px-2 py-0.5 text-[10px] font-medium leading-snug ring-1 ${consensusOutcomeClass(row.consensus)}`}
+                    >
+                      {outcome}
+                    </span>
+                  </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+
+      <p className="text-[11px] text-slate-500">
+        Badge SI = esito grezzo della formula cella; l&apos;acquisizione del segno dipende dal
+        consenso (colonna Consenso).
+      </p>
 
       {rel && (
         <div

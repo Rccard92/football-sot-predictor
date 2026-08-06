@@ -16,12 +16,15 @@ from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoToda
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 from app.services.cecchino.cecchino_signal_consensus import (
+    CONSENSUS_REQUIRED_TWO_GROUPS,
     CURRENT_SIGNAL_FORMULA_VERSION,
     GROUP_AVAILABLE_COLUMNS,
     LEGACY_SIGNAL_FORMULA_VERSION,
+    SIGNAL_AUDIT_VERSION,
     SIGNAL_CONSENSUS_POLICY_VERSION,
     SINGLE_FORMULA_EXEMPT_GROUPS,
     compute_consensus_for_matrix_row,
+    get_current_signal_contract,
     normalize_formula_version,
 )
 from app.services.cecchino.cecchino_signal_decimal import (
@@ -29,9 +32,25 @@ from app.services.cecchino.cecchino_signal_decimal import (
     canonical_signal_decimal,
     format_canonical_decimal,
 )
-from app.services.cecchino.cecchino_signal_target_mapping import map_row_key_to_signal_group
+from app.services.cecchino.cecchino_signal_draw_thresholds import (
+    DRAW_D_F36_LOWER,
+    DRAW_D_F36_UPPER,
+    DRAW_E_F36_LOWER,
+    DRAW_E_F36_UPPER,
+    DRAW_E_QX_UPPER,
+    DRAW_F_F36_LOWER,
+    DRAW_F_F36_UPPER,
+    DRAW_F_QX_UPPER,
+    DRAW_G_F36_LOWER,
+    DRAW_G_F36_UPPER,
+    DRAW_G_QX_UPPER,
+)
+from app.services.cecchino.cecchino_signal_target_mapping import (
+    map_column_to_source,
+    map_row_key_to_signal_group,
+)
 
-AUDIT_VERSION = "cecchino_signal_explanations_v3"
+AUDIT_VERSION = SIGNAL_AUDIT_VERSION
 
 Ctx = dict[str, Any]
 Leaf = dict[str, Any]
@@ -561,8 +580,8 @@ def _eval_draw_d(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator="<",
             right_label="Soglia",
-            right_value=Decimal("0.80"),
-            passed=_cmp_dec(f36, "<", Decimal("0.80")),
+            right_value=DRAW_D_F36_UPPER,
+            passed=_cmp_dec(f36, "<", DRAW_D_F36_UPPER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -573,8 +592,8 @@ def _eval_draw_d(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator=">",
             right_label="Soglia",
-            right_value=Decimal("-0.80"),
-            passed=_cmp_dec(f36, ">", Decimal("-0.80")),
+            right_value=DRAW_D_F36_LOWER,
+            passed=_cmp_dec(f36, ">", DRAW_D_F36_LOWER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -614,8 +633,8 @@ def _eval_draw_e(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f33,
             operator="<",
             right_label="Soglia",
-            right_value=Decimal("3.30"),
-            passed=_cmp_dec(f33, "<", Decimal("3.30")),
+            right_value=DRAW_E_QX_UPPER,
+            passed=_cmp_dec(f33, "<", DRAW_E_QX_UPPER),
             source_path="signals_matrix.inputs.qx",
         ),
         _draw_leaf(
@@ -626,8 +645,8 @@ def _eval_draw_e(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator="<=",
             right_label="Soglia",
-            right_value=Decimal("1.47"),
-            passed=_cmp_dec(f36, "<=", Decimal("1.47")),
+            right_value=DRAW_E_F36_UPPER,
+            passed=_cmp_dec(f36, "<=", DRAW_E_F36_UPPER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -638,8 +657,8 @@ def _eval_draw_e(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator=">=",
             right_label="Soglia",
-            right_value=Decimal("-1.40"),
-            passed=_cmp_dec(f36, ">=", Decimal("-1.40")),
+            right_value=DRAW_E_F36_LOWER,
+            passed=_cmp_dec(f36, ">=", DRAW_E_F36_LOWER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -676,8 +695,8 @@ def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f33,
             operator="<=",
             right_label="Soglia",
-            right_value=Decimal("2.90"),
-            passed=_cmp_dec(f33, "<=", Decimal("2.90")),
+            right_value=DRAW_F_QX_UPPER,
+            passed=_cmp_dec(f33, "<=", DRAW_F_QX_UPPER),
             source_path="signals_matrix.inputs.qx",
         ),
         _draw_leaf(
@@ -688,8 +707,8 @@ def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator="<=",
             right_label="Soglia",
-            right_value=Decimal("1.70"),
-            passed=_cmp_dec(f36, "<=", Decimal("1.70")),
+            right_value=DRAW_F_F36_UPPER,
+            passed=_cmp_dec(f36, "<=", DRAW_F_F36_UPPER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -700,8 +719,8 @@ def _eval_draw_f(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator=">=",
             right_label="Soglia",
-            right_value=Decimal("-1.70"),
-            passed=_cmp_dec(f36, ">=", Decimal("-1.70")),
+            right_value=DRAW_F_F36_LOWER,
+            passed=_cmp_dec(f36, ">=", DRAW_F_F36_LOWER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -738,8 +757,8 @@ def _eval_draw_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f33,
             operator="<=",
             right_label="Soglia",
-            right_value=Decimal("3.50"),
-            passed=_cmp_dec(f33, "<=", Decimal("3.50")),
+            right_value=DRAW_G_QX_UPPER,
+            passed=_cmp_dec(f33, "<=", DRAW_G_QX_UPPER),
             source_path="signals_matrix.inputs.qx",
         ),
         _draw_leaf(
@@ -750,8 +769,8 @@ def _eval_draw_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator="<=",
             right_label="Soglia",
-            right_value=Decimal("1.20"),
-            passed=_cmp_dec(f36, "<=", Decimal("1.20")),
+            right_value=DRAW_G_F36_UPPER,
+            passed=_cmp_dec(f36, "<=", DRAW_G_F36_UPPER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -762,8 +781,8 @@ def _eval_draw_g(ctx: Ctx) -> tuple[str, Logic, list[dict[str, Any]]]:
             canonical_value=f36,
             operator=">=",
             right_label="Soglia",
-            right_value=Decimal("-1.20"),
-            passed=_cmp_dec(f36, ">=", Decimal("-1.20")),
+            right_value=DRAW_G_F36_LOWER,
+            passed=_cmp_dec(f36, ">=", DRAW_G_F36_LOWER),
             source_path="signals_matrix.inputs.diff_1_2",
         ),
         _draw_leaf(
@@ -1164,7 +1183,7 @@ SIGNAL_RULE_REGISTRY: list[dict[str, Any]] = [
           '=IF(AND(F36<0.80,F36>-0.80,F32>=F34),"SI","NO")',
           "F36 < 0,80 AND F36 > −0,80 AND F32 ≥ F34",
           "Pareggio quando F36 è entro ±0,80 (stretti) e quota 1 ≥ quota 2.",
-          "Intercettare equilibri da pareggio (formula V2).",
+          "Intercettare equilibri da pareggio (formula V3 Decimal2).",
           "Segno X FT", _eval_draw_d),
     _rule("draw", "excel_e", "E42",
           '=IF(AND(F33<3.3,F36<=1.47,F36>=-1.4,F32>=F34),"SI","NO")',
@@ -1176,13 +1195,13 @@ SIGNAL_RULE_REGISTRY: list[dict[str, Any]] = [
           '=IF(AND(F33<=2.90,F36<=1.70,F36>=-1.70,F32>=F34),"SI","NO")',
           "F33 ≤ 2,90 AND F36 ≤ 1,70 AND F36 ≥ −1,70 AND F32 ≥ F34",
           "Pareggio con X ≤ 2,90 e F36 entro ±1,70 inclusivi.",
-          "Segnale X V2 su quota X e banda F36.",
+          "Segnale X V3 Decimal2 su quota X e banda F36.",
           "Segno X FT", _eval_draw_f),
     _rule("draw", "excel_g", "G42",
           '=IF(AND(F33<=3.50,F36<=1.20,F36>=-1.20,F32>=F34),"SI","NO")',
           "F33 ≤ 3,50 AND F36 ≤ 1,20 AND F36 ≥ −1,20 AND F32 ≥ F34",
           "Pareggio con X ≤ 3,50 e F36 entro ±1,20 inclusivi.",
-          "Variante X V2 intermedia.",
+          "Variante X V3 Decimal2 intermedia.",
           "Segno X FT", _eval_draw_g),
     _rule("over_over_pt", "excel_d", "D45",
           '=IF(AND(OR(F36>1.7,F36<-1.5),F33>=6),"SI","NO")',
@@ -1585,3 +1604,108 @@ def get_signal_explanations(db: Session, today_fixture_id: int) -> dict[str, Any
             "message": "Fixture non eleggibile",
         }
     return build_signal_explanations(row)
+
+
+def _registry_consensus_counts(signal_group: str | None) -> tuple[int, int, bool]:
+    group = str(signal_group or "").upper()
+    available = GROUP_AVAILABLE_COLUMNS.get(group, ())
+    available_count = len(available)
+    exempt = group in SINGLE_FORMULA_EXEMPT_GROUPS
+    if group in CONSENSUS_REQUIRED_TWO_GROUPS:
+        required = 2
+    elif exempt:
+        required = 1
+    else:
+        required = 1 if available_count else 0
+    return required, available_count, exempt
+
+
+def _registry_decimal_policy(row_key: str) -> dict[str, Any] | None:
+    if row_key != "draw":
+        return None
+    return {
+        "scope": "draw_formulas_only",
+        "quantum": format_canonical_decimal(SIGNAL_FORMULA_DECIMAL_QUANTUM) or "0.01",
+        "rounding": "ROUND_HALF_UP",
+    }
+
+
+def _registry_scala_eligibility(column_key: str, signal_group: str | None, source_column: str) -> bool:
+    if str(column_key).startswith("scala_"):
+        return True
+    return source_column == "SCALA" and str(signal_group or "") in ("ONE_X", "X_TWO")
+
+
+def get_signal_formula_registry() -> dict[str, Any]:
+    """Registro read-only formule attive (SIGNAL_RULE_REGISTRY) + contratto/consenso.
+
+    Le colonne inactive della heatmap (celle non previste da Excel) non sono in
+    ``entries``: il FE le deriva per completezza griglia.
+    """
+    contract = get_current_signal_contract()
+    entries: list[dict[str, Any]] = []
+    for rule in SIGNAL_RULE_REGISTRY:
+        row_key = str(rule["row_key"])
+        column_key = str(rule["column_key"])
+        signal_group = map_row_key_to_signal_group(row_key)
+        source_column = map_column_to_source(column_key) or column_key.upper()
+        required, available, exempt = _registry_consensus_counts(signal_group)
+        entries.append(
+            {
+                "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+                "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+                "audit_version": SIGNAL_AUDIT_VERSION,
+                "signal_group": signal_group,
+                "row_key": row_key,
+                "label": rule["row_label"],
+                "column_key": column_key,
+                "source_column": source_column,
+                "source_cell": rule["source_cell"],
+                "excel_formula": rule["excel_formula"],
+                "formula_readable": rule["formula_symbolic"],
+                "target_market": rule["target_market"],
+                "evaluation_rule": rule.get("description") or rule.get("purpose"),
+                "purpose": rule.get("purpose"),
+                "column_active": True,
+                "decimal_policy": _registry_decimal_policy(row_key),
+                "consensus_required_count": required,
+                "consensus_available_count": available,
+                "single_formula_exemption": exempt,
+                "scala_eligibility": _registry_scala_eligibility(
+                    column_key, signal_group, source_column
+                ),
+            },
+        )
+
+    return {
+        "signal_contract": contract,
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+        "audit_version": SIGNAL_AUDIT_VERSION,
+        "entries": entries,
+        "intro": {
+            "description": (
+                "Registro formule segnali Cecchino: solo colonne attive da "
+                "SIGNAL_RULE_REGISTRY. La heatmap monitoraggio può avere celle "
+                "mancanti: il FE le marca inactive (non previste da Excel)."
+            ),
+            "notes": [
+                "SI grezzo di cella ≠ segno acquisito: acquisizione richiede consenso min-two "
+                "(o esenzione singola formula su 1/2).",
+                "Colonna SCALA prevista solo per 1X (G48) e X2 (G54).",
+                "Decimal policy ROUND_HALF_UP a 0.01 applicata solo alle formule DRAW (V3).",
+                "DRAW_PT è osservazione derivata, non una formula della matrice Excel.",
+            ],
+            "scala_mapping_note": (
+                "La colonna SCALA è prevista solo per 1X e X2. G48 → 1X/SCALA, "
+                "G54 → X2/SCALA. Le righe 1 e 2 non hanno segnali SCALA."
+            ),
+            "dominance_note": (
+                "La Dominanza è recuperata dalla sezione Equilibrio vs Squilibrio "
+                "e misura quanto il modello è convinto dello scenario principale."
+            ),
+            "inactive_columns": "frontend_derived",
+        },
+        "contract": contract,
+        "active_entry_count": len(entries),
+    }

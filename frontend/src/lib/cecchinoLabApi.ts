@@ -757,7 +757,74 @@ export function replaceCecchinoLabDataset(datasetId: number, file: File): Promis
 }
 
 export const HISTORICAL_SCAN_CONFIRM_TOKEN = 'RUN_CECCHINO_LAB_HISTORICAL_SCAN'
+export const DERIVED_REBUILD_CONFIRM_TOKEN = 'REBUILD_CECCHINO_LAB_DERIVED_V3'
 export const DEFAULT_HISTORICAL_SEASON = '2021/2022'
+
+export type HistoricalDerivedRefresh = {
+  status?: string | null
+  applied_at?: string | null
+  applied_git_commit?: string | null
+  formula_version?: string | null
+  consensus_policy_version?: string | null
+  audit_version?: string | null
+  market_registry_count?: number | null
+  source_run_git_commit?: string | null
+  external_api_calls?: number | null
+  full_scan_restarted?: boolean | null
+  snapshots_rebuilt?: number | null
+}
+
+export type HistoricalDerivedRebuildResult = {
+  status: string
+  schema_version?: string
+  run_id: number
+  run_status?: string | null
+  snapshots_found: number
+  snapshots_rebuildable: number
+  snapshots_partial: number
+  snapshots_blocked: number
+  market_results_to_replace: number
+  signals_to_rebuild: number
+  kpi_to_rebuild: number
+  missing_inputs_by_reason: Record<string, number>
+  external_api_calls: number
+  full_scan_required: boolean
+  full_scan_restarted?: boolean
+  signal_contract: {
+    formula_version?: string
+    consensus_policy_version?: string
+    audit_version?: string
+    formula_label?: string
+    [key: string]: unknown
+  }
+  formula_version?: string
+  consensus_policy_version?: string
+  audit_version?: string
+  market_registry_count: number
+  confirm_token_required: string
+  derived_refresh?: HistoricalDerivedRefresh | null
+  dry_run?: boolean
+  snapshots_rebuilt?: number
+  classifications?: Array<{
+    snapshot_id: number
+    classification: string
+    reasons: string[]
+    signals_rebuildable?: boolean
+    market_results_rebuildable?: boolean
+  }>
+  rebuilt?: Array<Record<string, unknown>>
+  run_active?: boolean
+}
+
+export function historicalRunDerivedRebuild(
+  runId: number,
+  options?: { dry_run?: boolean; confirm?: string | null },
+): Promise<HistoricalDerivedRebuildResult> {
+  return postJson(`/api/admin/cecchino-lab/historical/runs/${runId}/derived-rebuild`, {
+    dry_run: options?.dry_run ?? true,
+    confirm: options?.confirm ?? null,
+  })
+}
 
 export type HistoricalScanPreflight = {
   season_label: string

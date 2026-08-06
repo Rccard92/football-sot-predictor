@@ -1,8 +1,8 @@
 ﻿# Cecchino Lab — Dashboard analisi run storico
 
-## Nota — Monitoraggio Segnali Cecchino V2 (2026-08-06)
+## Nota — Segnali Cecchino V3 + Lab A–F (2026-08-06)
 
-Il consenso formule e i filtri acquisizione riguardano `/monitoraggio-segnali` (matrice SI/NO, formula corrente V3 Decimal). Nessuna modifica a overview/moduli STEP 4A/4B.
+Contratto operativo: formula `cecchino_signals_matrix_v3_draw_dfg_decimal2` + consenso `cecchino_signal_consensus_v1_min_two` + audit `cecchino_signal_explanations_v3`. Raw SI ≠ `is_acquired`. Lab A–F: `cecchino_lab_signals_af_v2_current_v3_consensus` acquired-only; KPI/dashboard mercati **19**. Derived rebuild senza full scan: confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` (provenance `derived_refresh`, no overwrite `source_git_commit`). Monitoraggio Today resta su `/monitoraggio-segnali`; overview STEP 4A/4B invariati nel layout.
 
 ## STEP 4B — Filtro V3 su KPI + pagina Segnali A–F (2026-08-02)
 
@@ -99,12 +99,12 @@ Warning persistente: modulo osservazionale; descrive la formula congelata del Ru
 
 ## Segnali A–F (dashboard)
 
-Sezione a due livelli:
+Sezione a due livelli (module `cecchino_lab_signals_af_v2_current_v3_consensus`, formula V3 + consenso min-two):
 
-- **Opportunità uniche** — ROI/hit/overlap con F; mai sommare celle come scommesse
-- **Celle attive** — diagnostica overlapping (`attribution_mode=overlapping`)
+- **Opportunità uniche / acquired** — metrica operativa = segni con `is_acquired=true`; ROI/hit/overlap con F; mai sommare celle SI grezze come scommesse
+- **Celle attive (raw SI)** — solo diagnostica overlapping (`attribution_mode=overlapping`); non equivalgono ad acquisizione
 - `with_signal_active` non mostrato come sovrapposizione; etichette: «Opportunità uniche», «Celle attive», «Sovrapposizione con F», «F — modello corrente»
-- Consenso **per mercato** (non ROI multi-mercato aggregato)
+- Consenso **per mercato** (non ROI multi-mercato aggregato); DRAW_PT eredita consenso DRAW
 
 ## Formulazioni obbligatorie
 
@@ -154,7 +154,7 @@ I filtri frontend restano in query string (URL condivisibile).
 | Path | Contenuto |
 |------|-----------|
 | `GET .../dashboard/overview` | run meta, progress, KPI, `scan_source_git_commit`, `analytics_runtime_git_commit*`, `analytics_aggregation_version`, `is_provisional` |
-| `GET .../dashboard/markets` | 14 mercati indipendenti + unavailable + medie/profit null-safe |
+| `GET .../dashboard/markets` | **19** mercati indipendenti (`KPI_V2_ROW_DEFS`) + unavailable + medie/profit null-safe |
 | `GET .../dashboard/ratings` | matrice mercato × fascia Rating + warning indipendenza |
 | `GET .../dashboard/purchasability` | primaria `by_market`; distribuzione globale diagnostica |
 | `GET .../dashboard/signals` | modelli Aâ€“F (F = corrente) |
@@ -169,7 +169,7 @@ I filtri frontend restano in query string (URL condivisibile).
 
 ## Sezioni UI
 
-A Header Â· B Live progress Â· C V1 Pulse Â· D 14 mercati Â· E Rating Â· F AcquistabilitÃ  Â· G Segnali Aâ€“F Â· H Balance Â· I IntensitÃ  Goal Â· J League DNA Â· K Timeline Â· L Pattern Â· M Match explorer Â· N Esclusioni
+A Header · B Live progress · C V1 Pulse · D 19 mercati · E Rating · F Acquistabilità · G Segnali A–F · H Balance · I Intensità Goal · J League DNA · K Timeline · L Pattern · M Match explorer · N Esclusioni
 
 Report download: riusa API ZIP esistenti (voce consigliata Â«Sintesi per ChatGPTÂ»). Rigenerabile dagli snapshot giÃ  presenti (nessuna nuova scansione).
 

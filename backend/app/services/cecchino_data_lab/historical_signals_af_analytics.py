@@ -36,7 +36,7 @@ from app.services.cecchino_data_lab.historical_signal_export import (
     public_opportunity_row,
 )
 
-HISTORICAL_SIGNALS_AF_ANALYTICS_VERSION = "cecchino_lab_historical_signals_af_v1"
+HISTORICAL_SIGNALS_AF_ANALYTICS_VERSION = "cecchino_lab_historical_signals_af_v2_acquired_v3"
 ANALYTICS_CACHE_TTL_S = 300
 CACHE_MAX_ENTRIES = 64
 CACHE_KIND_SUMMARY = "summary"

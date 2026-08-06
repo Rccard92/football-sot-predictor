@@ -16,6 +16,10 @@ SIGNAL_CONSENSUS_POLICY_VERSION = "cecchino_signal_consensus_v1_min_two"
 LEGACY_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v1_legacy"
 PREVIOUS_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v2_draw_dfg"
 CURRENT_SIGNAL_FORMULA_VERSION = "cecchino_signals_matrix_v3_draw_dfg_decimal2"
+# Alias canonico audit spiegazioni segnali (stesso valore di AUDIT_VERSION in explanations).
+SIGNAL_AUDIT_VERSION = "cecchino_signal_explanations_v3"
+CURRENT_SIGNAL_FORMULA_LABEL = "Formula corrente V3"
+OPERATIONAL_SIGNAL_SEMANTICS = "acquired_only"
 
 # Ordine canonico colonne conferma
 CANONICAL_SOURCE_COLUMNS: tuple[str, ...] = (
@@ -244,3 +248,59 @@ def is_current_signal_matrix(matrix: dict[str, Any] | None) -> bool:
     if fv is None or str(fv).strip() == "":
         return False
     return str(fv).strip() == CURRENT_SIGNAL_FORMULA_VERSION
+
+
+def get_current_signal_contract() -> dict[str, Any]:
+    """Contratto operativo unico: formula V3 + consenso min-two + acquired_only."""
+    from app.services.cecchino.cecchino_signal_decimal import (
+        SIGNAL_FORMULA_DECIMAL_QUANTUM,
+        format_canonical_decimal,
+    )
+
+    return {
+        "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
+        "formula_label": CURRENT_SIGNAL_FORMULA_LABEL,
+        "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
+        "audit_version": SIGNAL_AUDIT_VERSION,
+        "decimal_policy": {
+            "scope": "draw_formulas_only",
+            "quantum": format_canonical_decimal(SIGNAL_FORMULA_DECIMAL_QUANTUM) or "0.01",
+            "rounding": "ROUND_HALF_UP",
+        },
+        "operational_signal_semantics": OPERATIONAL_SIGNAL_SEMANTICS,
+        "legacy_versions_operational": False,
+    }
+
+
+def build_matrix_signal_contract(matrix: dict[str, Any] | None) -> dict[str, Any]:
+    """Contratto corrente + metadati read-only della matrice persistita (nessun rebuild)."""
+    contract = get_current_signal_contract()
+    is_current = is_current_signal_matrix(matrix if isinstance(matrix, dict) else None)
+
+    matrix_status: str | None = None
+    detected: str | None = None
+    reason_code: str | None = None
+
+    if not isinstance(matrix, dict):
+        reason_code = "signal_matrix_missing"
+    else:
+        matrix_status = str(matrix.get("status") or "") or None
+        raw_fv = matrix.get("formula_version")
+        if raw_fv is not None and str(raw_fv).strip() != "":
+            detected = str(raw_fv).strip()
+        if not is_current:
+            if matrix_status != "available":
+                reason_code = "signal_matrix_unavailable"
+            elif detected is None:
+                reason_code = "signal_matrix_formula_version_missing"
+            else:
+                reason_code = "signal_matrix_formula_version_not_current"
+
+    return {
+        **contract,
+        "is_current_formula": is_current,
+        "matrix_status": matrix_status,
+        "operational_semantics": OPERATIONAL_SIGNAL_SEMANTICS,
+        "detected_formula_version": detected,
+        "reason_code": None if is_current else reason_code,
+    }

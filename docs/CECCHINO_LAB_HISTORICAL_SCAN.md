@@ -1,8 +1,23 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
-## Monitoraggio Segnali Cecchino — consenso V2 (2026-08-06)
+## Segnali Cecchino V3 — contratto operativo + Lab (2026-08-06)
 
-Nota operativa (pagina `/monitoraggio-segnali`, non Lab Run): formule X V3 Decimal + consenso min-two; sync/monitoraggio **current-only** (V3); V1/V2 preservate fuori scope; nessun backfill storico automatico; default UI `current`+`acquired`. Il Lab scan storico non è modificato da questa feature.
+Nota operativa condivisa Today/Monitoraggio/Lab:
+
+| Voce | Valore |
+|------|--------|
+| Formula | `cecchino_signals_matrix_v3_draw_dfg_decimal2` |
+| Consenso | `cecchino_signal_consensus_v1_min_two` |
+| Audit | `cecchino_signal_explanations_v3` |
+| Contratto | `get_current_signal_contract()`; Today current-only (`is_current_signal_matrix` + `signal_contract`) |
+| Raw ≠ acquisito | cella SI grezza ≠ `is_acquired=true` (metrica operativa) |
+| DRAW_PT | eredita consenso da DRAW |
+| Lab A–F | module `cecchino_lab_signals_af_v2_current_v3_consensus`, **acquired-only** |
+| Lab KPI / settlement | **19 mercati** (`KPI_V2_ROW_DEFS`) |
+| Evaluation / odds refresh | V3-only (`signal_formula_version`); backfill/revaluate/backtest ancora disponibili ma V3-only; V1/V2 archiviate invariate |
+| Diagnostics | contatori versionati v1/v2/v3 |
+| Formula registry | `GET /api/admin/cecchino/signals/formula-registry` |
+| Derived rebuild | dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` su `POST …/historical/runs/{run_id}/derived-rebuild`; nessuna API esterna; nessuna ripartenza full scan; provenance in `derived_refresh`; **non** sovrascrive `source_git_commit` |
 
 ## Segnali KPI operativi — 19 mercati (2026-08-06)
 
@@ -222,7 +237,7 @@ Aggregazioni hardened: riconciliazione real+derived+unavailable; medie odds `nul
 |--------|-------------------|-------------|-----|
 | Intensità Goal | 7 feature + `TrainEcdf` + `_pillar_scores_from_pct` | **Parziale** (no bundle Today, no xG) | `historical_goal_intensity.py` |
 | Acquistabilità | `calculate_purchasability_v2_item` + profilo progressivo | **Non equivalente Betfair** | `historical_purchasability.py` |
-| Segnali A–F | pesi ufficiali + `compute_final_odds` + `build_signals_matrix` | **F = modello corrente** | `historical_signal_models.py` |
+| Segnali A–F | pesi ufficiali + `compute_final_odds` + `build_signals_matrix` V3 + consenso; module `cecchino_lab_signals_af_v2_current_v3_consensus`; settlement/analytics **acquired-only** | **F = modello corrente** | `historical_signal_models.py` |
 
 ## Avvio
 

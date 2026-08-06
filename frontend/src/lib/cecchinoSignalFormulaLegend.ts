@@ -16,12 +16,12 @@ export type CecchinoSignalFormulaEntry = {
 
 export const CECCHINO_HEATMAP_FORMULA_INTRO = {
   description:
-    'Ogni cella della heatmap aggrega tutte le partite in cui quel segnale si è acceso su quella specifica colonna Excel. Il valore principale indica quante volte il segnale è stato attivato. Il rapporto W/L indica quante volte il target associato è andato a buon fine dopo il risultato finale della partita.',
+    'Ogni cella della heatmap può aggregare attivazioni formula (cella SI grezza) o segni acquisiti a seconda del filtro. Il flusso operativo default usa solo segni acquisiti (formula V3 + consenso min-two). Il badge SI di una singola cella non implica da solo che il segno sia acquisito.',
   formulas: [
-    'Attivazioni = count(signal_value = SI)',
-    'Valutati = won + lost',
-    'Success rate = won / valutati × 100',
-    'Pending e non valutabili non entrano nel success rate.',
+    'Celle formula SI = count(signal_value = SI) — diagnostica grezza',
+    'Segni acquisiti = is_acquired / consensus min-two (metrica operativa)',
+    'Segni rifiutati per consenso = SI grezzi sotto soglia',
+    'Success rate = won / (won + lost) × 100 sui segni nel filtro corrente',
   ],
 } as const
 
@@ -144,7 +144,7 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
   ),
   inactive('UNDER_UNDER_PT', 'UNDER 2.5', 'SCALA', UNDER_TARGET, UNDER_EVAL),
 
-  // SEGNO X (formule V2 D/F/G; E invariata)
+  // SEGNO X (formule V3 Decimal2 D/E/F/G)
   active(
     'DRAW',
     'SEGNO X',

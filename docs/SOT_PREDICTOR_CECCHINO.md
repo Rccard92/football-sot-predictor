@@ -1056,23 +1056,25 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 - Backend: `cecchino_signals_matrix.py`, `cecchino_signal_goal_refs.py`; legenda: `cecchinoSignalFormulaLegend.ts`.
 - E39 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore. *(F39/G39 aggiornate in step successivo.)*
 
-## Cecchino — Consenso segnali + formule X V2 (2026-08-06)
+## Cecchino — Consenso segnali + formule X V2 (2026-08-06) — storico
 
-- **Formule X (V2):** D42 `F36<0.80 ∧ F36>-0.80 ∧ F32≥F34`; F42 `F33≤2.90 ∧ F36∈[-1.70,1.70] ∧ F32≥F34`; G42 `F33≤3.50 ∧ F36∈[-1.20,1.20] ∧ F32≥F34`; **E42 invariata**.
-- **Versioning:** `cecchino_signals_matrix_v1_legacy` / `cecchino_signals_matrix_v2_draw_dfg`; policy `cecchino_signal_consensus_v1_min_two`; audit `cecchino_signal_explanations_v2`.
-- **Consenso (Opzione B):** gruppi multi-formula richiedono ≥2 SI distinti per acquisire il segno; HOME/AWAY esenti (1 formula); SCALA conta solo per 1X/X2; DRAW_PT eredita DRAW e non aumenta il conteggio.
-- **Raw ≠ acquisito:** celle SI/NO restano; activation V2 persistono SI grezzi; `is_acquired` / `acquisition_status` distinguono acquisiti vs `rejected_insufficient_consensus`.
-- **Persistenza:** migration `20260806170000`; unique key include `COALESCE(signal_formula_version, legacy)`; sync V2 non tocca V1.
-- **Monitoraggio:** default `formula=current` + `acquisition=acquired`; metriche `formula_activations` vs `unique_acquired_signs`.
-- **Invariato:** value gate, settlement, altre formule, Balance/KPI/Rating/Edge; nessun leakage post-match; nessuno storico eliminato.
+- **Formule X (V2, allora corrente):** D42 / F42 / G42 aggiornate; **E42 invariata**. Versioning `…_v1_legacy` / `…_v2_draw_dfg`; audit allora `cecchino_signal_explanations_v2`.
+- **Consenso (Opzione B, ancora vigente):** ≥2 SI distinti per acquisire; HOME/AWAY esenti; DRAW_PT eredita DRAW.
+- **Raw ≠ acquisito:** cella SI grezza ≠ segno acquisito (`is_acquired` / `acquisition_status`).
+- **Persistenza:** migration `20260806170000`. **Superseduta** dal cutover V3 Decimal: V2 archiviata invariata, fuori dal sync/monitoraggio operativo.
 
 ## Cecchino — Formule X V3 Decimal + cutover current-only (2026-08-06)
 
-- **Root cause:** confronti float sulle soglie DRAW D/E/F/G (es. F36 = −0.80) producevano falsi positivi/negativi.
-- **Fix:** helper condiviso `canonical_signal_decimal` (`Decimal(str(value))` → quantize `0.01` `ROUND_HALF_UP`); scope **solo DRAW** D/E/F/G; altre formule invariate.
-- **Versione corrente:** `cecchino_signals_matrix_v3_draw_dfg_decimal2`; previous `…_v2_draw_dfg`; legacy `…_v1_legacy`; consensus invariata; audit `cecchino_signal_explanations_v3`.
-- **Cutover:** sync rifiuta matrici non-V3 (`skipped_non_current_formula_matrix`); nessuna rinomina V1/V2→V3; Monitoraggio rifiuta `legacy`/`all`/`v1`/`v2` (HTTP 422); modelli A–F usano solo V3.
-- **Nessun backfill storico**; nessuna migrazione; V1/V2 restano nel DB fuori dal flusso operativo.
+- **Formula operativa unica:** `cecchino_signals_matrix_v3_draw_dfg_decimal2` (DRAW Decimal `0.01` ROUND_HALF_UP; E invariata).
+- **Consenso:** `cecchino_signal_consensus_v1_min_two`. **Audit:** `cecchino_signal_explanations_v3`.
+- **Contratto canonico:** `get_current_signal_contract()`; Today current-only via `is_current_signal_matrix` + `signal_contract` nel detail.
+- **Raw SI ≠ acquisito:** `signal_active`/cella SI grezza ≠ metrica operativa; operativo = `is_acquired=true`.
+- **DRAW_PT:** eredita consenso da DRAW (non aumenta `yes_count`).
+- **Cutover:** sync rifiuta matrici non-V3; Monitoraggio solo `current`/V3 (`legacy`/`all`/`v1`/`v2` → 422); evaluation / odds refresh / backfill / revaluate / backtest **V3-only** (`signal_formula_version`); V1/V2 archiviate senza modifica.
+- **Diagnostics:** contatori versionati v1/v2/v3 (acquired/raw/archived).
+- **Registro formule:** `GET /api/admin/cecchino/signals/formula-registry` — fonte backend; FE usa API (fallback locale solo se registry non disponibile).
+- **Data Lab A–F:** module `cecchino_lab_signals_af_v2_current_v3_consensus`, acquired-only; KPI/settlement Lab **19 mercati**.
+- **Derived rebuild** (senza full scan): `POST …/historical/runs/{run_id}/derived-rebuild` — dry-run default + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3`; zero API esterne; provenance in `summary_json.derived_refresh`; **non** sovrascrive `source_git_commit`.
 - **FE:** badge `Formula corrente V3`; `raw_signal_value` tipizzato `'SI'|'NO'|null`.
 
 ## Cecchino — Modifica formula X D42 (2026-07-08)
@@ -1487,13 +1489,13 @@ Versione UI `cecchino_today_v0_33_signals_formula_legend` — debug formule heat
 | Componente | Comportamento |
 |------------|---------------|
 | UI | Accordion «Legenda formule segnali Cecchino» sotto heatmap, chiuso di default |
-| Dati | `cecchinoSignalFormulaLegend.ts` — formule Excel + parlanti statiche |
+| Dati (attuale) | Fonte primaria `GET /api/admin/cecchino/signals/formula-registry`; fallback locale `cecchinoSignalFormulaLegend.ts` solo se API non disponibile |
 | Tab | 8 segnali (stesso ordine heatmap): UNDER 2.5, SEGNO X, OVER 2.5, 1, 1X, 2, X2, 12 |
-| Colonne | Excel D/E/F/G + SCALA; colonne non previste marcate «Non prevista da Excel» |
+| Colonne | Excel D/E/F/G + SCALA; colonne non previste marcate «Non prevista da Excel» (derivate FE) |
 | Nota SCALA | G48 solo 1X/SCALA; G54 solo X2/SCALA; righe 1 e 2 senza SCALA |
-| Aggregazione | Box intro su Attivazioni, Valutati, Success rate heatmap |
+| Aggregazione | Box intro: celle SI grezze vs segni acquisiti (`is_acquired` / consenso min-two) |
 
-**Invariato:** backend segnali, Betfair-only, SOT v2.0/v2.1, formule calcolo matrice.
+**Post-cutover V3:** FE non è più l’unica fonte delle formule; contratto/audit/consenso arrivano dal registry backend.
 
 ## Cecchino Today — Fase 38 — Fix definitivo Scala 1X/X2 (v0.32)
 

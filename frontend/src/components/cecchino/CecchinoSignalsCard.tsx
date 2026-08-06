@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
+import type { CecchinoSignalContract, CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import type {
   CecchinoSignalCellExplanation,
   CecchinoSignalExplanationsResponse,
@@ -20,6 +20,7 @@ type Props = {
   scanDate?: string | null
   todayFixtureId?: number | null
   providerFixtureId?: number | null
+  signalContract?: CecchinoSignalContract | null
 }
 
 function downloadAuditJson(
@@ -41,6 +42,7 @@ export function CecchinoSignalsCard({
   scanDate,
   todayFixtureId,
   providerFixtureId,
+  signalContract = null,
 }: Props) {
   const monitoringHref =
     scanDate != null
@@ -166,6 +168,7 @@ export function CecchinoSignalsCard({
         analysisMode={analysisMode}
         onOpenCell={openCell}
         hasExplanation={hasExplanation}
+        signalContract={signalContract}
       />
       {selected ? (
         <CecchinoSignalAuditModal explanation={selected} onClose={() => setSelected(null)} />

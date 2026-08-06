@@ -11,11 +11,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.services.cecchino.cecchino_signal_consensus import (
+    CURRENT_SIGNAL_FORMULA_VERSION,
+    SIGNAL_AUDIT_VERSION,
+    SIGNAL_CONSENSUS_POLICY_VERSION,
+)
 from app.services.cecchino.cecchino_signal_explanations import (
     SIGNAL_RULE_REGISTRY,
     build_signal_explanations,
     explain_all_cells_from_inputs,
     get_signal_explanations,
+    get_signal_formula_registry,
 )
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
@@ -50,6 +56,34 @@ def test_registry_has_26_rules():
     assert len(SIGNAL_RULE_REGISTRY) == 26
     keys = {r["cell_key"] for r in SIGNAL_RULE_REGISTRY}
     assert len(keys) == 26
+
+
+def test_get_signal_formula_registry_active_only():
+    payload = get_signal_formula_registry()
+    assert payload["formula_version"] == CURRENT_SIGNAL_FORMULA_VERSION
+    assert payload["consensus_policy_version"] == SIGNAL_CONSENSUS_POLICY_VERSION
+    assert payload["audit_version"] == SIGNAL_AUDIT_VERSION
+    assert payload["active_entry_count"] == 26
+    assert len(payload["entries"]) == 26
+    assert payload["intro"]["inactive_columns"] == "frontend_derived"
+    assert payload["signal_contract"]["formula_version"] == CURRENT_SIGNAL_FORMULA_VERSION
+
+    draw = [e for e in payload["entries"] if e["row_key"] == "draw"]
+    assert len(draw) == 4
+    assert all(e["decimal_policy"]["scope"] == "draw_formulas_only" for e in draw)
+    assert all(e["column_active"] is True for e in payload["entries"])
+    assert all(e["source_column"].startswith("EXCEL_") or e["source_column"] == "SCALA" for e in payload["entries"])
+
+    purposes = " ".join(str(e.get("purpose") or "") for e in draw)
+    assert "V3 Decimal2" in purposes
+    assert "V2" not in purposes.replace("V3 Decimal2", "")
+
+    home = [e for e in payload["entries"] if e["signal_group"] == "HOME"][0]
+    assert home["single_formula_exemption"] is True
+    assert home["consensus_required_count"] == 1
+    scala = [e for e in payload["entries"] if e["column_key"] == "scala_1x"][0]
+    assert scala["scala_eligibility"] is True
+    assert scala["source_column"] == "SCALA"
 
 
 def test_get_not_found():

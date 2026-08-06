@@ -22,6 +22,7 @@ from app.services.cecchino.cecchino_signal_aggregation import (
     export_signals_csv,
     list_signal_activations,
 )
+from app.services.cecchino.cecchino_signal_explanations import get_signal_formula_registry
 from app.services.cecchino.cecchino_signal_backfill import (
     backfill_signal_activations,
     build_signal_diagnostics,
@@ -33,6 +34,13 @@ from app.services.cecchino.cecchino_signal_model_backtest import (
 )
 
 router = APIRouter(prefix="/admin/cecchino/signals", tags=["admin-cecchino-signals"])
+
+
+@router.get("/formula-registry")
+def cecchino_signals_formula_registry():
+    """Registro read-only formule attive + contratto segnale corrente."""
+    payload = get_signal_formula_registry()
+    return JSONResponse(content=jsonable_encoder(payload))
 
 
 @router.get("/diagnostics")

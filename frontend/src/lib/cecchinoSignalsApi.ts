@@ -424,6 +424,58 @@ export const HEATMAP_SIGNAL_ROWS = SIGNAL_DISPLAY_ORDER
 
 export const HEATMAP_COLUMNS = ['EXCEL_D', 'EXCEL_E', 'EXCEL_F', 'EXCEL_G', 'SCALA'] as const
 
+export type SignalFormulaRegistryDecimalPolicy = {
+  scope?: string
+  quantum?: string
+  rounding?: string
+}
+
+export type SignalFormulaRegistryEntry = {
+  formula_version?: string
+  consensus_policy_version?: string
+  audit_version?: string
+  signal_group: string | null
+  row_key: string
+  label: string
+  column_key?: string
+  source_column: string
+  source_cell: string | null
+  excel_formula: string | null
+  formula_readable: string | null
+  target_market: string | null
+  evaluation_rule: string | null
+  purpose?: string | null
+  column_active: boolean
+  decimal_policy?: SignalFormulaRegistryDecimalPolicy | null
+  consensus_required_count?: number
+  consensus_available_count?: number
+  single_formula_exemption?: boolean
+  scala_eligibility?: boolean
+}
+
+export type SignalFormulaRegistryResponse = {
+  signal_contract?: Record<string, unknown>
+  contract?: Record<string, unknown>
+  formula_version?: string
+  consensus_policy_version?: string
+  audit_version?: string
+  entries: SignalFormulaRegistryEntry[]
+  intro?: {
+    description?: string
+    notes?: string[]
+    scala_mapping_note?: string
+    dominance_note?: string
+    inactive_columns?: string
+  }
+  active_entry_count?: number
+}
+
+export async function getCecchinoSignalFormulaRegistry(): Promise<SignalFormulaRegistryResponse> {
+  return adminGetJson<SignalFormulaRegistryResponse>(
+    '/api/admin/cecchino/signals/formula-registry',
+  )
+}
+
 export type SignalMinBookOddSetting = {
   target_market_key: string
   label: string

@@ -37,6 +37,9 @@ from app.services.cecchino_data_lab.historical_scan_service import (
     resume_historical_scan,
     start_historical_scan,
 )
+from app.services.cecchino_data_lab.historical_derived_rebuild import (
+    rebuild_historical_run_derived_modules,
+)
 from app.services.cecchino_data_lab.historical_ai_report import (
     build_historical_report_response,
     iter_report_chunks,
@@ -468,6 +471,36 @@ def historical_scan_cancel(
 ) -> JSONResponse:
     try:
         result = cancel_historical_scan(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/historical/runs/{run_id}/derived-rebuild")
+def historical_run_derived_rebuild(
+    run_id: int,
+    body: dict[str, Any] | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Riallineamento derived V3 (signals + market results) — dry_run di default."""
+    payload = body or {}
+    dry_run = bool(payload.get("dry_run", True))
+    confirm = payload.get("confirm")
+    try:
+        result = rebuild_historical_run_derived_modules(
+            db,
+            run_id,
+            dry_run=dry_run,
+            confirm=confirm,
+        )
     except CecchinoLabImportError as exc:
         return JSONResponse(
             status_code=exc.status_code,

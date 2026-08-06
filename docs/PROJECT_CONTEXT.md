@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Cutover — Segnali Cecchino V3 allineamento operativo (2026-08-06)
+
+Contratto canonico `get_current_signal_contract()`: formula `cecchino_signals_matrix_v3_draw_dfg_decimal2` + consenso `cecchino_signal_consensus_v1_min_two` + audit `cecchino_signal_explanations_v3`. Raw SI ≠ acquisito (`is_acquired=true`). Today current-only via `is_current_signal_matrix` + `signal_contract`. Evaluation / odds refresh / backfill / revaluate / backtest **V3-only** (`signal_formula_version`); V1/V2 archiviate invariate. Diagnostics versionate (contatori v1/v2/v3). Registro formule: `GET /api/admin/cecchino/signals/formula-registry` (FE non più unica fonte). Data Lab A–F acquired-only, module `cecchino_lab_signals_af_v2_current_v3_consensus`; KPI/settlement **19 mercati**; DRAW_PT eredita consenso da DRAW. Derived rebuild senza full scan: dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3`; zero API esterne; provenance in `derived_refresh`; **non** sovrascrive `source_git_commit`.
+
 ## Feat — Combine historical KPI with purchasability V3 STEP 4B (2026-08-02)
 
 Filtro Acquistabilità V3 minima sull’Analisi KPI storica (funnel copertura, gate failed ≠ 0); pagina autonoma Segnali A–F; CTA Storico: Analisi KPI · Segnali A–F · Report. Nessuna migration/scansione/replay; formule e Run #3 invariate.
@@ -60,7 +64,7 @@ Aggregazioni read-only `cecchino_lab_analytics_agg_v2`: riconciliazione real/der
 
 ## Feat — Dashboard analisi run storico Cecchino Lab (2026-07-28)
 
-Dashboard read-only `/cecchino-lab/historical-scans/:runId` + endpoint `/dashboard/*`. Aggregazioni da snapshot/market_results già persistiti; cache in-memory; filtri URL; 14 mercati indipendenti; Rating/Acquistabilità/A–F/Balance/GI; pattern/esclusioni/match explorer. **Today/Betfair/formule/run esistenti invariati.** Doc: `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+Dashboard read-only `/cecchino-lab/historical-scans/:runId` + endpoint `/dashboard/*`. Aggregazioni da snapshot/market_results già persistiti; cache in-memory; filtri URL; mercati indipendenti (oggi **19**, allineati a `KPI_V2_ROW_DEFS`); Rating/Acquistabilità/A–F/Balance/GI; pattern/esclusioni/match explorer. **Today/Betfair/formule/run esistenti invariati.** Doc: `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
 
 ## Feat — Completamento moduli storici Cecchino Lab (2026-07-27)
 
@@ -72,7 +76,7 @@ Correzioni pre-scansione 2021/2022: settlement solo `eligible_core`; estrazione 
 
 ## Feat — Replay storico Cecchino Lab 2021/2022 (2026-07-27)
 
-Scansione storica isolata nel Lab: preflight, adapter Bet365, job resumibile offline, snapshot anti-leakage, KPI Bet365 wrapper, settlement 14 mercati, report ZIP ChatGPT, tab UI Scansioni storiche. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`.
+Scansione storica isolata nel Lab: preflight, adapter Bet365, job resumibile offline, snapshot anti-leakage, KPI Bet365 wrapper, settlement mercati (oggi **19**, `KPI_V2_ROW_DEFS`), report ZIP ChatGPT, tab UI Scansioni storiche. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`.
 
 ## Feat — Overview betting analytics + export qualità Cecchino Lab (2026-07-27)
 
@@ -467,13 +471,13 @@ Formula F42 (SEGNO X, Excel F) aggiornata: `=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),
 
 Soglie minime quota book editabili da admin e persistite in `cecchino_signal_min_book_odd_settings`. Default fallback in `cecchino_signal_min_odds.py` (X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85). API: `GET/PUT /api/admin/cecchino/signal-min-book-odds`, reset-defaults, save-and-backtest (backfill storico con ripescaggio). Pannello condiviso in `/monitoraggio-segnali` e Segnali Lab. Post-deploy: `alembic upgrade head`. Segnali KPI / formule Cecchino / rating KPI invariati.
 
-## Cecchino — Consenso segnali V2 (2026-08-06)
+## Cecchino — Consenso segnali V2 (2026-08-06) — storico
 
-Matrice `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X aggiornate; E invariata). Acquisizione: policy `cecchino_signal_consensus_v1_min_two` (≥2 SI per gruppi multi-formula; HOME/AWAY esenti). Raw SI persistiti; Monitoraggio default `current`+`acquired`. Migration `20260806170000`. V1 legacy preservata. Value gate invariato.
+Matrice allora corrente `cecchino_signals_matrix_v2_draw_dfg` (D/F/G X; E invariata). Introduzione policy `cecchino_signal_consensus_v1_min_two` e migration `20260806170000`. **Superseduta** dal cutover V3 Decimal (stesso giorno): V2 resta archiviata invariata, fuori dal flusso operativo.
 
 ## Cecchino — Formule X V3 Decimal + current-only (2026-08-06)
 
-Matrice corrente `cecchino_signals_matrix_v3_draw_dfg_decimal2`: soglie DRAW via Decimal `0.01` ROUND_HALF_UP (helper condiviso motore/audit). V1/V2 preservate nel DB ma escluse da sync operativo, Monitoraggio (solo `current`/V3; `legacy`/`all` → 422) e modelli A–F. Nessun backfill storico; nessuna nuova migrazione. `raw_signal_value` FE: `'SI'|'NO'|null`.
+Matrice operativa unica `cecchino_signals_matrix_v3_draw_dfg_decimal2` + consenso `cecchino_signal_consensus_v1_min_two` + audit `cecchino_signal_explanations_v3`. Helper canonico `get_current_signal_contract()`; Today current-only (`is_current_signal_matrix` + `signal_contract`). Raw SI ≠ `is_acquired`. Evaluation/odds refresh/backfill/revaluate/backtest filtrano `signal_formula_version` V3; V1/V2 archiviate. Diagnostics con contatori v1/v2/v3. Registro: `GET /api/admin/cecchino/signals/formula-registry`. Lab A–F: `cecchino_lab_signals_af_v2_current_v3_consensus` acquired-only; DRAW_PT eredita DRAW. Derived rebuild: confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` (no full scan, no overwrite `source_git_commit`).
 
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
@@ -549,7 +553,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Cecchino — dashboard autonoma (picchetti, KPI DASHBOARD classico con 3 bookmaker; **non** influenza SOT)
 - Cecchino — sezione sidebar dedicata in alto (Fase 35): Cecchino, Cecchino Today, Monitoraggio Segnali, **Segnali Lab (Fase 44)**
 - Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, debug Picchetti (Fase 25), formule goal Poisson+storico v2 (Fase 27), pesi globali 1X2 30/30/20/20 e goal 20/30/20/30 (Fase 40), ricalcolo offline `POST /api/admin/cecchino/recompute`, sezione Equilibrio vs Squilibrio (Fase 29), **Intensità Goal v4 Goal Attesi** nel dettaglio partita (Fase 46/47/48/49), **Expected Goal Engine Diagnostica Variabili** (Fase 50), **API Raw Inspector** manuale per esplorazione xG/expected (Fase 51), **xG storico current season** nel diagnostics EGE (Fase 52), **xG storico automatico** su fixture eleggibili con cache `xg_profiles_json` (Fase 53), Dominanza contestualizzata X vs 1/2 (Fase 30), legenda operativa equilibrio 18 righe (Fase 31), Monitoraggio Segnali storico SI/NO con valutazione esito, backfill giornate pregresse (Fase 32/33), mapping Under/Over 2.5 FT (Fase 34), Indice di Convergenza Match ICM (Fase 41, sostituisce Delta Forza Fase 36), mapping Scala su righe 1X/X2 (Fase 37), fix definitivo Scala heatmap/storico (Fase 38), card PT/FT, mapping strict Match Winner, layout 35/65, **timeline ±30** (navigazione, non retention), **nessun cleanup automatico post-scan** (storico preservato; DELETE solo admin gated), scan async (`/cecchino-today`)
-- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap UNDER/OVER 2.5, KPI con media segnali/partita Fase 35, Quota media prese / Quota Void / Rendimento prese Fase 42, **Confronto modelli pesi A–F Fase 43**, **formule segnali aggiornate Fase 45** con Dominanza da Equilibrio, export CSV, backfill storico, pulsante «Ricalcola modelli A–F», pulsante «Ricalcola filtro valore» (value gate quota book ≥ Cecchino), diagnostics legacy SCALA Fase 38, legenda formule Excel espandibile Fase 39/45)
+- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap UNDER/OVER 2.5, KPI con media segnali/partita Fase 35, Quota media prese / Quota Void / Rendimento prese Fase 42, **Confronto modelli pesi A–F Fase 43**, **formule segnali V3 + consenso acquired-only**, export CSV, backfill/revaluate/backtest V3-only, pulsante «Ricalcola modelli A–F», pulsante «Ricalcola filtro valore» (value gate quota book ≥ Cecchino), diagnostics versionate v1/v2/v3, legenda da `GET …/signals/formula-registry` Fase 39/45)
 - **Segnali Lab** — pagina sperimentale `/monitoraggio-segnali-lab` (Fase 44): UI premium con framer-motion, ECharts, Sonner; stessi dati/endpoint della pagina stabile; codice isolato in `cecchino-lab/`; drawer dettaglio heatmap/partite; **legenda formule Fase 45** (accordion condiviso con pagina stabile)
 - Monitoraggio Giocate
 - Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)

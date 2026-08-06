@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CECCHINO_DOMINANCE_NOTE,
   CECCHINO_HEATMAP_FORMULA_INTRO,
@@ -7,7 +7,15 @@ import {
   getLegendEntriesForSignal,
   getSignalTabs,
   type CecchinoSignalFormulaEntry,
+  type SourceColumn,
 } from '../../../lib/cecchinoSignalFormulaLegend'
+import {
+  HEATMAP_COLUMNS,
+  HEATMAP_SIGNAL_ROWS,
+  getCecchinoSignalFormulaRegistry,
+  type SignalFormulaRegistryEntry,
+  type SignalFormulaRegistryResponse,
+} from '../../../lib/cecchinoSignalsApi'
 
 function CopyFormulaButton({ formula }: { formula: string }) {
   const [copied, setCopied] = useState(false)
@@ -87,18 +95,109 @@ function FormulaRow({ entry }: { entry: CecchinoSignalFormulaEntry }) {
   )
 }
 
+function toLegendEntry(
+  entry: SignalFormulaRegistryEntry,
+  signalLabel: string,
+): CecchinoSignalFormulaEntry | null {
+  const source = entry.source_column as SourceColumn
+  if (!HEATMAP_COLUMNS.includes(source)) return null
+  return {
+    signal_group: entry.signal_group ?? '',
+    signal_label: signalLabel,
+    source_column: source,
+    source_cell: entry.source_cell,
+    excel_formula: entry.excel_formula,
+    readable_formula: entry.formula_readable ?? '',
+    target_market_label: entry.target_market,
+    evaluation_rule: entry.evaluation_rule,
+    is_active_column: entry.column_active !== false,
+  }
+}
+
+function inactiveLegend(
+  signalGroup: string,
+  signalLabel: string,
+  sourceColumn: SourceColumn,
+): CecchinoSignalFormulaEntry {
+  return {
+    signal_group: signalGroup,
+    signal_label: signalLabel,
+    source_column: sourceColumn,
+    source_cell: null,
+    excel_formula: null,
+    readable_formula: 'Colonna non prevista per questo segnale',
+    target_market_label: null,
+    evaluation_rule: null,
+    is_active_column: false,
+  }
+}
+
+function entriesForGroupFromRegistry(
+  registry: SignalFormulaRegistryResponse,
+  signalGroup: string,
+): CecchinoSignalFormulaEntry[] {
+  const label =
+    HEATMAP_SIGNAL_ROWS.find((r) => r.group === signalGroup)?.label ?? signalGroup
+  const byCol = new Map<SourceColumn, CecchinoSignalFormulaEntry>()
+  for (const raw of registry.entries ?? []) {
+    if (raw.signal_group !== signalGroup) continue
+    const mapped = toLegendEntry(raw, label)
+    if (!mapped) continue
+    // Prefer SCALA over duplicate EXCEL mapping if any; last active wins for same column.
+    byCol.set(mapped.source_column, mapped)
+  }
+  return HEATMAP_COLUMNS.map(
+    (col) => byCol.get(col) ?? inactiveLegend(signalGroup, label, col),
+  )
+}
+
 export function SignalsFormulaLegendAccordion() {
   const [open, setOpen] = useState(false)
-  const tabs = getSignalTabs()
-  const [activeTab, setActiveTab] = useState(tabs[0]?.signal_group ?? 'UNDER_UNDER_PT')
-  const entries = getLegendEntriesForSignal(activeTab)
+  const staticTabs = getSignalTabs()
+  const [activeTab, setActiveTab] = useState(staticTabs[0]?.signal_group ?? 'UNDER_UNDER_PT')
+  const [registry, setRegistry] = useState<SignalFormulaRegistryResponse | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const loadRegistry = () => {
+    if (registry != null || loading) return
+    setLoading(true)
+    setLoadError(null)
+    void getCecchinoSignalFormulaRegistry()
+      .then((payload) => {
+        setRegistry(payload)
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof Error ? err.message : 'Errore caricamento registro formule')
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }
+
+  const handleToggle = () => {
+    const next = !open
+    setOpen(next)
+    if (next) loadRegistry()
+  }
+
+  const tabs = staticTabs
+  const entries = useMemo(() => {
+    if (registry) return entriesForGroupFromRegistry(registry, activeTab)
+    return getLegendEntriesForSignal(activeTab)
+  }, [registry, activeTab])
   const activeLabel = tabs.find((t) => t.signal_group === activeTab)?.signal_label ?? activeTab
+
+  const introDescription =
+    registry?.intro?.description ?? CECCHINO_HEATMAP_FORMULA_INTRO.description
+  const scalaNote = registry?.intro?.scala_mapping_note ?? CECCHINO_SCALA_MAPPING_NOTE
+  const dominanceNote = registry?.intro?.dominance_note ?? CECCHINO_DOMINANCE_NOTE
 
   return (
     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/50">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         aria-expanded={open}
         className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-slate-100/60"
       >
@@ -117,7 +216,7 @@ export function SignalsFormulaLegendAccordion() {
       {open && (
         <div className="space-y-4 border-t border-slate-200 px-4 py-4">
           <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-900">
-            <p>{CECCHINO_HEATMAP_FORMULA_INTRO.description}</p>
+            <p>{introDescription}</p>
             <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs">
               {CECCHINO_HEATMAP_FORMULA_INTRO.formulas.map((f) => (
                 <li key={f} className="font-mono">
@@ -125,14 +224,36 @@ export function SignalsFormulaLegendAccordion() {
                 </li>
               ))}
             </ul>
+            {registry?.intro?.notes?.length ? (
+              <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-sky-800">
+                {registry.intro.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
 
+          {loading ? (
+            <p className="text-xs text-slate-500">Caricamento registro formule…</p>
+          ) : null}
+          {loadError ? (
+            <p className="text-xs text-amber-800">
+              Registro API non disponibile ({loadError}). Uso legenda locale di fallback.
+            </p>
+          ) : null}
+          {registry ? (
+            <p className="text-[11px] text-slate-500">
+              Fonte: API formula-registry · {registry.active_entry_count ?? registry.entries.length}{' '}
+              formule attive · {registry.formula_version ?? '—'}
+            </p>
+          ) : null}
+
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-            {CECCHINO_SCALA_MAPPING_NOTE}
+            {scalaNote}
           </div>
 
           <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs text-violet-900">
-            {CECCHINO_DOMINANCE_NOTE}
+            {dominanceNote}
           </div>
 
           <div className="flex gap-1 overflow-x-auto pb-1">

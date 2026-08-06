@@ -1562,6 +1562,24 @@ export type CecchinoTodayDetailResponse = {
   stats_snapshot?: Record<string, unknown>
   cecchino_output?: Record<string, unknown>
   signals_matrix?: Record<string, unknown>
+  signal_contract?: {
+    formula_version?: string
+    formula_label?: string
+    consensus_policy_version?: string
+    audit_version?: string
+    decimal_policy?: {
+      scope?: string
+      quantum?: string
+      rounding?: string
+    }
+    operational_signal_semantics?: string
+    operational_semantics?: string
+    legacy_versions_operational?: boolean
+    is_current_formula?: boolean
+    matrix_status?: string | null
+    detected_formula_version?: string | null
+    reason_code?: string | null
+  }
   kpi_panel?: CecchinoKpiV2Panel
   kpi_panel_v2?: CecchinoKpiV2Panel
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary

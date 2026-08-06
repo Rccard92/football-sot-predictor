@@ -17,6 +17,7 @@ from app.models.cecchino_signal_activation import (
     CecchinoSignalActivation,
 )
 from app.models.cecchino_today_fixture import CecchinoTodayFixture, MATCH_FINISHED
+from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 from app.services.cecchino.cecchino_signal_target_mapping import (
     apply_under_over_target_to_activation,
     remap_under_over_activations_in_range,
@@ -348,6 +349,8 @@ def evaluate_activations_for_fixture(db: Session, today_fixture_id: int) -> dict
             select(CecchinoSignalActivation).where(
                 CecchinoSignalActivation.today_fixture_id == int(today_fixture_id),
                 CecchinoSignalActivation.is_current.is_(True),
+                CecchinoSignalActivation.signal_formula_version
+                == CURRENT_SIGNAL_FORMULA_VERSION,
             ),
         ).all(),
     )
@@ -423,9 +426,11 @@ def revaluate_signal_activations(
                 evaluate_after=False,
             )
 
+    # Valutazione sempre e solo V3: force non tocca V1/V2.
     query = select(CecchinoSignalActivation.today_fixture_id).where(
         CecchinoSignalActivation.scan_date >= date_from,
         CecchinoSignalActivation.scan_date <= date_to,
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
     )
     if not force:
         query = query.where(CecchinoSignalActivation.is_current.is_(True))

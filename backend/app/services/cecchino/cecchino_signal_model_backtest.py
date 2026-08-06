@@ -1,4 +1,4 @@
-"""Backtest offline modelli pesi Cecchino A–F — formula V2 + consenso (zero API-Football)."""
+"""Backtest offline modelli pesi Cecchino A–F — formula V3 Decimal2 + consenso min-two (zero API-Football)."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def _has_picchetti_output(row: CecchinoTodayFixture) -> bool:
 
 
 def build_signals_matrix_for_model(row: CecchinoTodayFixture, model_key: str) -> dict[str, Any] | None:
-    """Matrice V2 + consensus ricostruita dai pesi del modello (in memoria)."""
+    """Matrice corrente V3 + consensus ricostruita dai pesi del modello (in memoria)."""
     output = row.cecchino_output_json
     if not isinstance(output, dict):
         return None
@@ -264,8 +264,8 @@ def backtest_cecchino_weight_models(
 ) -> dict[str, Any]:
     """Backtest offline modelli pesi su range date — zero API-Football.
 
-    Per ogni model_key ricostruisce matrice V2 e applica consenso separato;
-    source mode = offline_weight_model_recompute.
+    Per ogni model_key ricostruisce matrice corrente V3 e applica consenso min-two;
+    activation V3; source mode = offline_weight_model_recompute.
     """
     if refresh_bookmaker_odds:
         logger.warning("backtest_models: refresh_bookmaker_odds ignored (offline backtest)")

@@ -101,6 +101,7 @@ from app.services.cecchino.cecchino_signal_goal_refs import (
 )
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import sync_signals_for_scan_date
+from app.services.cecchino.cecchino_signal_consensus import build_matrix_signal_contract
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_picchetti_debug import (
     build_cecchino_picchetti_debug,
@@ -2532,6 +2533,11 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         )
     except Exception:
         obs_v1, obs_v2 = {}, {}
+    signals_matrix = output.get("signals_matrix") if isinstance(output, dict) else None
+    # Read-only: nessun rebuild matrice, solo metadati contratto sulla matrice persistita.
+    signal_contract = build_matrix_signal_contract(
+        signals_matrix if isinstance(signals_matrix, dict) else None,
+    )
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
@@ -2556,7 +2562,8 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "odds_snapshot": row.odds_snapshot_json,
         "stats_snapshot": row.stats_snapshot_json,
         "cecchino_output": output,
-        "signals_matrix": output.get("signals_matrix"),
+        "signals_matrix": signals_matrix,
+        "signal_contract": signal_contract,
         "kpi_panel": kpi_panel,
         "kpi_panel_v2": kpi_panel,
         "picchetti_debug_summary": picchetti_debug_summary,

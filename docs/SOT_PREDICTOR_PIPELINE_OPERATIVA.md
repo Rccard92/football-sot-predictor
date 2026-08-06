@@ -786,19 +786,22 @@ Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-o
 - UI Monitoring + Lab: pannello editabile con conferma range > 7 giorni e sezione Avanzate (rebuild KPI offline).
 - **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live (nessuna API esterna in backtest).
 
-## Cecchino — Consenso + formule X V2 (2026-08-06)
+## Cecchino — Consenso + formule X V2 (2026-08-06) — storico
 
-- Backfill V2 offline da snapshot pre-match; `only_missing` richiede formula version corrente.
-- Sync: `persisted_live_matrix`; backtest A–F: `offline_weight_model_recompute`.
-- Filtri Monitoraggio: `signal_formula_version`, `acquisition_filter` (default current+acquired).
-- Alembic: `20260806170000` dopo `20260806143000`.
+- Introduzione consenso + formule X V2 e migration `20260806170000`. Filtri Monitoraggio `signal_formula_version` / `acquisition_filter`.
+- **Superseduto** dal cutover V3 Decimal: backfill/sync operativi sono V3-only; V2 archiviata invariata.
 
 ## Cecchino — Formule X V3 Decimal + current-only (2026-08-06)
 
 - Motore: DRAW D/E/F/G via `canonical_signal_decimal` (quantum 0.01, ROUND_HALF_UP); altre formule float invariate.
-- Versione corrente: `cecchino_signals_matrix_v3_draw_dfg_decimal2`; sync skip se matrice ≠ V3; `sync_signals_for_scan_date` può rebuild V3 da prematch sulla data sync.
-- Monitoraggio: solo `current`/V3; `legacy`/`all`/`v1`/`v2` → HTTP 422.
-- Nessun backfill storico; Alembic head resta `20260806170000`.
+- Formula operativa unica: `cecchino_signals_matrix_v3_draw_dfg_decimal2`; consenso `cecchino_signal_consensus_v1_min_two`; audit `cecchino_signal_explanations_v3`.
+- Contratto: `get_current_signal_contract()`; Today current-only (`is_current_signal_matrix` + `signal_contract`).
+- Sync skip se matrice ≠ V3; evaluation / odds refresh / backfill / revaluate / backtest **V3-only** (`signal_formula_version`); V1/V2 archiviate.
+- Monitoraggio: solo `current`/V3; `legacy`/`all`/`v1`/`v2` → HTTP 422; metrica operativa = `is_acquired` (non sola cella SI).
+- Diagnostics versionate (v1/v2/v3). Registro: `GET /api/admin/cecchino/signals/formula-registry`.
+- Lab A–F: `cecchino_lab_signals_af_v2_current_v3_consensus` acquired-only; KPI Lab 19 mercati; DRAW_PT eredita DRAW.
+- Derived rebuild (no full scan): dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` su `POST …/historical/runs/{run_id}/derived-rebuild`; zero API; provenance `derived_refresh`; non overwrite `source_git_commit`.
+- Alembic head resta `20260806170000`.
 
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
@@ -945,9 +948,9 @@ flowchart TD
 
 ## Fase 39 — Legenda formule Monitoraggio Segnali
 
-- **UI:** accordion sotto Heatmap Segnale × Colonna in `/monitoraggio-segnali`.
-- **Dati:** legenda statica frontend — nessuna chiamata API aggiuntiva.
-- **Contenuto:** celle D39–G57, G48/G54, D60/E60 con formule Excel, testo parlante, target FT e regole W/L.
+- **UI:** accordion sotto Heatmap Segnale × Colonna in `/monitoraggio-segnali` (e Lab).
+- **Dati (post-cutover V3):** fonte primaria `GET /api/admin/cecchino/signals/formula-registry` (backend); FE mantiene fallback locale solo se registry non disponibile — non è più l’unica fonte delle formule.
+- **Contenuto:** formule attive da `SIGNAL_RULE_REGISTRY` + contratto/consenso; note SI grezzo ≠ acquisito; Decimal solo DRAW V3.
 - **Verifica:** confronto diretto con tab CECCHINO di AutomazioneCecchino.xlsm.
 
 ## Fase 38 — Fix definitivo Scala 1X/X2
@@ -1124,7 +1127,7 @@ flowchart TD
 - **Formule aggiornate:** D48, D54, E51, G57, D60, E60 in `cecchino_signals_matrix.py`.
 - **Dominanza:** da `cecchino_balance_analysis.compute_dominance_pp` (stessa scala Equilibrio); prob mancanti → NO sulle formule che la richiedono.
 - **Rigenerazione storico:** «Rivaluta segnali», backfill `force_rebuild`/`force_remap`, «Ricalcola modelli A–F» — offline, zero API esterne.
-- **UI:** legenda formule condivisa stabile + Lab (`cecchinoSignalFormulaLegend.ts`, `SignalsFormulaLegendAccordion`).
+- **UI:** legenda formule condivisa stabile + Lab (`SignalsFormulaLegendAccordion` → API `formula-registry`; fallback `cecchinoSignalFormulaLegend.ts`).
 
 ## Fase 44 — Monitoraggio Segnali Lab
 

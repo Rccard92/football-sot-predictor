@@ -20,6 +20,8 @@ from app.models.cecchino_signal_activation import (
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signal_consensus import (
+    ACQ_NO_RAW_SIGNAL,
+    ACQ_REJECTED_INSUFFICIENT,
     CURRENT_SIGNAL_FORMULA_VERSION,
     FORMULA_SOURCE_RECOMPUTED_PREMATCH,
     LEGACY_SIGNAL_FORMULA_VERSION,
@@ -281,6 +283,7 @@ def _activation_status_counts(
     *,
     only_current: bool = True,
     formula_version: str | None = None,
+    only_acquired: bool = False,
 ) -> dict[str, int]:
     query = select(CecchinoSignalActivation.evaluation_status, func.count()).where(
         CecchinoSignalActivation.scan_date >= date_from,
@@ -294,6 +297,8 @@ def _activation_status_counts(
             CecchinoSignalActivation.signal_formula_version
             == normalize_formula_version(formula_version),
         )
+    if only_acquired:
+        query = query.where(CecchinoSignalActivation.is_acquired.is_(True))
     query = query.group_by(CecchinoSignalActivation.evaluation_status)
     rows = db.execute(query).all()
     counts = {
@@ -319,6 +324,24 @@ def _activation_status_counts(
     }
 
 
+def _count_activations(
+    db: Session,
+    date_from: date,
+    date_to: date,
+    *extra_filters,
+) -> int:
+    query = (
+        select(func.count())
+        .select_from(CecchinoSignalActivation)
+        .where(
+            CecchinoSignalActivation.scan_date >= date_from,
+            CecchinoSignalActivation.scan_date <= date_to,
+            *extra_filters,
+        )
+    )
+    return int(db.scalar(query) or 0)
+
+
 def build_signal_diagnostics(
     db: Session,
     *,
@@ -340,42 +363,102 @@ def build_signal_diagnostics(
                     f"fixture_{row.id}:output_without_signals_matrix",
                 )
 
-    activations_total = db.scalar(
-        select(func.count())
-        .select_from(CecchinoSignalActivation)
-        .where(
-            CecchinoSignalActivation.scan_date >= date_from,
-            CecchinoSignalActivation.scan_date <= date_to,
-            CecchinoSignalActivation.signal_value.is_(True),
+    v3_matrices = [r for r in with_matrix if is_current_signal_matrix(_matrix_on_row(r))]
+    non_current_matrices = [
+        r for r in with_matrix if not is_current_signal_matrix(_matrix_on_row(r))
+    ]
+
+    activations_total = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_value.is_(True),
+    )
+    v3_current_activations = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_value.is_(True),
+        CecchinoSignalActivation.is_current.is_(True),
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+    )
+    v3_raw_formula_activations = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_value.is_(True),
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+    )
+    v3_acquired_activations = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_value.is_(True),
+        CecchinoSignalActivation.is_current.is_(True),
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+        CecchinoSignalActivation.is_acquired.is_(True),
+    )
+    v3_rejected_consensus = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+        CecchinoSignalActivation.acquisition_status == ACQ_REJECTED_INSUFFICIENT,
+    )
+    v3_no_raw_signal = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+        CecchinoSignalActivation.acquisition_status == ACQ_NO_RAW_SIGNAL,
+    )
+    legacy_v1_archived = _count_activations(
+        db,
+        date_from,
+        date_to,
+        or_(
+            CecchinoSignalActivation.signal_formula_version == LEGACY_SIGNAL_FORMULA_VERSION,
+            CecchinoSignalActivation.signal_formula_version == "legacy",
+            CecchinoSignalActivation.signal_formula_version == "v1",
         ),
-    ) or 0
-    current_total = db.scalar(
-        select(func.count())
-        .select_from(CecchinoSignalActivation)
-        .where(
-            CecchinoSignalActivation.scan_date >= date_from,
-            CecchinoSignalActivation.scan_date <= date_to,
-            CecchinoSignalActivation.signal_value.is_(True),
-            CecchinoSignalActivation.is_current.is_(True),
+    )
+    previous_v2_archived = _count_activations(
+        db,
+        date_from,
+        date_to,
+        or_(
+            CecchinoSignalActivation.signal_formula_version == PREVIOUS_SIGNAL_FORMULA_VERSION,
+            CecchinoSignalActivation.signal_formula_version == "v2",
         ),
-    ) or 0
-    status_counts = _activation_status_counts(db, date_from, date_to, only_current=True)
-    legacy_wrong_scala_mapping_count = int(
-        db.scalar(
-            select(func.count())
-            .select_from(CecchinoSignalActivation)
-            .where(
-                CecchinoSignalActivation.scan_date >= date_from,
-                CecchinoSignalActivation.scan_date <= date_to,
-                CecchinoSignalActivation.is_current.is_(True),
-                CecchinoSignalActivation.source_column == "SCALA",
-                or_(
-                    CecchinoSignalActivation.signal_group == "HOME",
-                    CecchinoSignalActivation.signal_group == "AWAY",
-                ),
-            ),
-        )
-        or 0,
+    )
+    unversioned_archived = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.signal_formula_version.is_(None),
+    )
+
+    # Contatore operativo principale = solo V3 acquired (non basta is_current su V1/V2).
+    operational_main = v3_acquired_activations
+    status_counts = _activation_status_counts(
+        db,
+        date_from,
+        date_to,
+        only_current=True,
+        formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
+        only_acquired=True,
+    )
+    legacy_wrong_scala_mapping_count = _count_activations(
+        db,
+        date_from,
+        date_to,
+        CecchinoSignalActivation.is_current.is_(True),
+        CecchinoSignalActivation.signal_formula_version == CURRENT_SIGNAL_FORMULA_VERSION,
+        CecchinoSignalActivation.source_column == "SCALA",
+        or_(
+            CecchinoSignalActivation.signal_group == "HOME",
+            CecchinoSignalActivation.signal_group == "AWAY",
+        ),
     )
     if legacy_wrong_scala_mapping_count > 0:
         warnings.append(
@@ -388,9 +471,20 @@ def build_signal_diagnostics(
         "today_fixtures_count": len(fixtures),
         "eligible_fixtures_count": len(eligible),
         "fixtures_with_signal_matrix_count": len(with_matrix),
+        "v3_matrices_available": len(v3_matrices),
+        "non_current_matrices": len(non_current_matrices),
         "signal_activations_count": int(activations_total),
-        "current_signal_activations_count": int(current_total),
-        "value_eligible_activations_count": int(current_total),
+        "v3_current_activations": v3_current_activations,
+        "v3_raw_formula_activations": v3_raw_formula_activations,
+        "v3_acquired_activations": v3_acquired_activations,
+        "v3_rejected_consensus": v3_rejected_consensus,
+        "v3_no_raw_signal": v3_no_raw_signal,
+        "legacy_v1_archived": legacy_v1_archived,
+        "previous_v2_archived": previous_v2_archived,
+        "unversioned_archived": unversioned_archived,
+        # Compat FE: current/value_eligible allineati a V3 acquired operativo.
+        "current_signal_activations_count": operational_main,
+        "value_eligible_activations_count": operational_main,
         "legacy_wrong_scala_mapping_count": legacy_wrong_scala_mapping_count,
         "evaluated_count": status_counts["evaluated_count"],
         "won": status_counts["won"],
@@ -399,18 +493,19 @@ def build_signal_diagnostics(
         "not_evaluable": status_counts["not_evaluable"],
         "date_filter_field_used": DATE_FILTER_FIELD,
         "monitoring_note": (
-            "Il monitoraggio include solo segnali comprabili: quota book >= quota Cecchino "
-            "e quota book >= soglia minima del segno."
+            "Il monitoraggio include solo segnali comprabili V3 acquisiti: quota book >= quota "
+            "Cecchino e quota book >= soglia minima del segno."
         ),
         "min_book_odds_thresholds": list_min_book_odds_for_api(db=db),
         "warnings": warnings[:50],
     }
     logger.info(
-        "cecchino_signal_diagnostics date_from=%s date_to=%s fixtures=%s activations=%s",
+        "cecchino_signal_diagnostics date_from=%s date_to=%s fixtures=%s activations=%s v3_acquired=%s",
         date_from.isoformat(),
         date_to.isoformat(),
         len(fixtures),
         int(activations_total),
+        operational_main,
     )
     return payload
 

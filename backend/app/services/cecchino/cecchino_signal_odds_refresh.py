@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
+from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 from app.services.cecchino.cecchino_signal_target_mapping import (
     market_key_for_signal_group,
 )
@@ -95,6 +96,10 @@ def apply_kpi_odds_to_activation(
     return changed
 
 
+def _is_v3_activation(activation: CecchinoSignalActivation) -> bool:
+    return getattr(activation, "signal_formula_version", None) == CURRENT_SIGNAL_FORMULA_VERSION
+
+
 def refresh_activation_odds_from_kpi(
     db: Session,
     *,
@@ -103,7 +108,10 @@ def refresh_activation_odds_from_kpi(
     only_null: bool = False,
     only_current: bool = True,
 ) -> dict[str, int]:
-    """Ripopola quote activation da kpi_panel_json fixture — zero API esterne."""
+    """Ripopola quote activation V3 da kpi_panel_json fixture — zero API esterne.
+
+    Non aggiorna mai odds/prob/rating/edge su activation V1/V2 o unversioned.
+    """
     activations = list(
         db.scalars(
             select(CecchinoSignalActivation).where(
@@ -114,10 +122,16 @@ def refresh_activation_odds_from_kpi(
         ).all(),
     )
     activations = [a for a in activations if isinstance(a, CecchinoSignalActivation)]
-    if only_current:
-        activations = [a for a in activations if a.is_current]
 
-    fixture_ids = {int(a.today_fixture_id) for a in activations if a.today_fixture_id is not None}
+    archived = [a for a in activations if not _is_v3_activation(a)]
+    v3_pool = [a for a in activations if _is_v3_activation(a)]
+    if only_current:
+        v3_pool = [a for a in v3_pool if a.is_current]
+
+    archived_skipped_count = len(archived)
+    v3_candidates = len(v3_pool)
+
+    fixture_ids = {int(a.today_fixture_id) for a in v3_pool if a.today_fixture_id is not None}
     fixtures_by_id: dict[int, CecchinoTodayFixture] = {}
     if fixture_ids:
         fixtures = list(
@@ -133,7 +147,7 @@ def refresh_activation_odds_from_kpi(
     still_missing = 0
     skipped_no_kpi = 0
 
-    for activation in activations:
+    for activation in v3_pool:
         if only_null and activation.quota_book is not None:
             continue
         fixture = fixtures_by_id.get(int(activation.today_fixture_id))
@@ -155,4 +169,8 @@ def refresh_activation_odds_from_kpi(
         "odds_refreshed": refreshed,
         "odds_still_missing": still_missing,
         "odds_skipped_no_kpi": skipped_no_kpi,
+        "v3_candidates": v3_candidates,
+        "v3_refreshed": refreshed,
+        "v3_still_missing": still_missing,
+        "archived_skipped_count": archived_skipped_count,
     }

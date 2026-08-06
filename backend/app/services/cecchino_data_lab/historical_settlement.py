@@ -1,4 +1,4 @@
-"""Settlement storico 14 mercati + profitto real/synthetic."""
+"""Settlement storico 19 mercati + profitto real/synthetic."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from typing import Any
 
 from app.models.cecchino_signal_activation import EVAL_LOST, EVAL_WON
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS
+from app.services.cecchino.cecchino_kpi_signals import KPI_SIGNAL_MARKET_DEFS
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_market_selection
 from app.services.cecchino_data_lab.historical_signal_extraction import (
     build_market_signal_index,
@@ -15,6 +16,10 @@ from app.services.cecchino_data_lab.historical_signal_extraction import (
 PROFIT_ACTUAL = "actual_bet365"
 PROFIT_SYNTHETIC = "synthetic_derived"
 PROFIT_NO_BOOK = "no_book_quote"
+
+_PERIOD_LINE_BY_KEY: dict[str, tuple[str | None, Any]] = {
+    str(d["selection_key"]): (d.get("period"), d.get("line")) for d in KPI_SIGNAL_MARKET_DEFS
+}
 
 
 def match_result_from_lab_match(match: Any) -> dict[str, Any]:
@@ -30,22 +35,9 @@ def match_result_from_lab_match(match: Any) -> dict[str, Any]:
     }
 
 
-def _period_line(market_key: str) -> tuple[str | None, str | None]:
-    if market_key in ("HOME", "DRAW", "AWAY", "ONE_X", "X_TWO", "ONE_TWO"):
-        return "FT", None
-    if market_key == "DRAW_PT":
-        return "HT", None
-    if market_key in ("OVER_1_5",):
-        return "FT", "1.5"
-    if market_key in ("OVER_2_5", "UNDER_2_5"):
-        return "FT", "2.5"
-    if market_key == "UNDER_3_5":
-        return "FT", "3.5"
-    if market_key in ("UNDER_PT_1_5", "OVER_PT_1_5"):
-        return "HT", "1.5"
-    if market_key == "OVER_PT_0_5":
-        return "HT", "0.5"
-    return None, None
+def _period_line(market_key: str) -> tuple[str | None, Any]:
+    """Periodo/linea da definizione canonica KPI (19 mercati)."""
+    return _PERIOD_LINE_BY_KEY.get(market_key, (None, None))
 
 
 def empty_settlement_summary() -> dict[str, Any]:
@@ -132,6 +124,13 @@ def settle_historical_markets(
                 "signal_sources_json": sig["signal_sources_json"],
                 "signal_family": sig.get("signal_family"),
                 "active_signal_count": int(sig.get("active_signal_count") or 0),
+                "raw_si_count": int(sig.get("raw_si_count") or 0),
+                "acquired_signal_count": int(sig.get("acquired_signal_count") or 0),
+                "consensus_yes_count": int(sig.get("consensus_yes_count") or 0),
+                "consensus_required_count": int(sig.get("consensus_required_count") or 0),
+                "acquisition_status": sig.get("acquisition_status"),
+                "signal_formula_version": sig.get("signal_formula_version"),
+                "consensus_policy_version": sig.get("consensus_policy_version"),
                 "evaluation_status": status,
                 "won": won,
                 "profit_1u_real": profit_real,

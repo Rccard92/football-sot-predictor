@@ -242,13 +242,14 @@ def apply_under_over_target_to_activation(activation) -> bool:
 
 
 def remap_under_over_activations_in_range(db, *, date_from, date_to) -> int:
-    """Rimap activation UNDER/OVER con target mancante o not_evaluable nel range scan_date."""
+    """Rimap activation UNDER/OVER V3 con target mancante o not_evaluable nel range scan_date."""
     from sqlalchemy import or_, select
 
     from app.models.cecchino_signal_activation import (
         EVAL_NOT_EVALUABLE,
         CecchinoSignalActivation,
     )
+    from app.services.cecchino.cecchino_signal_consensus import CURRENT_SIGNAL_FORMULA_VERSION
 
     rows = list(
         db.scalars(
@@ -257,6 +258,8 @@ def remap_under_over_activations_in_range(db, *, date_from, date_to) -> int:
                 CecchinoSignalActivation.scan_date <= date_to,
                 CecchinoSignalActivation.signal_group.in_(("UNDER_UNDER_PT", "OVER_OVER_PT")),
                 CecchinoSignalActivation.is_current.is_(True),
+                CecchinoSignalActivation.signal_formula_version
+                == CURRENT_SIGNAL_FORMULA_VERSION,
                 or_(
                     CecchinoSignalActivation.target_market_key.is_(None),
                     CecchinoSignalActivation.evaluation_status == EVAL_NOT_EVALUABLE,
