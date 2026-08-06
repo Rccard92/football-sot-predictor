@@ -43,8 +43,8 @@ describe('indexPurchasabilityV31ByMarketKey', () => {
     expect(metricKey).toBe('purchasability_v31')
   })
 
-  it('status score/gate_failed/non_calculable sono i soli valori previsti', () => {
-    const validStatuses = ['score', 'gate_failed', 'non_calculable']
+  it('status score/score_provisional/gate_failed/non_calculable sono i valori previsti', () => {
+    const validStatuses = ['score', 'score_provisional', 'gate_failed', 'non_calculable']
     for (const item of V31_SNAPSHOT.items) {
       expect(validStatuses).toContain(item.status)
     }

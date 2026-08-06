@@ -272,25 +272,50 @@ def _score_panel_row_from_indexes(
             "competitions_in_cohort": probe.get("competitions_in_cohort"),
             "competition_count": probe.get("competition_count"),
         }
+    elif global_n >= 1 or local_n >= 1:
+        if local_n >= 1:
+            cohort = local_cohort
+            cohort_meta = {
+                "cohort_scope": SCOPE_LOCAL,
+                "local_sample_size": local_n,
+                "global_sample_size": global_n,
+                "selected_sample_size": local_n,
+                "fallback_used": False,
+                "fallback_reason": "below_minimum_local",
+            }
+        else:
+            cohort = global_cohort
+            probe = calculate_historical_reliability_cohort_metrics(cohort)
+            cohort_meta = {
+                "cohort_scope": SCOPE_GLOBAL,
+                "local_sample_size": local_n,
+                "global_sample_size": global_n,
+                "selected_sample_size": global_n,
+                "fallback_used": True,
+                "fallback_reason": "global_below_minimum",
+                "competitions_in_cohort": probe.get("competitions_in_cohort"),
+                "competition_count": probe.get("competition_count"),
+            }
     else:
         result = calculate_historical_reliability(
-            {"sample_size": global_n},
+            {"sample_size": 0},
             competition_id=competition_id,
             selection=sel,
             rating=rating,
             rating_band=band,
-            status_override="insufficient_data",
+            status_override="no_history",
             cohort_meta={
                 "cohort_scope": None,
                 "local_sample_size": local_n,
                 "global_sample_size": global_n,
-                "selected_sample_size": global_n,
+                "selected_sample_size": 0,
                 "fallback_used": False,
-                "fallback_reason": "global_below_minimum",
+                "fallback_reason": "no_history",
             },
         )
         result.update(audit_base)
         result["historical_factor"] = None
+        result["historical_multiplier"] = 1.0
         result["hr_score"] = None
         return result
 
@@ -306,7 +331,12 @@ def _score_panel_row_from_indexes(
     result.update(audit_base)
     score = result.get("score")
     result["hr_score"] = score
+    # Legacy field for v1 consumers; v2 usa historical_multiplier nel candidate.
     result["historical_factor"] = (float(score) / 100.0) if score is not None else None
+    if score is not None:
+        result["historical_multiplier"] = 1.0 + (float(score) - 50.0) / 100.0
+    else:
+        result["historical_multiplier"] = 1.0
     return result
 
 

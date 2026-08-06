@@ -15,6 +15,43 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _primary_delta_reason(v31_item: dict[str, Any], score_delta: int | None) -> str | None:
+    codes = list(v31_item.get("reason_codes") or [])
+    hist_codes = list(v31_item.get("historical_reason_codes") or [])
+    hist = v31_item.get("historical") if isinstance(v31_item.get("historical"), dict) else {}
+    status = str(v31_item.get("status") or "")
+
+    if status == "gate_failed" and "rating_below_purchase_scope" in codes:
+        return "rating_gate"
+    if status == "non_calculable":
+        return "true_input_missing"
+    if "historical_no_sample" in hist_codes or hist.get(
+        "historical_evidence_quality"
+    ) == "neutral_fallback":
+        return "no_history_neutral_fallback"
+    if status == "score_provisional" or "historical_sample_below_minimum" in hist_codes:
+        return "provisional_history"
+
+    adj = hist.get("historical_adjustment_points")
+    if adj is None:
+        adj = v31_item.get("historical_adjustment_points")
+    adj_f = _safe_float(adj)
+    if adj_f is not None:
+        if adj_f > 0.05:
+            return "historical_positive_adjustment"
+        if adj_f < -0.05:
+            return "historical_negative_adjustment"
+        if abs(adj_f) <= 0.05:
+            # teorico vs V3 può ancora differire per penalità
+            if score_delta is not None and score_delta != 0:
+                return "theoretical_penalties"
+            return "historical_neutral"
+
+    if score_delta is not None and score_delta != 0:
+        return "theoretical_penalties"
+    return None
+
+
 def build_comparison_with_v3(
     v31_item: dict[str, Any],
     v3_item: dict[str, Any] | None,
@@ -37,6 +74,22 @@ def build_comparison_with_v3(
     v31_status = str(v31_item.get("status") or "non_calculable")
     v31_score = v31_item.get("score")
     v31_class = v31_item.get("class")
+    theoretical = (
+        v31_item.get("theoretical")
+        if isinstance(v31_item.get("theoretical"), dict)
+        else {}
+    )
+    hist = (
+        v31_item.get("historical")
+        if isinstance(v31_item.get("historical"), dict)
+        else {}
+    )
+    theoretical_raw = theoretical.get("theoretical_raw_score") or v31_item.get(
+        "theoretical_raw_score"
+    )
+    multiplier = hist.get("historical_multiplier")
+    if multiplier is None:
+        multiplier = v31_item.get("historical_multiplier")
 
     score_delta = None
     if v3_score is not None and v31_score is not None:
@@ -52,19 +105,23 @@ def build_comparison_with_v3(
         v31_item.get("reason_codes") or []
     ):
         reasons.append("derived_quote_blocks_v31")
+    # v1 legacy block reason (non più prodotto da v2)
     if v31_status == "non_calculable" and "historical_sample_insufficient" in (
         v31_item.get("reason_codes") or []
     ):
         reasons.append("historical_blocks_v31")
-    hist = v31_item.get("historical") if isinstance(v31_item.get("historical"), dict) else {}
-    if hist.get("historical_factor") is not None and v31_score is not None:
-        reasons.append("historical_factor_applied")
-    if v31_status == "gate_failed" and "rating_below_purchase_scope" in (
-        v31_item.get("reason_codes") or []
-    ):
-        reasons.append("rating_gate_v31")
-    if not reasons and score_delta is not None and score_delta != 0:
+
+    primary = _primary_delta_reason(v31_item, score_delta)
+    if primary:
+        reasons.append(primary)
+    elif score_delta is not None and score_delta != 0:
         reasons.append("score_formula_delta")
+
+    definitive_or_provisional = None
+    if v31_status == "score":
+        definitive_or_provisional = "definitive"
+    elif v31_status == "score_provisional":
+        definitive_or_provisional = "provisional"
 
     return {
         "v3_status": v3_status,
@@ -73,10 +130,15 @@ def build_comparison_with_v3(
         "v31_status": v31_status,
         "v31_score": v31_score,
         "v31_class": v31_class,
+        "v31_theoretical_raw_score": theoretical_raw,
+        "v31_historical_multiplier": multiplier,
+        "v31_evidence_quality": definitive_or_provisional
+        or hist.get("historical_evidence_quality"),
         "score_delta": score_delta,
         "class_changed": (v3_class != v31_class) if v3_class or v31_class else False,
         "status_changed": v3_status != v31_status,
         "main_change_reasons": reasons,
+        "primary_delta_reason": primary,
     }
 
 
@@ -91,6 +153,8 @@ def build_shadow_summary(
     reason_dist: Counter[str] = Counter()
 
     score_count = 0
+    score_definitive = 0
+    score_provisional = 0
     gate_failed = 0
     non_calc = 0
     derived = 0
@@ -112,12 +176,23 @@ def build_shadow_summary(
         status = it.get("status")
         if status == "score":
             score_count += 1
+            score_definitive += 1
             sc = _safe_float(it.get("score"))
             if sc is not None:
                 v31_scores.append(sc)
             klass = it.get("class")
             if klass:
                 class_dist[str(klass)] += 1
+        elif status == "score_provisional":
+            score_count += 1
+            score_provisional += 1
+            sc = _safe_float(it.get("score"))
+            if sc is not None:
+                v31_scores.append(sc)
+            klass = it.get("class")
+            if klass:
+                class_dist[str(klass)] += 1
+            hist_insufficient += 1
         elif status == "gate_failed":
             gate_failed += 1
         elif status == "non_calculable":
@@ -160,6 +235,8 @@ def build_shadow_summary(
         "rows_v3_supported": v3_supported,
         "rows_v31_supported": v31_supported,
         "scores_produced": score_count,
+        "scores_definitive": score_definitive,
+        "scores_provisional": score_provisional,
         "gate_failed": gate_failed,
         "non_calculable": non_calc,
         "quotes_absent": missing_quote,

@@ -219,7 +219,12 @@ def test_batch_never_unsupported_market():
     assert len(batch["items"]) == 19
     for it in batch["items"]:
         assert "unsupported_market" not in (it.get("reason_codes") or [])
-        assert it.get("status") in ("score", "gate_failed", "non_calculable")
+        assert it.get("status") in (
+            "score",
+            "score_provisional",
+            "gate_failed",
+            "non_calculable",
+        )
 
 
 # --- complements ---
@@ -374,7 +379,7 @@ def test_missing_book_quote_non_calculable():
 
 
 def test_historical_factor_math_deterministic():
-    """theoretical_raw=80, historical=25 → raw=20, score=20."""
+    """theoretical_raw × multiplier(HR=25=0.75); v2 neutrale centrato su 50."""
     by = {
         SEL_HOME: _row(SEL_HOME, edge=40, prob=0.50, rating=70),
         SEL_DRAW: _row(SEL_DRAW, edge=5),
@@ -385,13 +390,12 @@ def test_historical_factor_math_deterministic():
         SEL_DRAW: _fair(0.33),
         SEL_AWAY: _fair(0.32),
     }
-    # Force theoretical path by inspecting formula with known HR
     it = _item(SEL_HOME, by, fair, _hr(score=25, sample=40))
     assert it["status"] == "score"
     theor = it["theoretical"]["theoretical_raw_score"]
-    factor = it["historical"]["historical_factor"]
-    expected_raw = theor * (25 / 100.0)
-    assert abs(factor - 0.25) < 1e-9
+    mult = it["historical"]["historical_multiplier"]
+    expected_raw = theor * (1.0 + (25 - 50) / 100.0)
+    assert abs(mult - 0.75) < 1e-9
     assert abs(it["raw_score_v31"] - expected_raw) < 1e-3
     assert it["score_v31"] == round_purchasability_score_half_up(expected_raw)
 
@@ -413,7 +417,8 @@ def test_historical_scores_scale():
         assert it["status"] == "score"
         scores[hs] = it["score"]
     assert scores[10] < scores[44] < scores[85] <= scores[100]
-    assert scores[10] < 30  # storico basso impedisce score elevato
+    # v2: HR 10 → multiplier 0.60; non dimezza più a 0.10
+    assert scores[10] < scores[50]
 
 
 def test_historical_insufficient():
@@ -427,10 +432,14 @@ def test_historical_insufficient():
         SEL_HOME,
         by,
         fair,
-        _hr(status="insufficient_data", sample=MIN_SAMPLE - 1, score=None),  # type: ignore[arg-type]
+        _hr(status="provisional_insufficient_sample", sample=MIN_SAMPLE - 1, score=50),
     )
-    assert it["status"] == "non_calculable"
-    assert "historical_sample_insufficient" in it["reason_codes"]
+    assert it["status"] == "score_provisional"
+    assert it["score"] is not None
+    assert "historical_sample_insufficient" not in it["reason_codes"]
+    assert "historical_sample_below_minimum" in it["historical_reason_codes"]
+    assert it["gate_status"] == "passed"
+    assert it["gate_reason_codes"] == []
 
 
 def test_historical_absent():
@@ -441,8 +450,35 @@ def test_historical_absent():
         SEL_AWAY: _fair(0.3),
     }
     it = _item(SEL_HOME, by, fair, None)
+    assert it["status"] == "score_provisional"
+    assert it["score"] is not None
+    assert it["historical"]["historical_multiplier"] == 1.0
+    assert "historical_no_sample" in it["historical_reason_codes"]
+    assert "historical_reliability_unavailable" not in it["reason_codes"]
+
+
+def test_historical_insufficient_v1_still_blocks():
+    by = {SEL_HOME: _row(SEL_HOME), SEL_DRAW: _row(SEL_DRAW), SEL_AWAY: _row(SEL_AWAY)}
+    fair = {
+        SEL_HOME: _fair(0.4, normalized_map={SEL_HOME: 0.4, SEL_DRAW: 0.3, SEL_AWAY: 0.3}),
+        SEL_DRAW: _fair(0.3),
+        SEL_AWAY: _fair(0.3),
+    }
+    model = {k: r.get("prob_cecchino") for k, r in by.items()}
+    it = calculate_purchasability_v31_item(
+        SEL_HOME,
+        by[SEL_HOME],
+        by,
+        fair_by=fair,
+        model_probs=model,
+        historical_reliability_item=_hr(
+            status="insufficient_data", sample=MIN_SAMPLE - 1, score=None
+        ),
+        policy="v1",
+    )
     assert it["status"] == "non_calculable"
-    assert "historical_reliability_unavailable" in it["reason_codes"]
+    assert "historical_sample_insufficient" in it["reason_codes"]
+    assert it["formula_version"].endswith("empirical_v1")
 
 
 def test_gate_failed_skips_historical():
@@ -514,7 +550,7 @@ def test_v31_versions_distinct_from_v3():
     assert PURCHASABILITY_V31_FORMULA_VERSION != PURCHASABILITY_V3_FORMULA_VERSION
     assert PURCHASABILITY_V31_CANDIDATE_NAME == "purchasability_v31_shadow"
     assert PURCHASABILITY_V31_REGISTRY_STATUS == "shadow_candidate"
-    assert PURCHASABILITY_V31_FORMULA_CONFIG_VERSION == "fixed_discount_v31_empirical_v1"
+    assert PURCHASABILITY_V31_FORMULA_CONFIG_VERSION == "fixed_discount_v31_empirical_v2"
     assert "purchasability_v31" in ANALYZABLE_METRICS
 
 

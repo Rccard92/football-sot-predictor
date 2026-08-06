@@ -9,12 +9,14 @@ from app.schemas.cecchino_purchasability_v31 import (
     PURCHASABILITY_V31_AUDIT_VERSION,
     PURCHASABILITY_V31_CANDIDATE_NAME,
     PURCHASABILITY_V31_CANDIDATE_VERSION,
+    PURCHASABILITY_V31_CANDIDATE_VERSION_V1,
     PURCHASABILITY_V31_CONTRACT_VERSION,
     PURCHASABILITY_V31_FEATURE_VERSION,
     PURCHASABILITY_V31_FORMULA_CONFIG_VERSION,
     PURCHASABILITY_V31_FORMULA_VERSION,
     PURCHASABILITY_V31_REGISTRY_STATUS,
     PURCHASABILITY_V31_SNAPSHOT_VERSION,
+    PURCHASABILITY_V31_SNAPSHOT_VERSION_V1,
 )
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_purchasability_v31_candidate import (
@@ -72,6 +74,19 @@ def _compact_item(item: dict[str, Any]) -> dict[str, Any]:
         "fair_book_audit": fair,
         "theoretical": theoretical,
         "historical": historical,
+        "historical_multiplier": item.get("historical_multiplier")
+        or historical.get("historical_multiplier"),
+        "historical_adjustment_points": item.get("historical_adjustment_points")
+        or historical.get("historical_adjustment_points"),
+        "historical_adjustment_pct": item.get("historical_adjustment_pct")
+        or historical.get("historical_adjustment_pct"),
+        "historical_reason_codes": list(
+            item.get("historical_reason_codes")
+            or historical.get("historical_reason_codes")
+            or []
+        ),
+        "theoretical_raw_score": item.get("theoretical_raw_score")
+        or theoretical.get("theoretical_raw_score"),
         "formula_steps": list(item.get("formula_steps") or []),
         "rounding": item.get("rounding"),
         "comparison_with_v3": item.get("comparison_with_v3"),
@@ -83,6 +98,8 @@ def _compact_item(item: dict[str, Any]) -> dict[str, Any]:
         or theoretical.get("theoretical_penalty_total"),
         "shadow_candidate": True,
         "current_operational_version": False,
+        "candidate_version": item.get("candidate_version"),
+        "audit_version": item.get("audit_version"),
     }
 
 
@@ -140,9 +157,18 @@ def build_purchasability_preview_v31_snapshot(
 def validate_purchasability_preview_v31_snapshot(snapshot: Any) -> dict[str, Any]:
     if not isinstance(snapshot, dict):
         return {"ok": False, "reason": "not_a_dict"}
-    if snapshot.get("snapshot_version") != PURCHASABILITY_V31_SNAPSHOT_VERSION:
+    snap_v = snapshot.get("snapshot_version")
+    # Accetta snapshot v2 correnti e v1 già persistiti (non sovrascrivere a caldo).
+    if snap_v not in (
+        PURCHASABILITY_V31_SNAPSHOT_VERSION,
+        PURCHASABILITY_V31_SNAPSHOT_VERSION_V1,
+    ):
         return {"ok": False, "reason": "snapshot_version_mismatch"}
-    if snapshot.get("candidate_version") != PURCHASABILITY_V31_CANDIDATE_VERSION:
+    cand_v = snapshot.get("candidate_version")
+    if cand_v not in (
+        PURCHASABILITY_V31_CANDIDATE_VERSION,
+        PURCHASABILITY_V31_CANDIDATE_VERSION_V1,
+    ):
         return {"ok": False, "reason": "candidate_version_mismatch"}
     items = snapshot.get("items")
     if not isinstance(items, list):

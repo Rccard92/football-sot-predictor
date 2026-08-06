@@ -9,7 +9,7 @@ import {
   GATE_FAILED_NO_VALUE_V31_ITEM,
   NON_CALCULABLE_MISSING_QUOTE_V31_ITEM,
   NON_CALCULABLE_DERIVED_V31_ITEM,
-  NON_CALCULABLE_INSUFFICIENT_HISTORY_V31_ITEM,
+  SCORE_PROVISIONAL_INSUFFICIENT_HISTORY_V31_ITEM,
 } from './fixtures/purchasabilityV31Fixtures'
 
 describe('resolvePurchasabilityV31CellState', () => {
@@ -83,14 +83,41 @@ describe('resolvePurchasabilityV31CellState', () => {
     expect(s.analyzable).toBe(true)
   })
 
-  it('non calcolabile per storico insufficiente → "Non calcolabile" + "Storico insufficiente"', () => {
-    const s = resolvePurchasabilityV31CellState(NON_CALCULABLE_INSUFFICIENT_HISTORY_V31_ITEM, {
+  it('score provisional per storico insufficiente → mostra score, non Input mancanti', () => {
+    const s = resolvePurchasabilityV31CellState(SCORE_PROVISIONAL_INSUFFICIENT_HISTORY_V31_ITEM, {
       snapshotAvailable: true,
     })
-    expect(s.kind).toBe('non_calculable')
-    expect(s.primary).toBe('Non calcolabile')
-    expect(s.subtitle).toBe('Storico insufficiente')
+    expect(s.kind).toBe('score_provisional')
+    expect(s.primary).toBe('53')
+    expect(s.provisional).toBe(true)
+    expect(s.subtitle).toContain('16')
+    expect(s.subtitle).toContain('30')
+    expect(s.primary).not.toBe('Non calcolabile')
+    expect(s.subtitle).not.toContain('Input mancanti')
+    expect(s.strongBuyReading).toBeNull()
     expect(s.analyzable).toBe(true)
+  })
+
+  it('no history → provisional con multiplier neutrale', () => {
+    const s = resolvePurchasabilityV31CellState(
+      {
+        market_key: 'HOME',
+        status: 'score_provisional',
+        score: 53,
+        class: 'Media',
+        historical: {
+          sample_size: 0,
+          selected_sample_size: 0,
+          min_sample: 30,
+          historical_multiplier: 1,
+          historical_evidence_quality: 'neutral_fallback',
+        },
+      },
+      { snapshotAvailable: true },
+    )
+    expect(s.kind).toBe('score_provisional')
+    expect(s.subtitle).toContain('Nessuno storico')
+    expect(s.strongBuyReading).toBeNull()
   })
 
   it('item null con snapshot disponibile → snapshot_absent', () => {

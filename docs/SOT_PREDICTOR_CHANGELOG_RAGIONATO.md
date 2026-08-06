@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Make v3.1 historical adjustment non-blocking (empirical_v2) (2026-08-06)
+
+- Perché: con sample storico &lt;30 la V3.1 v1 annullava valutazioni teoriche complete (`historical_sample_insufficient`); HR=50 dimezzava lo score (`HR/100`).
+- Cosa: formula `empirical_v2` con `historical_multiplier = 1+(HR−50)/100`; status `score_provisional`; HR calcola metriche anche sotto MIN_SAMPLE; registry v1/v2; GO/NO-GO v2; UI provisional + fix `[object Object]`/metadata; regressione Richmond; V3 e v1 frozen preservate.
+- Cosa non fa: nessuna promozione automatica; nessun replay Railway in questo ambiente; nessuna migration; nessuna nuova dipendenza; teorico/penalità/gate invariati.
+
 ## Feat — Add purchasability v3.1 replay validation (Step 2B) (2026-08-06)
 
 - Perché: validare storicamente la V3.1 congelata con replay anti-leakage, analytics, Positive Signal Health e decisione GO/NO-GO versionata, senza tarare la formula né toccare Replay ID 1 / Run #3.

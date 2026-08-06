@@ -17,6 +17,7 @@ export const AWAY_V31_ITEM: CecchinoPurchasabilityV31Item = {
   gate_passed: true,
   theoretical_raw: 86.3,
   historical_factor: 0.6,
+  historical_multiplier: 0.6,
   total_penalty: 12,
   formula_version: 'cecchino_purchasability_v31_shadow_v1',
   candidate_version: 'cecchino_purchasability_v31_candidate_1',
@@ -41,6 +42,7 @@ export const AWAY_V31_ITEM: CecchinoPurchasabilityV31Item = {
     },
     historical_reliability: {
       factor: 0.6,
+      historical_multiplier: 0.6,
       score: 72,
       class: 'Buona',
       sample_size: 45,
@@ -55,6 +57,7 @@ export const AWAY_V31_ITEM: CecchinoPurchasabilityV31Item = {
     final_calculation: {
       theoretical_raw: 86.3,
       historical_factor: 0.6,
+      historical_multiplier: 0.6,
       raw_result: 51.78,
       score: 52,
       rounding: 'ROUND_HALF_UP',
@@ -175,25 +178,39 @@ export const NON_CALCULABLE_DERIVED_V31_ITEM: CecchinoPurchasabilityV31Item = {
   },
 }
 
-/** Fixture V3.1: non calcolabile per storico insufficiente. */
-export const NON_CALCULABLE_INSUFFICIENT_HISTORY_V31_ITEM: CecchinoPurchasabilityV31Item = {
+/** Fixture V3.1: score provvisorio per storico insufficiente (non più non_calculable). */
+export const SCORE_PROVISIONAL_INSUFFICIENT_HISTORY_V31_ITEM: CecchinoPurchasabilityV31Item = {
   market_key: 'UNDER_2_5',
   market_label: 'Under 2.5',
   market_family: 'GOALS_FT',
-  status: 'non_calculable',
-  score: null,
-  reason: 'Storico insufficiente',
-  reason_code: 'insufficient_history',
-  formula_version: 'cecchino_purchasability_v31_shadow_v1',
-  candidate_version: 'cecchino_purchasability_v31_candidate_1',
+  status: 'score_provisional',
+  score: 53,
+  class: 'Media',
+  calculation_quality: 'provisional',
+  formula_version: 'cecchino_purchasability_v31_fixed_discount_empirical_v2',
+  candidate_version: 'cecchino_purchasability_v31_candidate_2',
+  historical: {
+    sample_size: 16,
+    selected_sample_size: 16,
+    min_sample: 30,
+    historical_multiplier: 1,
+    historical_evidence_quality: 'provisional',
+    historical_reliability_score: 50,
+  },
+  historical_multiplier: 1,
+  theoretical_raw_score: 53.4134,
   explanation: {
     final_state: {
-      status: 'non_calculable',
-      reason: 'Storico insufficiente',
-      reason_code: 'insufficient_history',
+      status: 'score_provisional',
+      score: 53,
+      class: 'Media',
     },
   },
 }
+
+/** Legacy alias — non più usato come non_calculable. */
+export const NON_CALCULABLE_INSUFFICIENT_HISTORY_V31_ITEM =
+  SCORE_PROVISIONAL_INSUFFICIENT_HISTORY_V31_ITEM
 
 /** Snapshot V3.1 completo. */
 export const V31_SNAPSHOT: CecchinoPurchasabilityV31Snapshot = {

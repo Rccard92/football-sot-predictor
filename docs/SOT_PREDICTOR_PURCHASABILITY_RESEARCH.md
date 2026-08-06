@@ -2,6 +2,25 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## V3.1 empirical_v2 — storico non bloccante (2026-08-06)
+
+**Root cause:** con `empirical_v1`, sample &lt; `MIN_SAMPLE=30` → `non_calculable` / `historical_sample_insufficient` anche con gate passato e input completi (Richmond: 16 casi). Inoltre `historical_factor = HR/100` rendeva HR=50 → ×0,50.
+
+**v1 frozen:** `historical_factor = HR/100`; versioni `candidate_1` / `empirical_v1` / `go_no_go_v1` riproducibili via registry `v31_v1`.
+
+**v2 corrente (shadow):**
+```
+theoretical_raw = value_score × theoretical_quality / 100   # invariata
+historical_multiplier = 1 + (HR − 50) / 100                 # HR50 → ×1
+raw = clamp(theoretical_raw × historical_multiplier, 0, 100)
+score = ROUND_HALF_UP(raw)
+```
+`MIN_SAMPLE=30` → definitive (`score`) vs provisional (`score_provisional`). Sample 0 → fallback neutrale. Storico non produce più `non_calculable`.
+
+Versioni: `candidate_2`, `empirical_v2`, `audit_v2`, `features_v2`, `go_no_go_v2`. V3 invariata. Nessuna promozione automatica. Replay v2 distinto.
+
+**Richmond:** theoretical_raw≈53,41; no-history→53 provisional; HR70→64 Alta; HR30→43 Media.
+
 ## V3.1 Fase 2B — Replay storico + GO/NO-GO (2026-08-06)
 
 Infrastruttura replay formula-configurable riusando tabelle/API V3 (nessuna migration).

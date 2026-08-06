@@ -14,6 +14,18 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Recupero | `POST /revalidate-day` poi `force_rescan` su `2026-08-08` |
 | Invariato | Formule Cecchino, V3, V3.1, filtri competizione |
 
+## Acquistabilità V3.1 — empirical_v2 storico non bloccante (2026-08-06)
+
+| Campo | Valore |
+|-------|--------|
+| Formula corrente | `cecchino_purchasability_v31_fixed_discount_empirical_v2` |
+| Formula v1 frozen | `…_empirical_v1` (riproducibile via `v31_v1`) |
+| Multiplier | `1 + (HR − 50) / 100` (HR50 = neutrale) |
+| Status | `score` / `score_provisional` / `gate_failed` / `non_calculable` |
+| Decision | `purchasability_v31_go_no_go_v2` |
+| Stato | shadow (nessuna promozione automatica) |
+| Operativo | `operational_purchasability_version=v3` |
+
 ## Acquistabilità V3.1 — Fase 2B replay validation (2026-08-06)
 
 | Campo | Valore |
@@ -36,7 +48,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | V3 | **Invariata** (`fixed_discount_v3`), ancora default UI |
 | Promozione | **No** — `shadow_candidate`; Fase 2B = replay storico |
 
-Gate: Edge&gt;0 ∧ vantaggio&gt;0 ∧ Rating≥50. Score = ROUND_HALF_UP(theoretical_raw × historical_factor). Quote derivate → Non calcolabile. Affidabilità storica v1.1 obbligatoria (batch).
+Gate: Edge&gt;0 ∧ vantaggio&gt;0 ∧ Rating≥50. Score v2 = ROUND_HALF_UP(theoretical_raw × historical_multiplier). Sample&lt;30 → score_provisional (non blocco). Quote derivate → Non calcolabile.
 
 ## Acquistabilità V3.1 — Fase 1B formule e backfill (2026-08-05)
 

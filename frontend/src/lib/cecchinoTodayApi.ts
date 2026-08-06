@@ -628,7 +628,11 @@ export type CecchinoPurchasabilityV3Snapshot = {
 // Acquistabilità V3.1 (shadow candidate)
 // ============================================================================
 
-export type CecchinoPurchasabilityV31ItemStatus = 'score' | 'gate_failed' | 'non_calculable'
+export type CecchinoPurchasabilityV31ItemStatus =
+  | 'score'
+  | 'score_provisional'
+  | 'gate_failed'
+  | 'non_calculable'
 
 export type CecchinoPurchasabilityV31SectionKey =
   | 'final_state'
@@ -698,14 +702,24 @@ export type CecchinoPurchasabilityV31Explanation = {
   }
   historical_reliability?: {
     factor?: number | null
+    historical_multiplier?: number | null
     score?: number | null
     class?: string | null
     sample_size?: number | null
+    selected_sample_size?: number | null
+    min_sample?: number | null
+    historical_evidence_quality?: string | null
+    historical_reliability_score?: number | null
+    historical_adjustment_points?: number | null
   }
   final_calculation?: {
     theoretical_raw?: number | null
+    theoretical_raw_score?: number | null
     historical_factor?: number | null
+    historical_multiplier?: number | null
+    historical_adjustment_points?: number | null
     raw_result?: number | null
+    raw_score_v31?: number | null
     score?: number | null
     rounding?: string | null
   }
@@ -732,14 +746,31 @@ export type CecchinoPurchasabilityV31Item = {
   reason_code?: string | null
   gate_status?: string | null
   gate_passed?: boolean | null
+  calculation_quality?: string | null
   theoretical_raw?: number | null
+  theoretical_raw_score?: number | null
   historical_factor?: number | null
-  total_penalty?: number | null
+  historical_multiplier?: number | null
+  historical_adjustment_points?: number | null
+  historical?: {
+    sample_size?: number | null
+    selected_sample_size?: number | null
+    min_sample?: number | null
+    historical_multiplier?: number | null
+    historical_evidence_quality?: string | null
+    historical_reliability_score?: number | null
+    [key: string]: unknown
+  } | null
   formula_version?: string | null
   candidate_version?: string | null
+  audit_version?: string | null
+  input?: Record<string, unknown>
   explanation?: CecchinoPurchasabilityV31Explanation | null
+  is_real_book_quote?: boolean | null
+  derived_quote?: boolean | null
+  total_penalty?: number | null
   warnings?: string[]
-  input?: Record<string, number | string | boolean | null>
+  [key: string]: unknown
 }
 
 export type CecchinoPurchasabilityV31Snapshot = {

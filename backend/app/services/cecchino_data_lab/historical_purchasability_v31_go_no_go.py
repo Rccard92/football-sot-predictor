@@ -11,6 +11,7 @@ from typing import Any
 from app.services.cecchino.cecchino_historical_reliability import MIN_SAMPLE
 
 GO_NO_GO_VERSION = "purchasability_v31_go_no_go_v1"
+GO_NO_GO_VERSION_V2 = "purchasability_v31_go_no_go_v2"
 
 DECISION_GO_FINAL = "GO_FINAL"
 DECISION_GO_PROVISIONAL = "GO_PROVISIONAL"
@@ -526,11 +527,13 @@ def _pack(
     warnings: list[str],
     next_action: str,
     ctx: dict[str, Any],
+    *,
+    version: str = GO_NO_GO_VERSION,
 ) -> dict[str, Any]:
     assert decision in ALLOWED_DECISIONS
     return {
-        "version": GO_NO_GO_VERSION,
-        "decision_version": GO_NO_GO_VERSION,
+        "version": version,
+        "decision_version": version,
         "decision": decision,
         "criteria_passed": list(passed),
         "criteria_failed": list(failed),
@@ -546,3 +549,140 @@ def _pack(
         "promotion_allowed": decision == DECISION_GO_FINAL,
         "strong_buy_message_allowed": decision == DECISION_GO_FINAL,
     }
+
+
+def evaluate_purchasability_v31_go_no_go_v2(
+    analytics: dict[str, Any] | None,
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """GO/NO-GO v2: GO_FINAL solo su definitive; provisional diagnostico."""
+    analytics = analytics or {}
+    ctx = dict(context or {})
+    # Riusa v1 come base tecnica, poi applica vincoli v2.
+    base = evaluate_purchasability_v31_go_no_go(analytics, context=ctx)
+    passed = list(base.get("criteria_passed") or [])
+    failed = list(base.get("criteria_failed") or [])
+    insufficient = list(base.get("criteria_insufficient") or [])
+    blockers = list(base.get("blockers") or [])
+    warnings = list(base.get("warnings") or [])
+    evidence = dict(base.get("evidence") or {})
+
+    coverage = analytics.get("coverage") or {}
+    recon = coverage.get("reconciliation") or ctx.get("reconciliation") or {}
+    evidence["reconciliation"] = recon
+    if recon and recon.get("ok") is False:
+        if "reconciliation_ok" not in failed:
+            failed.append("reconciliation_ok")
+        blockers.append("reconciliation_failed")
+
+    definitive_n = int(
+        coverage.get("definitive_score_count")
+        or ctx.get("definitive_score_count")
+        or 0
+    )
+    provisional_n = int(
+        coverage.get("provisional_score_count")
+        or ctx.get("provisional_score_count")
+        or 0
+    )
+    evidence["definitive_score_count"] = definitive_n
+    evidence["provisional_score_count"] = provisional_n
+
+    # Storico insufficiente non deve finire in non_calculable
+    reason_counts = coverage.get("reason_code_counts") or {}
+    hist_as_non_calc = int(reason_counts.get("historical_sample_insufficient") or 0)
+    evidence["historical_sample_insufficient_as_non_calculable"] = hist_as_non_calc
+    if hist_as_non_calc > 0:
+        failed.append("historical_non_blocking")
+        blockers.append("historical_still_blocking_non_calculable")
+    else:
+        passed.append("historical_non_blocking")
+
+    # Theoretical scores when inputs complete
+    theoretical_n = int(coverage.get("theoretical_score_count") or 0)
+    evidence["theoretical_score_count"] = theoretical_n
+    if theoretical_n > 0:
+        passed.append("theoretical_scores_available")
+
+    perf_blocks = analytics.get("performance_blocks") or ctx.get("performance_blocks") or {}
+    evidence["performance_blocks_counts"] = (perf_blocks.get("counts") or {})
+
+    # Formula version check
+    fv = str(ctx.get("formula_version") or analytics.get("replay", {}).get("formula_version") or "")
+    if fv and "empirical_v2" not in fv and "v31" in fv.lower() and "empirical_v1" in fv:
+        failed.append("formula_version_v2")
+        blockers.append("formula_version_not_v2")
+    else:
+        passed.append("formula_version_v2")
+
+    decision = str(base.get("decision") or DECISION_NO_GO_DATA)
+
+    # GO_FINAL impossibile con soli provisional
+    if definitive_n < MIN_SAMPLE:
+        insufficient.append("definitive_sample_sufficient")
+        if decision == DECISION_GO_FINAL:
+            decision = DECISION_GO_PROVISIONAL
+            warnings.append(
+                "GO_FINAL declassato: campione definitivo < MIN_SAMPLE; "
+                "usare GO_PROVISIONAL finché lo storico definitivo non è sufficiente."
+            )
+            blockers.append("definitive_sample_insufficient_for_go_final")
+    else:
+        passed.append("definitive_sample_sufficient")
+
+    if provisional_n > 0 and definitive_n == 0:
+        if decision == DECISION_GO_FINAL:
+            decision = DECISION_GO_PROVISIONAL
+        warnings.append(
+            "Solo score provisional disponibili: GO_FINAL non consentito."
+        )
+        blockers.append("provisional_only_blocks_go_final")
+
+    # Se base era NO_GO tecnico, preserva
+    if base.get("decision") == DECISION_NO_GO_TECHNICAL:
+        decision = DECISION_NO_GO_TECHNICAL
+    elif "historical_still_blocking_non_calculable" in blockers:
+        decision = DECISION_NO_GO_TECHNICAL
+    elif decision == DECISION_GO_FINAL and definitive_n < MIN_SAMPLE:
+        decision = DECISION_GO_PROVISIONAL
+
+    # GO_PROVISIONAL se formula promettente ma storico definitivo insufficiente
+    if (
+        decision not in (DECISION_GO_FINAL, DECISION_NO_GO_TECHNICAL, DECISION_NO_GO_OVER_SEVERE)
+        and provisional_n >= MIN_SAMPLE
+        and definitive_n < MIN_SAMPLE
+        and float(coverage.get("score_production_rate") or 0) >= 0.05
+    ):
+        if decision in (DECISION_NO_GO_DATA, DECISION_NO_GO_PERFORMANCE):
+            # upgrade diagnostico solo se non collapse
+            psh = analytics.get("positive_signal_health") or {}
+            if not psh.get("all_negative_collapse"):
+                decision = DECISION_GO_PROVISIONAL
+                warnings.append(
+                    "GO_PROVISIONAL: copertura/promessa ok ma storico definitivo insufficiente."
+                )
+
+    next_action = str(base.get("recommended_next_action") or "")
+    if decision == DECISION_GO_PROVISIONAL:
+        next_action = (
+            "Monitorare warm-up storico; rieseguire replay quando definitive >= MIN_SAMPLE. "
+            "Nessuna promozione operativa."
+        )
+    elif decision == DECISION_GO_FINAL:
+        next_action = (
+            "GO_FINAL v2: promozione manuale con token esplicito; V3 resta default finché non promossa."
+        )
+
+    return _pack(
+        decision,
+        passed,
+        failed,
+        insufficient,
+        evidence,
+        blockers,
+        warnings,
+        next_action,
+        ctx,
+        version=GO_NO_GO_VERSION_V2,
+    )

@@ -1,6 +1,10 @@
 """Contratto Acquistabilità v3.1 — shadow candidate empirica.
 
 Parallela a fixed_discount_v3. Non operativa. Non promuove V3.1.
+
+Versioning:
+  - empirical_v1 / candidate_1: formula storica bloccante (HR/100), preservata
+  - empirical_v2 / candidate_2: storico non bloccante + multiplier neutrale (corrente)
 """
 
 from __future__ import annotations
@@ -9,25 +13,44 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-PURCHASABILITY_V31_CONTRACT_VERSION = "cecchino_purchasability_v31_contract"
-PURCHASABILITY_V31_FEATURE_VERSION = "cecchino_purchasability_v31_features_v1"
-PURCHASABILITY_V31_CANDIDATE_VERSION = "cecchino_purchasability_v31_candidate_1"
-PURCHASABILITY_V31_CANDIDATE_NAME = "purchasability_v31_shadow"
-PURCHASABILITY_V31_FORMULA_VERSION = (
+# --- Frozen empirical v1 (riproducibile, non mutare matematica) ---
+PURCHASABILITY_V31_CANDIDATE_VERSION_V1 = "cecchino_purchasability_v31_candidate_1"
+PURCHASABILITY_V31_FORMULA_VERSION_V1 = (
     "cecchino_purchasability_v31_fixed_discount_empirical_v1"
 )
-PURCHASABILITY_V31_FORMULA_CONFIG_VERSION = "fixed_discount_v31_empirical_v1"
-PURCHASABILITY_V31_AUDIT_VERSION = "cecchino_purchasability_v31_audit_v1"
-PURCHASABILITY_V31_SNAPSHOT_VERSION = "cecchino_purchasability_snapshot_v31"
+PURCHASABILITY_V31_FORMULA_CONFIG_VERSION_V1 = "fixed_discount_v31_empirical_v1"
+PURCHASABILITY_V31_AUDIT_VERSION_V1 = "cecchino_purchasability_v31_audit_v1"
+PURCHASABILITY_V31_FEATURE_VERSION_V1 = "cecchino_purchasability_v31_features_v1"
+PURCHASABILITY_V31_CONTRACT_VERSION_V1 = "cecchino_purchasability_v31_contract"
+PURCHASABILITY_V31_SNAPSHOT_VERSION_V1 = "cecchino_purchasability_snapshot_v31"
+
+# --- Current shadow empirical v2 ---
+PURCHASABILITY_V31_CONTRACT_VERSION = "cecchino_purchasability_v31_contract_v2"
+PURCHASABILITY_V31_FEATURE_VERSION = "cecchino_purchasability_v31_features_v2"
+PURCHASABILITY_V31_CANDIDATE_VERSION = "cecchino_purchasability_v31_candidate_2"
+PURCHASABILITY_V31_CANDIDATE_NAME = "purchasability_v31_shadow"
+PURCHASABILITY_V31_FORMULA_VERSION = (
+    "cecchino_purchasability_v31_fixed_discount_empirical_v2"
+)
+PURCHASABILITY_V31_FORMULA_CONFIG_VERSION = "fixed_discount_v31_empirical_v2"
+PURCHASABILITY_V31_AUDIT_VERSION = "cecchino_purchasability_v31_audit_v2"
+PURCHASABILITY_V31_SNAPSHOT_VERSION = "cecchino_purchasability_snapshot_v31_v2"
 PURCHASABILITY_V31_REGISTRY_STATUS = "shadow_candidate"
 
 PurchasabilityV31Status = Literal[
     "score",
+    "score_provisional",
     "gate_failed",
     "non_calculable",
 ]
 
-CalculationQuality = Literal["full", "partial", "not_applicable"]
+CalculationQuality = Literal["full", "partial", "provisional", "not_applicable"]
+
+HistoricalEvidenceQuality = Literal[
+    "definitive",
+    "provisional",
+    "neutral_fallback",
+]
 
 PurchasabilityClass = Literal[
     "Molto Bassa",
@@ -80,6 +103,7 @@ class PurchasabilityV31Item(BaseModel):
     reading_short: str | None = None
     reading_detailed: str | None = None
     reason_codes: list[str] = Field(default_factory=list)
+    historical_reason_codes: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     pre_match_only: bool = True
     current_operational_version: bool = False

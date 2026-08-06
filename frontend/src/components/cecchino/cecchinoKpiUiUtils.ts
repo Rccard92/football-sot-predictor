@@ -491,6 +491,7 @@ export function fmtRoiPct(roi: number | null | undefined): string {
 
 export type PurchasabilityV31CellKind =
   | 'score'
+  | 'score_provisional'
   | 'gate_failed'
   | 'non_calculable'
   | 'snapshot_absent'
@@ -505,6 +506,9 @@ export type PurchasabilityV31CellState = {
   score: number | null
   classLabel: string | null
   reasonCode: string | null
+  provisional?: boolean
+  sampleSize?: number | null
+  minSample?: number | null
   /** Solo post GO_FINAL operativo + Molto Alta + quota reale */
   strongBuyReading?: string | null
 }
@@ -533,13 +537,21 @@ const V31_GATE_FAILED_REASON_LABELS: Record<string, string> = {
  */
 export function resolvePurchasabilityV31CellState(
   item: {
-    status?: 'score' | 'gate_failed' | 'non_calculable' | string | null
+    status?: 'score' | 'score_provisional' | 'gate_failed' | 'non_calculable' | string | null
     score?: number | null
     class?: string | null
     reason?: string | null
     reason_code?: string | null
     gate_status?: string | null
-    input?: Record<string, number | string | boolean | null>
+    calculation_quality?: string | null
+    input?: Record<string, unknown>
+    historical?: {
+      sample_size?: number | null
+      selected_sample_size?: number | null
+      min_sample?: number | null
+      historical_evidence_quality?: string | null
+      historical_multiplier?: number | null
+    } | null
     is_real_book_quote?: boolean | null
     derived_quote?: boolean | null
   } | null | undefined,
@@ -600,6 +612,9 @@ export function resolvePurchasabilityV31CellState(
   const status = item.status
   const reasonCode = item.reason_code ?? null
   const reason = item.reason ?? null
+  const sampleSize =
+    item.historical?.selected_sample_size ?? item.historical?.sample_size ?? null
+  const minSample = item.historical?.min_sample ?? 30
 
   if (status === 'gate_failed') {
     const subtitle =
@@ -620,30 +635,61 @@ export function resolvePurchasabilityV31CellState(
   }
 
   if (status === 'non_calculable') {
-    const subtitle =
-      reasonCode && V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
-        ? V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
-        : reason ?? 'Input mancanti'
-    return {
-      kind: 'non_calculable',
-      primary: 'Non calcolabile',
-      subtitle,
-      showScoreBadge: false,
-      analyzable: true,
-      score: null,
-      classLabel: null,
-      reasonCode,
-      strongBuyReading: null,
+    // Storico insufficiente non è più un blocco: se score presente, tratta come provisional
+    if (item.score != null && (reasonCode === 'insufficient_history' || reasonCode === 'historical_sample_insufficient')) {
+      // fall through handled below via score_provisional-like path
+    } else {
+      const subtitle =
+        reasonCode && V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
+          ? V31_NON_CALCULABLE_REASON_LABELS[reasonCode]
+          : reason ?? 'Input mancanti'
+      return {
+        kind: 'non_calculable',
+        primary: 'Non calcolabile',
+        subtitle,
+        showScoreBadge: false,
+        analyzable: true,
+        score: null,
+        classLabel: null,
+        reasonCode,
+        strongBuyReading: null,
+      }
     }
   }
 
   const derived =
     item.derived_quote === true || item.is_real_book_quote === false
 
+  if (status === 'score_provisional' && item.score != null) {
+    const classLabel = item.class ?? null
+    const n = sampleSize ?? 0
+    let subtitle: string
+    if (n <= 0) {
+      subtitle =
+        'Valutazione teorica provvisoria. Nessuno storico: moltiplicatore neutrale 1,00.'
+    } else {
+      subtitle = `Storico insufficiente: ${n} casi su ${minSample}. Il punteggio teorico e la correzione provvisoria sono disponibili.`
+    }
+    return {
+      kind: 'score_provisional',
+      primary: String(item.score),
+      subtitle,
+      showScoreBadge: true,
+      analyzable: true,
+      score: item.score,
+      classLabel: classLabel ? `${classLabel} provvisoria` : 'provvisoria',
+      reasonCode,
+      provisional: true,
+      sampleSize: n,
+      minSample,
+      strongBuyReading: null,
+    }
+  }
+
   if (status === 'score' && item.score != null) {
     const classLabel = item.class ?? null
     let strongBuyReading: string | null = null
-    let subtitle: string | null = null
+    let subtitle: string | null = 'Valutazione completa. Storico sufficiente.'
     if (
       strongBuyAllowed &&
       !derived &&
@@ -666,6 +712,7 @@ export function resolvePurchasabilityV31CellState(
       score: item.score,
       classLabel,
       reasonCode,
+      provisional: false,
       strongBuyReading,
     }
   }

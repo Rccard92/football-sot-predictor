@@ -4,13 +4,14 @@
 
 | Campo | Valore |
 |-------|--------|
-| Formula | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
+| Formula corrente | `cecchino_purchasability_v31_fixed_discount_empirical_v2` |
+| Formula v1 frozen | `cecchino_purchasability_v31_fixed_discount_empirical_v1` |
 | Infra | riuso tabelle/API replay V3 (`formula_version` distingue) |
 | Mercati | 19 classificati; assenti → `source_market_unavailable` |
-| HR | walk-forward anti-leakage |
-| GO/NO-GO | `purchasability_v31_go_no_go_v1` |
-| Preservati | Run #3, Replay V3 ID 1 |
-| Promozione | solo `GO_FINAL` (non eseguita senza holdout/replay reale) |
+| HR | walk-forward anti-leakage; metriche anche con n&lt;30 (provisional) |
+| GO/NO-GO | `purchasability_v31_go_no_go_v2` (v1 preservata) |
+| Preservati | Run #3, Replay V3 ID 1, eventuali replay V3.1 v1 |
+| Promozione | solo `GO_FINAL` v2 (non eseguita senza holdout/replay reale) |
 
 ## STEP 4B — KPI × Acquistabilità V3 + Segnali A–F (2026-08-02)
 

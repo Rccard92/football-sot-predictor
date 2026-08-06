@@ -317,6 +317,8 @@ def calculate_historical_reliability_cohort_metrics(rows: list[dict[str, Any]]) 
 def _class_for_score(score: int | None, status: str) -> str:
     if status == "insufficient_data":
         return "Dati insufficienti"
+    if status == "no_history":
+        return "Nessuno storico"
     if status == "rating_below_scope":
         return "Non valutato"
     if status == "unsupported_market":
@@ -352,14 +354,21 @@ def _explanation(
         return f"Mercato non storicizzabile: {reason}."
     if status == "history_unavailable":
         return "Storico non disponibile per questa combinazione."
-    if status == "insufficient_data":
+    if status in ("insufficient_data", "provisional_insufficient_sample"):
         g = meta.get("global_sample_size") or metrics.get("sample_size") or 0
         label = (band or {}).get("label") or "?"
         sel = selection or "?"
-        return (
-            f"{g} casi globali per {sel} nella fascia {label}. "
-            f"Servono almeno {MIN_SAMPLE} casi."
+        prefix = (
+            "Valutazione provvisoria: "
+            if status == "provisional_insufficient_sample"
+            else ""
         )
+        return (
+            f"{prefix}{g} casi globali per {sel} nella fascia {label}. "
+            f"Servono almeno {MIN_SAMPLE} casi per lo storico definitivo."
+        )
+    if status == "no_history":
+        return "Nessuno storico disponibile per questa combinazione."
     if meta.get("fallback_used"):
         n_comp = meta.get("competition_count") or 0
         local_n = meta.get("local_sample_size") or 0
@@ -401,27 +410,46 @@ def calculate_historical_reliability(
     status_override: str | None = None,
     cohort_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Applica formula Affidabilità storica v1.1 (numerica invariata vs empirica v1.1)."""
+    """Applica formula Affidabilità storica v1.1 (numerica invariata vs empirica v1.1).
+
+    MIN_SAMPLE separa storico definitivo (`ok`) da provvisorio
+    (`provisional_insufficient_sample`). Con n>=1 le metriche e lo score
+    vengono sempre calcolati (shrinkage già nella formula).
+    """
     meta = dict(cohort_meta or {})
-    if status_override:
+    n = int(metrics.get("sample_size") or 0)
+    stability_status: str | None = None
+    score: int | None = None
+    reason_codes: list[str] = []
+
+    # Override non-numerici (mercato non supportato, rating, ecc.)
+    if status_override and status_override not in (
+        "insufficient_data",
+        "provisional_insufficient_sample",
+        "no_history",
+    ):
         status = status_override
-        score = None
         reason_codes = [status_override]
-    elif (metrics.get("sample_size") or 0) < MIN_SAMPLE:
-        status = "insufficient_data"
+    elif status_override == "no_history" or n <= 0:
+        status = "no_history"
+        reason_codes = ["no_history"]
         score = None
-        reason_codes = ["insufficient_data"]
     else:
-        status = "ok"
+        # n >= 1: calcola sempre metriche + score (anche sotto MIN_SAMPLE)
         reason_codes = []
         roi = float(metrics["roi"] or 0.0)
         margin = float(metrics["realized_margin"] or 0.0)
         stability = metrics.get("stability_ratio")
         roi_c = clamp(50.0 + roi * 500.0)
         margin_c = clamp(50.0 + margin * 500.0)
-        stab_c = (float(stability) * 100.0) if stability is not None else 50.0
+        if stability is not None:
+            stab_c = float(stability) * 100.0
+            stability_status = "ok"
+        else:
+            stab_c = 50.0
+            stability_status = "insufficient_periods"
+            reason_codes.append("historical_stability_insufficient_periods")
         raw = (roi_c + margin_c + stab_c) / 3.0
-        n = int(metrics["sample_size"])
         confidence = min(1.0, n / 100.0)
         score_f = clamp(50.0 + confidence * (raw - 50.0))
         score = int(round(score_f))
@@ -435,11 +463,24 @@ def calculate_historical_reliability(
             "stability_component": stab_c,
             "raw_evidence_score": raw,
             "sample_confidence": confidence,
+            "stability_status": stability_status,
         }
+        if n >= MIN_SAMPLE:
+            status = "ok"
+        else:
+            status = "provisional_insufficient_sample"
+            reason_codes.insert(0, "provisional_insufficient_sample")
 
     sample_confidence = metrics.get("sample_confidence")
-    if sample_confidence is None and metrics.get("sample_size"):
-        sample_confidence = min(1.0, int(metrics["sample_size"]) / 100.0)
+    if sample_confidence is None and n > 0:
+        sample_confidence = min(1.0, n / 100.0)
+    if status == "no_history":
+        sample_confidence = 0.0
+
+    if stability_status is None:
+        stability_status = metrics.get("stability_status")
+        if stability_status is None and metrics.get("stability_ratio") is None and n > 0:
+            stability_status = "insufficient_periods"
 
     klass = _class_for_score(score, status)
     out = {
@@ -467,6 +508,7 @@ def calculate_historical_reliability(
         "positive_periods": metrics.get("positive_periods"),
         "total_periods": metrics.get("total_periods"),
         "stability_ratio": metrics.get("stability_ratio"),
+        "stability_status": stability_status,
         "sample_confidence": sample_confidence,
         "historical_date_from": metrics.get("historical_date_from"),
         "historical_date_to": metrics.get("historical_date_to"),
@@ -617,22 +659,47 @@ def _score_current_panel_row(
             "competitions_in_cohort": metrics_probe.get("competitions_in_cohort"),
             "competition_count": metrics_probe.get("competition_count"),
         }
+    elif global_n >= 1 or local_n >= 1:
+        # Sotto MIN_SAMPLE: usa il campione disponibile (preferisci locale se >0).
+        if local_n >= 1:
+            cohort = local_cohort
+            cohort_meta = {
+                "cohort_scope": SCOPE_LOCAL,
+                "local_sample_size": local_n,
+                "global_sample_size": global_n,
+                "selected_sample_size": local_n,
+                "fallback_used": False,
+                "fallback_reason": "below_minimum_local",
+            }
+        else:
+            cohort = global_cohort
+            metrics_probe = calculate_historical_reliability_cohort_metrics(cohort)
+            cohort_meta = {
+                "cohort_scope": SCOPE_GLOBAL,
+                "local_sample_size": local_n,
+                "global_sample_size": global_n,
+                "selected_sample_size": global_n,
+                "fallback_used": True,
+                "fallback_reason": "global_below_minimum",
+                "competitions_in_cohort": metrics_probe.get("competitions_in_cohort"),
+                "competition_count": metrics_probe.get("competition_count"),
+            }
     else:
         cohort_meta = {
             "cohort_scope": None,
             "local_sample_size": local_n,
             "global_sample_size": global_n,
-            "selected_sample_size": global_n,
+            "selected_sample_size": 0,
             "fallback_used": False,
-            "fallback_reason": "global_below_minimum",
+            "fallback_reason": "no_history",
         }
         result = calculate_historical_reliability(
-            {"sample_size": global_n},
+            {"sample_size": 0},
             competition_id=competition_id,
             selection=sel,
             rating=rating,
             rating_band=band,
-            status_override="insufficient_data",
+            status_override="no_history",
             cohort_meta=cohort_meta,
         )
         result.update(base_meta)
@@ -708,7 +775,7 @@ def build_historical_reliability_for_panel(
                 scored_global += 1
             else:
                 scored_local += 1
-        elif st == "insufficient_data":
+        elif st in ("insufficient_data", "provisional_insufficient_sample"):
             insufficient += 1
         elif st == "rating_below_scope":
             below_scope += 1

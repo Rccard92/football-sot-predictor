@@ -1,10 +1,15 @@
 """Acquistabilità V3.1 — shadow candidate fixed_discount empirica.
 
 Parallela a fixed_discount_v3. Non operativa.
-Formula:
-  theoretical_raw = value_score × theoretical_quality / 100
+
+empirical_v1 (frozen):
   raw_score_v31 = theoretical_raw × (historical_reliability_score / 100)
-  score = ROUND_HALF_UP(raw_score_v31)
+  sample < MIN_SAMPLE → non_calculable
+
+empirical_v2 (corrente):
+  historical_multiplier = 1 + (HR - 50) / 100
+  raw_score_v31 = clamp(theoretical_raw × historical_multiplier, 0, 100)
+  sample < MIN_SAMPLE → score_provisional (non bloccante)
 """
 
 from __future__ import annotations
@@ -13,16 +18,22 @@ import hashlib
 import json
 import math
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, Literal
 
 from app.schemas.cecchino_purchasability_v31 import (
     PURCHASABILITY_V31_AUDIT_VERSION,
+    PURCHASABILITY_V31_AUDIT_VERSION_V1,
     PURCHASABILITY_V31_CANDIDATE_NAME,
     PURCHASABILITY_V31_CANDIDATE_VERSION,
+    PURCHASABILITY_V31_CANDIDATE_VERSION_V1,
     PURCHASABILITY_V31_CONTRACT_VERSION,
+    PURCHASABILITY_V31_CONTRACT_VERSION_V1,
     PURCHASABILITY_V31_FEATURE_VERSION,
+    PURCHASABILITY_V31_FEATURE_VERSION_V1,
     PURCHASABILITY_V31_FORMULA_CONFIG_VERSION,
+    PURCHASABILITY_V31_FORMULA_CONFIG_VERSION_V1,
     PURCHASABILITY_V31_FORMULA_VERSION,
+    PURCHASABILITY_V31_FORMULA_VERSION_V1,
     PURCHASABILITY_V31_REGISTRY_STATUS,
 )
 from app.services.cecchino.cecchino_historical_reliability import (
@@ -42,6 +53,11 @@ from app.services.cecchino.cecchino_purchasability_fair_book import (
 )
 from app.services.cecchino.cecchino_purchasability_features import (
     build_model_context_probability_map,
+)
+from app.services.cecchino.cecchino_purchasability_v31_historical_policy import (
+    apply_historical_to_theoretical,
+    build_historical_block,
+    resolve_historical,
 )
 from app.services.cecchino.cecchino_purchasability_v31_opposition import (
     SUPPORTED_V31_MARKETS,
@@ -77,6 +93,8 @@ from app.services.cecchino.cecchino_purchasability_v3_candidate import (
     compute_probability_risk_penalty,
     compute_value_score,
 )
+
+FormulaPolicy = Literal["v1", "v2"]
 
 RATING_MIN_PURCHASE_SCOPE = 50.0
 
@@ -351,70 +369,38 @@ def resolve_execution_quote(
 
 def _resolve_historical(
     historical_reliability_item: dict[str, Any] | None,
+    *,
+    policy: FormulaPolicy = "v2",
 ) -> dict[str, Any]:
-    if not isinstance(historical_reliability_item, dict):
-        return {
-            "ok": False,
-            "reason_code": "historical_reliability_unavailable",
-            "reading": "Storico non disponibile",
-            "item": None,
-        }
-    status = str(historical_reliability_item.get("status") or "")
-    score = _safe_float(historical_reliability_item.get("score"))
-    sample = historical_reliability_item.get("selected_sample_size")
-    try:
-        sample_n = int(sample) if sample is not None else 0
-    except (TypeError, ValueError):
-        sample_n = 0
-
-    if status == "insufficient_data" or (
-        status == "ok" and sample_n < MIN_SAMPLE
-    ):
-        return {
-            "ok": False,
-            "reason_code": "historical_sample_insufficient",
-            "reading": (
-                "Storico insufficiente per questo mercato e questa fascia Rating"
-            ),
-            "item": historical_reliability_item,
-        }
-    if status != "ok" or score is None:
-        return {
-            "ok": False,
-            "reason_code": "historical_reliability_unavailable",
-            "reading": "Storico non disponibile",
-            "item": historical_reliability_item,
-        }
-    if sample_n < MIN_SAMPLE:
-        return {
-            "ok": False,
-            "reason_code": "historical_sample_insufficient",
-            "reading": (
-                "Storico insufficiente per questo mercato e questa fascia Rating"
-            ),
-            "item": historical_reliability_item,
-        }
-    return {
-        "ok": True,
-        "reason_code": None,
-        "reading": None,
-        "item": historical_reliability_item,
-        "score": float(score),
-        "factor": float(score) / 100.0,
-    }
+    return resolve_historical(historical_reliability_item, policy=policy)
 
 
-def _base_meta(market_key: str) -> dict[str, Any]:
-    period, line = period_and_line_for(market_key)
+def _version_meta(policy: FormulaPolicy) -> dict[str, str]:
+    if policy == "v1":
+        return {
+            "formula_version": PURCHASABILITY_V31_FORMULA_VERSION_V1,
+            "formula_config_version": PURCHASABILITY_V31_FORMULA_CONFIG_VERSION_V1,
+            "candidate_version": PURCHASABILITY_V31_CANDIDATE_VERSION_V1,
+            "contract_version": PURCHASABILITY_V31_CONTRACT_VERSION_V1,
+            "feature_version": PURCHASABILITY_V31_FEATURE_VERSION_V1,
+            "audit_version": PURCHASABILITY_V31_AUDIT_VERSION_V1,
+        }
     return {
         "formula_version": PURCHASABILITY_V31_FORMULA_VERSION,
         "formula_config_version": PURCHASABILITY_V31_FORMULA_CONFIG_VERSION,
-        "candidate_name": PURCHASABILITY_V31_CANDIDATE_NAME,
         "candidate_version": PURCHASABILITY_V31_CANDIDATE_VERSION,
-        "registry_status": PURCHASABILITY_V31_REGISTRY_STATUS,
         "contract_version": PURCHASABILITY_V31_CONTRACT_VERSION,
         "feature_version": PURCHASABILITY_V31_FEATURE_VERSION,
         "audit_version": PURCHASABILITY_V31_AUDIT_VERSION,
+    }
+
+
+def _base_meta(market_key: str, *, policy: FormulaPolicy = "v2") -> dict[str, Any]:
+    period, line = period_and_line_for(market_key)
+    return {
+        **_version_meta(policy),
+        "candidate_name": PURCHASABILITY_V31_CANDIDATE_NAME,
+        "registry_status": PURCHASABILITY_V31_REGISTRY_STATUS,
         "market_key": market_key,
         "label": market_label_for(market_key),
         "market_label": market_label_for(market_key),
@@ -442,13 +428,14 @@ def _non_calculable(
     historical_block: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
     extra: dict[str, Any] | None = None,
+    policy: FormulaPolicy = "v2",
 ) -> dict[str, Any]:
     g = gate or {
         "gate_status": "unavailable_inputs",
         "gate_reason_codes": list(reason_codes),
     }
     out = {
-        **_base_meta(market_key),
+        **_base_meta(market_key, policy=policy),
         "status": "non_calculable",
         "calculation_quality": "not_applicable",
         "score": None,
@@ -460,6 +447,9 @@ def _non_calculable(
         "gate": g,
         "gate_status": g.get("gate_status"),
         "gate_reason_codes": list(g.get("gate_reason_codes") or reason_codes),
+        "historical_reason_codes": list(
+            (historical_block or {}).get("historical_reason_codes") or []
+        ),
         "input": input_block or {},
         "fair_book_audit": fair_audit or {},
         "historical": historical_block or {},
@@ -481,12 +471,13 @@ def _gate_failed_item(
     gate: dict[str, Any],
     input_block: dict[str, Any],
     fair_audit: dict[str, Any] | None = None,
+    policy: FormulaPolicy = "v2",
 ) -> dict[str, Any]:
     codes = list(gate.get("gate_reason_codes") or [])
     reading = str(gate.get("gate_reading") or READING_GATE_NO_VALUE)
     return make_json_safe(
         {
-            **_base_meta(market_key),
+            **_base_meta(market_key, policy=policy),
             "status": "gate_failed",
             "calculation_quality": "not_applicable",
             "score": None,
@@ -498,6 +489,7 @@ def _gate_failed_item(
             "gate": gate,
             "gate_status": "gate_failed",
             "gate_reason_codes": codes,
+            "historical_reason_codes": [],
             "input": input_block,
             "fair_book_audit": fair_audit or {},
             "historical": {},
@@ -511,33 +503,13 @@ def _gate_failed_item(
     )
 
 
-def _historical_block(hr_resolved: dict[str, Any]) -> dict[str, Any]:
-    item = hr_resolved.get("item") if isinstance(hr_resolved.get("item"), dict) else {}
-    score = hr_resolved.get("score")
-    factor = hr_resolved.get("factor")
-    return {
-        "historical_reliability_version": item.get("version")
-        or HISTORICAL_RELIABILITY_VERSION,
-        "historical_reliability_status": item.get("status"),
-        "historical_reliability_score": score if score is not None else item.get("score"),
-        "historical_reliability_class": item.get("class"),
-        "historical_factor": factor,
-        "cohort_scope": item.get("cohort_scope"),
-        "rating_band": item.get("rating_band"),
-        "local_sample_size": item.get("local_sample_size"),
-        "global_sample_size": item.get("global_sample_size"),
-        "selected_sample_size": item.get("selected_sample_size"),
-        "wins": item.get("wins"),
-        "losses": item.get("losses"),
-        "voids": item.get("voids"),
-        "roi": item.get("roi"),
-        "realized_margin": item.get("realized_margin"),
-        "stability_ratio": item.get("stability_ratio")
-        or item.get("stability_component"),
-        "historical_date_from": item.get("date_from") or item.get("historical_date_from"),
-        "historical_date_to": item.get("date_to") or item.get("historical_date_to"),
-        "sample_confidence": item.get("sample_confidence"),
-    }
+def _historical_block(
+    hr_resolved: dict[str, Any],
+    *,
+    policy: FormulaPolicy = "v2",
+) -> dict[str, Any]:
+    return build_historical_block(hr_resolved, policy=policy)
+
 
 
 def calculate_purchasability_v31_item(
@@ -551,8 +523,9 @@ def calculate_purchasability_v31_item(
     gate_by_market: dict[str, dict[str, Any]] | None = None,
     edge_by_market: dict[str, float | None] | None = None,
     fixture_meta: dict[str, Any] | None = None,
+    policy: FormulaPolicy = "v2",
 ) -> dict[str, Any]:
-    """Calcolatore puro V3.1. Nessuna sessione DB."""
+    """Calcolatore puro V3.1. Nessuna sessione DB. Default policy=v2."""
     meta = fixture_meta or {}
     family = market_family_for(market_key)
 
@@ -563,6 +536,7 @@ def calculate_purchasability_v31_item(
             reason_codes=["unsupported_market"],
             reading_short=READING_NON_CALC,
             reading_detailed="Mercato non supportato dalla V3.1",
+            policy=policy,
         )
 
     kickoff = meta.get("kickoff") or row.get("kickoff")
@@ -678,6 +652,7 @@ def calculate_purchasability_v31_item(
             reading_detailed=detail,
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if quota_cecchino is None or quota_cecchino <= 1.0:
@@ -688,6 +663,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Quota Cecchino assente",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if prob_cec_pct is None:
@@ -698,6 +674,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Probabilità Cecchino assente",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if fair_prob is None:
@@ -711,6 +688,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Probabilità Fair Book non verificata o set incompleto",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if complement.get("complement_fair_probability") is None:
@@ -721,6 +699,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Complemento matematico non disponibile",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if kickoff is None and meta.get("kickoff_required"):
@@ -731,6 +710,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Kickoff non disponibile",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if snapshot_verified is False:
@@ -741,6 +721,7 @@ def calculate_purchasability_v31_item(
             reading_detailed="Snapshot pre-match non verificabile",
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     gate = (
@@ -758,6 +739,7 @@ def calculate_purchasability_v31_item(
             gate=gate,
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
     if gate.get("gate_status") == "gate_failed":
@@ -766,23 +748,10 @@ def calculate_purchasability_v31_item(
             gate=gate,
             input_block=input_block,
             fair_audit=fair_audit,
+            policy=policy,
         )
 
-    # HR solo dopo gate passato.
-    hr_resolved = _resolve_historical(historical_reliability_item)
-    hist_block = _historical_block(hr_resolved)
-    if not hr_resolved.get("ok"):
-        return _non_calculable(
-            market_key=market_key,
-            reason_codes=[str(hr_resolved.get("reason_code"))],
-            reading_short=READING_NON_CALC,
-            reading_detailed=str(hr_resolved.get("reading") or "Storico non disponibile"),
-            gate=gate,
-            input_block=input_block,
-            fair_audit=fair_audit,
-            historical_block=hist_block,
-        )
-
+    # --- Score teorico (sempre dopo gate passato) poi storico ---
     assert edge is not None and prob_cec_pct is not None
     value_score = compute_value_score(edge)
     pen_prob = compute_probability_risk_penalty(prob_cec_pct)
@@ -843,23 +812,6 @@ def calculate_purchasability_v31_item(
     )
     theoretical_quality_score = clamp(100.0 - theoretical_penalty_total, 0.0, 100.0)
     theoretical_raw_score = value_score * theoretical_quality_score / 100.0
-    historical_factor = float(hr_resolved["factor"])
-    raw_score_v31 = theoretical_raw_score * historical_factor
-    score_v31 = round_purchasability_score_half_up(raw_score_v31)
-    klass = map_score_to_class(score_v31)
-
-    formula_steps = [
-        f"value_score = clamp({_round2(edge)} / {VALUE_EDGE_FULL_SCORE_PCT} × 100) = {_round4(value_score)}",
-        f"probability_risk_penalty = {_round4(float(pen_prob['penalty_points']))}",
-        f"opposite_market_pressure_penalty = {_round4(float(pen_opp['penalty_points']))}",
-        f"extreme_divergence_penalty = {_round4(float(pen_div['penalty_points']))}",
-        f"family_ambiguity_penalty = {_round4(float(pen_fam['penalty_points']))} ({ambiguity_status})",
-        f"theoretical_quality_score = clamp(100 - {_round4(theoretical_penalty_total)}) = {_round4(theoretical_quality_score)}",
-        f"theoretical_raw_score = {_round4(value_score)} × {_round4(theoretical_quality_score)} / 100 = {_round4(theoretical_raw_score)}",
-        f"historical_factor = {_round4(float(hr_resolved['score']))} / 100 = {_round4(historical_factor)}",
-        f"raw_score_v31 = {_round4(theoretical_raw_score)} × {_round4(historical_factor)} = {_round4(raw_score_v31)}",
-        f"score_v31 = ROUND_HALF_UP({_round4(raw_score_v31)}) = {score_v31}",
-    ]
 
     theoretical = {
         "value_score": _round4(value_score),
@@ -906,40 +858,153 @@ def calculate_purchasability_v31_item(
         },
     }
 
-    hist_block["historical_factor"] = _round4(historical_factor)
+    formula_steps_theo = [
+        f"value_score = clamp({_round2(edge)} / {VALUE_EDGE_FULL_SCORE_PCT} × 100) = {_round4(value_score)}",
+        f"probability_risk_penalty = {_round4(float(pen_prob['penalty_points']))}",
+        f"opposite_market_pressure_penalty = {_round4(float(pen_opp['penalty_points']))}",
+        f"extreme_divergence_penalty = {_round4(float(pen_div['penalty_points']))}",
+        f"family_ambiguity_penalty = {_round4(float(pen_fam['penalty_points']))} ({ambiguity_status})",
+        f"theoretical_quality_score = clamp(100 - {_round4(theoretical_penalty_total)}) = {_round4(theoretical_quality_score)}",
+        f"theoretical_raw_score = {_round4(value_score)} × {_round4(theoretical_quality_score)} / 100 = {_round4(theoretical_raw_score)}",
+    ]
+
+    hr_resolved = _resolve_historical(historical_reliability_item, policy=policy)
+    hist_block = _historical_block(hr_resolved, policy=policy)
+
+    # v1: storico insufficiente blocca ancora (comportamento frozen)
+    if policy == "v1" and hr_resolved.get("blocks_score"):
+        return _non_calculable(
+            market_key=market_key,
+            reason_codes=[str(hr_resolved.get("reason_code"))],
+            reading_short=READING_NON_CALC,
+            reading_detailed=str(hr_resolved.get("reading") or "Storico non disponibile"),
+            gate=gate,
+            input_block=input_block,
+            fair_audit=fair_audit,
+            historical_block=hist_block,
+            policy=policy,
+            extra={"theoretical": theoretical, "formula_steps": formula_steps_theo},
+        )
+
+    applied = apply_historical_to_theoretical(
+        theoretical_raw_score, hr_resolved, policy=policy
+    )
+    raw_score_v31 = float(applied["raw_score_v31"])
+    score_v31 = round_purchasability_score_half_up(raw_score_v31)
+    klass = map_score_to_class(score_v31)
+
+    if policy == "v1":
+        historical_factor = float(applied["historical_factor"])
+        hist_block["historical_factor"] = _round4(historical_factor)
+        hist_block["historical_factor_legacy"] = _round4(historical_factor)
+        formula_steps = formula_steps_theo + [
+            f"historical_factor = {_round4(float(hr_resolved['score']))} / 100 = {_round4(historical_factor)}",
+            f"raw_score_v31 = {_round4(theoretical_raw_score)} × {_round4(historical_factor)} = {_round4(raw_score_v31)}",
+            f"score_v31 = ROUND_HALF_UP({_round4(raw_score_v31)}) = {score_v31}",
+        ]
+        item_status = "score"
+        calc_quality = "full"
+        hist_reason_codes: list[str] = []
+        reading_detailed = (
+            f"Acquistabilità V3.1 shadow: score {score_v31} ({klass}). "
+            f"theoretical_raw={_round4(theoretical_raw_score)} × "
+            f"historical_factor={_round4(historical_factor)}."
+        )
+        adj_points = None
+        adj_pct = None
+        multiplier = None
+    else:
+        multiplier = float(applied["historical_multiplier"])
+        adj_points = applied["historical_adjustment_points"]
+        adj_pct = applied["historical_adjustment_pct"]
+        hist_block["historical_multiplier"] = _round4(multiplier)
+        hist_block["historical_adjustment_points"] = (
+            _round4(float(adj_points)) if adj_points is not None else None
+        )
+        hist_block["historical_adjustment_pct"] = (
+            _round4(float(adj_pct)) if adj_pct is not None else None
+        )
+        formula_steps = formula_steps_theo + [
+            f"historical_reliability_score = {_round4(float(hr_resolved['score']))}"
+            + (
+                " (neutral_fallback)"
+                if hr_resolved.get("score_is_neutral_fallback")
+                else ""
+            ),
+            f"historical_multiplier = 1 + ({_round4(float(hr_resolved['score']))} - 50) / 100 = {_round4(multiplier)}",
+            f"historical_adjusted_raw_score = {_round4(theoretical_raw_score)} × {_round4(multiplier)} = {_round4(float(applied['historical_adjusted_raw_score']))}",
+            f"raw_score_v31 = clamp(...) = {_round4(raw_score_v31)}",
+            f"historical_adjustment_points = {_round4(float(adj_points)) if adj_points is not None else None}",
+            f"score_v31 = ROUND_HALF_UP({_round4(raw_score_v31)}) = {score_v31}",
+        ]
+        item_status = str(hr_resolved.get("item_status") or "score_provisional")
+        calc_quality = str(hr_resolved.get("calculation_quality") or "provisional")
+        hist_reason_codes = list(hr_resolved.get("historical_reason_codes") or [])
+        sample_n = int(hr_resolved.get("sample_size") or 0)
+        if item_status == "score_provisional":
+            if sample_n <= 0:
+                reading_short_extra = f"{score_v31} ({klass} provvisoria)"
+                reading_detailed = (
+                    f"Valutazione teorica provvisoria. Nessuno storico: "
+                    f"moltiplicatore neutrale 1,00. Score {score_v31} ({klass})."
+                )
+            else:
+                reading_short_extra = f"{score_v31} ({klass} provvisoria)"
+                reading_detailed = (
+                    f"Valutazione provvisoria. Storico {sample_n}/{MIN_SAMPLE}. "
+                    f"theoretical_raw={_round4(theoretical_raw_score)} × "
+                    f"historical_multiplier={_round4(multiplier)} → score {score_v31}."
+                )
+        else:
+            reading_short_extra = f"{score_v31} ({klass})"
+            reading_detailed = (
+                f"Acquistabilità V3.1 shadow: score {score_v31} ({klass}). "
+                f"theoretical_raw={_round4(theoretical_raw_score)} × "
+                f"historical_multiplier={_round4(multiplier)}."
+            )
+
+    if policy == "v1":
+        reading_short_extra = f"{score_v31} ({klass})"
 
     return make_json_safe(
         {
-            **_base_meta(market_key),
-            "status": "score",
-            "calculation_quality": "full",
+            **_base_meta(market_key, policy=policy),
+            "status": item_status,
+            "calculation_quality": calc_quality,
             "score": score_v31,
             "raw_score": _round4(raw_score_v31),
             "score_v31": score_v31,
             "raw_score_v31": _round4(raw_score_v31),
             "class": klass,
             "class_v31": klass,
-            "score_display": f"{score_v31} ({klass})",
+            "score_display": reading_short_extra,
             "gate": gate,
             "gate_status": "passed",
             "gate_reason_codes": [],
+            "historical_reason_codes": hist_reason_codes,
             "input": input_block,
             "fair_book_audit": fair_audit,
             "theoretical": theoretical,
             "historical": hist_block,
+            "historical_multiplier": (
+                _round4(multiplier) if multiplier is not None else None
+            ),
+            "historical_adjustment_points": (
+                _round4(float(adj_points)) if adj_points is not None else None
+            ),
+            "historical_adjustment_pct": (
+                _round4(float(adj_pct)) if adj_pct is not None else None
+            ),
             "value_score": _round4(value_score),
             "quality_score": _round4(theoretical_quality_score),
+            "theoretical_raw_score": _round4(theoretical_raw_score),
             "total_penalty": _round4(theoretical_penalty_total),
             "penalties": theoretical["penalties"],
             "family_ambiguity_status": ambiguity_status,
             "opposite_fair_probability": complement.get("complement_fair_probability"),
             "complement_fair_probability": complement.get("complement_fair_probability"),
-            "reading_short": f"{score_v31} ({klass})",
-            "reading_detailed": (
-                f"Acquistabilità V3.1 shadow: score {score_v31} ({klass}). "
-                f"theoretical_raw={_round4(theoretical_raw_score)} × "
-                f"historical_factor={_round4(historical_factor)}."
-            ),
+            "reading_short": reading_short_extra,
+            "reading_detailed": reading_detailed,
             "reason_codes": [],
             "warnings": warnings,
             "formula_steps": formula_steps,
@@ -950,14 +1015,17 @@ def calculate_purchasability_v31_item(
     )
 
 
+
+
 def calculate_purchasability_v31_batch(
     *,
     kpi_panel: dict[str, Any] | None,
     fixture_meta: dict[str, Any] | None = None,
     historical_by_market: dict[str, dict[str, Any]] | None = None,
     v3_items_by_market: dict[str, dict[str, Any]] | None = None,
+    policy: FormulaPolicy = "v2",
 ) -> dict[str, Any]:
-    """Batch puro: richiede historical_by_market già risolto dall'orchestratore."""
+    """Batch puro: richiede historical_by_market già risolto. Default v2."""
     from app.services.cecchino.cecchino_purchasability_v31_compare import (
         attach_comparisons_and_summary,
     )
@@ -1018,16 +1086,18 @@ def calculate_purchasability_v31_batch(
                 gate_by_market=gate_by_market,
                 edge_by_market=edge_by_market,
                 fixture_meta=meta,
+                policy=policy,
             )
         )
 
+    vmeta = _version_meta(policy)
     batch = {
-        "candidate_version": PURCHASABILITY_V31_CANDIDATE_VERSION,
+        "candidate_version": vmeta["candidate_version"],
         "candidate_name": PURCHASABILITY_V31_CANDIDATE_NAME,
-        "formula_version": PURCHASABILITY_V31_FORMULA_VERSION,
-        "formula_config_version": PURCHASABILITY_V31_FORMULA_CONFIG_VERSION,
+        "formula_version": vmeta["formula_version"],
+        "formula_config_version": vmeta["formula_config_version"],
         "registry_status": PURCHASABILITY_V31_REGISTRY_STATUS,
-        "audit_version": PURCHASABILITY_V31_AUDIT_VERSION,
+        "audit_version": vmeta["audit_version"],
         "status": "ok" if items else "unavailable",
         "items": items,
         "fixture_meta": {
@@ -1037,7 +1107,17 @@ def calculate_purchasability_v31_batch(
         },
         "summary": {
             "rows_total": len(items),
-            "score_count": sum(1 for it in items if it.get("status") == "score"),
+            "score_count": sum(
+                1
+                for it in items
+                if it.get("status") in ("score", "score_provisional")
+            ),
+            "score_definitive_count": sum(
+                1 for it in items if it.get("status") == "score"
+            ),
+            "score_provisional_count": sum(
+                1 for it in items if it.get("status") == "score_provisional"
+            ),
             "gate_failed_count": sum(
                 1 for it in items if it.get("status") == "gate_failed"
             ),
@@ -1050,6 +1130,33 @@ def calculate_purchasability_v31_batch(
     return attach_comparisons_and_summary(
         batch, v3_items_by_market=v3_items_by_market or {}
     )
+
+
+
+def calculate_purchasability_v31_batch_v1(
+    *,
+    kpi_panel: dict[str, Any] | None,
+    fixture_meta: dict[str, Any] | None = None,
+    historical_by_market: dict[str, dict[str, Any]] | None = None,
+    v3_items_by_market: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Entry frozen empirical_v1 per registry/replay."""
+    return calculate_purchasability_v31_batch(
+        kpi_panel=kpi_panel,
+        fixture_meta=fixture_meta,
+        historical_by_market=historical_by_market,
+        v3_items_by_market=v3_items_by_market,
+        policy="v1",
+    )
+
+
+def calculate_purchasability_v31_item_v1(
+    *args: Any,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    kwargs["policy"] = "v1"
+    return calculate_purchasability_v31_item(*args, **kwargs)
+
 
 
 def canonical_v31_candidate_sha256(batch: dict[str, Any]) -> str:

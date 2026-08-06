@@ -2228,9 +2228,9 @@ export function resumePurchasabilityV3Replay(
 }
 
 export const PURCHASABILITY_V31_FORMULA_VERSION =
-  'cecchino_purchasability_v31_fixed_discount_empirical_v1'
+  'cecchino_purchasability_v31_fixed_discount_empirical_v2'
 export const PURCHASABILITY_V31_PREFLIGHT_SCHEMA_VERSION =
-  'cecchino_lab_purchasability_v31_replay_preflight_v1'
+  'cecchino_lab_purchasability_v31_replay_preflight_v2'
 export const PURCHASABILITY_V31_INTEGRITY_POLICY_VERSION =
   'cecchino_lab_historical_reconstruction_integrity_v1'
 

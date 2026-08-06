@@ -20,6 +20,11 @@ from app.services.cecchino_data_lab.historical_purchasability_replay_formula_reg
 )
 from app.services.cecchino_data_lab.historical_purchasability_v31_go_no_go import (
     evaluate_purchasability_v31_go_no_go,
+    evaluate_purchasability_v31_go_no_go_v2,
+)
+from app.schemas.cecchino_purchasability_v31 import (
+    PURCHASABILITY_V31_FORMULA_VERSION,
+    PURCHASABILITY_V31_FORMULA_VERSION_V1,
 )
 
 CLASS_LABELS: tuple[str, ...] = (
@@ -85,8 +90,37 @@ def _class_for_score(score: int | None) -> str | None:
     return "Molto Alta"
 
 
+def is_scored_status(status: str) -> bool:
+    return status in ("score", "score_provisional", "available", "partial")
+
+
+def is_definitive_status(status: str) -> bool:
+    return status == "score"
+
+
+def is_provisional_status(status: str) -> bool:
+    return status == "score_provisional"
+
+
+def reconstruct_historical_multiplier(row: dict[str, Any]) -> tuple[float | None, str | None]:
+    """Preferisce campo esplicito; altrimenti ricostruisce da raw/theoretical."""
+    explicit = _f(row.get("historical_multiplier"))
+    if explicit is not None:
+        return explicit, None
+    # legacy: historical_factor era HR/100; non convertire silenziosamente
+    factor, reason = reconstruct_historical_factor(row)
+    if factor is None:
+        return None, reason
+    # Se formula v2, factor ricostruito È già il multiplier (raw/theo).
+    # Se formula v1, factor ricostruito è HR/100.
+    fv = str(row.get("formula_version") or "")
+    if "empirical_v2" in fv:
+        return factor, None
+    return factor, "legacy_historical_factor"
+
+
 def reconstruct_historical_factor(row: dict[str, Any]) -> tuple[float | None, str | None]:
-    """historical_factor = raw / (value * quality / 100) se ricostruibile."""
+    """historical_factor o multiplier ricostruito = raw / (value * quality / 100)."""
     raw = _f(row.get("raw_score"))
     value = _f(row.get("value_score"))
     quality = _f(row.get("quality_score"))
@@ -114,43 +148,56 @@ def is_source_unavailable(row: dict[str, Any]) -> bool:
     return (
         status in ("source_market_unavailable", "source_not_replayable")
         or "source_market_unavailable" in codes
-        or (row.get("source_market_result_id") is None and status != "score")
+        or (
+            row.get("source_market_result_id") is None
+            and status not in ("score", "score_provisional")
+        )
     )
 
 
 def score_production_rate(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Denominatore: quota reale + input teorici completi; esclude mercati assenti."""
+    """Denominatore: quota reale + input teorici completi; esclude mercati assenti.
+
+    score_production_rate include definitive + provisional.
+    """
     eligible = []
-    scored = 0
     for r in rows:
         if is_source_unavailable(r):
             continue
         if not is_real_executable(r):
             continue
-        # input teorici: edge/vantaggio/rating presenti o comunque non missing_inputs
         status = str(r.get("calculation_status") or "")
         if status in ("unavailable", "source_not_replayable"):
             continue
         eligible.append(r)
-        if r.get("score") is not None and status in ("score", "available", "partial") or (
-            r.get("score") is not None
-        ):
-            if status not in ("gate_failed", "non_calculable", "error"):
-                scored += 1
-            elif r.get("score") is not None:
-                scored += 1
-    # recount scored properly
     scored = sum(
         1
         for r in eligible
         if r.get("score") is not None
-        and str(r.get("calculation_status") or "") not in ("gate_failed", "non_calculable", "error")
+        and str(r.get("calculation_status") or "")
+        not in ("gate_failed", "non_calculable", "error")
+    )
+    definitive = sum(
+        1
+        for r in eligible
+        if r.get("score") is not None
+        and str(r.get("calculation_status") or "") == "score"
+    )
+    provisional = sum(
+        1
+        for r in eligible
+        if r.get("score") is not None
+        and str(r.get("calculation_status") or "") == "score_provisional"
     )
     n = len(eligible)
     return {
         "scored": scored,
         "eligible_real_complete": n,
         "score_production_rate": (scored / n) if n else None,
+        "definitive_score_count": definitive,
+        "provisional_score_count": provisional,
+        "definitive_score_rate": (definitive / n) if n else None,
+        "provisional_score_rate": (provisional / n) if n else None,
     }
 
 
@@ -768,12 +815,32 @@ def compute_matched_v3_v31_comparison(
 
 def compute_coverage_analytics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(rows)
-    scored = sum(1 for r in rows if r.get("score") is not None)
+    definitive = sum(
+        1 for r in rows if str(r.get("calculation_status") or "") == "score"
+    )
+    provisional = sum(
+        1
+        for r in rows
+        if str(r.get("calculation_status") or "") == "score_provisional"
+    )
+    scored = definitive + provisional
+    # anche score senza status esplicito (legacy)
+    scored_legacy = sum(
+        1
+        for r in rows
+        if r.get("score") is not None
+        and str(r.get("calculation_status") or "")
+        not in ("gate_failed", "non_calculable", "error", "score", "score_provisional")
+    )
+    scored += scored_legacy
     gate_failed = sum(
         1
         for r in rows
         if str(r.get("calculation_status") or "") == "gate_failed"
-        or (str(r.get("gate_status") or "") not in ("", "passed", "None") and r.get("score") is None)
+        or (
+            str(r.get("gate_status") or "") not in ("", "passed", "None")
+            and r.get("score") is None
+        )
     )
     non_calc = sum(
         1 for r in rows if str(r.get("calculation_status") or "") == "non_calculable"
@@ -784,12 +851,59 @@ def compute_coverage_analytics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     derived_q = sum(1 for r in rows if bool(r.get("is_derived_quote")))
     spr = score_production_rate(rows)
 
+    no_history = 0
+    below_min = 0
+    true_input_missing = 0
+    multipliers: list[float] = []
+    adj_points: list[float] = []
+    for r in rows:
+        status = str(r.get("calculation_status") or "")
+        hist_n = r.get("historical_sample_size")
+        try:
+            hn = int(hist_n) if hist_n is not None else None
+        except (TypeError, ValueError):
+            hn = None
+        if status == "score_provisional":
+            if hn == 0 or hn is None:
+                no_history += 1
+            elif hn < MIN_SAMPLE:
+                below_min += 1
+        if status == "non_calculable":
+            codes = r.get("reason_codes_json") or r.get("reason_codes") or []
+            if "historical_sample_insufficient" not in {str(c) for c in codes}:
+                true_input_missing += 1
+        mult, _ = reconstruct_historical_multiplier(r)
+        if mult is not None and status in ("score", "score_provisional"):
+            multipliers.append(mult)
+            theo = _f(r.get("value_score"))
+            qual = _f(r.get("quality_score"))
+            raw = _f(r.get("raw_score"))
+            if theo is not None and qual is not None and raw is not None:
+                theo_raw = theo * qual / 100.0
+                adj_points.append(raw - theo_raw)
+
     by_market = {}
     for mk in V31_MARKET_ORDER:
         subset = [r for r in rows if str(r.get("market_key")) == mk]
         by_market[mk] = {
             "rows": len(subset),
-            "scored": sum(1 for r in subset if r.get("score") is not None),
+            "scored": sum(
+                1
+                for r in subset
+                if r.get("score") is not None
+                and str(r.get("calculation_status") or "")
+                not in ("gate_failed", "non_calculable", "error")
+            ),
+            "definitive": sum(
+                1
+                for r in subset
+                if str(r.get("calculation_status") or "") == "score"
+            ),
+            "provisional": sum(
+                1
+                for r in subset
+                if str(r.get("calculation_status") or "") == "score_provisional"
+            ),
             "source_unavailable": sum(1 for r in subset if is_source_unavailable(r)),
             "real": sum(1 for r in subset if is_real_executable(r)),
             "derived": sum(1 for r in subset if bool(r.get("is_derived_quote"))),
@@ -800,18 +914,61 @@ def compute_coverage_analytics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for code in r.get("reason_codes_json") or r.get("reason_codes") or []:
             reason_counts[str(code)] += 1
 
+    recon_parts = definitive + provisional + gate_failed + non_calc + errors
+    # source unavailable may overlap; reconciliation uses calculation buckets
+    other = total - recon_parts
+    recon_ok = other == 0 or (scored_legacy == 0 and other == source_unavail)
+
+    pos_adj = sum(1 for a in adj_points if a > 0.05)
+    neu_adj = sum(1 for a in adj_points if abs(a) <= 0.05)
+    neg_adj = sum(1 for a in adj_points if a < -0.05)
+
     return {
         "evaluations_total": total,
         "scored": scored,
+        "score_definitive": definitive,
+        "score_provisional": provisional,
+        "theoretical_score_count": scored,
+        "definitive_score_count": definitive,
+        "provisional_score_count": provisional,
         "gate_failed": gate_failed,
         "non_calculable": non_calc,
+        "non_calculable_true_input_count": true_input_missing,
         "errors": errors,
         "source_market_unavailable": source_unavail,
+        "no_history_count": no_history,
+        "below_min_sample_count": below_min,
         "real_quotes": real_q,
         "derived_quotes": derived_q,
         "by_market": by_market,
         "markets_supported_count": len(PANEL_MARKET_KEYS),
         "reason_code_counts": dict(reason_counts),
+        "reconciliation": {
+            "evaluations_total": total,
+            "score_definitive": definitive,
+            "score_provisional": provisional,
+            "gate_failed": gate_failed,
+            "non_calculable": non_calc,
+            "errors": errors,
+            "sum_parts": recon_parts,
+            "ok": (definitive + provisional + gate_failed + non_calc + errors)
+            <= total,
+            "delta": total - recon_parts,
+        },
+        "historical_multiplier_stats": {
+            "mean": (sum(multipliers) / len(multipliers)) if multipliers else None,
+            "p10": _percentile(multipliers, 10) if multipliers else None,
+            "p50": _percentile(multipliers, 50) if multipliers else None,
+            "p90": _percentile(multipliers, 90) if multipliers else None,
+            "positive_adjustments": pos_adj,
+            "neutral_adjustments": neu_adj,
+            "negative_adjustments": neg_adj,
+            "average_adjustment_points": (
+                (sum(adj_points) / len(adj_points)) if adj_points else None
+            ),
+            "max_uplift": max(adj_points) if adj_points else None,
+            "max_reduction": min(adj_points) if adj_points else None,
+        },
         **spr,
     }
 
@@ -888,6 +1045,34 @@ def build_v31_analytics_payload(
     psh_holdout = compute_positive_signal_health(holdout_rows)
     psh["holdout_high_count"] = psh_holdout.get("high_count")
     thresholds = compute_threshold_performance(rows)
+    all_scored_real = [
+        r
+        for r in rows
+        if is_real_executable(r)
+        and r.get("score") is not None
+        and str(r.get("calculation_status") or "")
+        not in ("gate_failed", "non_calculable", "error")
+    ]
+    definitive_only = [
+        r
+        for r in all_scored_real
+        if str(r.get("calculation_status") or "") == "score"
+    ]
+    provisional_only = [
+        r
+        for r in all_scored_real
+        if str(r.get("calculation_status") or "") == "score_provisional"
+    ]
+    perf_blocks = {
+        "all_scored_real": compute_threshold_performance(all_scored_real),
+        "definitive_only": compute_threshold_performance(definitive_only),
+        "provisional_only": compute_threshold_performance(provisional_only),
+        "counts": {
+            "all_scored_real": len(all_scored_real),
+            "definitive_only": len(definitive_only),
+            "provisional_only": len(provisional_only),
+        },
+    }
     ordering = compute_ordering_diagnostics(rows)
     decomposition = compute_decomposition(rows)
     comparison = compute_matched_v3_v31_comparison(rows, v3_rows or [])
@@ -907,6 +1092,9 @@ def build_v31_analytics_payload(
         ),
     }
 
+    formula_version = str(
+        meta.get("formula_version") or ctx.get("formula_version") or ""
+    )
     analytics = {
         "schema_version": ANALYTICS_SCHEMA_VERSION_V31,
         "generated_at": _utcnow_iso(),
@@ -916,6 +1104,7 @@ def build_v31_analytics_payload(
         "score_distribution": distribution,
         "positive_signal_health": psh,
         "performance_real": thresholds,
+        "performance_blocks": perf_blocks,
         "thresholds": thresholds,
         "top_percentiles": {
             k: thresholds[k]
@@ -928,6 +1117,7 @@ def build_v31_analytics_payload(
         "v3_comparison": comparison,
         "derived_quotes_diagnostic": derived_section,
         "markets": coverage.get("by_market"),
+        "historical_multiplier_stats": coverage.get("historical_multiplier_stats"),
     }
 
     ctx.setdefault("has_independent_holdout", False)
@@ -935,6 +1125,10 @@ def build_v31_analytics_payload(
     ctx.setdefault("holdout_high_count", psh_holdout.get("high_count"))
     ctx.setdefault("score_production_rate", coverage.get("score_production_rate"))
     ctx.setdefault("scored_real_count", psh.get("scored_real_count"))
+    ctx.setdefault("definitive_score_count", coverage.get("definitive_score_count"))
+    ctx.setdefault("provisional_score_count", coverage.get("provisional_score_count"))
+    ctx.setdefault("performance_blocks", perf_blocks)
+    ctx.setdefault("reconciliation", coverage.get("reconciliation"))
     ctx.setdefault("v3_comparison", comparison)
     ctx.setdefault("ordering", ordering)
     ctx.setdefault(
@@ -948,7 +1142,17 @@ def build_v31_analytics_payload(
         (ordering.get("baseline_scored_real") or {}).get("roi"),
     )
     ctx.setdefault("high_vs_all_uplift", ordering.get("high_vs_all_uplift"))
+    ctx.setdefault("formula_version", formula_version)
 
-    decision = evaluate_purchasability_v31_go_no_go(analytics, context=ctx)
+    if (
+        formula_version == PURCHASABILITY_V31_FORMULA_VERSION
+        or "empirical_v2" in formula_version
+        or not formula_version
+    ):
+        decision = evaluate_purchasability_v31_go_no_go_v2(analytics, context=ctx)
+    elif formula_version == PURCHASABILITY_V31_FORMULA_VERSION_V1:
+        decision = evaluate_purchasability_v31_go_no_go(analytics, context=ctx)
+    else:
+        decision = evaluate_purchasability_v31_go_no_go_v2(analytics, context=ctx)
     analytics["decision"] = decision
     return analytics

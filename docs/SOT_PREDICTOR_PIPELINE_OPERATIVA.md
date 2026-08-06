@@ -1,5 +1,12 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Acquistabilità V3.1 — empirical_v2 storico non bloccante (2026-08-06)
+
+1. Live/shadow: `formula_version=empirical_v2`; sample&lt;30 → `score_provisional` (non `non_calculable`).
+2. Replay Lab: `formula_version=v31` punta a v2; `v31_v1` ripristina empirical_v1.
+3. GO/NO-GO `purchasability_v31_go_no_go_v2`; GO_FINAL solo su definitive.
+4. V3 resta operativa; nessuna promozione automatica.
+
 ## Acquistabilità V3.1 — Fase 2B replay + GO/NO-GO (2026-08-06)
 
 1. Preflight/start/analytics/decision con `formula_version=v31` (stesse tabelle replay V3).

@@ -2571,7 +2571,8 @@ def _explain_purchasability_v31(
     mk = str(row.get("market_key") or "")
     formula = (
         "theoretical_raw = value × theoretical_quality / 100; "
-        "raw_score_v31 = theoretical_raw × historical_factor; "
+        "historical_multiplier = 1 + (HR - 50) / 100; "
+        "raw_score_v31 = clamp(theoretical_raw × historical_multiplier, 0, 100); "
         "score_v31 = ROUND_HALF_UP(raw_score_v31)"
     )
     source = preview_item if isinstance(preview_item, dict) else {}
@@ -2616,16 +2617,21 @@ def _explain_purchasability_v31(
     status = str(source.get("status") or "non_calculable")
     score = source.get("score")
     klass = source.get("class")
+    expl_status = (
+        "ok"
+        if status in ("score", "score_provisional")
+        else ("partial" if status == "gate_failed" else "partial")
+    )
 
     return _base_explanation(
         market_key=mk,
         market_label=market_label,
         metric_key="purchasability_v31",
-        status="ok" if status == "score" else "partial",
+        status=expl_status,
         calculation_type="purchasability_v31_shadow",
         description=(
-            "Acquistabilità V3.1 shadow: valore teorico V3 × fattore empirico "
-            "Affidabilità storica. Solo quote Book reali."
+            "Acquistabilità V3.1 shadow: valore teorico × moltiplicatore storico "
+            "neutrale (HR=50 → ×1). Solo quote Book reali."
         ),
         purpose="Candidate shadow — non ufficiale, non promuove V3.1.",
         formula_symbolic=formula,
@@ -2670,7 +2676,13 @@ def _explain_purchasability_v31(
             "class_v31": klass,
             "raw_score_v31": source.get("raw_score_v31") or source.get("raw_score"),
             "theoretical_raw_score": theoretical.get("theoretical_raw_score"),
-            "historical_factor": historical.get("historical_factor"),
+            "historical_multiplier": historical.get("historical_multiplier")
+            or source.get("historical_multiplier"),
+            "historical_adjustment_points": historical.get(
+                "historical_adjustment_points"
+            )
+            or source.get("historical_adjustment_points"),
+            "calculation_quality": source.get("calculation_quality"),
         },
         consistency={"status": "computed", "delta": None},
         rounding=source.get("rounding")
@@ -2684,10 +2696,25 @@ def _explain_purchasability_v31(
             "score": score,
             "class": klass,
             "raw_score_v31": source.get("raw_score_v31") or source.get("raw_score"),
+            "candidate_version": source.get("candidate_version")
+            or preview_meta.get("candidate_version"),
+            "audit_version": source.get("audit_version")
+            or preview_meta.get("audit_version"),
+            "generated_at": preview_meta.get("generated_at"),
+            "source_snapshot_at": preview_meta.get("source_snapshot_at"),
+            "source_snapshot_verified": preview_meta.get("source_snapshot_verified"),
+            "registry_status": source.get("registry_status")
+            or preview_meta.get("registry_status"),
+            "calculation_quality": source.get("calculation_quality"),
             "gate": gate,
             "gate_status": source.get("gate_status") or gate.get("gate_status"),
             "gate_reason_codes": list(
                 source.get("gate_reason_codes") or gate.get("gate_reason_codes") or []
+            ),
+            "historical_reason_codes": list(
+                source.get("historical_reason_codes")
+                or historical.get("historical_reason_codes")
+                or []
             ),
             "input": inp,
             "fair_book": fair,
@@ -2701,9 +2728,8 @@ def _explain_purchasability_v31(
             "reason_codes": list(source.get("reason_codes") or []),
             "candidate_name": source.get("candidate_name")
             or preview_meta.get("candidate_name"),
-            "registry_status": source.get("registry_status")
-            or preview_meta.get("registry_status"),
-            "formula_config_version": source.get("formula_config_version"),
+            "formula_config_version": source.get("formula_config_version")
+            or preview_meta.get("formula_config_version"),
             "shadow_candidate": True,
             "current_operational_version": False,
             "sections": {
@@ -2711,6 +2737,7 @@ def _explain_purchasability_v31(
                     "score": score,
                     "class": klass,
                     "status": status,
+                    "calculation_quality": source.get("calculation_quality"),
                     "reading": source.get("reading_short"),
                 },
                 "gate": gate,
@@ -2725,6 +2752,10 @@ def _explain_purchasability_v31(
                     "edge_pct": inp.get("edge_pct"),
                     "value_score": theoretical.get("value_score")
                     or source.get("value_score"),
+                    "theoretical_raw_score": theoretical.get("theoretical_raw_score"),
+                    "theoretical_quality_score": theoretical.get(
+                        "theoretical_quality_score"
+                    ),
                 },
                 "penalties": source.get("penalties") or theoretical.get("penalties"),
                 "family_ambiguity": {
@@ -2735,7 +2766,12 @@ def _explain_purchasability_v31(
                 "historical_reliability": historical,
                 "final_calculation": {
                     "theoretical_raw_score": theoretical.get("theoretical_raw_score"),
-                    "historical_factor": historical.get("historical_factor"),
+                    "historical_multiplier": historical.get("historical_multiplier")
+                    or source.get("historical_multiplier"),
+                    "historical_adjustment_points": historical.get(
+                        "historical_adjustment_points"
+                    )
+                    or source.get("historical_adjustment_points"),
                     "raw_score_v31": source.get("raw_score_v31")
                     or source.get("raw_score"),
                     "score_v31": score,

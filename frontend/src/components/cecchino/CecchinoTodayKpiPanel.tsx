@@ -216,7 +216,7 @@ function PurchasabilityV31Cell({
         <span className="flex items-center gap-1">
           <span
             className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityV31BadgeClass(
-              state.classLabel,
+              state.classLabel?.replace(' provvisoria', '') ?? state.classLabel,
             )}`}
           >
             {state.score}
@@ -235,6 +235,36 @@ function PurchasabilityV31Cell({
           >
             {state.strongBuyReading}
           </span>
+        ) : null}
+        {state.subtitle ? (
+          <span className="mt-0.5 block text-[9px] text-slate-400">{state.subtitle}</span>
+        ) : null}
+      </span>
+    )
+  }
+
+  if (state.kind === 'score_provisional' && state.showScoreBadge) {
+    return (
+      <span
+        className="text-left"
+        aria-label={ariaParts.join('. ')}
+        data-testid="purchasability-v31-cell"
+        data-v31-kind="score_provisional"
+      >
+        <span className="flex items-center gap-1">
+          <span
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityV31BadgeClass(
+              state.classLabel?.replace(' provvisoria', '') ?? null,
+            )}`}
+          >
+            {state.score}
+          </span>
+          <span className="rounded border border-amber-400/50 bg-amber-500/20 px-1 py-0.5 text-[8px] font-medium text-amber-200">
+            Provvisorio
+          </span>
+        </span>
+        {state.classLabel ? (
+          <span className="mt-0.5 block text-[9px] text-slate-300">{state.classLabel}</span>
         ) : null}
         {state.subtitle ? (
           <span className="mt-0.5 block text-[9px] text-slate-400">{state.subtitle}</span>

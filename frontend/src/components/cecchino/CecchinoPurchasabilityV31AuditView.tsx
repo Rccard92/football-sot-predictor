@@ -19,7 +19,48 @@ function asRecord(v: unknown): UnknownRecord | null {
 
 function asString(v: unknown): string | null {
   if (v == null) return null
-  return String(v)
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return null
+}
+
+function formatAuditResult(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    return String(v)
+  }
+  const rec = asRecord(v)
+  if (!rec) return '—'
+  const parts: string[] = []
+  if (rec.status != null) parts.push(`status=${String(rec.status)}`)
+  if (rec.score_v31 != null || rec.score != null) {
+    parts.push(`score=${String(rec.score_v31 ?? rec.score)}`)
+  }
+  if (rec.class_v31 != null || rec.class != null) {
+    parts.push(`class=${String(rec.class_v31 ?? rec.class)}`)
+  }
+  if (rec.theoretical_raw_score != null) {
+    parts.push(`theo=${String(rec.theoretical_raw_score)}`)
+  }
+  if (rec.historical_multiplier != null) {
+    parts.push(`mult=${String(rec.historical_multiplier)}`)
+  }
+  if (rec.calculation_quality != null) {
+    parts.push(`quality=${String(rec.calculation_quality)}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : '—'
+}
+
+function formatSafeDisplay(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    return String(v)
+  }
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return '—'
+  }
 }
 
 function asNumber(v: unknown): number | null {
@@ -151,18 +192,59 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
   const gateReasonCode = asString(gate.reason_code)
   const gateReason = asString(gate.reason)
 
-  const theoreticalRaw = asNumber(theoreticalValue.theoretical_raw) ?? asNumber(finalCalculation.theoretical_raw)
-  const historicalFactor = asNumber(historicalReliability.factor) ?? asNumber(finalCalculation.historical_factor)
+  const candidateVersion =
+    asString(explRec.candidate_version) ??
+    asString(input.candidate_version) ??
+    asString(v31Explanation.candidate_version) ??
+    asString(finalState.candidate_version)
+  const formulaVersion =
+    explanation.formula_version ??
+    asString(v31Explanation.formula_version) ??
+    asString(explRec.formula_version)
+  const auditVersion =
+    asString(explRec.audit_version) ??
+    asString(v31Explanation.audit_version) ??
+    asString(input.audit_version)
+  const generatedAt =
+    asString(explRec.generated_at) ??
+    asString(dataOrigin.generated_at) ??
+    asString(v31Explanation.generated_at)
+  const sourceSnapshotAt =
+    asString(explRec.source_snapshot_at) ??
+    asString(dataOrigin.source_snapshot_at) ??
+    asString(v31Explanation.source_snapshot_at)
+  const registryStatus =
+    asString(explRec.registry_status) ??
+    asString(v31Explanation.registry_status) ??
+    asString(input.registry_status)
+  const calculationQuality =
+    asString(finalState.calculation_quality) ??
+    asString(v31Explanation.calculation_quality) ??
+    asString(explRec.calculation_quality)
+  const formulaConfigVersion =
+    asString(explRec.formula_config_version) ??
+    asString(v31Explanation.formula_config_version)
 
-  const candidateVersion = asString(explRec.candidate_version) ?? asString(input.candidate_version)
-  const formulaVersion = explanation.formula_version ?? asString(v31Explanation.formula_version)
-  const auditVersion = asString(explRec.audit_version)
-  const generatedAt = asString(explRec.generated_at) ?? asString(dataOrigin.generated_at)
-  const sourceSnapshotAt = asString(explRec.source_snapshot_at) ?? asString(dataOrigin.source_snapshot_at)
+  const historicalMultiplier =
+    asNumber(historicalReliability.historical_multiplier) ??
+    asNumber(finalCalculation.historical_multiplier) ??
+    asNumber(explRec.historical_multiplier) ??
+    asNumber(historicalReliability.factor) ??
+    asNumber(finalCalculation.historical_factor)
+  const adjPoints =
+    asNumber(historicalReliability.historical_adjustment_points) ??
+    asNumber(finalCalculation.historical_adjustment_points)
+  const theoreticalRaw =
+    asNumber(theoreticalValue.theoretical_raw_score) ??
+    asNumber(theoreticalValue.theoretical_raw) ??
+    asNumber(finalCalculation.theoretical_raw_score) ??
+    asNumber(finalCalculation.theoretical_raw)
 
+  const isProvisional = status === 'score_provisional'
   const isNonCalculable = status === 'non_calculable'
-  const isGateFailed = status === 'gate_failed' || (!isNonCalculable && !gatePassed && score == null)
-  const hasScore = status === 'score' && score != null
+  const isGateFailed = status === 'gate_failed' || (!isNonCalculable && !isProvisional && !gatePassed && score == null)
+  const hasScore =
+    (status === 'score' || status === 'score_provisional') && score != null
 
   const v3Score = asNumber(comparisonWithV3.v3_score)
   const v31Score = asNumber(comparisonWithV3.v31_score) ?? score
@@ -190,7 +272,9 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
               data-testid="v31-status"
             >
               {hasScore
-                ? 'Score calcolato'
+                ? isProvisional
+                  ? 'Score provvisorio'
+                  : 'Score calcolato'
                 : isGateFailed
                   ? 'Non attivato'
                   : isNonCalculable
@@ -201,7 +285,7 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
           <DlRow label="Acquistabilità V3.1">
             <span data-testid="v31-score-final">
               {hasScore && score != null
-                ? `${score}${klass ? ` — ${klass}` : ''}`
+                ? `${score}${klass ? ` — ${klass}` : ''}${isProvisional ? ' (provvisorio)' : ''}`
                 : isGateFailed
                   ? 'Indice non attivato'
                   : isNonCalculable
@@ -331,22 +415,42 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
       ) : null}
 
       {/* Affidabilità storica */}
-      {gatePassed && (historicalFactor != null || asNumber(historicalReliability.score) != null) ? (
+      {gatePassed && (historicalMultiplier != null || asNumber(historicalReliability.historical_reliability_score) != null || asNumber(historicalReliability.score) != null || hasScore) ? (
         <Section title="Affidabilità storica" testId="v31-section-historical">
           <dl className="space-y-1.5">
-            <DlRow label="Fattore storico">
+            <DlRow label="Moltiplicatore storico">
               <span data-testid="v31-historical-factor">
-                {formatV3Number(historicalFactor)}
+                {historicalMultiplier != null ? formatV3Number(historicalMultiplier, 4) : '—'}
               </span>
             </DlRow>
-            {asNumber(historicalReliability.score) != null ? (
-              <DlRow label="Score affidabilità">{formatV3Number(asNumber(historicalReliability.score), 0)}</DlRow>
+            {asNumber(historicalReliability.historical_reliability_score) != null || asNumber(historicalReliability.score) != null ? (
+              <DlRow label="Score affidabilità">
+                {formatV3Number(
+                  asNumber(historicalReliability.historical_reliability_score) ??
+                    asNumber(historicalReliability.score),
+                  0,
+                )}
+              </DlRow>
+            ) : null}
+            {asString(historicalReliability.historical_evidence_quality) ? (
+              <DlRow label="Qualità evidenza">
+                {asString(historicalReliability.historical_evidence_quality)}
+              </DlRow>
             ) : null}
             {asString(historicalReliability.class) ? (
               <DlRow label="Classe">{asString(historicalReliability.class)}</DlRow>
             ) : null}
-            {asNumber(historicalReliability.sample_size) != null ? (
-              <DlRow label="Campione">{asNumber(historicalReliability.sample_size)} casi</DlRow>
+            {asNumber(historicalReliability.sample_size) != null ||
+            asNumber(historicalReliability.selected_sample_size) != null ? (
+              <DlRow label="Campione">
+                {asNumber(historicalReliability.selected_sample_size) ??
+                  asNumber(historicalReliability.sample_size)}
+                {' / '}
+                {asNumber(historicalReliability.min_sample) ?? 30} casi
+              </DlRow>
+            ) : null}
+            {adjPoints != null ? (
+              <DlRow label="Adjustment points">{formatV3Number(adjPoints, 4)}</DlRow>
             ) : null}
           </dl>
         </Section>
@@ -357,22 +461,40 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
         <Section title="Calcolo finale" testId="v31-section-final">
           <dl className="space-y-1.5 text-sm">
             <DlRow label="Valore teorico grezzo">{formatV3Number(theoreticalRaw)}</DlRow>
-            <DlRow label="Fattore storico">{formatV3Number(historicalFactor)}</DlRow>
+            <DlRow label="Moltiplicatore storico">
+              {historicalMultiplier != null ? formatV3Number(historicalMultiplier, 4) : '—'}
+            </DlRow>
             <DlRow label="Risultato grezzo">
               <span data-testid="v31-raw-result">
-                {formatV3Number(asNumber(finalCalculation.raw_result))}
+                {formatV3Number(
+                  asNumber(finalCalculation.raw_score_v31) ??
+                    asNumber(finalCalculation.raw_result),
+                )}
               </span>
             </DlRow>
-            <DlRow label="Arrotondamento">{asString(finalCalculation.rounding) ?? 'ROUND_HALF_UP'}</DlRow>
+            <DlRow label="Arrotondamento">
+              {asString(asRecord(finalCalculation.rounding)?.policy) ??
+                asString(finalCalculation.rounding) ??
+                'ROUND_HALF_UP'}
+            </DlRow>
             <DlRow label="Score finale">
-              <span className="font-semibold" data-testid="v31-final-score">{score}</span>
+              <span className="font-semibold" data-testid="v31-final-score">
+                {score}
+                {isProvisional ? ' (provvisorio)' : ''}
+              </span>
             </DlRow>
           </dl>
           <p
             className="mt-2 rounded-md bg-slate-50 px-2.5 py-2 font-mono text-sm text-slate-900"
             data-testid="v31-final-formula"
           >
-            {formatV3Number(theoreticalRaw)} × {formatV3Number(historicalFactor)} = {formatV3Number(asNumber(finalCalculation.raw_result))} → ROUND_HALF_UP = {score}
+            {formatV3Number(theoreticalRaw)} ×{' '}
+            {historicalMultiplier != null ? formatV3Number(historicalMultiplier, 4) : '?'} ={' '}
+            {formatV3Number(
+              asNumber(finalCalculation.raw_score_v31) ??
+                asNumber(finalCalculation.raw_result),
+            )}{' '}
+            → ROUND_HALF_UP = {score}
           </p>
         </Section>
       ) : null}
@@ -431,7 +553,7 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
             </DlRow>
             <DlRow label="Risultato audit">
               <span data-testid="v31-audit-result">
-                {explanation.audit_result == null ? '—' : String(explanation.audit_result)}
+                {formatAuditResult(explanation.audit_result)}
               </span>
             </DlRow>
             <DlRow label="Consistency">
@@ -443,8 +565,32 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
             <DlRow label="formula_version">
               <span data-testid="v31-formula-version">{formulaVersion ?? '—'}</span>
             </DlRow>
+            <DlRow label="formula_config_version">
+              <span data-testid="v31-formula-config-version">{formulaConfigVersion ?? '—'}</span>
+            </DlRow>
             <DlRow label="audit_version">
               <span data-testid="v31-audit-version">{auditVersion ?? '—'}</span>
+            </DlRow>
+            <DlRow label="registry_status">
+              <span data-testid="v31-registry-status">{registryStatus ?? '—'}</span>
+            </DlRow>
+            <DlRow label="calculation_quality">
+              <span data-testid="v31-calculation-quality">{calculationQuality ?? '—'}</span>
+            </DlRow>
+            <DlRow label="historical_multiplier">
+              <span data-testid="v31-historical-multiplier">
+                {historicalMultiplier != null ? formatV3Number(historicalMultiplier, 4) : '—'}
+              </span>
+            </DlRow>
+            <DlRow label="historical_adjustment_points">
+              <span data-testid="v31-historical-adjustment">
+                {adjPoints != null ? formatV3Number(adjPoints, 4) : '—'}
+              </span>
+            </DlRow>
+            <DlRow label="theoretical_raw_score">
+              <span data-testid="v31-theoretical-raw-meta">
+                {theoreticalRaw != null ? formatV3Number(theoreticalRaw, 4) : '—'}
+              </span>
             </DlRow>
             <DlRow label="generated_at">
               <span data-testid="v31-generated-at">{generatedAt ?? '—'}</span>
@@ -510,7 +656,7 @@ export function CecchinoPurchasabilityV31AuditView({ explanation }: Props) {
                     {Object.entries(input).map(([k, v]) => (
                       <tr key={k} className="border-t border-slate-100">
                         <td className="px-2 py-1 font-mono text-[10px]">{k}</td>
-                        <td className="px-2 py-1 tabular-nums">{v == null ? '—' : String(v)}</td>
+                        <td className="px-2 py-1 tabular-nums">{formatSafeDisplay(v)}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -134,7 +134,7 @@ Route FE: `/monitoraggio-moduli`.
 | Validation | `cecchino_purchasability_validation_v1` |
 | Policy | `cecchino_purchasability_promotion_policy_v1` |
 | V3 ufficiale | `fixed_discount_v3` (invariata; ancora default operativo UI) |
-| V3.1 shadow | `purchasability_v31_shadow` / `cecchino_purchasability_v31_fixed_discount_empirical_v1` (`shadow_candidate`, non promossa; replay Lab 2B + `purchasability_v31_go_no_go_v1`; promozione solo `GO_FINAL`) |
+| V3.1 shadow | `purchasability_v31_shadow` / `cecchino_purchasability_v31_fixed_discount_empirical_v2` (`shadow_candidate`; v1 frozen riproducibile; `go_no_go_v2`; storico non bloccante; promozione solo `GO_FINAL`) |
 | Operational version | `v3` (default); fallback `v3`; stato runtime `.runtime/purchasability_operational_state.json` |
 | KPI panel mapping | `kpi_markets_v31_phase1` |
 | Goal OU Cecchino | `goal_market_poisson_empirical_v2` (coppie condivise Fase 1B) |
