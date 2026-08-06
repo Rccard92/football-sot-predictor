@@ -237,6 +237,7 @@ export function HistoricalRunGoalIntensityBenchmark({
   if (!completed) {
     return (
       <section
+        id="gi-benchmark"
         data-testid="historical-run-gi-benchmark"
         className="rounded-xl border p-4 opacity-70"
         style={{ borderColor: 'var(--lab-border)', background: 'var(--lab-surface)' }}
@@ -258,6 +259,7 @@ export function HistoricalRunGoalIntensityBenchmark({
 
   return (
     <section
+      id="gi-benchmark"
       data-testid="historical-run-gi-benchmark"
       className="rounded-xl border p-4"
       style={{ borderColor: 'var(--lab-border)', background: 'var(--lab-surface)' }}

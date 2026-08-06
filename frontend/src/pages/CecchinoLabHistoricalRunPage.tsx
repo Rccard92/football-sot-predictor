@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import { HistoricalRunBalance } from '../components/cecchino-data-lab/historical-run/HistoricalRunBalance'
 import { HistoricalRunCompetitions } from '../components/cecchino-data-lab/historical-run/HistoricalRunCompetitions'
@@ -72,6 +72,7 @@ function idleSection<T>(): SectionState<T> {
 export function CecchinoLabHistoricalRunPage() {
   const { runId: runIdParam } = useParams()
   const runId = Number(runIdParam)
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = useMemo(
     () => parseHistoricalRunFiltersFromSearch(searchParams.toString()),
@@ -143,6 +144,14 @@ export function CecchinoLabHistoricalRunPage() {
   useEffect(() => {
     void loadOverview()
   }, [loadOverview])
+
+  useEffect(() => {
+    if (location.hash !== '#gi-benchmark') return
+    if (!overview.data) return
+    const el = document.getElementById('gi-benchmark')
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [location.hash, overview.data])
 
   useEffect(() => {
     const status = overview.data?.run.status

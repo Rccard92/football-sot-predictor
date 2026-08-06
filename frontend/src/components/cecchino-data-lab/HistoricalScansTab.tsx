@@ -612,6 +612,22 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                     {r.status.startsWith('completed') ? (
                       <>
                         <Link
+                          to={`/cecchino-lab/historical-scans/${r.id}`}
+                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                          data-testid={`historical-dashboard-link-${r.id}`}
+                        >
+                          Dashboard run
+                        </Link>
+                        {' · '}
+                        <Link
+                          to={`/cecchino-lab/historical-scans/${r.id}#gi-benchmark`}
+                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                          data-testid={`historical-gi-benchmark-link-${r.id}`}
+                        >
+                          Benchmark Goal
+                        </Link>
+                        {' · '}
+                        <Link
                           to={`/cecchino-lab/historical-scans/${r.id}/kpi-signals`}
                           className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
                           data-testid={`historical-kpi-link-${r.id}`}

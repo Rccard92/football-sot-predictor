@@ -45,13 +45,19 @@ beforeEach(() => {
 })
 
 describe('HistoricalScansTab STEP 4B navigation', () => {
-  it('mostra Analisi KPI, Segnali A–F, Report; nasconde Apri analisi e Verifica replay', async () => {
+  it('mostra Dashboard run, Benchmark Goal, Analisi KPI, Segnali A–F, Report; nasconde Apri analisi e Verifica replay', async () => {
     render(
       <MemoryRouter>
         <HistoricalScansTab refreshKey={0} />
       </MemoryRouter>,
     )
-    await waitFor(() => expect(screen.getByTestId('historical-kpi-link-3')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('historical-dashboard-link-3')).toBeTruthy())
+    const dashboard = screen.getByTestId('historical-dashboard-link-3')
+    expect(dashboard.getAttribute('href')).toBe('/cecchino-lab/historical-scans/3')
+    const giBench = screen.getByTestId('historical-gi-benchmark-link-3')
+    expect(giBench.getAttribute('href')).toContain('/cecchino-lab/historical-scans/3')
+    expect(giBench.getAttribute('href')).toContain('#gi-benchmark')
+    expect(screen.getByTestId('historical-kpi-link-3')).toBeTruthy()
     expect(screen.getByTestId('historical-signals-af-link-3')).toBeTruthy()
     expect(screen.getByTestId('historical-report-link-3')).toBeTruthy()
     expect(screen.queryByText('Apri analisi')).toBeNull()
