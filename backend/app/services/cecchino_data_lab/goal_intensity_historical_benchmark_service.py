@@ -218,11 +218,29 @@ def can_resume_job(job: CecchinoLabGoalIntensityBenchmarkJob) -> bool:
 # Per-job advisory lock (no new dependency; PG + process fallback)
 # ---------------------------------------------------------------------------
 
+_GI_BENCH_PG_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(CAST(:lock_key AS bigint))"
+_GI_BENCH_PG_UNLOCK_SQL = "SELECT pg_advisory_unlock(CAST(:lock_key AS bigint))"
+
 
 class GiBenchJobLockNotAcquired(Exception):
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
         super().__init__("gi_bench_job_lock_not_acquired")
+
+
+def build_gi_bench_advisory_lock_key(job_id: int) -> int:
+    """Deterministic signed bigint advisory key from namespace + job_id.
+
+    Combines unsigned 32-bit namespace and unsigned 32-bit job_id into a 64-bit
+    value, then maps into PostgreSQL signed bigint range [-2^63, 2^63-1].
+    Stable across processes (does not use Python hash()).
+    """
+    ns = int(GI_BENCH_ADVISORY_LOCK_NAMESPACE) & 0xFFFFFFFF
+    jid = int(job_id) & 0xFFFFFFFF
+    unsigned64 = (ns << 32) | jid
+    if unsigned64 >= (1 << 63):
+        return int(unsigned64 - (1 << 64))
+    return int(unsigned64)
 
 
 def _is_postgres(engine: Engine) -> bool:
@@ -236,7 +254,7 @@ def acquire_gi_bench_job_lock(
     *,
     engine: Engine | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Session-level PG advisory lock keyed by (namespace, job_id); process fallback otherwise."""
+    """Session-level PG advisory lock keyed by signed bigint; process fallback otherwise."""
     if engine is None:
         from app.core.database import engine as default_engine
 
@@ -253,18 +271,20 @@ def acquire_gi_bench_job_lock(
 def _acquire_gi_bench_pg_lock(
     engine: Engine, job_id: int, started: float
 ) -> Generator[dict[str, Any], None, None]:
+    lock_key = build_gi_bench_advisory_lock_key(job_id)
     conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
     acquired = False
     try:
         row = conn.execute(
-            text("SELECT pg_try_advisory_lock(:k1, :k2)"),
-            {"k1": int(GI_BENCH_ADVISORY_LOCK_NAMESPACE), "k2": int(job_id)},
+            text(_GI_BENCH_PG_TRY_LOCK_SQL),
+            {"lock_key": int(lock_key)},
         ).scalar()
         acquired = bool(row)
         payload = {
             "acquired": acquired,
             "backend": "postgresql_advisory",
             "lock_namespace": GI_BENCH_ADVISORY_LOCK_NAMESPACE,
+            "lock_key": lock_key,
             "job_id": job_id,
             "waited_seconds": round(time.monotonic() - started, 3),
         }
@@ -275,8 +295,8 @@ def _acquire_gi_bench_pg_lock(
         finally:
             try:
                 conn.execute(
-                    text("SELECT pg_advisory_unlock(:k1, :k2)"),
-                    {"k1": int(GI_BENCH_ADVISORY_LOCK_NAMESPACE), "k2": int(job_id)},
+                    text(_GI_BENCH_PG_UNLOCK_SQL),
+                    {"lock_key": int(lock_key)},
                 )
             except Exception:
                 logger.exception("gi_bench unlock failed job_id=%s", job_id)
@@ -290,6 +310,7 @@ def _acquire_gi_bench_pg_lock(
 def _acquire_gi_bench_process_lock(
     job_id: int, started: float
 ) -> Generator[dict[str, Any], None, None]:
+    lock_key = build_gi_bench_advisory_lock_key(job_id)
     with _job_process_locks_guard:
         lock = _job_process_locks.get(job_id)
         if lock is None:
@@ -300,6 +321,7 @@ def _acquire_gi_bench_process_lock(
         "acquired": acquired,
         "backend": "process_threading",
         "lock_namespace": GI_BENCH_ADVISORY_LOCK_NAMESPACE,
+        "lock_key": lock_key,
         "job_id": job_id,
         "waited_seconds": round(time.monotonic() - started, 3),
     }
@@ -309,6 +331,36 @@ def _acquire_gi_bench_process_lock(
         yield payload
     finally:
         lock.release()
+
+
+def _persist_advisory_lock_acquisition_failure(job_id: int, exc: BaseException) -> None:
+    """Mark job failed/resumable when advisory lock acquisition raises a technical error."""
+    db = SessionLocal()
+    try:
+        job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
+        if job is None:
+            return
+        now = _utcnow()
+        job.status = STATUS_FAILED
+        job.error_json = {
+            "type": type(exc).__name__,
+            "error": str(exc)[:1000],
+            "phase": "advisory_lock_acquisition",
+            "timestamp": now.isoformat(),
+        }
+        job.completed_at = now
+        job.last_checkpoint_at = now
+        db.commit()
+    except Exception:
+        logger.exception(
+            "gi_bench failed to persist advisory_lock_acquisition error job=%s", job_id
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1294,17 +1346,22 @@ def _apply_result_to_row(
 
 def _run_job_worker(job_id: int) -> None:
     lock_cm = None
+    db = None
     try:
-        lock_cm = acquire_gi_bench_job_lock(int(job_id))
-        lock_cm.__enter__()
-    except GiBenchJobLockNotAcquired:
-        logger.warning("gi_bench_job_lock_busy job=%s", job_id)
-        with _lock:
-            _active_threads.pop(job_id, None)
-        return
+        try:
+            lock_cm = acquire_gi_bench_job_lock(int(job_id))
+            lock_cm.__enter__()
+        except GiBenchJobLockNotAcquired:
+            logger.warning("gi_bench_job_lock_busy job=%s", job_id)
+            return
+        except Exception as lock_exc:  # noqa: BLE001
+            logger.exception(
+                "gi_bench_advisory_lock_acquisition_failed job=%s", job_id
+            )
+            _persist_advisory_lock_acquisition_failure(int(job_id), lock_exc)
+            return
 
-    db = SessionLocal()
-    try:
+        db = SessionLocal()
         job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
         if job is None:
             return
@@ -1573,18 +1630,26 @@ def _run_job_worker(job_id: int) -> None:
         db.commit()
     except Exception as exc:  # noqa: BLE001
         logger.exception("gi_bench_job_failed job=%s", job_id)
-        try:
-            job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
-            if job is not None:
-                job.status = STATUS_FAILED
-                job.error_json = {"error": str(exc)[:1000], "type": type(exc).__name__}
-                job.completed_at = _utcnow()
-                job.last_checkpoint_at = _utcnow()
-                db.commit()
-        except Exception:
-            db.rollback()
+        if db is not None:
+            try:
+                job = db.get(CecchinoLabGoalIntensityBenchmarkJob, int(job_id))
+                if job is not None:
+                    job.status = STATUS_FAILED
+                    job.error_json = {"error": str(exc)[:1000], "type": type(exc).__name__}
+                    job.completed_at = _utcnow()
+                    job.last_checkpoint_at = _utcnow()
+                    db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
     finally:
-        db.close()
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                logger.exception("gi_bench worker db close failed job=%s", job_id)
         if lock_cm is not None:
             try:
                 lock_cm.__exit__(None, None, None)

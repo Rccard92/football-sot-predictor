@@ -18,11 +18,13 @@ from app.models.cecchino_goal_intensity_v5_preview import (
 from app.models.cecchino_lab_goal_intensity_benchmark_job import (
     CONFIRM_FULL,
     CONFIRM_PILOT,
+    GI_BENCH_ADVISORY_LOCK_NAMESPACE,
     JOB_VERSION,
     MODE_FULL,
     MODE_PILOT,
     REQUIRED_BUNDLE_VERSION,
     STATUS_COMPLETED,
+    STATUS_FAILED,
     STATUS_QUEUED,
 )
 from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import V4_MODEL_ID
@@ -950,12 +952,239 @@ def test_resume_allows_stale_running():
 
 
 def test_advisory_lock_blocks_second_worker():
+    """Fallback process-local only for non-PostgreSQL."""
     engine = MagicMock()
     engine.dialect.name = "sqlite"
     with svc.acquire_gi_bench_job_lock(4242, engine=engine):
         with pytest.raises(svc.GiBenchJobLockNotAcquired):
             with svc.acquire_gi_bench_job_lock(4242, engine=engine):
                 pass
+
+
+def test_build_gi_bench_advisory_lock_key_deterministic():
+    a = svc.build_gi_bench_advisory_lock_key(1)
+    b = svc.build_gi_bench_advisory_lock_key(1)
+    assert a == b
+    assert isinstance(a, int)
+
+
+def test_build_gi_bench_advisory_lock_key_signed_bigint_range():
+    for job_id in (0, 1, 42, 2**31 - 1, 2**32 - 1):
+        key = svc.build_gi_bench_advisory_lock_key(job_id)
+        assert -(1 << 63) <= key <= (1 << 63) - 1
+
+
+def test_build_gi_bench_advisory_lock_key_unique_per_job():
+    keys = {svc.build_gi_bench_advisory_lock_key(i) for i in range(1, 50)}
+    assert len(keys) == 49
+
+
+def test_build_gi_bench_advisory_lock_key_same_for_lock_and_unlock():
+    """Same helper feeds both pg_try_advisory_lock and pg_advisory_unlock."""
+    job_id = 7
+    expected = svc.build_gi_bench_advisory_lock_key(job_id)
+    engine = MagicMock()
+    engine.dialect.name = "postgresql"
+    conn = MagicMock()
+    engine.connect.return_value.execution_options.return_value = conn
+    conn.execute.return_value.scalar.return_value = True
+
+    with svc.acquire_gi_bench_job_lock(job_id, engine=engine) as payload:
+        assert payload["lock_key"] == expected
+        assert payload["backend"] == "postgresql_advisory"
+
+    assert conn.execute.call_count >= 2
+    lock_params = conn.execute.call_args_list[0].args[1]
+    unlock_params = conn.execute.call_args_list[1].args[1]
+    assert lock_params["lock_key"] == expected
+    assert unlock_params["lock_key"] == expected
+
+
+def _pg_lock_engine(*, scalar_value=True, execute_side_effect=None):
+    engine = MagicMock()
+    engine.dialect.name = "postgresql"
+    conn = MagicMock()
+    engine.connect.return_value.execution_options.return_value = conn
+    if execute_side_effect is not None:
+        conn.execute.side_effect = execute_side_effect
+    else:
+        conn.execute.return_value.scalar.return_value = scalar_value
+    return engine, conn
+
+
+def test_pg_advisory_lock_sql_uses_single_bigint_cast():
+    engine, conn = _pg_lock_engine(scalar_value=True)
+    with svc.acquire_gi_bench_job_lock(1, engine=engine):
+        pass
+    lock_sql = str(conn.execute.call_args_list[0].args[0])
+    unlock_sql = str(conn.execute.call_args_list[1].args[0])
+    assert "pg_try_advisory_lock(CAST(:lock_key AS bigint))" in lock_sql
+    assert "pg_advisory_unlock(CAST(:lock_key AS bigint))" in unlock_sql
+    assert ":k1" not in lock_sql
+    assert ":k2" not in lock_sql
+    assert ":k1" not in unlock_sql
+    assert ":k2" not in unlock_sql
+
+
+def test_no_residual_two_arg_advisory_lock_sql():
+    src = open(svc.__file__, encoding="utf-8").read()
+    assert "pg_try_advisory_lock(:k1, :k2)" not in src
+    assert "pg_advisory_unlock(:k1, :k2)" not in src
+    assert "CAST(:lock_key AS bigint)" in src
+
+
+def test_postgresql_lock_acquired():
+    engine, conn = _pg_lock_engine(scalar_value=True)
+    with svc.acquire_gi_bench_job_lock(3, engine=engine) as payload:
+        assert payload["acquired"] is True
+        assert payload["lock_key"] == svc.build_gi_bench_advisory_lock_key(3)
+        assert payload["lock_namespace"] == GI_BENCH_ADVISORY_LOCK_NAMESPACE
+    conn.close.assert_called()
+
+
+def test_postgresql_lock_busy():
+    engine, _conn = _pg_lock_engine(scalar_value=False)
+    with pytest.raises(svc.GiBenchJobLockNotAcquired) as ei:
+        with svc.acquire_gi_bench_job_lock(3, engine=engine):
+            pass
+    assert ei.value.payload["acquired"] is False
+    assert ei.value.payload["backend"] == "postgresql_advisory"
+
+
+def test_postgresql_unlock_in_finally():
+    engine, conn = _pg_lock_engine(scalar_value=True)
+
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        with svc.acquire_gi_bench_job_lock(11, engine=engine):
+            raise Boom("work failed")
+
+    unlock_sql = str(conn.execute.call_args_list[1].args[0])
+    assert "pg_advisory_unlock(CAST(:lock_key AS bigint))" in unlock_sql
+    assert conn.execute.call_args_list[1].args[1]["lock_key"] == svc.build_gi_bench_advisory_lock_key(
+        11
+    )
+
+
+def test_advisory_lock_acquisition_exception_marks_job_failed_resumable():
+    job = _pilot_job(
+        id=1,
+        status=STATUS_QUEUED,
+        completed_at=None,
+        progress_pct=0,
+        last_checkpoint_at=None,
+        started_at=None,
+        processed_snapshots=0,
+        error_json=None,
+    )
+    db = MagicMock()
+    db.get.return_value = job
+
+    lock_cm = MagicMock()
+    lock_cm.__enter__.side_effect = RuntimeError(
+        "function pg_try_advisory_lock(bigint, integer) does not exist"
+    )
+
+    with (
+        patch.object(svc, "acquire_gi_bench_job_lock", return_value=lock_cm),
+        patch.object(svc, "SessionLocal", return_value=db),
+    ):
+        svc._run_job_worker(1)
+
+    assert job.status == STATUS_FAILED
+    assert job.error_json is not None
+    assert job.error_json["phase"] == "advisory_lock_acquisition"
+    assert job.error_json["type"] == "RuntimeError"
+    assert "does not exist" in job.error_json["error"]
+    assert "timestamp" in job.error_json
+    assert job.last_checkpoint_at is not None
+    assert job.status != STATUS_QUEUED
+    assert svc.can_resume_job(job) is True
+    db.commit.assert_called()
+
+
+def test_lock_busy_does_not_mark_failed():
+    job = _pilot_job(id=5, status=STATUS_QUEUED, completed_at=None, error_json=None)
+    db = MagicMock()
+    db.get.return_value = job
+
+    lock_cm = MagicMock()
+    lock_cm.__enter__.side_effect = svc.GiBenchJobLockNotAcquired(
+        {"acquired": False, "backend": "postgresql_advisory", "job_id": 5}
+    )
+
+    with (
+        patch.object(svc, "acquire_gi_bench_job_lock", return_value=lock_cm),
+        patch.object(svc, "SessionLocal", return_value=db) as session_factory,
+    ):
+        svc._run_job_worker(5)
+
+    assert job.status == STATUS_QUEUED
+    assert job.error_json is None
+    session_factory.assert_not_called()
+
+
+def test_resume_same_job_does_not_duplicate_selection():
+    """Resume reuses existing job + remaining incomplete rows; no new pilot selection."""
+    complete_skip = _row(
+        historical_snapshot_id=1,
+        included_in_main_cohort=False,
+        exclusion_reason="missing_persisted_v4_expected_goals",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json=None,
+    )
+    failed = _row(
+        historical_snapshot_id=2,
+        included_in_main_cohort=False,
+        exclusion_reason="row_exception",
+        input_hash=None,
+        prediction_payload_json=None,
+        evaluation_payload_json={"error": "x"},
+    )
+    done_map = {1: complete_skip, 2: failed}
+    selected = [1, 2, 3]
+    remaining = [
+        sid
+        for sid in selected
+        if sid not in done_map or not svc.row_is_complete(done_map[sid], "h")
+    ]
+    assert remaining == [2, 3]
+
+    db = MagicMock()
+    job = _pilot_job(
+        id=1,
+        status=STATUS_FAILED,
+        completed_at=datetime.now(timezone.utc),
+        error_json={"phase": "advisory_lock_acquisition", "type": "UndefinedFunction"},
+        params_json={
+            "selected_snapshot_ids": selected,
+            "selection_hash": "sel-hash-keep",
+        },
+    )
+    db.get.return_value = job
+    with patch.object(svc, "_spawn_worker") as spawn:
+        out = svc.resume_goal_intensity_benchmark_job(db, 1)
+    assert job.status == STATUS_QUEUED
+    assert job.params_json["selected_snapshot_ids"] == selected
+    assert job.params_json["selection_hash"] == "sel-hash-keep"
+    assert out["id"] == 1
+    spawn.assert_called_once_with(1)
+
+
+def test_pg_lock_sql_error_does_not_fallback_to_process_lock():
+    engine, _conn = _pg_lock_engine(
+        execute_side_effect=RuntimeError(
+            "function pg_try_advisory_lock(bigint, integer) does not exist"
+        )
+    )
+    with patch.object(svc, "_acquire_gi_bench_process_lock") as process_lock:
+        with pytest.raises(RuntimeError, match="does not exist"):
+            with svc.acquire_gi_bench_job_lock(1, engine=engine):
+                pass
+        process_lock.assert_not_called()
 
 
 def test_crash_after_batch_resume_retries_exception_only():
