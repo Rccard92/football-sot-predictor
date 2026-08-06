@@ -81,42 +81,303 @@ def get_snapshot_for_today(db: Session, today_fixture_id: int) -> dict[str, Any]
 
 
 def build_today_payload(db: Session, today_fixture_id: int) -> dict[str, Any]:
-    """Payload canonico Today: una sola lettura DB."""
+    """Payload canonico Today: official support, legacy archive, o fallback V4 atomico."""
+    from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+        extract_v4_from_persisted_today,
+    )
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        FALLBACK_REASON_FEATURES_INCOMPLETE,
+        FEATURE_STATUS_FALLBACK_V4,
+        FEATURE_STATUS_UNAVAILABLE,
+        OFFICIAL_BUNDLE_VERSION,
+        OFFICIAL_MODULE_VERSION,
+        OPERATIONAL_CALIBRATION_KEY,
+        OPERATIONAL_STATUS,
+        RAW_INDEX_ID,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+        TARGET_CALIBRATION_MAPPING,
+        is_official_bundle,
+    )
+    from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import safe_float
+
+    active = get_active_bundle(db)
     detail = get_preview_detail(db, today_fixture_id)
+    presentation = detail.get("presentation") or "legacy_preview"
+    legacy_archive = bool(detail.get("legacy_archive"))
+
+    # --- Unavailable / missing snapshot with possible V4 fallback (official only) ---
     if detail.get("status") == "error":
         err = detail.get("error")
+        if (
+            active is not None
+            and is_official_bundle(active)
+            and err in {"bundle_missing", "snapshot_not_found"}
+        ):
+            today_row = db.get(CecchinoTodayFixture, int(today_fixture_id))
+            v4_payload, v4_reason = extract_v4_from_persisted_today(today_row)
+            if v4_payload is not None:
+                return make_json_safe(
+                    _build_v4_fallback_payload(
+                        active,
+                        v4_payload,
+                        reason=FALLBACK_REASON_FEATURES_INCOMPLETE,
+                        today_fixture_id=today_fixture_id,
+                    )
+                )
+            return make_json_safe(
+                {
+                    "status": "unavailable",
+                    "error": err,
+                    "message": "Modulo Intensità Goal non disponibile",
+                    "module_version": OFFICIAL_MODULE_VERSION,
+                    "bundle_version": active.version,
+                    "operational_status": OPERATIONAL_STATUS,
+                    "operational_status_label_it": "Supporto ufficiale",
+                    "role": ROLE,
+                    "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+                    "signals_integration_status_label_it": "Bloccati / non collegati",
+                    "source": "none",
+                    "feature_status": FEATURE_STATUS_UNAVAILABLE,
+                    "fallback": None,
+                    "fallback_attempt_reason": v4_reason,
+                    "no_betting_signals": True,
+                }
+            )
         if err in {"bundle_missing", "snapshot_not_found"}:
-            base = {
-                "status": "unavailable",
-                "error": err,
-                "message": "Snapshot prospettico non disponibile",
-                "version": BUNDLE_VERSION,
-                "operational_status": "preview_monitored",
-                "operational_status_label_it": "Preview monitorata",
-                "signals_integration_status": "blocked",
-                "no_betting_signals": True,
-            }
-        else:
-            base = {
+            return make_json_safe(
+                {
+                    "status": "unavailable",
+                    "error": err,
+                    "message": "Snapshot prospettico non disponibile",
+                    "version": BUNDLE_VERSION,
+                    "operational_status": "preview_monitored",
+                    "operational_status_label_it": "Preview monitorata",
+                    "signals_integration_status": "blocked",
+                    "no_betting_signals": True,
+                }
+            )
+        return make_json_safe(
+            {
                 **detail,
                 "operational_status": "preview_monitored",
                 "operational_status_label_it": "Preview monitorata",
                 "signals_integration_status": "blocked",
             }
-    else:
-        base = {
-            **detail,
-            "banner": (
-                "Quattro dimensioni distinte della struttura goal, monitorate su "
-                "snapshot prospettici pre-match."
-            ),
-            "operational_status": "preview_monitored",
-            "operational_status_label_it": "Preview monitorata",
-            "signals_integration_status": "blocked",
-            "signals_integration_status_label_it": "Bloccata",
-            "calibrated_estimate_label_it": "Stima calibrata research",
+        )
+
+    snap = detail.get("snapshot") or {}
+    bundle_meta = detail.get("bundle") or {}
+    cal_all = snap.get("calibrated_predictions") or {}
+
+    # Legacy archive or pre-cutover preview
+    if presentation in {"legacy_preview", "legacy_archive"} or not is_official_bundle(active):
+        return make_json_safe(
+            {
+                **detail,
+                "banner": detail.get("banner"),
+                "operational_status": (
+                    "legacy_archive" if legacy_archive else "preview_monitored"
+                ),
+                "operational_status_label_it": (
+                    "Archivio preview" if legacy_archive else "Preview monitorata"
+                ),
+                "role": ROLE,
+                "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+                "signals_integration_status_label_it": "Bloccata",
+                "calibrated_estimate_label_it": "Stima calibrata research",
+                "source": "v5_legacy_preview",
+                "legacy_archive": legacy_archive,
+                "presentation": presentation,
+                "no_betting_signals": True,
+            }
+        )
+
+    # Official V5 complete path
+    op = cal_all.get(OPERATIONAL_CALIBRATION_KEY) or {}
+    feature_status = snap.get("feature_status") or ""
+    incomplete = feature_status in {
+        FEATURE_STATUS_UNAVAILABLE,
+        "incomplete",
+        SNAPSHOT_INCOMPLETE,
+    } or snap.get("preview_status") == "error"
+
+    if incomplete or not op:
+        today_row = db.get(CecchinoTodayFixture, int(today_fixture_id))
+        v4_payload, _v4_reason = extract_v4_from_persisted_today(today_row)
+        if v4_payload is not None:
+            return make_json_safe(
+                _build_v4_fallback_payload(
+                    active,
+                    v4_payload,
+                    reason=FALLBACK_REASON_FEATURES_INCOMPLETE,
+                    today_fixture_id=today_fixture_id,
+                    snapshot_meta=snap,
+                )
+            )
+
+    raw_score = safe_float(op.get("raw_score"))
+    if raw_score is None:
+        raw_score = safe_float(snap.get("GI_A") or snap.get("primary_candidate_score"))
+
+    p_ge2 = safe_float(op.get("probability_goals_ge_2"))
+    p_ge3 = safe_float(op.get("probability_goals_ge_3"))
+    p_btts = safe_float(op.get("probability_btts"))
+    expected = safe_float(op.get("expected_total_goals"))
+    p_u15 = safe_float(op.get("probability_under_1_5"))
+    p_u25 = safe_float(op.get("probability_under_2_5"))
+    p_btts_no = safe_float(op.get("probability_btts_no"))
+    if p_u15 is None and p_ge2 is not None:
+        p_u15 = round(max(1e-6, min(1.0 - 1e-6, 1.0 - p_ge2)), 6)
+    if p_u25 is None and p_ge3 is not None:
+        p_u25 = round(max(1e-6, min(1.0 - 1e-6, 1.0 - p_ge3)), 6)
+    if p_btts_no is None and p_btts is not None:
+        p_btts_no = round(max(1e-6, min(1.0 - 1e-6, 1.0 - p_btts)), 6)
+
+    return make_json_safe(
+        {
+            "status": "ok",
+            "module_version": OFFICIAL_MODULE_VERSION,
+            "bundle_version": bundle_meta.get("version") or OFFICIAL_BUNDLE_VERSION,
+            "bundle_id": bundle_meta.get("bundle_id"),
+            "operational_status": OPERATIONAL_STATUS,
+            "operational_status_label_it": "Supporto ufficiale",
+            "role": ROLE,
+            "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+            "signals_integration_status_label_it": "Bloccati / non collegati",
+            "source": "v5_official",
+            "presentation": "official",
+            "legacy_archive": False,
+            "banner": "Supporto analitico contestuale. Non collegato ai Segnali.",
+            "calibrated_estimate_label_it": "Stima calibrata del totale gol",
+            "index": {"id": RAW_INDEX_ID, "score": raw_score},
+            "outputs": {
+                "expected_total_goals": {
+                    "value": expected,
+                    "label_it": "Stima totale gol",
+                    "calibration_source": TARGET_CALIBRATION_MAPPING["total_goals_ft"],
+                },
+                "over_1_5": {
+                    "probability": p_ge2,
+                    "calibration_source": TARGET_CALIBRATION_MAPPING["goals_ge_2"],
+                },
+                "under_1_5": {
+                    "probability": p_u15,
+                    "derived_as_complement": True,
+                },
+                "over_2_5": {
+                    "probability": p_ge3,
+                    "calibration_source": TARGET_CALIBRATION_MAPPING["goals_ge_3"],
+                },
+                "under_2_5": {
+                    "probability": p_u25,
+                    "derived_as_complement": True,
+                },
+                "btts_yes": {
+                    "probability": p_btts,
+                    "calibration_source": TARGET_CALIBRATION_MAPPING["btts_ft"],
+                },
+                "btts_no": {
+                    "probability": p_btts_no,
+                    "derived_as_complement": True,
+                },
+            },
+            "pillar_scores": snap.get("pillar_scores"),
+            "data_quality": {
+                "feature_status": snap.get("feature_status") or "official_v5_complete",
+                "history_sample_size": snap.get("history_sample_size"),
+                "no_target_used_in_score": snap.get("no_target_used_in_score", True),
+            },
+            "fallback": None,
+            "bundle": bundle_meta,
+            "snapshot": snap,
+            "no_betting_signals": True,
+            # Compatibilità FE legacy (campi scorciatoia)
+            "primary_candidate_score": raw_score,
+            "candidate_scores": snap.get("candidate_scores"),
+            "calibrated_predictions": cal_all,
         }
-    return make_json_safe(base)
+    )
+
+
+def _build_v4_fallback_payload(
+    bundle: Any,
+    v4_payload: dict[str, Any],
+    *,
+    reason: str,
+    today_fixture_id: int,
+    snapshot_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        FEATURE_STATUS_FALLBACK_V4,
+        OFFICIAL_MODULE_VERSION,
+        OPERATIONAL_STATUS,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+    )
+    from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import safe_float
+
+    thresholds = v4_payload.get("thresholds") if isinstance(v4_payload.get("thresholds"), dict) else {}
+    over_15 = thresholds.get("over_1_5") or {}
+    over_25 = thresholds.get("over_2_5") or {}
+    p15 = safe_float(over_15.get("probability"))
+    p25 = safe_float(over_25.get("probability"))
+    # V4 probabilities are often rounded to 2 decimals; keep complements consistent
+    u15 = round(1.0 - p15, 6) if p15 is not None else None
+    u25 = round(1.0 - p25, 6) if p25 is not None else None
+    eg = safe_float(v4_payload.get("expected_goals_total"))
+
+    return {
+        "status": "ok",
+        "module_version": OFFICIAL_MODULE_VERSION,
+        "bundle_version": getattr(bundle, "version", None),
+        "bundle_id": getattr(bundle, "id", None),
+        "operational_status": OPERATIONAL_STATUS,
+        "operational_status_label_it": "Supporto ufficiale",
+        "role": ROLE,
+        "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+        "signals_integration_status_label_it": "Bloccati / non collegati",
+        "source": "v4_fallback",
+        "presentation": "v4_fallback",
+        "banner": "Fallback V4: feature V5 ufficiali incomplete. BTTS non disponibile.",
+        "calibrated_estimate_label_it": "Goal attesi Cecchino interni (V4)",
+        "index": None,
+        "outputs": {
+            "expected_total_goals": {
+                "value": eg,
+                "label_it": "Stima totale gol",
+                "calibration_source": "GI_V4_EXPECTED_GOALS",
+            },
+            "over_1_5": {
+                "probability": p15,
+                "calibration_source": "GI_V4_EXPECTED_GOALS",
+            },
+            "under_1_5": {"probability": u15, "derived_as_complement": True},
+            "over_2_5": {
+                "probability": p25,
+                "calibration_source": "GI_V4_EXPECTED_GOALS",
+            },
+            "under_2_5": {"probability": u25, "derived_as_complement": True},
+            "btts_yes": {"probability": None, "unavailable": True},
+            "btts_no": {"probability": None, "unavailable": True},
+        },
+        "pillar_scores": None,
+        "data_quality": {
+            "feature_status": FEATURE_STATUS_FALLBACK_V4,
+            "history_sample_size": (snapshot_meta or {}).get("history_sample_size"),
+        },
+        "fallback": {
+            "source": "v4_fallback",
+            "fallback_reason": reason,
+            "v4_version": v4_payload.get("version"),
+            "today_fixture_id": today_fixture_id,
+            "btts_unavailable": True,
+            "atomic": True,
+            "no_target_mix": True,
+        },
+        "no_betting_signals": True,
+        "snapshot": snapshot_meta,
+    }
 
 
 def compute_snapshot(db: Session, today_row: CecchinoTodayFixture) -> dict[str, Any]:
@@ -388,6 +649,50 @@ def build_overview(
     summary = _bundle_summary(bundle, db)
     global_cov = normalized.get("coverage_global") or {}
     period_cov = normalized.get("coverage_in_period") or {}
+
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OFFICIAL_MODULE_VERSION,
+        OPERATIONAL_STATUS,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+        is_official_bundle,
+    )
+
+    if is_official_bundle(bundle):
+        return make_json_safe(
+            {
+                "status": "ok",
+                "monitoring_version": GOAL_INTENSITY_V5_MONITORING_VERSION,
+                "module_version": OFFICIAL_MODULE_VERSION,
+                "bundle_version": bundle.version,
+                "operational_status": OPERATIONAL_STATUS,
+                "operational_status_label_it": "Supporto ufficiale",
+                "role": ROLE,
+                "role_label_it": "Supporto contestuale mercati goal",
+                "scientific_evidence": "external_validation_completed",
+                "scientific_maturity": "external_validation_completed",
+                "scientific_maturity_label_it": "Validazione esterna completata",
+                "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+                "signals_integration_status_label_it": "Bloccati / non collegati",
+                "current_decision": "support_module_active",
+                "current_decision_label_it": "Modulo di supporto attivo",
+                "collection_note_it": "Raccolta snapshot post-cutover",
+                "post_cutover_qc_only": True,
+                "no_gate_on_200": True,
+                "bundle": summary,
+                "coverage_global": global_cov,
+                "coverage_in_period": period_cov,
+                "snapshots_global": len(all_snaps),
+                "snapshots_in_period": len(period),
+                "completed_snapshots": n_completed,
+                "pending_snapshots": sum(
+                    1 for s in all_snaps if s.snapshot_status == SNAPSHOT_PENDING
+                ),
+                "research_archive_available": True,
+                "research_archive_loaded_by_default": False,
+            }
+        )
+
     return make_json_safe(
         {
             "status": "ok",

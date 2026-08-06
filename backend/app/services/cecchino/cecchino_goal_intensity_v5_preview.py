@@ -476,6 +476,22 @@ def freeze_preview_bundle(
 
 
 def get_active_bundle(db: Session) -> CecchinoGoalIntensityV5PreviewBundle | None:
+    """Un solo bundle attivo: preferenza official support, fallback legacy preview pre-cutover."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OFFICIAL_BUNDLE_VERSION,
+    )
+
+    official = db.scalars(
+        select(CecchinoGoalIntensityV5PreviewBundle)
+        .where(
+            CecchinoGoalIntensityV5PreviewBundle.is_active.is_(True),
+            CecchinoGoalIntensityV5PreviewBundle.status == BUNDLE_STATUS_ACTIVE,
+            CecchinoGoalIntensityV5PreviewBundle.version == OFFICIAL_BUNDLE_VERSION,
+        )
+        .order_by(CecchinoGoalIntensityV5PreviewBundle.id.desc())
+    ).first()
+    if official is not None:
+        return official
     return db.scalars(
         select(CecchinoGoalIntensityV5PreviewBundle)
         .where(
@@ -485,6 +501,13 @@ def get_active_bundle(db: Session) -> CecchinoGoalIntensityV5PreviewBundle | Non
         )
         .order_by(CecchinoGoalIntensityV5PreviewBundle.id.desc())
     ).first()
+
+
+def get_bundle_for_snapshot(
+    db: Session, snap: CecchinoGoalIntensityV5PreviewSnapshot
+) -> CecchinoGoalIntensityV5PreviewBundle | None:
+    """Carica il bundle esatto dello snapshot (mai l'active per riletture storiche)."""
+    return db.get(CecchinoGoalIntensityV5PreviewBundle, int(snap.bundle_id))
 
 
 # ---------------------------------------------------------------------------
@@ -528,11 +551,11 @@ def _apply_logistic(cal: dict[str, Any] | None, score: float | None) -> float | 
     return _round(min(1.0 - 1e-6, max(1e-6, p)))
 
 
-def score_features_with_bundle(
+def score_legacy_preview_with_bundle(
     features: dict[str, Any],
     bundle: CecchinoGoalIntensityV5PreviewBundle,
 ) -> dict[str, Any]:
-    """Calcola pillar/candidati/predizioni calibrate senza rifit."""
+    """Scoring legacy preview v1.1: quattro candidati. Non usare per bundle ufficiali."""
     ecdfs = _ecdfs_from_bundle(bundle)
     pct = {k: ecdf.transform(safe_float(features.get(k))) for k, ecdf in ecdfs.items()}
     pillar = _pillar_scores_from_pct(pct)
@@ -574,6 +597,21 @@ def score_features_with_bundle(
     }
 
 
+def score_features_with_bundle(
+    features: dict[str, Any],
+    bundle: CecchinoGoalIntensityV5PreviewBundle,
+) -> dict[str, Any]:
+    """Dispatch scoring: official support vs legacy preview."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OFFICIAL_BUNDLE_VERSION,
+        score_official_support_with_bundle,
+    )
+
+    if bundle.version == OFFICIAL_BUNDLE_VERSION:
+        return score_official_support_with_bundle(features, bundle)
+    return score_legacy_preview_with_bundle(features, bundle)
+
+
 # ---------------------------------------------------------------------------
 # Snapshot lifecycle
 # ---------------------------------------------------------------------------
@@ -593,25 +631,39 @@ def compute_snapshot_for_today_row(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Crea/aggiorna snapshot pre-match; lock post-kickoff; attach risultato FT."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        FEATURE_STATUS_COMPLETE,
+        FEATURE_STATUS_UNAVAILABLE,
+        OFFICIAL_BUNDLE_VERSION,
+        OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS,
+        official_features_complete,
+    )
+
     now = _ensure_utc(now) or _utc_now()
     bundle = bundle or get_active_bundle(db)
     if bundle is None:
         return {"status": "error", "reason_codes": ["bundle_missing"], "today_fixture_id": today_row.id}
 
-    if bundle.version != PREVIEW_BUNDLE_VERSION:
+    is_official = bundle.version == OFFICIAL_BUNDLE_VERSION
+    is_legacy = bundle.version == PREVIEW_BUNDLE_VERSION
+    if not is_official and not is_legacy:
         return {
             "status": "error",
-            "reason_codes": ["bundle_missing"],
+            "reason_codes": ["bundle_version_unsupported"],
             "today_fixture_id": today_row.id,
         }
 
-    if bundle.candidate_definition_hash != EXPECTED_DEFINITION_HASH and bundle.candidate_definition_hash != _candidate_definition_hash():
-        if bundle.candidate_definition_hash != _candidate_definition_hash():
-            return {
-                "status": "error",
-                "reason_codes": ["bundle_hash_mismatch"],
-                "today_fixture_id": today_row.id,
-            }
+    if is_legacy:
+        if (
+            bundle.candidate_definition_hash != EXPECTED_DEFINITION_HASH
+            and bundle.candidate_definition_hash != _candidate_definition_hash()
+        ):
+            if bundle.candidate_definition_hash != _candidate_definition_hash():
+                return {
+                    "status": "error",
+                    "reason_codes": ["bundle_hash_mismatch"],
+                    "today_fixture_id": today_row.id,
+                }
 
     eligibility = str(today_row.eligibility_status or "")
     if eligibility != ELIGIBILITY_ELIGIBLE:
@@ -660,6 +712,7 @@ def compute_snapshot_for_today_row(
 
     source_snapshot_at = _ensure_utc(getattr(today_row, "updated_at", None)) or now
     freeze_at = _ensure_utc(bundle.frozen_at)
+    # Cutover strict: nuovi snapshot solo dopo frozen_at del bundle attivo
     if freeze_at is None or source_snapshot_at <= freeze_at:
         return {
             "status": "skipped",
@@ -715,9 +768,15 @@ def compute_snapshot_for_today_row(
         )
 
     sample_size = int(leak_meta.get("sample_size") or 0)
-    core_ok = sample_size >= 10 and all(
-        safe_float(features.get(k)) is not None for k in BUNDLE_FEATURE_KEYS
+    required_keys = (
+        OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS if is_official else BUNDLE_FEATURE_KEYS
     )
+    if is_official:
+        core_ok = official_features_complete(features, sample_size=sample_size)
+    else:
+        core_ok = sample_size >= 10 and all(
+            safe_float(features.get(k)) is not None for k in BUNDLE_FEATURE_KEYS
+        )
     if not core_ok:
         return _upsert_error_snapshot(
             db,
@@ -725,7 +784,7 @@ def compute_snapshot_for_today_row(
             today_row,
             existing,
             reason_codes=["feature_incomplete"],
-            feature_payload={k: features.get(k) for k in BUNDLE_FEATURE_KEYS},
+            feature_payload={k: features.get(k) for k in required_keys},
             history_sample_size=sample_size,
             xg_status=str(leak_meta.get("xg_status") or "missing"),
             now=now,
@@ -734,6 +793,7 @@ def compute_snapshot_for_today_row(
 
     scored = score_features_with_bundle(features, bundle)
     scan_date = today_row.scan_date
+    feature_status = FEATURE_STATUS_COMPLETE if is_official else "available"
 
     payload_common = dict(
         local_fixture_id=int(local.id),
@@ -751,8 +811,8 @@ def compute_snapshot_for_today_row(
         eligibility_status=eligibility,
         eligibility_source="cecchino_today",
         eligibility_reason_codes=[],
-        feature_status="available",
-        feature_payload={k: features.get(k) for k in BUNDLE_FEATURE_KEYS},
+        feature_status=feature_status,
+        feature_payload={k: features.get(k) for k in required_keys},
         history_sample_size=sample_size,
         xg_status=str(leak_meta.get("xg_status") or "missing"),
         xg_payload={
@@ -763,9 +823,9 @@ def compute_snapshot_for_today_row(
         candidate_scores_payload=scored["candidate_scores"],
         calibrated_predictions_payload=scored["calibrated_predictions"],
         primary_candidate_score=scored["primary_candidate_score"],
-        challenger_candidate_score=scored["challenger_candidate_score"],
-        benchmark_score=scored["benchmark_score"],
-        diagnostic_score=scored["diagnostic_score"],
+        challenger_candidate_score=scored.get("challenger_candidate_score"),
+        benchmark_score=scored.get("benchmark_score"),
+        diagnostic_score=scored.get("diagnostic_score"),
         candidate_definition_hash=bundle.candidate_definition_hash,
         normalization_hashes_payload=scored["normalization_hashes"],
         no_target_used_in_score=True,
@@ -1097,26 +1157,67 @@ def list_preview_snapshots(
 
 
 def get_preview_detail(db: Session, today_fixture_id: int) -> dict[str, Any]:
+    """Dettaglio snapshot per Today. Preferisce bundle attivo; legacy solo come archivio."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OFFICIAL_BUNDLE_VERSION,
+        get_preview_bundle_v1_1,
+        is_official_bundle,
+    )
+
     bundle = get_active_bundle(db)
     if bundle is None:
         return {"status": "error", "error": "bundle_missing"}
+
     snap = db.scalars(
         select(CecchinoGoalIntensityV5PreviewSnapshot).where(
             CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id,
             CecchinoGoalIntensityV5PreviewSnapshot.today_fixture_id == int(today_fixture_id),
         )
     ).first()
+
+    presentation = "official" if is_official_bundle(bundle) else "legacy_preview"
+    archive_legacy = False
+
+    # Post-cutover senza nuovo scan: mostra snapshot legacy come archivio (non ufficiale)
+    if snap is None and is_official_bundle(bundle):
+        legacy_bundle = get_preview_bundle_v1_1(db)
+        if legacy_bundle is not None:
+            legacy_snap = db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == legacy_bundle.id,
+                    CecchinoGoalIntensityV5PreviewSnapshot.today_fixture_id
+                    == int(today_fixture_id),
+                )
+            ).first()
+            if legacy_snap is not None:
+                snap = legacy_snap
+                bundle = legacy_bundle
+                presentation = "legacy_archive"
+                archive_legacy = True
+
     if snap is None:
-        return {"status": "error", "error": "snapshot_not_found"}
+        return {"status": "error", "error": "snapshot_not_found", "active_bundle_version": bundle.version}
+
     freeze_at = _ensure_utc(bundle.frozen_at)
     source_at = _ensure_utc(snap.source_snapshot_at)
     kickoff = _ensure_utc(snap.kickoff)
     after_freeze = bool(freeze_at and source_at and source_at > freeze_at)
     before_kickoff = bool(kickoff and source_at and source_at < kickoff) if source_at else None
+    banner = (
+        "Archivio preview research. Non è il risultato ufficiale."
+        if archive_legacy
+        else (
+            "Supporto analitico contestuale. Non collegato ai Segnali."
+            if presentation == "official"
+            else "Preview research non produttiva. Nessun segnale betting attivato."
+        )
+    )
     return {
         "status": "ok",
-        "version": VERSION,
-        "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
+        "version": bundle.version,
+        "presentation": presentation,
+        "legacy_archive": archive_legacy,
+        "banner": banner,
         "bundle": _bundle_summary(bundle, db),
         "snapshot": {
             **_snapshot_detail(snap),
@@ -1127,6 +1228,7 @@ def get_preview_detail(db: Session, today_fixture_id: int) -> dict[str, Any]:
                 "source_snapshot_at_gt_bundle_frozen_at": after_freeze,
                 "source_snapshot_at_lt_kickoff": before_kickoff,
             },
+            "feature_status": snap.feature_status,
         },
         "v4_unchanged": True,
         "no_betting_signals": True,

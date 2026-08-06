@@ -297,6 +297,19 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 - UI: voce Cecchino «Monitoraggio Segno 1».
 - Limitazione FASE 1: niente pattern mining, clustering, ROI, nuove formule/soglie.
 
+## Intensità Goal Avanzata v5 — Official support Phase 2D (2026-08-06)
+
+| Campo | Valore |
+|-------|--------|
+| Module | `cecchino_goal_intensity_v5_official_support_v1` |
+| Bundle ufficiale | `cecchino_goal_intensity_v5_official_support_bundle_v1` (post-freeze) |
+| Bundle legacy | `cecchino_goal_intensity_v5_preview_v1_1` |
+| Bundle Phase 2C | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (non attivo) |
+| Job historical Lab | `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1` (Job 2 = evidence) |
+| Facade | `cecchino_goal_intensity_v5` + `cecchino_goal_intensity_v5_official_support` |
+| Role | `contextual_support_only` |
+| Signals | blocked |
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 | Campo | Valore |

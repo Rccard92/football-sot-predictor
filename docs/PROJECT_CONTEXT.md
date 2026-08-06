@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal — Official support Phase 2D (2026-08-06)
+
+Modulo operativo `cecchino_goal_intensity_v5_official_support_v1` (`official_support`, ruolo `contextual_support_only`). Raw unico `GI_A_STRICT_CORE`; teste target-specifiche (ge2←GI_A; total/ge3/BTTS←GI_E) da bundle candidate v2.1 senza refit. Evidenza: Job benchmark storico ID 2 (`external_validation`). Fallback V4 atomico. Signals blocked. Cutover `strict_after_official_freeze`, nessun backfill. Dry-run/freeze: `…/goal-intensity-v5/finalization`. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
+
 ## Intensità Goal — Historical benchmark job V4 vs V5 (2026-08-06)
 
 Job derivata `cecchino_lab_goal_intensity_v4_v5_historical_benchmark_v1` su run Cecchino Lab completed. Bundle richiesto `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (`frozen_external_benchmark_candidate`, `is_active=false`) via `get_frozen_goal_intensity_candidate_bundle` (mai `get_active_bundle`). Cinque modelli: V4 + GI_A/B/E/F; MT1/without_volatility solo `archived_not_selected`. Preflight read-only, pilot 300 deterministico (seed 42), full gated su pilot tecnico. Tabelle `cecchino_lab_goal_intensity_benchmark_jobs` / `_rows` (migration `20260806213000`). Independence protocol (external / partial / full / unknown): overlap → `historical_diagnostic_replay`. Zero API, zero scan restart, zero writes sulla run base, nessun refit, nessuna promozione automatica. UI hub run + freeze Phase 2C disabilitato se già congelato.

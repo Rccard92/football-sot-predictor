@@ -968,6 +968,33 @@ def goal_intensity_v5_phase_2c_candidates(
     return JSONResponse(content=jsonable_encoder(payload))
 
 
+@router.get("/goal-intensity-v5/finalization")
+def goal_intensity_v5_finalization_dry_run(
+    benchmark_job_id: int = Query(..., description="ID job benchmark storico (es. 2)"),
+    dry_run: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    """Dry-run finalizzazione official support. Read-only; writes sempre 0."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        freeze_official_support_bundle,
+    )
+
+    if not dry_run:
+        # GET non scrive mai: forza dry-run
+        dry_run = True
+    payload = freeze_official_support_bundle(
+        db,
+        int(benchmark_job_id),
+        dry_run=True,
+    )
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        payload.pop("_bundle_payload", None)
+        payload["dry_run"] = True
+        payload["writes"] = 0
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
 @router.get("/goal-intensity-v5/data-health")
 def goal_intensity_v5_data_health(
     date_from: date | None = Query(None),

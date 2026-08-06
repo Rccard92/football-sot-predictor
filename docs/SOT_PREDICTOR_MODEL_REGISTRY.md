@@ -66,6 +66,23 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Readiness / policy / governance | versioni Step 2C **invariate** |
 | Schema | solo `server_default now()` su timestamp readiness/governance |
 
+## Intensità Goal Avanzata v5 — Official support Phase 2D (2026-08-06)
+
+| Campo | Valore |
+|-------|--------|
+| Module | `cecchino_goal_intensity_v5_official_support_v1` |
+| Bundle ufficiale | `cecchino_goal_intensity_v5_official_support_bundle_v1` |
+| Bundle parent legacy | `cecchino_goal_intensity_v5_preview_v1_1` (superseded al cutover) |
+| Bundle Phase 2C | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (invariato) |
+| Scoring | `cecchino_goal_intensity_v5_official_support_scoring_v1` |
+| Finalization | `cecchino_goal_intensity_v5_phase_2d_finalization_v1` |
+| Raw index | `GI_A_STRICT_CORE` |
+| Heads | ge2←GI_A; total/ge3/btts←GI_E |
+| Role | `contextual_support_only` |
+| Signals | blocked |
+| V4 | fallback atomico only |
+| Status | `official_support` (post-freeze) |
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 | Artefatto | Versione / note |

@@ -333,3 +333,45 @@ def goal_intensity_phase_2c_candidates_freeze(
             status_code=500,
             detail=f"phase_2c_freeze_failed:{type(exc).__name__}",
         ) from exc
+
+
+class GoalIntensityOfficialFinalizationFreezeBody(BaseModel):
+    benchmark_job_id: int
+    dry_run: bool = True
+    confirm: str | None = None
+
+
+@admin_router.post("/goal-intensity-v5/finalization/freeze")
+def goal_intensity_v5_finalization_freeze(
+    body: GoalIntensityOfficialFinalizationFreezeBody,
+    db: Session = Depends(get_db),
+):
+    """Freeze atomico official support. Richiede confirm token se dry_run=false."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        FREEZE_CONFIRM_TOKEN,
+        freeze_official_support_bundle,
+    )
+
+    if not body.dry_run and body.confirm != FREEZE_CONFIRM_TOKEN:
+        raise HTTPException(status_code=400, detail="invalid_confirm_token")
+
+    try:
+        payload = freeze_official_support_bundle(
+            db,
+            int(body.benchmark_job_id),
+            dry_run=body.dry_run,
+            confirm=body.confirm,
+        )
+        if isinstance(payload, dict):
+            payload = dict(payload)
+            payload.pop("_bundle_payload", None)
+        if payload.get("status") == "error" and payload.get("error") == "invalid_confirm_token":
+            raise HTTPException(status_code=400, detail="invalid_confirm_token")
+        return JSONResponse(content=jsonable_encoder(payload))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"official_finalization_freeze_failed:{type(exc).__name__}",
+        ) from exc

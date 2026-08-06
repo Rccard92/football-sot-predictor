@@ -53,6 +53,23 @@ from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     _ensure_utc,
     get_active_bundle,
 )
+
+
+def _get_phase_2c_parent_bundle(db: Session) -> CecchinoGoalIntensityV5PreviewBundle | None:
+    """Parent v1.1 esplicito (anche superseded). Evita di usare il bundle ufficiale attivo."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        get_preview_bundle_v1_1,
+    )
+
+    # Preferisci get_active_bundle se ancora preview (pre-cutover + test monkeypatch).
+    active = get_active_bundle(db)
+    if active is not None and getattr(active, "version", None) == PREVIEW_BUNDLE_VERSION:
+        return active
+    # Post-cutover: preview superseded, caricalo per versione
+    parent = get_preview_bundle_v1_1(db)
+    if parent is not None and getattr(parent, "version", None) == PREVIEW_BUNDLE_VERSION:
+        return parent
+    return None
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import (
     bootstrap_index_matrix,
     safe_float,
@@ -1108,7 +1125,7 @@ def develop_phase_2c_candidates(
     source_git_commit: str | None = None,
 ) -> dict[str, Any]:
     """Dry-run / compute completo Phase 2C (nessuna scrittura)."""
-    parent = get_active_bundle(db)
+    parent = _get_phase_2c_parent_bundle(db)
     if parent is None:
         return make_json_safe(
             {
@@ -1449,7 +1466,7 @@ def freeze_candidate_bundle(
             }
         )
 
-    parent = get_active_bundle(db)
+    parent = _get_phase_2c_parent_bundle(db)
     if parent is None:
         return make_json_safe({"status": "error", "error": "parent_bundle_missing", "writes": 0})
 

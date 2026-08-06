@@ -317,6 +317,15 @@ flowchart TD
 5. Non ricalcolare moduli in lettura; campi mancanti restano unavailable.
 6. Fuori scope FASE 1: pattern mining / clustering / ROI.
 
+## Intensità Goal Avanzata v5 — Phase 2D official support (2026-08-06)
+
+1. Dry-run: `GET /api/cecchino/module-monitoring/goal-intensity-v5/finalization?benchmark_job_id=2&dry_run=true`
+2. Verificare `freeze_allowed`, mapping target, coefficienti, definition hash.
+3. Freeze (manuale post-deploy): `POST /api/admin/cecchino/module-monitoring/goal-intensity-v5/finalization/freeze` con `confirm=FREEZE_GOAL_INTENSITY_V5_OFFICIAL_SUPPORT_V1`.
+4. Verificare bundle attivo = `cecchino_goal_intensity_v5_official_support_bundle_v1`; preview superseded; v2.1 invariato.
+5. Nuovi snapshot Today solo con `source_snapshot_at > official.frozen_at` (nessun backfill).
+6. Fallback V4 atomico se feature V5 incomplete; Signals restano blocked.
+
 ## Intensità Goal Avanzata v5 — Phase 2C (2026-08-06)
 
 1. `alembic upgrade head` (revision `20260806200000` — status String(64)).

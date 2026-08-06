@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Goal Intensity V5 official support module (2026-08-06)
+
+- Perché: trasformare la research multi-candidato in un unico modulo operativo di supporto contestuale.
+- Cosa: `cecchino_goal_intensity_v5_official_support_v1`; raw GI_A; teste GI_A(ge2)+GI_E(total/ge3/BTTS); freeze atomico; fallback V4; Today card unica; Signals blocked; cutover strict; nessun backfill/refit/migrazione.
+- Impatto: post-freeze bundle ufficiale attivo; preview v1.1 superseded; v2.1 invariato; Job 2 certificata.
+- Non fatto in sessione: freeze produzione.
+
 ## Feat — Prospective Goal Intensity Phase 2C candidate bundle (2026-08-06)
 
 - Perché: Phase 2B ha mostrato Primary/Challenger ancora utili, MT1 e without_volatility peggiori di V4 sul MAE con evidenza supportata; serve sviluppo controllato di varianti senza attivazione live.

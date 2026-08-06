@@ -37,7 +37,7 @@ export function GoalIntensityModulePanel({
     cohortFilter,
   }
 
-  if (view === 'overview') {
+  if (view === 'overview' || view === 'market-outputs') {
     return <GoalIntensityOverviewView {...common} />
   }
 
@@ -79,6 +79,18 @@ export function GoalIntensityModulePanel({
 
   if (view === 'export') {
     return <GoalIntensityExportView {...common} />
+  }
+
+  if (view === 'research-archive') {
+    return (
+      <div className="space-y-4">
+        <MonitoringEmptyState
+          title="Archivio ricerca"
+          reason="Le viste research (candidati, Phase 2C, benchmark prospettico) non sono caricate di default. Seleziona una sotto-vista dall’archivio quando serve."
+        />
+        <GoalIntensityCandidatesView {...common} />
+      </div>
+    )
   }
 
   return (

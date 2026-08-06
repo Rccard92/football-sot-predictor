@@ -1,11 +1,27 @@
 # Intensità Goal v5 — Research
 
+> **Phase 2D (2026-08-06):** modulo operativo `cecchino_goal_intensity_v5_official_support_v1`.
+> Raw unico GI_A; teste GI_A (ge2) + GI_E (total/ge3/BTTS). Vedi
+> `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`. Questo file resta riferimento **research**.
+
 > **Consolidamento operativo (2026-07-20):** il monitoring canonico è in
-> `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` (facade, readiness, export v10, workspace).
+> `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` (facade, readiness, export, workspace).
 > Questo file resta il riferimento **research_internal** (audit/dataset/statistics/candidate).
 > UI lab rimossa: redirect a `/monitoraggio-moduli?module=goal-intensity-v5&view=overview`.
 
-Modulo di ricerca per rifondare **Intensità Goal** su quattro dimensioni distinte. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
+## Phase 2D — Official support (sintesi)
+
+| Elemento | Valore |
+|----------|--------|
+| Evidenza | Job benchmark storico ID 2, mode full, external_validation |
+| Source candidate | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` |
+| Official bundle | `cecchino_goal_intensity_v5_official_support_bundle_v1` |
+| Raw index | `GI_A_STRICT_CORE` (una sola volta) |
+| Heads | ge2←GI_A; total/ge3/btts←GI_E |
+| Archiviati runtime | GI_B, GI_F, MT1 candidate, GI_A_without_volatility |
+| Fallback | V4 atomico, BTTS N/D |
+| Signals | blocked |
+| Backfill | no |
 
 ## Analisi interattiva Today (2026-07-26)
 

@@ -33,6 +33,7 @@ from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     BUNDLE_FEATURE_KEYS,
     CHALLENGER_ID,
     DIAGNOSTIC_ID,
+    PREVIEW_BUNDLE_VERSION,
     PRIMARY_ID,
     _apply_linear,
     _apply_logistic,
@@ -1054,6 +1055,171 @@ def build_goal_intensity_v5_explanations(
     snap: CecchinoGoalIntensityV5PreviewSnapshot,
     bundle: CecchinoGoalIntensityV5PreviewBundle,
 ) -> dict[str, Any]:
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        is_official_bundle,
+    )
+
+    if is_official_bundle(bundle):
+        return _build_official_support_explanations(row, snap, bundle)
+    return _build_legacy_preview_explanations(row, snap, bundle)
+
+
+def _build_official_support_explanations(
+    row: CecchinoTodayFixture,
+    snap: CecchinoGoalIntensityV5PreviewSnapshot,
+    bundle: CecchinoGoalIntensityV5PreviewBundle,
+) -> dict[str, Any]:
+    """Audit operativo: unico indice GI_A + teste target-specifiche. Nessun candidato archiviato."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OFFICIAL_AUDIT_VERSION,
+        OFFICIAL_MODULE_VERSION,
+        OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS,
+        OPERATIONAL_CALIBRATION_KEY,
+        RAW_INDEX_ID,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+        TARGET_CALIBRATION_MAPPING,
+        score_official_support_with_bundle,
+    )
+
+    warnings: list[str] = []
+    features = dict(snap.feature_payload or {})
+    for k in OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS:
+        features.setdefault(k, None)
+    missing = [k for k in OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS if safe_float(features.get(k)) is None]
+    if missing:
+        warnings.append(f"Feature mancanti: {', '.join(missing)}")
+
+    audit = score_official_support_with_bundle(features, bundle)
+    ecdfs = _ecdfs_from_bundle(bundle)
+    pct = {k: ecdf.transform(safe_float(features.get(k))) for k, ecdf in ecdfs.items()}
+    full_pillars = _pillar_scores_from_pct(pct)
+    composite = _composite_scores(full_pillars)
+    raw_audit = _round(composite.get(RAW_INDEX_ID))
+    raw_stored = safe_float((snap.candidate_scores_payload or {}).get(RAW_INDEX_ID))
+    if raw_stored is None:
+        raw_stored = safe_float(snap.primary_candidate_score)
+
+    cal_root = bundle.calibration_payload or {}
+    op_cal = cal_root.get(OPERATIONAL_CALIBRATION_KEY) or {}
+    stored_op = (snap.calibrated_predictions_payload or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
+    audit_op = (audit.get("calibrated_predictions") or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
+
+    head_defs = [
+        ("expected_total_goals", "total_goals_ft", "linear", "Stima totale gol"),
+        ("probability_goals_ge_2", "goals_ge_2", "logistic", "Over 1.5"),
+        ("probability_goals_ge_3", "goals_ge_3", "logistic", "Over 2.5"),
+        ("probability_btts", "btts_ft", "logistic", "Gol (BTTS)"),
+    ]
+    target_heads: dict[str, Any] = {}
+    for out_key, target, transform, label in head_defs:
+        cal = op_cal.get(target) or {}
+        intercept = safe_float(cal.get("intercept"))
+        coef = safe_float(cal.get("coefficient"))
+        stored_v = safe_float(stored_op.get(out_key))
+        audit_v = safe_float(audit_op.get(out_key))
+        consistent = (
+            stored_v is not None
+            and audit_v is not None
+            and abs(stored_v - audit_v) < 1e-4
+        )
+        target_heads[out_key] = {
+            "label_it": label,
+            "target": target,
+            "raw_score": raw_audit,
+            "raw_index_id": RAW_INDEX_ID,
+            "intercept": intercept,
+            "coefficient": coef,
+            "transform": transform,
+            "result_stored": stored_v,
+            "result_audit": audit_v,
+            "calibration_source": TARGET_CALIBRATION_MAPPING.get(target),
+            "bundle_version": bundle.version,
+            "consistency": {
+                "status": "ok" if consistent else ("unavailable" if stored_v is None else "mismatch"),
+                "stored_vs_audit": consistent,
+            },
+        }
+
+    defs = bundle.candidate_definitions_payload or {}
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    source_at = _ensure_utc(snap.source_snapshot_at)
+
+    return _json_safe(
+        {
+            "status": "ok" if not missing else "partial",
+            "audit_version": OFFICIAL_AUDIT_VERSION,
+            "module": MODULE,
+            "module_version": OFFICIAL_MODULE_VERSION,
+            "presentation": "official_support",
+            "role": ROLE,
+            "signals_integration_status": SIGNALS_INTEGRATION_STATUS,
+            "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "no_operational_recalculation": True,
+            "diagnostic_re_evaluation_only": True,
+            "source_mode": "persisted_goal_intensity_v5_official_snapshot",
+            "fixture": {
+                "today_fixture_id": int(row.id),
+                "home_team": row.home_team_name,
+                "away_team": row.away_team_name,
+                "kickoff": _iso_z(_ensure_utc(row.kickoff)) if row.kickoff else None,
+            },
+            "snapshot": {
+                "snapshot_id": snap.id,
+                "bundle_id": snap.bundle_id,
+                "bundle_version": bundle.version,
+                "candidate_definition_hash": snap.candidate_definition_hash
+                or bundle.candidate_definition_hash,
+                "source_snapshot_at": _iso_z(source_at),
+                "bundle_frozen_at": _iso_z(freeze_at),
+                "feature_status": snap.feature_status,
+            },
+            "index": {
+                "id": RAW_INDEX_ID,
+                "score_stored": raw_stored,
+                "score_audit": raw_audit,
+                "formula": "mean(OP1, DV1, MT1, OV1)",
+                "components": {
+                    "OP1_HOME_LONG_TERM": _round(full_pillars.get("OP1_HOME_LONG_TERM")),
+                    "DV1_MEAN_CONCEDED": _round(full_pillars.get("DV1_MEAN_CONCEDED")),
+                    "MT1_LONG_TERM": _round(full_pillars.get("MT1_LONG_TERM")),
+                    "OV1_STD": _round(full_pillars.get("OV1_STD")),
+                },
+                "features_raw": {k: features.get(k) for k in OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS},
+                "consistency": {
+                    "status": "ok"
+                    if raw_stored is not None
+                    and raw_audit is not None
+                    and abs(raw_stored - raw_audit) < 1e-4
+                    else "partial",
+                },
+            },
+            "target_heads": target_heads,
+            "benchmark_provenance": {
+                "benchmark_job_id": defs.get("benchmark_job_id"),
+                "source_candidate_bundle_version": defs.get("source_candidate_bundle_version"),
+                "scientific_evidence": (defs.get("provenance") or {}).get("scientific_evidence"),
+            },
+            "candidates": None,
+            "archived_candidates_hidden": True,
+            "warnings": warnings,
+            "metadata": {
+                "weight_status": WEIGHT_STATUS,
+                "normalization_method": NORMALIZATION_METHOD,
+                "bundle_id_used_for_audit": bundle.id,
+                "active_bundle_not_used_for_coefficients": True,
+                "no_blending": True,
+                "no_refit": True,
+            },
+        }
+    )
+
+
+def _build_legacy_preview_explanations(
+    row: CecchinoTodayFixture,
+    snap: CecchinoGoalIntensityV5PreviewSnapshot,
+    bundle: CecchinoGoalIntensityV5PreviewBundle,
+) -> dict[str, Any]:
     warnings: list[str] = []
     features = dict(snap.feature_payload or {})
     # Solo feature del bundle; nessun extract esterno
@@ -1168,6 +1334,7 @@ def build_goal_intensity_v5_explanations(
         "status": top_status,
         "audit_version": AUDIT_VERSION,
         "module": MODULE,
+        "presentation": "legacy_preview",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "no_operational_recalculation": True,
         "diagnostic_re_evaluation_only": True,
@@ -1226,7 +1393,12 @@ def get_goal_intensity_v5_explanations(db: Session, today_fixture_id: int) -> di
             "source_mode": SOURCE_MODE,
         }
 
-    # Stessa risoluzione del pannello Today: snapshot sul bundle attivo
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        get_preview_bundle_v1_1,
+        is_official_bundle,
+    )
+
+    # Stessa risoluzione del pannello Today: snapshot sul bundle attivo, legacy come archivio
     active = get_active_bundle(db)
     snap: CecchinoGoalIntensityV5PreviewSnapshot | None = None
     if active is not None:
@@ -1236,6 +1408,17 @@ def get_goal_intensity_v5_explanations(db: Session, today_fixture_id: int) -> di
                 CecchinoGoalIntensityV5PreviewSnapshot.today_fixture_id == int(today_fixture_id),
             )
         ).first()
+
+    if snap is None and active is not None and is_official_bundle(active):
+        legacy = get_preview_bundle_v1_1(db)
+        if legacy is not None and getattr(legacy, "version", None) == PREVIEW_BUNDLE_VERSION:
+            snap = db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == legacy.id,
+                    CecchinoGoalIntensityV5PreviewSnapshot.today_fixture_id
+                    == int(today_fixture_id),
+                )
+            ).first()
 
     if snap is None:
         return {

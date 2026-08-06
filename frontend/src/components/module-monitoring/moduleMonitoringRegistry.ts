@@ -9,6 +9,7 @@ export type MonitoringModuleKey =
 export type MonitoringViewDef = {
   id: string
   label: string
+  archive?: boolean
 }
 
 export type MonitoringModuleDef = {
@@ -22,6 +23,7 @@ export type MonitoringModuleDef = {
   icon: NavIconName
   defaultView: string
   views: MonitoringViewDef[]
+  archiveViews?: MonitoringViewDef[]
   exportCapabilities: string[]
 }
 
@@ -74,27 +76,31 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
   },
   {
     key: 'goal-intensity-v5',
-    label: 'Intensità Goal Avanzata v5',
+    label: 'Intensità Goal v5',
     shortLabel: 'Goal Intensity',
     description:
-      'Monitoraggio candidati, calibrazione e campione prospettico su quattro dimensioni distinte.',
-    operationalStatus: 'Preview monitorata',
-    versionLabel: 'goal_intensity_v5',
+      'Supporto contestuale mercati goal. Snapshot post-cutover. Signals bloccati.',
+    operationalStatus: 'Supporto ufficiale',
+    versionLabel: 'cecchino_goal_intensity_v5_official_support_v1',
     accent: 'goal',
     icon: 'flask',
     defaultView: 'overview',
     views: [
       { id: 'overview', label: 'Overview' },
+      { id: 'market-outputs', label: 'Output per mercato' },
+      { id: 'prospective-results', label: 'Performance post-cutover' },
+      { id: 'stability', label: 'Stabilità' },
+      { id: 'data-health', label: 'Data health' },
+      { id: 'export', label: 'Export' },
+      { id: 'research-archive', label: 'Archivio ricerca', archive: true },
+    ],
+    archiveViews: [
       { id: 'dimensions', label: 'Dimensioni' },
       { id: 'candidates', label: 'Candidati' },
-      { id: 'prospective-results', label: 'Risultati prospettici' },
       { id: 'benchmark-v4-v5', label: 'Benchmark V4 vs V5' },
       { id: 'variants-phase-2c', label: 'Varianti Phase 2C' },
       { id: 'calibration', label: 'Calibrazione' },
-      { id: 'stability', label: 'Stabilità' },
-      { id: 'readiness', label: 'Readiness' },
-      { id: 'data-health', label: 'Data health' },
-      { id: 'export', label: 'Export' },
+      { id: 'readiness', label: 'Readiness research' },
     ],
     exportCapabilities: ['analysis-pack', 'summary-json'],
   },

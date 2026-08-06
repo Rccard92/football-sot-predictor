@@ -1,12 +1,9 @@
-import { useCallback, useState, type KeyboardEvent } from 'react'
+import { useCallback, useState } from 'react'
 import type {
-  CecchinoGiV5CandidateExplanation,
-  CecchinoGiV5DimensionExplanation,
   CecchinoGiV5ExplanationsResponse,
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
 import { getGoalIntensityV5Explanations } from '../../lib/cecchinoTodayApi'
-import { CecchinoGoalIntensityV5AuditModal } from './CecchinoGoalIntensityV5AuditModal'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type GoalIntensityPayload = NonNullable<CecchinoTodayDetailResponse['goal_intensity_v5']>
@@ -16,27 +13,6 @@ type Props = {
   todayFixtureId?: number | null
   providerFixtureId?: number | null
 }
-
-type SelectedAudit =
-  | { type: 'dimension'; explanation: CecchinoGiV5DimensionExplanation }
-  | { type: 'candidate'; explanation: CecchinoGiV5CandidateExplanation }
-
-type DimensionKey =
-  | 'offensive_production'
-  | 'defensive_solidity'
-  | 'match_tempo'
-  | 'offensive_stability'
-
-const CANDIDATES = [
-  { id: 'GI_A_STRICT_CORE', role: 'Primary', scoreKey: 'primary_candidate_score' },
-  { id: 'GI_B_RECENCY', role: 'Challenger', scoreKey: 'challenger_candidate_score' },
-  { id: 'MT1_LONG_TERM', role: 'Benchmark', scoreKey: 'benchmark_score' },
-  {
-    id: 'GI_A_without_volatility',
-    role: 'Diagnostico',
-    scoreKey: 'diagnostic_score',
-  },
-] as const
 
 function fmt(v: number | null | undefined, digits = 1): string {
   if (v == null || Number.isNaN(Number(v))) return '—'
@@ -48,415 +24,335 @@ function fmtProb(v: number | null | undefined): string {
   return `${(Number(v) * 100).toFixed(1)}%`
 }
 
-function downloadAuditJson(
-  payload: CecchinoGiV5ExplanationsResponse,
-  providerFixtureId: number | null | undefined,
-) {
-  const id = providerFixtureId ?? payload.fixture?.provider_fixture_id ?? 'unknown'
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `cecchino-goal-intensity-v5-audit-${id}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+function Badge({
+  children,
+  tone = 'slate',
+}: {
+  children: React.ReactNode
+  tone?: 'slate' | 'amber' | 'emerald' | 'sky'
+}) {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-700',
+    amber: 'bg-amber-50 text-amber-800',
+    emerald: 'bg-emerald-50 text-emerald-800',
+    sky: 'bg-sky-50 text-sky-800',
+  }
+  return (
+    <span className={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ${tones[tone]}`}>
+      {children}
+    </span>
+  )
 }
 
-function DimensionBlock({
+function ProbBlock({
   title,
-  rows,
-  analysisActive,
-  onOpenAnalysis,
+  overLabel,
+  underLabel,
+  over,
+  under,
 }: {
   title: string
-  rows: Array<[string, number | null | undefined]>
-  analysisActive: boolean
-  onOpenAnalysis?: () => void
+  overLabel: string
+  underLabel: string
+  over: number | null | undefined
+  under: number | null | undefined
 }) {
-  const interactiveClass = analysisActive
-    ? 'cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400'
-    : ''
-
-  const openAnalysis = () => {
-    if (analysisActive && onOpenAnalysis) onOpenAnalysis()
-  }
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (!analysisActive) return
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      openAnalysis()
-    }
-  }
-
   return (
-    <div
-      className={`rounded-lg border border-slate-150 bg-slate-50/60 px-3 py-2 ${interactiveClass}`}
-      role={analysisActive ? 'button' : undefined}
-      tabIndex={analysisActive ? 0 : undefined}
-      aria-label={analysisActive ? `Apri analisi ${title.replace(/^\d+\.\s*/, '')}` : undefined}
-      onClick={analysisActive ? openAnalysis : undefined}
-      onKeyDown={analysisActive ? onKeyDown : undefined}
-    >
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
       <p className="text-xs font-semibold text-slate-800">{title}</p>
-      <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-        {rows.map(([label, value]) => (
-          <li key={label} className="flex justify-between gap-2">
-            <span>{label}</span>
-            <span className="font-medium text-slate-900">{fmt(value)}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <p className="text-[11px] text-slate-500">{overLabel}</p>
+          <p className="font-semibold text-slate-900">{fmtProb(over)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-slate-500">{underLabel}</p>
+          <p className="font-semibold text-slate-900">{fmtProb(under)}</p>
+        </div>
+      </div>
     </div>
   )
 }
 
-function UnavailablePanel({
-  title,
-  subtitle,
-  showBadges,
-}: {
-  title: string
-  subtitle: string
-  showBadges?: boolean
-}) {
+function UnavailablePanel({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <section className={`${todayCard} ${todayCardPadding}`}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className={todaySectionTitle}>{title}</h3>
-          <p className={todaySectionSubtitle}>{subtitle}</p>
-        </div>
-        <span className="self-start rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-400">
-          Audit non disponibile
-        </span>
+      <h3 className={todaySectionTitle}>{title}</h3>
+      <p className={todaySectionSubtitle}>{subtitle}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Badge>Non collegato ai Segnali</Badge>
       </div>
-      {showBadges ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900">
-            Preview monitorata
-          </span>
-          <span className="inline-block rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-            Non collegato ai Segnali
-          </span>
-        </div>
-      ) : null}
     </section>
+  )
+}
+
+function readOutputProb(outputs: Record<string, unknown> | undefined, key: string): number | null {
+  const block = outputs?.[key]
+  if (block && typeof block === 'object' && 'probability' in block) {
+    const v = (block as { probability?: unknown }).probability
+    return v == null || Number.isNaN(Number(v)) ? null : Number(v)
+  }
+  return null
+}
+
+function readOutputValue(outputs: Record<string, unknown> | undefined, key: string): number | null {
+  const block = outputs?.[key]
+  if (block && typeof block === 'object' && 'value' in block) {
+    const v = (block as { value?: unknown }).value
+    return v == null || Number.isNaN(Number(v)) ? null : Number(v)
+  }
+  return null
+}
+
+function OfficialAuditCollapsible({
+  explanations,
+}: {
+  explanations: CecchinoGiV5ExplanationsResponse & {
+    index?: Record<string, unknown>
+    target_heads?: Record<string, Record<string, unknown>>
+  }
+}) {
+  const index = explanations.index || {}
+  const heads = explanations.target_heads || {}
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3" data-testid="gi-official-audit">
+      <p className="text-xs font-semibold text-slate-800">Audit operativo</p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Indice unico e teste per mercato. Nessun candidato research.
+      </p>
+      <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+        <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
+          <p className="text-slate-500">Indice</p>
+          <p className="font-medium text-slate-900">{String(index.id ?? 'GI_A_STRICT_CORE')}</p>
+          <p className="font-mono">{fmt(index.score_audit as number | null | undefined, 2)}</p>
+          <p className="text-slate-500">{String(index.formula ?? '')}</p>
+        </div>
+        {Object.entries(heads).map(([key, head]) => (
+          <div key={key} className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
+            <p className="font-medium text-slate-800">{String(head.label_it ?? key)}</p>
+            <p className="text-slate-500">source: {String(head.calibration_source ?? '—')}</p>
+            <p className="font-mono">
+              i={fmt(head.intercept as number | null | undefined, 4)} · c=
+              {fmt(head.coefficient as number | null | undefined, 4)}
+            </p>
+            <p className="font-mono">
+              {String(head.transform)} → {fmt(head.result_audit as number | null | undefined, 4)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
 export function CecchinoGoalIntensityV5Panel({
   goalIntensity,
   todayFixtureId,
-  providerFixtureId,
 }: Props) {
-  const [analysisMode, setAnalysisMode] = useState(false)
-  const [explanations, setExplanations] = useState<CecchinoGiV5ExplanationsResponse | null>(null)
+  const [explanations, setExplanations] = useState<
+    | (CecchinoGiV5ExplanationsResponse & {
+        index?: Record<string, unknown>
+        target_heads?: Record<string, Record<string, unknown>>
+      })
+    | null
+  >(null)
+  const [auditOpen, setAuditOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<SelectedAudit | null>(null)
-  const [analysisFixtureId, setAnalysisFixtureId] = useState(todayFixtureId)
 
-  if (analysisFixtureId !== todayFixtureId) {
-    setAnalysisFixtureId(todayFixtureId)
-    setAnalysisMode(false)
-    setExplanations(null)
-    setError(null)
-    setLoading(false)
-    setSelected(null)
-  }
-
-  const loadExplanations = useCallback(async (): Promise<CecchinoGiV5ExplanationsResponse | null> => {
-    if (explanations) return explanations
+  const loadExplanations = useCallback(async () => {
     if (todayFixtureId == null) return null
     setLoading(true)
     setError(null)
     try {
       const res = await getGoalIntensityV5Explanations(todayFixtureId)
-      if (res.status === 'error') {
-        setError(res.message || res.code || 'Errore caricamento audit Goal Intensity')
-        return null
-      }
-      setExplanations(res)
+      setExplanations(res as never)
       return res
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Errore caricamento audit Goal Intensity')
+      setError(e instanceof Error ? e.message : 'Errore audit')
       return null
     } finally {
       setLoading(false)
     }
-  }, [explanations, todayFixtureId])
+  }, [todayFixtureId])
 
-  const toggleAnalysis = async () => {
-    if (analysisMode) {
-      setAnalysisMode(false)
-      setSelected(null)
+  const toggleAudit = async () => {
+    if (auditOpen) {
+      setAuditOpen(false)
       return
     }
-    const res = await loadExplanations()
-    if (res) setAnalysisMode(true)
-  }
-
-  const handleDownload = async () => {
-    const res = await loadExplanations()
-    if (res) downloadAuditJson(res, providerFixtureId)
-  }
-
-  const openDimension = (key: DimensionKey) => {
-    const expl = explanations?.dimensions?.[key]
-    if (expl) setSelected({ type: 'dimension', explanation: expl })
-  }
-
-  const openCandidate = (id: string) => {
-    const expl = explanations?.candidates?.[id]
-    if (expl) setSelected({ type: 'candidate', explanation: expl })
+    const res = explanations ?? (await loadExplanations())
+    if (res) setAuditOpen(true)
   }
 
   if (!goalIntensity || goalIntensity.status === 'unavailable') {
     return (
-      <UnavailablePanel
-        title="Intensità Goal Avanzata v5"
-        subtitle="Snapshot prospettico non disponibile (bundle assente o partita fuori coorte)."
-        showBadges
-      />
+      <UnavailablePanel title="Intensità Goal V5" subtitle="Modulo non disponibile per questa partita." />
     )
   }
 
-  if (goalIntensity.status === 'error' && !goalIntensity.snapshot) {
+  if (goalIntensity.status === 'error' && !(goalIntensity as { snapshot?: unknown }).snapshot) {
     return (
       <UnavailablePanel
-        title="Intensità Goal Avanzata v5"
+        title="Intensità Goal V5"
         subtitle={goalIntensity.banner ?? 'Snapshot non disponibile.'}
       />
     )
   }
 
-  const snap = (goalIntensity.snapshot || {}) as Record<string, unknown>
-  const pillars = (snap.pillar_scores || {}) as Record<string, number | null>
-  const calibrated = (snap.calibrated_predictions || {}) as Record<
-    string,
-    Record<string, number | null | string | boolean>
-  >
+  const gi = goalIntensity as GoalIntensityPayload & {
+    bundle_version?: string
+    operational_status?: string
+    operational_status_label_it?: string
+    source?: string
+    presentation?: string
+    legacy_archive?: boolean
+    index?: { id?: string; score?: number | null } | null
+    outputs?: Record<string, unknown>
+    data_quality?: { feature_status?: string; history_sample_size?: number | null }
+    fallback?: { fallback_reason?: string; btts_unavailable?: boolean } | null
+    calibrated_predictions?: Record<string, Record<string, number | null | string | boolean>>
+    snapshot?: Record<string, unknown>
+    primary_candidate_score?: number | null
+  }
 
-  const dimensionDefs: Array<{
-    key: DimensionKey
-    title: string
-    rows: Array<[string, number | null | undefined]>
-  }> = [
-    {
-      key: 'offensive_production',
-      title: '1. Produzione offensiva',
-      rows: [
-        ['OP1 long-term', pillars.OP1_HOME_LONG_TERM],
-        ['OP2 recency', pillars.OP2_HOME_RECENCY],
-      ],
-    },
-    {
-      key: 'defensive_solidity',
-      title: '2. Solidità difensiva',
-      rows: [
-        ['Vulnerabilità DV1', pillars.DV1_MEAN_CONCEDED],
-        ['Solidità (100 − vuln.)', pillars.defensive_solidity_display],
-      ],
-    },
-    {
-      key: 'match_tempo',
-      title: '3. Ritmo partita',
-      rows: [
-        ['MT1 long-term', pillars.MT1_LONG_TERM],
-        ['MT2 + recency', pillars.MT2_LONG_TERM_PLUS_RECENCY],
-      ],
-    },
-    {
-      key: 'offensive_stability',
-      title: '4. Stabilità offensiva',
-      rows: [
-        ['Volatilità OV1', pillars.OV1_STD],
-        ['Stabilità (100 − vol.)', pillars.offensive_stability_display],
-      ],
-    },
-  ]
+  const source = gi.source || (gi.legacy_archive ? 'v5_legacy_preview' : 'v5_official')
+  const isFallback = source === 'v4_fallback'
+  const isLegacy =
+    Boolean(gi.legacy_archive) ||
+    gi.presentation === 'legacy_archive' ||
+    source === 'v5_legacy_preview'
+  const isOfficial =
+    !isFallback &&
+    !isLegacy &&
+    (gi.operational_status === 'official_support' || source === 'v5_official')
+
+  const outputs = gi.outputs
+  let indexScore = gi.index?.score ?? gi.primary_candidate_score ?? null
+  let expected = readOutputValue(outputs, 'expected_total_goals')
+  let over15 = readOutputProb(outputs, 'over_1_5')
+  let under15 = readOutputProb(outputs, 'under_1_5')
+  let over25 = readOutputProb(outputs, 'over_2_5')
+  let under25 = readOutputProb(outputs, 'under_2_5')
+  let bttsYes = readOutputProb(outputs, 'btts_yes')
+  let bttsNo = readOutputProb(outputs, 'btts_no')
+
+  if (expected == null || over15 == null) {
+    const snap = (gi.snapshot || {}) as Record<string, unknown>
+    const cal = (gi.calibrated_predictions ||
+      snap.calibrated_predictions ||
+      {}) as Record<string, Record<string, number | null>>
+    const block = cal.OFFICIAL_SUPPORT || cal.GI_A_STRICT_CORE
+    if (block) {
+      if (indexScore == null) {
+        const raw = Number(block.raw_score ?? gi.primary_candidate_score ?? NaN)
+        indexScore = Number.isNaN(raw) ? null : raw
+      }
+      if (expected == null) expected = block.expected_total_goals ?? null
+      if (over15 == null) over15 = block.probability_goals_ge_2 ?? null
+      if (over25 == null) over25 = block.probability_goals_ge_3 ?? null
+      if (bttsYes == null) bttsYes = block.probability_btts ?? null
+      if (under15 == null && over15 != null) under15 = 1 - over15
+      if (under25 == null && over25 != null) under25 = 1 - over25
+      if (bttsNo == null && bttsYes != null) bttsNo = 1 - bttsYes
+    }
+  }
+
+  const bttsUnavailable = isFallback || Boolean(gi.fallback?.btts_unavailable)
+  const statusLabel =
+    gi.operational_status_label_it ||
+    (isOfficial
+      ? 'Supporto ufficiale'
+      : isLegacy
+        ? 'Archivio preview'
+        : isFallback
+          ? 'Fallback V4'
+          : 'Preview monitorata')
 
   return (
-    <section className={`${todayCard} ${todayCardPadding}`}>
+    <section className={`${todayCard} ${todayCardPadding}`} data-testid="goal-intensity-v5-official-card">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className={todaySectionTitle}>Intensità Goal Avanzata v5</h3>
+          <h3 className={todaySectionTitle}>Intensità Goal V5</h3>
           <p className={todaySectionSubtitle}>
-            Analisi su quattro dimensioni distinte con candidati calibrati.
+            Supporto analitico contestuale sui mercati goal. Non è un consiglio autonomo.
           </p>
           {error ? <p className="mt-2 text-xs text-amber-700">{error}</p> : null}
-          {analysisMode ? (
-            <p className="mt-2 text-xs text-slate-500">
-              Modalità analisi: clicca una dimensione o un candidato
-            </p>
-          ) : null}
         </div>
         {todayFixtureId != null ? (
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <button
-              type="button"
-              onClick={() => void toggleAnalysis()}
-              disabled={loading}
-              className={`rounded-md border px-2.5 py-1 text-[11px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:opacity-60 ${
-                analysisMode
-                  ? 'border-amber-300 bg-amber-50 text-amber-900'
-                  : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {loading ? 'Caricamento…' : analysisMode ? 'Analisi attiva' : 'ƒx Analisi intensità'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDownload()}
-              disabled={loading}
-              className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:opacity-60"
-            >
-              Scarica audit Goal Intensity
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => void toggleAudit()}
+            disabled={loading}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? 'Caricamento…' : auditOpen ? 'Chiudi audit' : 'Apri audit'}
+          </button>
         ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900">
-          Preview monitorata
-        </span>
-        <span className="inline-block rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-          Non collegato ai Segnali
-        </span>
+        <Badge tone={isOfficial ? 'emerald' : isFallback ? 'amber' : 'sky'}>{statusLabel}</Badge>
+        <Badge>Non collegato ai Segnali</Badge>
+        {isFallback ? <Badge tone="amber">Fallback V4</Badge> : null}
+        {isLegacy ? <Badge tone="sky">Archivio preview</Badge> : null}
+        {gi.bundle_version ? <Badge>{gi.bundle_version}</Badge> : null}
       </div>
-      {goalIntensity.banner && (
-        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950">
-          {goalIntensity.banner}
+
+      {isFallback && gi.fallback?.fallback_reason ? (
+        <p className="mt-2 text-xs text-amber-800">
+          Motivo fallback: {gi.fallback.fallback_reason}. BTTS / No Gol non disponibili.
+        </p>
+      ) : null}
+
+      {!isLegacy ? (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+            <p className="text-[11px] text-slate-500">Indice intensità (0–100)</p>
+            <p className="text-2xl font-semibold text-slate-900" data-testid="gi-index-score">
+              {fmt(indexScore, 1)}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">GI_A_STRICT_CORE</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+            <p className="text-[11px] text-slate-500">Stima totale gol</p>
+            <p className="text-2xl font-semibold text-slate-900" data-testid="gi-expected-total">
+              {fmt(expected, 2)}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {isFallback ? 'Goal attesi Cecchino interni (V4)' : 'Stima calibrata del totale gol'}
+            </p>
+          </div>
+          <ProbBlock title="Linea 1.5" overLabel="Over 1.5" underLabel="Under 1.5" over={over15} under={under15} />
+          <ProbBlock title="Linea 2.5" overLabel="Over 2.5" underLabel="Under 2.5" over={over25} under={under25} />
+          <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:col-span-2">
+            <p className="text-xs font-semibold text-slate-800">Gol / No Gol</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <p className="text-[11px] text-slate-500">Gol</p>
+                <p className="font-semibold text-slate-900">{bttsUnavailable ? 'N/D' : fmtProb(bttsYes)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-500">No Gol</p>
+                <p className="font-semibold text-slate-900">{bttsUnavailable ? 'N/D' : fmtProb(bttsNo)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-600">
+          Snapshot di archivio preview. Non presentare come risultato ufficiale.
         </p>
       )}
 
-      <details
-        className="mt-3 rounded-lg border border-slate-200 bg-white"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-          Qualità snapshot
-        </summary>
-        <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-700">
-          <p>
-            Bundle frozen at:{' '}
-            <span className="font-medium">
-              {String(
-                snap.bundle_frozen_at ??
-                  (goalIntensity.bundle as Record<string, unknown> | undefined)?.bundle_frozen_at ??
-                  '—',
-              )}
-            </span>
-          </p>
-          <p className="mt-1">
-            Source snapshot at:{' '}
-            <span className="font-medium">{String(snap.source_snapshot_at ?? '—')}</span>
-          </p>
-          <p className="mt-1">
-            source_snapshot_at &gt; bundle_frozen_at:{' '}
-            <span className="font-medium">
-              {(() => {
-                const check = snap.freeze_check as Record<string, boolean> | undefined
-                const v = check?.source_snapshot_at_gt_bundle_frozen_at ?? snap.source_snapshot_after_freeze
-                return v == null ? '—' : v ? 'sì' : 'no'
-              })()}
-            </span>
-          </p>
-          <p className="mt-1">
-            source_snapshot_at &lt; kickoff:{' '}
-            <span className="font-medium">
-              {(() => {
-                const check = snap.freeze_check as Record<string, boolean> | undefined
-                const v = check?.source_snapshot_at_lt_kickoff ?? snap.source_snapshot_before_kickoff
-                return v == null ? '—' : v ? 'sì' : 'no'
-              })()}
-            </span>
-          </p>
-        </div>
-      </details>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {dimensionDefs.map((d) => (
-          <DimensionBlock
-            key={d.key}
-            title={d.title}
-            rows={d.rows}
-            analysisActive={analysisMode}
-            onOpenAnalysis={() => openDimension(d.key)}
-          />
-        ))}
+      <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-500">
+        <span>Fonte: {source}</span>
+        {gi.data_quality?.feature_status ? <span>Qualità dati: {gi.data_quality.feature_status}</span> : null}
       </div>
 
-      <div className="mt-5 overflow-x-auto">
-        <table className="min-w-full text-left text-xs">
-          <thead className="border-b border-slate-200 text-slate-500">
-            <tr>
-              <th className="py-2 pr-3 font-medium">Candidato</th>
-              <th className="py-2 pr-3 font-medium">Ruolo</th>
-              <th className="py-2 pr-3 font-medium">Score</th>
-              <th className="py-2 pr-3 font-medium">xG totali</th>
-              <th className="py-2 pr-3 font-medium">P(≥2)</th>
-              <th className="py-2 pr-3 font-medium">P(≥3)</th>
-              <th className="py-2 font-medium">P(BTTS)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CANDIDATES.map((c) => {
-              const cal = calibrated[c.id] || {}
-              const score =
-                (snap[c.scoreKey] as number | null | undefined) ??
-                ((snap.candidate_scores as Record<string, number> | undefined)?.[c.id] ?? null)
-              const isPrimary = c.role === 'Primary'
-              const rowInteractive = analysisMode
-                ? 'cursor-pointer transition-shadow hover:shadow-sm hover:ring-1 hover:ring-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400'
-                : ''
-
-              const openRow = () => openCandidate(c.id)
-              const onKeyDown = (e: KeyboardEvent) => {
-                if (!analysisMode) return
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  openRow()
-                }
-              }
-
-              return (
-                <tr
-                  key={c.id}
-                  className={`border-b border-slate-100 ${isPrimary ? 'bg-violet-50 font-medium text-slate-900' : 'text-slate-800'} ${rowInteractive}`}
-                  role={analysisMode ? 'button' : undefined}
-                  tabIndex={analysisMode ? 0 : undefined}
-                  aria-label={analysisMode ? `Apri analisi candidato ${c.id}` : undefined}
-                  onClick={analysisMode ? openRow : undefined}
-                  onKeyDown={analysisMode ? onKeyDown : undefined}
-                >
-                  <td className="py-2 pr-3 font-medium">{c.id}</td>
-                  <td className="py-2 pr-3">{c.role}</td>
-                  <td className="py-2 pr-3">{fmt(score)}</td>
-                  <td className="py-2 pr-3">{fmt(cal.expected_total_goals as number | null, 2)}</td>
-                  <td className="py-2 pr-3">{fmtProb(cal.probability_goals_ge_2 as number | null)}</td>
-                  <td className="py-2 pr-3">{fmtProb(cal.probability_goals_ge_3 as number | null)}</td>
-                  <td className="py-2">{fmtProb(cal.probability_btts as number | null)}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        <p className="mt-2 text-[11px] text-slate-500">
-          Stima calibrata research. Candidato Primary evidenziato. Non collegato ai segnali produttivi.
-        </p>
-      </div>
-
-      {selected ? (
-        <CecchinoGoalIntensityV5AuditModal
-          type={selected.type}
-          explanation={selected.explanation}
-          sourceMode={explanations?.source_mode}
-          onClose={() => setSelected(null)}
-        />
-      ) : null}
+      {auditOpen && explanations ? <OfficialAuditCollapsible explanations={explanations} /> : null}
     </section>
   )
 }
+
+export default CecchinoGoalIntensityV5Panel

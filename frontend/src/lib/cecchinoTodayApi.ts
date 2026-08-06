@@ -1595,6 +1595,21 @@ export type CecchinoTodayDetailResponse = {
     error?: string
     message?: string
     version?: string
+    module_version?: string
+    bundle_version?: string
+    operational_status?: string
+    operational_status_label_it?: string
+    role?: string
+    signals_integration_status?: string
+    source?: string
+    presentation?: string
+    legacy_archive?: boolean
+    index?: { id?: string; score?: number | null } | null
+    outputs?: Record<string, unknown>
+    data_quality?: Record<string, unknown>
+    fallback?: Record<string, unknown> | null
+    calibrated_predictions?: Record<string, unknown>
+    primary_candidate_score?: number | null
     bundle?: Record<string, unknown>
     snapshot?: Record<string, unknown>
     v4_unchanged?: boolean
