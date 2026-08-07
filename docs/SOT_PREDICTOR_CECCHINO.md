@@ -38,7 +38,7 @@ Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-ma
 | Tema | Regola |
 |------|--------|
 | Opportunity | `PRICE_VALUE OR SIGNAL_VALUE` (mai AND obbligatorio) |
-| Price | `book_gt_cecchino_v1` da riga KPI (`quota_book > quota_cecchino` / `edge_pct > 0`); rating/score_acquisto solo display |
+| Price (BET-01.2) | `v31_theoretical_gate_v1`: `edge>0` ∧ `vantaggio_prob>0` ∧ `rating>=RATING_MIN_PURCHASE_SCOPE` (50) via `evaluate_v31_gate`; score V3.1 **non** è gate |
 | Signals | Matrice V3 current + consensus policy min-two; **non** `is_acquired` come unico trigger; pre-value-gate |
 | HOME/AWAY | `direct_single_formula` (exempt ≥2) |
 | X PT | `derived_from_draw_consensus` da DRAW (`inherit_draw_consensus`); nessun formula inventata |
@@ -48,7 +48,19 @@ Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-ma
 | Context | Balance V5 su 1/X/2; GI official support su O/U; nessun supports/contradicts (BET-04) |
 | Freshness | Ogni GET legge Today current; `source_revision` SHA-256; nessuna tabella snapshot Bet Builder |
 | Endpoint | `GET /api/cecchino/bet-builder/opportunities` |
+| Aggregator | `cecchino_bet_builder_opportunity_aggregator_v2` |
 | Divieti | Bet Builder Score, consigli, stake, API esterne, write, migrazione |
+
+### BET-01.2 — Price Opportunity Gate = V3.1 theoretical (2026-08-07)
+
+| Tema | Regola |
+|------|--------|
+| Vecchio | `book_gt_cecchino_v1` = Book > Cecchino (edge positivo) |
+| Nuovo | edge > 0 AND vantaggio_prob > 0 AND rating ≥ 50 (`RATING_MIN_PURCHASE_SCOPE`) |
+| Riuso | `evaluate_v31_gate` dal modulo V3.1; soglia non duplicata |
+| Signals | Invariati; signal-only con rating &lt; 50 **ammesso** |
+| Non-gate | score_v31, `purchasability_v31.available`, gate persistito |
+| Invariati | formula V3.1, KPI/rating, consensus, HOME/AWAY, X PT |
 
 ### BET-01.1 — Balance V5 context mapping (2026-08-07)
 

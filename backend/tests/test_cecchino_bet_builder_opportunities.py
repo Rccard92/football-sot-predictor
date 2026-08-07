@@ -39,6 +39,9 @@ from app.services.cecchino.cecchino_bet_builder_opportunity_aggregator import (
     build_signals_evidence,
     opportunity_key,
 )
+from app.services.cecchino.cecchino_purchasability_v31_candidate import (
+    RATING_MIN_PURCHASE_SCOPE,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -69,8 +72,10 @@ def _kpi_row(
     *,
     book: float | None = 2.10,
     cecchino: float | None = 1.90,
-    rating: int | None = 40,
+    rating: int | None = 60,
     status: str = "available",
+    edge_pct: float | None | object = Ellipsis,
+    vantaggio_prob: float | None | object = Ellipsis,
 ) -> dict:
     edge = None
     if book is not None and cecchino is not None and cecchino > 0:
@@ -80,6 +85,10 @@ def _kpi_row(
     vant = None
     if prob_book is not None and prob_cec is not None:
         vant = round(prob_cec - prob_book, 6)
+    if edge_pct is not Ellipsis:
+        edge = edge_pct  # type: ignore[assignment]
+    if vantaggio_prob is not Ellipsis:
+        vant = vantaggio_prob  # type: ignore[assignment]
     return {
         "market_key": market_key,
         "segno": market_key,
@@ -89,7 +98,7 @@ def _kpi_row(
         "prob_cecchino": prob_cec,
         "vantaggio_prob": vant,
         "edge_pct": edge,
-        "score_acquisto": (prob_cec * (edge or 0) / 100) if prob_cec is not None else None,
+        "score_acquisto": (prob_cec * (edge or 0) / 100) if prob_cec is not None and edge is not None else None,
         "rating": rating,
         "rating_label": "basso" if rating is not None and rating < 50 else "medio",
         "status": status,
@@ -319,16 +328,304 @@ def test_non_positive_edge_no_price_trigger():
     assert price2["present"] is False
 
 
-def test_rating_is_not_a_gate():
-    # rating basso ma book > cecchino → price present
-    price = build_price_value(_kpi_row(SEL_AWAY, book=3.0, cecchino=2.5, rating=10))
-    assert price["present"] is True
-    assert price["rating"] == 10
+def test_rating_below_scope_no_price_trigger():
+    # BET-01.2: edge positivo ma rating < RATING_MIN_PURCHASE_SCOPE → no price
+    assert RATING_MIN_PURCHASE_SCOPE == 50.0
+    price = build_price_value(_kpi_row(SEL_AWAY, book=3.0, cecchino=2.5, rating=26))
+    assert price["present"] is False
+    assert price["rating"] == 26
+    assert price["method"] == PRICE_VALUE_METHOD
+    assert PRICE_VALUE_METHOD == "v31_theoretical_gate_v1"
 
 
 def test_low_quota_not_auto_excluded():
-    price = build_price_value(_kpi_row(SEL_HOME, book=1.25, cecchino=1.15, rating=20))
+    # quota bassa ok se gate V3.1 (edge/vant/rating) passa
+    price = build_price_value(_kpi_row(SEL_HOME, book=1.25, cecchino=1.15, rating=60))
     assert price["present"] is True
+
+
+# ---------------------------------------------------------------------------
+# BET-01.2 — price gate aligned to V3.1 theoretical gate
+# ---------------------------------------------------------------------------
+
+
+def test_bet_01_2_kups_like_low_rating_excluded(monkeypatch):
+    """edge positivo + rating 26 + consensus insufficiente → nessuna opportunity."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    # Book 4.00 / Cecchino 3.69 → edge ~8.4%; rating 26; 1/4 signals
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[
+                _kpi_row(
+                    SEL_DRAW,
+                    book=4.0,
+                    cecchino=3.69,
+                    rating=26,
+                    edge_pct=8.40,
+                    vantaggio_prob=0.021,
+                )
+            ],
+            signals_matrix=_matrix_v3(draw_yes=1),
+        )
+    ]
+    db = _mock_db(rows)
+    payload = aggregate_bet_builder_opportunities(db, scan_date=date(2026, 8, 8))
+    assert payload["summary"]["opportunities_total"] == 0
+    assert all(o["market"]["market_key"] != SEL_DRAW for o in payload["opportunities"])
+
+
+def test_bet_01_2_price_boundary_rating_50_included():
+    price = build_price_value(
+        _kpi_row(SEL_DRAW, book=2.2, cecchino=1.9, rating=50)
+    )
+    assert price["present"] is True
+
+
+def test_bet_01_2_price_boundary_rating_49_excluded():
+    price = build_price_value(
+        _kpi_row(SEL_DRAW, book=2.2, cecchino=1.9, rating=49)
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_price_boundary_edge_zero_excluded():
+    price = build_price_value(
+        _kpi_row(SEL_DRAW, book=2.0, cecchino=2.0, rating=90, edge_pct=0.0)
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_price_boundary_vantaggio_zero_excluded():
+    price = build_price_value(
+        _kpi_row(
+            SEL_DRAW,
+            book=2.2,
+            cecchino=1.9,
+            rating=90,
+            vantaggio_prob=0.0,
+        )
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_price_boundary_rating_null_excluded():
+    price = build_price_value(
+        _kpi_row(SEL_DRAW, book=2.2, cecchino=1.9, rating=None)
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_price_boundary_edge_null_excluded():
+    price = build_price_value(
+        _kpi_row(SEL_DRAW, book=2.2, cecchino=1.9, rating=90, edge_pct=None)
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_price_boundary_vantaggio_null_excluded():
+    price = build_price_value(
+        _kpi_row(
+            SEL_DRAW,
+            book=2.2,
+            cecchino=1.9,
+            rating=90,
+            vantaggio_prob=None,
+        )
+    )
+    assert price["present"] is False
+
+
+def test_bet_01_2_signal_only_draw_consensus_2_of_4_low_rating(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_DRAW, book=1.7, cecchino=2.0, rating=20)],
+            signals_matrix=_matrix_v3(draw_yes=2),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    draw = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW)
+    assert draw["origin"] == ORIGIN_SIGNALS
+    assert draw["price_value"]["present"] is False
+    assert draw["signals"]["present"] is True
+    assert payload["summary"]["signals_only"] >= 1
+    assert payload["summary"]["price_only"] == 0
+
+
+def test_bet_01_2_signal_only_draw_consensus_4_of_4_low_rating(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_DRAW, book=1.7, cecchino=2.0, rating=20)],
+            signals_matrix=_matrix_v3(draw_yes=4),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    draw = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW)
+    assert draw["origin"] == ORIGIN_SIGNALS
+    assert draw["price_value"]["present"] is False
+
+
+def test_bet_01_2_signal_only_home_direct_low_rating(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_HOME, book=1.5, cecchino=1.8, rating=20)],
+            signals_matrix=_matrix_v3(home_si=True),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    home = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_HOME)
+    assert home["origin"] == ORIGIN_SIGNALS
+    assert home["price_value"]["present"] is False
+    assert home["signals"]["evidence_mode"] == "direct_single_formula"
+
+
+def test_bet_01_2_signal_only_away_direct_low_rating(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_AWAY, book=1.5, cecchino=1.8, rating=20)],
+            signals_matrix=_matrix_v3(away_si=True),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    away = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_AWAY)
+    assert away["origin"] == ORIGIN_SIGNALS
+    assert away["price_value"]["present"] is False
+
+
+def test_bet_01_2_signal_only_draw_pt_derived(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[
+                _kpi_row(SEL_DRAW, book=1.5, cecchino=1.8, rating=20),
+                _kpi_row(SEL_DRAW_PT, book=1.5, cecchino=1.8, rating=20),
+            ],
+            signals_matrix=_matrix_v3(draw_yes=2),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    pt = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW_PT)
+    assert pt["origin"] == ORIGIN_SIGNALS
+    assert pt["price_value"]["present"] is False
+    assert pt["signals"]["evidence_mode"] == "derived_from_draw_consensus"
+
+
+def test_bet_01_2_price_and_signals_high_rating(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {
+            "status": "ok",
+            "items": [_v31_item(SEL_DRAW, score=80)],
+            "source_mode": "persisted_pre_match_snapshot",
+        },
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_DRAW, book=2.2, cecchino=1.9, rating=70)],
+            signals_matrix=_matrix_v3(draw_yes=3),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    draw = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW)
+    assert draw["origin"] == ORIGIN_PRICE_AND_SIGNALS
+    assert draw["price_value"]["present"] is True
+    assert draw["price_value"]["method"] == "v31_theoretical_gate_v1"
+    assert payload["aggregator_version"] == "cecchino_bet_builder_opportunity_aggregator_v2"
+    assert payload["summary"]["price_and_signals"] >= 1
+
+
+def test_bet_01_2_v31_unavailable_does_not_block_price_kpi_gate(monkeypatch):
+    """V3.1 N/D non blocca price se gate KPI passa."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {"status": "unavailable", "items": []},
+    )
+    rows = [
+        _fixture_row(
+            fid=1,
+            kpi_rows=[_kpi_row(SEL_OVER_2_5, book=2.0, cecchino=1.7, rating=70)],
+            signals_matrix=_matrix_v3(draw_yes=0),
+        )
+    ]
+    payload = aggregate_bet_builder_opportunities(
+        _mock_db(rows), scan_date=date(2026, 8, 8)
+    )
+    opp = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_OVER_2_5)
+    assert opp["origin"] == ORIGIN_PRICE
+    assert opp["price_value"]["present"] is True
+    assert opp["purchasability_v31"]["available"] is False
 
 
 # ---------------------------------------------------------------------------

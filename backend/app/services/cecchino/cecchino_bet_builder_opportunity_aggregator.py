@@ -66,6 +66,10 @@ from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
 from app.services.cecchino.cecchino_goal_intensity_v5_preview import get_active_bundle
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import safe_float
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import rating_label
+from app.services.cecchino.cecchino_purchasability_v31_candidate import (
+    RATING_MIN_PURCHASE_SCOPE,
+    evaluate_v31_gate,
+)
 from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
     index_purchasability_v31_snapshot_by_market,
     resolve_purchasability_preview_v31_for_detail,
@@ -117,7 +121,11 @@ def _iso(value: datetime | date | None) -> str | None:
 
 
 def build_price_value(kpi_row: dict[str, Any] | None) -> dict[str, Any]:
-    """price_value_present = quote finite AND book > cecchino (edge_pct > 0)."""
+    """PRICE_VALUE via gate teorico V3.1 (edge>0 ∧ vantaggio>0 ∧ rating>=scope).
+
+    Riusa ``evaluate_v31_gate`` / ``RATING_MIN_PURCHASE_SCOPE``. Lo score V3.1
+    non è gate; purchasability persistita non è richiesta.
+    """
     if not isinstance(kpi_row, dict):
         return {
             "present": False,
@@ -140,11 +148,12 @@ def build_price_value(kpi_row: dict[str, Any] | None) -> dict[str, Any]:
     quota_cecchino = _finite_number(kpi_row.get("quota_cecchino"))
     edge_pct = _finite_number(kpi_row.get("edge_pct"))
 
-    present = False
-    if quota_book is not None and quota_cecchino is not None:
-        present = quota_book > quota_cecchino
-    elif edge_pct is not None:
-        present = edge_pct > 0
+    # Gate canonico V3.1: edge > 0 AND vantaggio_prob > 0 AND rating >= RATING_MIN_PURCHASE_SCOPE
+    gate = evaluate_v31_gate(kpi_row)
+    present = (
+        gate.get("gate_status") == "passed"
+        and gate.get("rating_threshold") == RATING_MIN_PURCHASE_SCOPE
+    )
 
     rating = kpi_row.get("rating")
     try:

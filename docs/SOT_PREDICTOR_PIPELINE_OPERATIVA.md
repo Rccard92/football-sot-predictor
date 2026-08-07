@@ -23,10 +23,11 @@
 
 1. Scan / rescan Cecchino Today produce KPI, `signals_matrix` V3, `purchasability_preview_v31`, Balance monitoring, GI snapshot.
 2. `GET /api/cecchino/bet-builder/opportunities?date=` legge lo **stato current** (batch fixture + job + GI snapshots).
-3. Opportunity = price (`book > cecchino`) **oppure** signal evidence pre-value-gate.
-4. Nuova scan → nuovi `updated_at` / V3.1 / job → nuovo `source_revision`; nessuna cache applicativa.
-5. Pre-match only (`upcoming` + kickoff futuro); `excluded_post_kickoff` nel summary.
-6. Cecchino Today UI/scan **invariati** a livello analitico; Bet Builder non scrive.
+3. Opportunity = price (`v31_theoretical_gate_v1`: edge>0 ∧ vantaggio>0 ∧ rating≥50) **oppure** signal evidence pre-value-gate.
+4. BET-01.2: rating &lt; 50 esclude solo PRICE; signal-only resta; score V3.1 non è gate price.
+5. Nuova scan → nuovi `updated_at` / V3.1 / job → nuovo `source_revision`; nessuna cache applicativa. Aggregator v2 identifica la semantica price.
+6. Pre-match only (`upcoming` + kickoff futuro); `excluded_post_kickoff` nel summary.
+7. Cecchino Today UI/scan **invariati** a livello analitico; Bet Builder non scrive.
 
 ## Segnali KPI — 19 mercati + filtri Acquistabilità (2026-08-06)
 

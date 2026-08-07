@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-01.2 price gate aligned to V3.1 (2026-08-07)
+
+- Perché: PRICE_VALUE su solo Book > Cecchino faceva entrare mercati con edge debole e Rating KPI basso (es. X con rating 26 / consensus 1/4) senza Acquistabilità V3.1.
+- Cosa: `build_price_value` riusa `evaluate_v31_gate` / `RATING_MIN_PURCHASE_SCOPE`; method `v31_theoretical_gate_v1`; aggregator `…_v2`. OPPORTUNITY = PRICE OR SIGNALS invariato.
+- Impatto: meno price_only / price_and_signals; signal-only con rating &lt; 50 resta; summary ricalcolato naturalmente; fixture senza opportunity spariscono (BET-02.1).
+- Non toccato: formula V3.1, KPI/rating, consensus HOME/AWAY/X PT, score V3.1 come gate, migrazioni, Bet Builder Score.
+
 ## Fix — Bet Builder BET-02.1 group opportunities by fixture (2026-08-07)
 
 - Perché: troppe card (1 opportunity = 1 card) rendevano la stessa partita ripetuta; UX inefficiente.

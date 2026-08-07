@@ -35,7 +35,7 @@ function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOppor
     origin: 'price',
     price_value: {
       present: true,
-      method: 'book_gt_cecchino_v1',
+      method: 'v31_theoretical_gate_v1',
       quota_book: 4.1,
       quota_cecchino: 2.26,
       prob_book: null,

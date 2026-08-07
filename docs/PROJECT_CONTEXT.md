@@ -2,6 +2,17 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-01.2 — Price gate allineato a V3.1 (2026-08-07)
+
+Price trigger non è più solo Book > Cecchino. Nuovo gate = gate teorico Acquistabilità V3.1:
+
+- `edge_pct > 0` AND `vantaggio_prob > 0` AND `rating >= RATING_MIN_PURCHASE_SCOPE` (50)
+- Method: `v31_theoretical_gate_v1`; Aggregator: `cecchino_bet_builder_opportunity_aggregator_v2`
+- Riuso: `evaluate_v31_gate` + costante canonica V3.1 (nessun `50` locale)
+- OPPORTUNITY = PRICE OR SIGNALS invariato → signal-only con rating &lt; 50 resta ammesso
+- Score V3.1 / `purchasability_v31.available` **non** sono gate price; KPI e modulo V3.1 invariati
+- Nessuna migrazione; nessun Bet Builder Score
+
 ## Bet Builder BET-02.1 — Raggruppamento per fixture (2026-08-07)
 
 UX: **1 card = 1 partita**; N opportunity interne filtrate. Solo frontend; backend BET-01 invariato.
@@ -32,10 +43,10 @@ UI full-width **read-only** su payload BET-01. Non sostituisce Cecchino Today (a
 Layer **read-only** di orchestrazione su dati canonici Cecchino Today. **Non** è un modello, non sostituisce Cecchino Today, non altera scan/KPI/Segnali/Balance/GI/Acquistabilità operativa.
 
 - Contratto: `cecchino_bet_builder_contract_v1`
-- Aggregator: `cecchino_bet_builder_opportunity_aggregator_v1`
+- Aggregator: `cecchino_bet_builder_opportunity_aggregator_v2` (v2 = price gate aligned to V3.1 theoretical gate)
 - Signal evidence: `cecchino_bet_builder_signal_evidence_v1` (pre-value-gate, formula V3 only)
 - Purchasability policy Bet Builder: `v31_only` (`cecchino_bet_builder_purchasability_v31_only_v1`) — **nessun fallback V3**; V3.1 non promossa globalmente
-- Opportunity = **price OR signals** (`book_gt_cecchino_v1` ∨ consensus/direct evidence)
+- Opportunity = **price OR signals** (`v31_theoretical_gate_v1` ∨ consensus/direct evidence)
 - Endpoint: `GET /api/cecchino/bet-builder/opportunities?date=YYYY-MM-DD`
 - Client FE: `frontend/src/lib/cecchinoBetBuilderApi.ts`
 - Nessuna migrazione, nessuna cache stale, nessuna API esterna, nessuna write

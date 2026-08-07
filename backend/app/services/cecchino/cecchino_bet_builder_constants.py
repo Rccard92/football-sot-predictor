@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 BET_BUILDER_CONTRACT_VERSION = "cecchino_bet_builder_contract_v1"
-BET_BUILDER_AGGREGATOR_VERSION = "cecchino_bet_builder_opportunity_aggregator_v1"
+# v2 = price gate aligned to V3.1 theoretical gate
+BET_BUILDER_AGGREGATOR_VERSION = "cecchino_bet_builder_opportunity_aggregator_v2"
 BET_BUILDER_SIGNAL_EVIDENCE_VERSION = "cecchino_bet_builder_signal_evidence_v1"
 BET_BUILDER_PURCHASABILITY_POLICY_VERSION = (
     "cecchino_bet_builder_purchasability_v31_only_v1"
@@ -11,7 +12,7 @@ BET_BUILDER_PURCHASABILITY_POLICY_VERSION = (
 
 PURCHASABILITY_POLICY = "v31_only"
 
-PRICE_VALUE_METHOD = "book_gt_cecchino_v1"
+PRICE_VALUE_METHOD = "v31_theoretical_gate_v1"
 
 ORIGIN_PRICE = "price"
 ORIGIN_SIGNALS = "signals"

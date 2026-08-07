@@ -8,7 +8,8 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 |-------|--------|
 | Ruolo | Orchestrazione read-only (opportunity aggregator) |
 | Contratto | `cecchino_bet_builder_contract_v1` |
-| Aggregator | `cecchino_bet_builder_opportunity_aggregator_v1` |
+| Aggregator | `cecchino_bet_builder_opportunity_aggregator_v2` (price = V3.1 theoretical gate) |
+| Price method | `v31_theoretical_gate_v1` |
 | Score sintetico | **Nessuno** (divieto Bet Builder Score / confidence / combined) |
 | Acquistabilità in BB | Policy specifica `v31_only` — **non** promuove V3.1 nel registry globale |
 | Sorgenti | KPI Today, signals_matrix V3, purchasability_preview_v31, Balance monitoring, GI official support |

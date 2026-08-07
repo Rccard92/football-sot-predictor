@@ -45,7 +45,7 @@ function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBui
     origin: 'price_and_signals',
     price_value: {
       present: true,
-      method: 'book_gt_cecchino_v1',
+      method: 'v31_theoretical_gate_v1',
       quota_book: 4.1,
       quota_cecchino: 2.26,
       prob_book: null,
@@ -99,7 +99,7 @@ function baseResponse(
   const opportunities = overrides.opportunities ?? [baseOpportunity()]
   return {
     contract_version: 'cecchino_bet_builder_contract_v1',
-    aggregator_version: 'cecchino_bet_builder_opportunity_aggregator_v1',
+    aggregator_version: 'cecchino_bet_builder_opportunity_aggregator_v2',
     purchasability_policy: 'v31_only',
     scan_date: '2026-08-08',
     source_revision: 'rev-1',
