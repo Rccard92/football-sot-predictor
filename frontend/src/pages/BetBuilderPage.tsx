@@ -194,7 +194,7 @@ export function BetBuilderPage() {
       : data?.summary.fixtures_considered
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden">
+    <div className="mx-auto w-full max-w-[1400px] space-y-3 overflow-x-hidden sm:space-y-4">
       <BetBuilderHeader
         date={selectedDate}
         onDateChange={setDate}

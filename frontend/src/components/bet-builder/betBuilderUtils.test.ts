@@ -3,7 +3,9 @@ import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import {
   BET_BUILDER_PAGE_SIZE,
   DEFAULT_BET_BUILDER_FILTERS,
+  EVIDENCE_SORT_VERSION,
   buildBetBuilderFixtureGroups,
+  compareOpportunityEvidenceStrength,
   countActiveFilters,
   countFilteredOpportunities,
   countUniqueFixtures,
@@ -22,6 +24,7 @@ import {
   sliceProgressive,
   sortFixtureGroups,
   sortOpportunities,
+  sortOpportunitiesByEvidenceStrength,
   sortOpportunitiesWithinFixture,
 } from './betBuilderUtils'
 
@@ -75,6 +78,15 @@ function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOppor
 }
 
 describe('betBuilderUtils', () => {
+  it('default filters use evidence_strength_desc and context all', () => {
+    expect(DEFAULT_BET_BUILDER_FILTERS.sort).toBe('evidence_strength_desc')
+    expect(DEFAULT_BET_BUILDER_FILTERS.context).toBe('all')
+    expect(DEFAULT_BET_BUILDER_FILTERS.origin).toBe('all')
+    expect(DEFAULT_BET_BUILDER_FILTERS.market).toBe('all')
+    expect(DEFAULT_BET_BUILDER_FILTERS.minPurchasability).toBeNull()
+    expect(EVIDENCE_SORT_VERSION).toBe('bet_builder_evidence_sort_v1')
+  })
+
   it('validates iso dates and shifts days', () => {
     expect(isIsoDate('2026-08-08')).toBe(true)
     expect(isIsoDate('08-08-2026')).toBe(false)
@@ -115,6 +127,248 @@ describe('betBuilderUtils', () => {
       market: 'DRAW',
     })
     expect(draw.map((o) => o.opportunity_key).sort()).toEqual(['both', 'price'])
+  })
+
+  it('filters by context available without inventing confirmation', () => {
+    const ops = [
+      baseOp({
+        opportunity_key: 'with-ctx',
+        context_support: { available: true, module: 'balance_v5', status: 'raw_context_only' },
+      }),
+      baseOp({
+        opportunity_key: 'no-ctx',
+        market: { market_key: 'HOME', label: '1' },
+        context_support: { available: false, reason: 'no_validated_context_module' },
+      }),
+    ]
+    const filtered = filterOpportunities(ops, {
+      ...DEFAULT_BET_BUILDER_FILTERS,
+      context: 'available',
+    })
+    expect(filtered.map((o) => o.opportunity_key)).toEqual(['with-ctx'])
+  })
+
+  describe('compareOpportunityEvidenceStrength', () => {
+    it('A: price_and_signals before price', () => {
+      const qs = baseOp({
+        opportunity_key: 'qs',
+        origin: 'price_and_signals',
+        purchasability_v31: { available: true, score: 50 },
+      })
+      const price = baseOp({
+        opportunity_key: 'price',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 99 },
+      })
+      expect(compareOpportunityEvidenceStrength(qs, price)).toBeLessThan(0)
+      expect(sortOpportunitiesByEvidenceStrength([price, qs]).map((o) => o.opportunity_key)).toEqual([
+        'qs',
+        'price',
+      ])
+    })
+
+    it('B: higher consensus yes_count first at same origin', () => {
+      const four = baseOp({
+        opportunity_key: '4si',
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 4, passed: true },
+        purchasability_v31: { available: true, score: 70 },
+      })
+      const two = baseOp({
+        opportunity_key: '2si',
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 2, passed: true },
+        purchasability_v31: { available: true, score: 70 },
+      })
+      expect(compareOpportunityEvidenceStrength(four, two)).toBeLessThan(0)
+    })
+
+    it('C: V3.1 score DESC when signal evidence equal', () => {
+      const high = baseOp({
+        opportunity_key: 'v90',
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 3, passed: true },
+        purchasability_v31: { available: true, score: 90 },
+      })
+      const low = baseOp({
+        opportunity_key: 'v70',
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 3, passed: true },
+        purchasability_v31: { available: true, score: 70 },
+      })
+      expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
+    })
+
+    it('D: context available is only a tie-break', () => {
+      const withCtx = baseOp({
+        opportunity_key: 'ctx',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 80 },
+        price_value: { ...baseOp().price_value, rating: 80, edge_pct: 20 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        context_support: { available: true, module: 'balance_v5', status: 'raw_context_only' },
+      })
+      const noCtx = baseOp({
+        opportunity_key: 'noct',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 80 },
+        price_value: { ...baseOp().price_value, rating: 80, edge_pct: 20 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        context_support: { available: false },
+      })
+      expect(compareOpportunityEvidenceStrength(withCtx, noCtx)).toBeLessThan(0)
+    })
+
+    it('E: rating DESC tie-break', () => {
+      const high = baseOp({
+        opportunity_key: 'r90',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 70 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        price_value: { ...baseOp().price_value, rating: 90, edge_pct: 10 },
+        context_support: { available: false },
+      })
+      const low = baseOp({
+        opportunity_key: 'r70',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 70 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        price_value: { ...baseOp().price_value, rating: 70, edge_pct: 10 },
+        context_support: { available: false },
+      })
+      expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
+    })
+
+    it('F: edge DESC after rating', () => {
+      const high = baseOp({
+        opportunity_key: 'e30',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 70 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        price_value: { ...baseOp().price_value, rating: 80, edge_pct: 30 },
+        context_support: { available: false },
+      })
+      const low = baseOp({
+        opportunity_key: 'e20',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 70 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+        price_value: { ...baseOp().price_value, rating: 80, edge_pct: 20 },
+        context_support: { available: false },
+      })
+      expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
+    })
+
+    it('G: no combined score — comparator returns relative order only', () => {
+      const a = baseOp({ opportunity_key: 'a', origin: 'signals' })
+      const b = baseOp({ opportunity_key: 'b', origin: 'price' })
+      const result = compareOpportunityEvidenceStrength(a, b)
+      expect(typeof result).toBe('number')
+      expect(result).not.toBe(0)
+      expect((a as { evidence_score?: number }).evidence_score).toBeUndefined()
+      expect((b as { strong_score?: number }).strong_score).toBeUndefined()
+    })
+
+    it('context available does not beat Q+S vs price-only', () => {
+      const qs = baseOp({
+        opportunity_key: 'qs',
+        origin: 'price_and_signals',
+        context_support: { available: false },
+        purchasability_v31: { available: true, score: 40 },
+      })
+      const priceCtx = baseOp({
+        opportunity_key: 'price-ctx',
+        origin: 'price',
+        context_support: { available: true, module: 'balance_v5', status: 'raw_context_only' },
+        purchasability_v31: { available: true, score: 95 },
+      })
+      expect(compareOpportunityEvidenceStrength(qs, priceCtx)).toBeLessThan(0)
+    })
+
+    it('preserves direct_single_formula yes_count=1 without synthetic consensus', () => {
+      const direct = baseOp({
+        opportunity_key: 'home-direct',
+        origin: 'signals',
+        market: { market_key: 'HOME', label: '1' },
+        signals: {
+          available: true,
+          present: true,
+          evidence_mode: 'direct_single_formula',
+          yes_count: 1,
+          required_count: 1,
+          available_count: 1,
+          yes_columns: ['D'],
+          passed: true,
+        },
+        purchasability_v31: { available: false, score: null },
+      })
+      const consensus2 = baseOp({
+        opportunity_key: 'draw-2',
+        origin: 'signals',
+        signals: { ...baseOp().signals, yes_count: 2, passed: true },
+        purchasability_v31: { available: false, score: null },
+      })
+      expect(direct.signals.yes_count).toBe(1)
+      expect(direct.signals.evidence_mode).toBe('direct_single_formula')
+      expect(compareOpportunityEvidenceStrength(consensus2, direct)).toBeLessThan(0)
+    })
+
+    it('signals.passed true before false', () => {
+      const passed = baseOp({
+        opportunity_key: 'pass',
+        origin: 'signals',
+        signals: { ...baseOp().signals, passed: true, yes_count: 1 },
+      })
+      const failed = baseOp({
+        opportunity_key: 'fail',
+        origin: 'signals',
+        signals: { ...baseOp().signals, passed: false, yes_count: 4 },
+      })
+      expect(compareOpportunityEvidenceStrength(passed, failed)).toBeLessThan(0)
+    })
+  })
+
+  it('primary prefers Q+S with lower V3.1 over price-only with higher V3.1', () => {
+    const ops = [
+      baseOp({
+        opportunity_key: '1x-price',
+        origin: 'price',
+        market: { market_key: 'ONE_X', label: '1X' },
+        purchasability_v31: { available: true, score: 90 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false, present: false },
+      }),
+      baseOp({
+        opportunity_key: 'x-qs',
+        origin: 'price_and_signals',
+        market: { market_key: 'DRAW', label: 'X' },
+        purchasability_v31: { available: true, score: 70 },
+        signals: { ...baseOp().signals, yes_count: 4, passed: true },
+      }),
+    ]
+    const group = groupOpportunitiesByFixture(ops)[0]
+    expect(getPrimaryOpportunity(group)?.opportunity_key).toBe('x-qs')
+    expect(getPrimaryOpportunity(group)?.market.label).toBe('X')
+  })
+
+  it('fixture evidence_strength_desc uses primary opportunity', () => {
+    const groups = groupOpportunitiesByFixture([
+      baseOp({
+        opportunity_key: 'a-qs',
+        fixture: { ...baseOp().fixture, today_fixture_id: 1, home: { name: 'A' } },
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 4, passed: true },
+        purchasability_v31: { available: true, score: 80 },
+      }),
+      baseOp({
+        opportunity_key: 'b-price',
+        fixture: { ...baseOp().fixture, today_fixture_id: 2, home: { name: 'B' } },
+        origin: 'price',
+        purchasability_v31: { available: true, score: 95 },
+        signals: { ...baseOp().signals, yes_count: 0, passed: false },
+      }),
+    ])
+    const sorted = sortFixtureGroups(groups, 'evidence_strength_desc')
+    expect(sorted.map((g) => g.todayFixtureId)).toEqual([1, 2])
   })
 
   it('sorts purchasability desc with nulls last', () => {
@@ -205,10 +459,11 @@ describe('betBuilderUtils', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0].todayFixtureId).toBe(1)
     expect(groups[0].opportunities).toHaveLength(3)
+    // evidence-first: Q+S → signals → price
     expect(groups[0].opportunities.map((o) => o.opportunity_key)).toEqual([
       '1:ONE_X',
-      '1:DRAW',
       '1:OVER_2_5',
+      '1:DRAW',
     ])
     expect(groups[0].counts).toEqual({
       total: 3,
@@ -236,7 +491,7 @@ describe('betBuilderUtils', () => {
     expect(countUniqueFixtures(ops)).toBe(2)
   })
 
-  it('sorts opportunities within fixture by V3.1 then origin price_and_signals', () => {
+  it('sorts opportunities within fixture by origin Q+S > signals > price', () => {
     const ops = [
       baseOp({
         opportunity_key: 'price',
@@ -440,7 +695,7 @@ describe('betBuilderUtils', () => {
     expect(visible[0].opportunities).toHaveLength(3)
   })
 
-  it('primary opportunity is first after canonical sort — not a new score', () => {
+  it('primary opportunity is first after evidence-first sort — not a new score', () => {
     const ops = [
       baseOp({
         opportunity_key: 'low',
@@ -523,11 +778,12 @@ describe('betBuilderUtils', () => {
       countActiveFilters({
         ...DEFAULT_BET_BUILDER_FILTERS,
         origin: 'signals',
+        context: 'available',
         country: 'Italy',
         search: 'Inter',
         minPurchasability: 70,
       }),
-    ).toBe(3)
+    ).toBe(4)
   })
 
   it('mobile selector data: label + V3.1 + origin for each opportunity', () => {
@@ -563,6 +819,8 @@ describe('betBuilderUtils', () => {
       origin: 'Q + S',
       isPrimary: true,
     })
-    expect(selectorData[2].score).toBe('N/D')
+    // evidence order: Q+S, signals, price → N/D is middle
+    expect(selectorData[1].score).toBe('N/D')
+    expect(selectorData[2].label).toBe('1X')
   })
 })

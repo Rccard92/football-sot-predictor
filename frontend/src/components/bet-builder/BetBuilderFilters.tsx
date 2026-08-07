@@ -10,6 +10,7 @@ import {
 } from './betBuilderStyles'
 import {
   countActiveFilters,
+  type BetBuilderContextFilter,
   type BetBuilderFilterState,
   type BetBuilderMarketFilter,
   type BetBuilderOriginFilter,
@@ -31,12 +32,18 @@ type Props = {
 
 const ORIGIN_OPTIONS: Array<{ key: BetBuilderOriginFilter; label: string }> = [
   { key: 'all', label: 'Tutte' },
-  { key: 'price', label: 'Quota' },
-  { key: 'signals', label: 'Segnali' },
   { key: 'price_and_signals', label: 'Quota + Segnali' },
+  { key: 'signals', label: 'Segnali' },
+  { key: 'price', label: 'Quota' },
+]
+
+const CONTEXT_OPTIONS: Array<{ key: BetBuilderContextFilter; label: string }> = [
+  { key: 'all', label: 'Tutto' },
+  { key: 'available', label: 'Contesto disponibile' },
 ]
 
 const SORT_OPTIONS: Array<{ key: BetBuilderSortKey; label: string }> = [
+  { key: 'evidence_strength_desc', label: 'Forza evidenze ↓' },
   { key: 'purchasability_desc', label: 'Acquistabilità ↓' },
   { key: 'signals_desc', label: 'Segnali ↓' },
   { key: 'edge_desc', label: 'Edge ↓' },
@@ -57,9 +64,9 @@ export function BetBuilderFilters({
   const activeCount = countActiveFilters(filters)
 
   return (
-    <section className="space-y-3" aria-label="Filtri Bet Builder">
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold text-slate-800">Mercati</h2>
+    <section className="space-y-2" aria-label="Filtri Bet Builder">
+      <div className="space-y-1.5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mercati</h2>
         <div className={bbMarketChipScroll} role="tablist" aria-label="Filtro mercato">
           {BET_BUILDER_MARKET_CHIPS.map((chip) => {
             const active = filters.market === chip.key
@@ -74,7 +81,7 @@ export function BetBuilderFilters({
                 role="tab"
                 aria-selected={active}
                 aria-label={`${chip.label}, ${count}`}
-                className={`${active ? bbChipActive : bbChipIdle} snap-start`}
+                className={`${active ? bbChipActive : bbChipIdle} snap-start min-h-9 py-1.5`}
                 onClick={() => onChange({ market: chip.key as BetBuilderMarketFilter })}
               >
                 <span>{chip.label}</span>
@@ -116,14 +123,15 @@ export function BetBuilderFilters({
         <label className="flex items-center gap-2">
           <span className="sr-only">Ordina</span>
           <select
-            className={`${bbSelect} w-auto min-w-[11rem]`}
+            className={`${bbSelect} w-auto min-w-[12rem]`}
             value={filters.sort}
             onChange={(e) => onChange({ sort: e.target.value as BetBuilderSortKey })}
             aria-label="Ordinamento opportunity"
+            data-testid="bet-builder-sort"
           >
             {SORT_OPTIONS.map((o) => (
               <option key={o.key} value={o.key}>
-                Ordina: {o.label}
+                {o.label}
               </option>
             ))}
           </select>
@@ -179,7 +187,29 @@ export function BetBuilderFilters({
                     type="button"
                     aria-pressed={active}
                     className={active ? bbChipActive : bbChipIdle}
+                    data-testid={`bet-builder-origin-${opt.key}`}
                     onClick={() => onChange({ origin: opt.key })}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-slate-800">Contesto</h3>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filtro contesto">
+              {CONTEXT_OPTIONS.map((opt) => {
+                const active = filters.context === opt.key
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    aria-pressed={active}
+                    className={active ? bbChipActive : bbChipIdle}
+                    data-testid={`bet-builder-context-${opt.key}`}
+                    onClick={() => onChange({ context: opt.key })}
                   >
                     {opt.label}
                   </button>

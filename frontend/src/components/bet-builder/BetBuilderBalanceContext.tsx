@@ -26,7 +26,7 @@ export function BetBuilderBalanceContext({ payload }: Props) {
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         Equilibrio vs Squilibrio v5
       </h3>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2">
         {PILLARS.map(({ key, label }) => {
           const pillar = payload.pillars?.[key]
           const index =

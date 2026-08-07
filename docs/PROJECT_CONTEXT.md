@@ -2,6 +2,15 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
+
+- Default sort: **Forza evidenze ↓** (`evidence_strength_desc`) — comparator lessicografico puro, **nessun** score aggregato
+- Ordine: origin Q+S > signals > price → `signals.passed` → `yes_count` → V3.1 → `context_support.available` (tie-break) → rating → edge → key
+- Primary = prima dopo evidence sort («IN EVIDENZA» ≠ consigliata); sort lista fixture non cambia la primary interna
+- Context: solo `available` (raw); **non** conferma Balance/GI (BET-04 ancora pending); filtro «Contesto disponibile»
+- UX: primary emerald (selected vs non-selected distinti); secondary selected slate; desktop `xl:grid-cols-2`; header date nav allineata
+- **Nessun** backend; **nessun** nuovo score; **nessun** cart; nessuna migrazione; Alembic head `20260806213000`
+
 ## Bet Builder BET-02.2 — Premium UX/UI Redesign (2026-08-07)
 
 - Primary opportunity = `group.opportunities[0]` dopo sort BET-02.1 (post-filtro); badge **IN EVIDENZA** ≠ recommendation

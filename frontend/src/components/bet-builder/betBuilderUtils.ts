@@ -11,11 +11,16 @@ export const BET_BUILDER_POLL_RUNNING_MS = 2_500
 
 export type BetBuilderMarketFilter = 'all' | BetBuilderMarketKey
 export type BetBuilderOriginFilter = 'all' | BetBuilderOrigin
+export type BetBuilderContextFilter = 'all' | 'available'
 export type BetBuilderSortKey =
+  | 'evidence_strength_desc'
   | 'purchasability_desc'
   | 'signals_desc'
   | 'edge_desc'
   | 'kickoff_asc'
+
+/** Versione policy comparator frontend — non persistita, nessun score aggregato. */
+export const EVIDENCE_SORT_VERSION = 'bet_builder_evidence_sort_v1'
 
 /** Vista densità UI — solo frontend, nessun score. */
 export type BetBuilderViewMode = 'compact' | 'analysis'
@@ -23,6 +28,7 @@ export type BetBuilderViewMode = 'compact' | 'analysis'
 export type BetBuilderFilterState = {
   market: BetBuilderMarketFilter
   origin: BetBuilderOriginFilter
+  context: BetBuilderContextFilter
   country: string
   league: string
   search: string
@@ -33,11 +39,12 @@ export type BetBuilderFilterState = {
 export const DEFAULT_BET_BUILDER_FILTERS: BetBuilderFilterState = {
   market: 'all',
   origin: 'all',
+  context: 'all',
   country: '',
   league: '',
   search: '',
   minPurchasability: null,
-  sort: 'purchasability_desc',
+  sort: 'evidence_strength_desc',
 }
 
 export type BetBuilderFixtureOriginCounts = {
@@ -112,8 +119,8 @@ export function originMicroLabel(origin: BetBuilderOrigin): string {
 }
 
 /**
- * Opportunity principale = prima dopo sort canonico BET-02.1.
- * Non è un nuovo score / recommendation.
+ * Opportunity in evidenza = prima dopo sort evidence-first BET-02.3.
+ * Non è un nuovo score / recommendation / "da giocare".
  */
 export function getPrimaryOpportunity(
   group: Pick<BetBuilderFixtureGroup, 'opportunities'> | null | undefined,
@@ -143,12 +150,13 @@ export function formatPurchasabilityTab(score: number | null | undefined): strin
 }
 
 /**
- * Conta filtri avanzati attivi (origin/country/league/minPurchasability).
+ * Conta filtri avanzati attivi (origin/context/country/league/minPurchasability).
  * Search resta in toolbar e non entra nel badge Filtri.
  */
 export function countActiveFilters(filters: BetBuilderFilterState): number {
   let n = 0
   if (filters.origin !== 'all') n += 1
+  if (filters.context !== 'all') n += 1
   if (filters.country) n += 1
   if (filters.league) n += 1
   if (filters.minPurchasability != null) n += 1
@@ -201,6 +209,7 @@ export function filterOpportunities(
   return opportunities.filter((op) => {
     if (filters.market !== 'all' && op.market.market_key !== filters.market) return false
     if (filters.origin !== 'all' && op.origin !== filters.origin) return false
+    if (filters.context === 'available' && !op.context_support.available) return false
     if (filters.country && (op.fixture.country ?? '') !== filters.country) return false
     if (filters.league && (op.fixture.league ?? '') !== filters.league) return false
     if (!matchesSearch(op, filters.search)) return false
@@ -230,6 +239,42 @@ function cmpKickoffAsc(a: string | null | undefined, b: string | null | undefine
   return a!.localeCompare(b!)
 }
 
+/**
+ * Comparator lessicografico BET-02.3 — forza evidenze.
+ * Nessuna somma, media, weighted score o KPI numerico aggregato.
+ */
+export function compareOpportunityEvidenceStrength(
+  a: BetBuilderOpportunity,
+  b: BetBuilderOpportunity,
+): number {
+  const byOrigin = ORIGIN_RANK[a.origin] - ORIGIN_RANK[b.origin]
+  if (byOrigin !== 0) return byOrigin
+
+  const aPassed = a.signals.passed === true
+  const bPassed = b.signals.passed === true
+  if (aPassed !== bPassed) return aPassed ? -1 : 1
+
+  const byYes = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
+  if (byYes !== 0) return byYes
+
+  const byV31 = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
+  if (byV31 !== 0) return byV31
+
+  // Nessun alignment canonico selection-specific (BET-04 non implementato).
+  // Solo availability come tie-break descrittivo.
+  const aCtx = a.context_support.available === true
+  const bCtx = b.context_support.available === true
+  if (aCtx !== bCtx) return aCtx ? -1 : 1
+
+  const byRating = cmpNullableNumberDesc(a.price_value.rating, b.price_value.rating)
+  if (byRating !== 0) return byRating
+
+  const byEdge = cmpNullableNumberDesc(a.price_value.edge_pct, b.price_value.edge_pct)
+  if (byEdge !== 0) return byEdge
+
+  return a.opportunity_key.localeCompare(b.opportunity_key)
+}
+
 /** Sort legacy flat list (usato da test regressione / compatibilità). */
 export function sortOpportunities(
   opportunities: BetBuilderOpportunity[],
@@ -238,7 +283,9 @@ export function sortOpportunities(
   const copy = [...opportunities]
   copy.sort((a, b) => {
     let primary: number
-    if (sort === 'purchasability_desc') {
+    if (sort === 'evidence_strength_desc') {
+      primary = compareOpportunityEvidenceStrength(a, b)
+    } else if (sort === 'purchasability_desc') {
       primary = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
     } else if (sort === 'signals_desc') {
       primary = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
@@ -260,26 +307,20 @@ export function filterAndSortOpportunities(
   return sortOpportunities(filterOpportunities(opportunities, filters), filters.sort)
 }
 
-/** Ordinamento deterministico delle opportunity dentro una fixture (§11). */
-export function sortOpportunitiesWithinFixture(
+/** Ordinamento evidence-first delle opportunity dentro una fixture (BET-02.3). */
+export function sortOpportunitiesByEvidenceStrength(
   opportunities: BetBuilderOpportunity[],
 ): BetBuilderOpportunity[] {
   const copy = [...opportunities]
-  copy.sort((a, b) => {
-    const byScore = cmpNullableNumberDesc(
-      a.purchasability_v31.score,
-      b.purchasability_v31.score,
-    )
-    if (byScore !== 0) return byScore
-    const byOrigin = ORIGIN_RANK[a.origin] - ORIGIN_RANK[b.origin]
-    if (byOrigin !== 0) return byOrigin
-    const byYes = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
-    if (byYes !== 0) return byYes
-    const byEdge = cmpNullableNumberDesc(a.price_value.edge_pct, b.price_value.edge_pct)
-    if (byEdge !== 0) return byEdge
-    return a.opportunity_key.localeCompare(b.opportunity_key)
-  })
+  copy.sort(compareOpportunityEvidenceStrength)
   return copy
+}
+
+/** Alias: primary / selector order = forza evidenze. */
+export function sortOpportunitiesWithinFixture(
+  opportunities: BetBuilderOpportunity[],
+): BetBuilderOpportunity[] {
+  return sortOpportunitiesByEvidenceStrength(opportunities)
 }
 
 export function fixtureOpportunityCounts(
@@ -344,7 +385,14 @@ export function sortFixtureGroups(
   const copy = [...groups]
   copy.sort((a, b) => {
     let primary: number
-    if (sort === 'purchasability_desc') {
+    if (sort === 'evidence_strength_desc') {
+      const aPrimary = a.opportunities[0]
+      const bPrimary = b.opportunities[0]
+      if (!aPrimary && !bPrimary) primary = 0
+      else if (!aPrimary) primary = 1
+      else if (!bPrimary) primary = -1
+      else primary = compareOpportunityEvidenceStrength(aPrimary, bPrimary)
+    } else if (sort === 'purchasability_desc') {
       primary = cmpNullableNumberDesc(
         maxNullable(a.opportunities.map((o) => o.purchasability_v31.score)),
         maxNullable(b.opportunities.map((o) => o.purchasability_v31.score)),

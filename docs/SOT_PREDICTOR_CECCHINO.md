@@ -2,6 +2,23 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
+
+Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun backend change.
+
+| Tema | Regola |
+|------|--------|
+| Default sort | `evidence_strength_desc` — label UI «Forza evidenze ↓» |
+| Comparator | Lessicografico: origin → passed → yes_count → V3.1 → context.available → rating → edge → key. Policy version `bet_builder_evidence_sort_v1` (non persistita) |
+| Primary | Prima opportunity dopo evidence sort; badge **IN EVIDENZA** ≠ recommendation |
+| Selected | Stato indipendente da primary; primary non-selected = emerald chiaro; primary selected = emerald pieno; secondary selected = slate/navy |
+| Context | `context_support.available` solo tie-break / filtro; status resta `raw_context_only`; **nessuna** conferma modulo (BET-04) |
+| Layout | Mobile 1 col; desktop `xl:grid-cols-2`; metriche core 2×2; header `[←][data][→]` allineato |
+| Filtri | Origin + Contesto disponibile; default: tutto visibile, ordinato meglio (no auto-filter Q+S) |
+| Divieti | Nessun score aggregato; nessun cart BET-03; nessun backend; nessuna conferma Balance/GI |
+
+Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-02.2 — Premium UX/UI Redesign (2026-08-07)
 
 Ridisegno **solo frontend** del Bet Builder. Nessuna nuova formula, nessun nuovo score, nessun backend change.

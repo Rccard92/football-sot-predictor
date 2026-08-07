@@ -114,10 +114,10 @@ export function BetBuilderSelectedOpportunityPanel({
         </div>
 
         <div
-          className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3"
+          className="grid grid-cols-2 gap-2"
           data-testid="bet-builder-core-metrics"
         >
-          <div className={`${bbMetricCell} col-span-2 sm:col-span-1`}>
+          <div className={bbMetricCell}>
             <BetBuilderPurchasabilityRing
               purchasability={opportunity.purchasability_v31}
               size="md"

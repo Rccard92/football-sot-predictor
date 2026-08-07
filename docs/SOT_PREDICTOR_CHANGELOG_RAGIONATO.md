@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-02.3 evidence-first ranking and layout (2026-08-07)
+
+- Perché: default V3.1-first non portava in cima le opportunity con quadro evidenze più ricco; primary quasi-nera confusa con selected; 1 colonna desktop lenta; header data disallineato.
+- Cosa: comparator lessicografico `compareOpportunityEvidenceStrength` (default sort Forza evidenze); primary emerald + selected distinto; grid `xl:grid-cols-2`; header date nav unica; filtro Contesto disponibile; nessun score aggregato.
+- Impatto: solo frontend; backend BET-01.2 / signals / V3.1 / Balance / GI invariati; context resta availability ≠ confirmation (BET-04); nessuna migrazione; nessun cart.
+- Non fatto: cart BET-03, alignment/verdict context BET-04.
+
 ## Feat — Bet Builder BET-02.2 Premium UX/UI Redesign (2026-08-07)
 
 - Perché: più opportunity per fixture rendevano le card lunghe e senza gerarchia primaria/secondaria.

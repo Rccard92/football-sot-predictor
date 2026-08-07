@@ -2,6 +2,8 @@ import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import {
   bbBadge,
   bbInEvidenzaBadge,
+  bbInEvidenzaBadgeOnDark,
+  bbInEvidenzaBadgeOnLight,
   bbOppTabIdle,
   bbOppTabPrimary,
   bbOppTabPrimarySelected,
@@ -64,6 +66,30 @@ export function BetBuilderOpportunitySelector({
           else if (isPrimary) className = bbOppTabPrimary
           else if (selected) className = bbOppTabSelected
 
+          const onDark = isPrimary && selected
+          const labelClass = onDark
+            ? 'text-sm font-semibold leading-tight text-white sm:text-base'
+            : isPrimary
+              ? 'text-sm font-semibold leading-tight text-emerald-950 sm:text-base'
+              : selected
+                ? 'text-sm font-semibold leading-tight text-slate-950'
+                : 'text-sm font-semibold leading-tight text-slate-800'
+          const scoreClass = onDark
+            ? 'tabular-nums text-base font-semibold text-white'
+            : isPrimary
+              ? 'tabular-nums text-base font-semibold text-emerald-950'
+              : 'tabular-nums text-sm font-semibold text-slate-900'
+          const mutedClass = onDark
+            ? 'text-white/70'
+            : isPrimary
+              ? 'text-emerald-700/70'
+              : 'text-slate-400'
+          const originClass = onDark
+            ? 'text-[10px] font-medium text-white/75'
+            : isPrimary
+              ? 'text-[10px] font-medium text-emerald-800/80'
+              : 'text-[10px] font-medium text-slate-500'
+
           return (
             <button
               key={op.opportunity_key}
@@ -77,48 +103,29 @@ export function BetBuilderOpportunitySelector({
               data-testid="bet-builder-opportunity-tab"
               data-opportunity-key={op.opportunity_key}
               data-primary={isPrimary ? 'true' : 'false'}
+              data-selected={selected ? 'true' : 'false'}
               data-market={op.market.market_key}
               data-origin={op.origin}
               onClick={() => onSelect(op.opportunity_key)}
             >
               <span className="flex w-full items-center justify-between gap-2">
-                <span
-                  className={`font-semibold leading-tight ${
-                    isPrimary ? 'text-sm sm:text-base' : 'text-sm'
-                  }`}
-                >
-                  {op.market.label}
-                </span>
+                <span className={labelClass}>{op.market.label}</span>
                 {isPrimary && index === 0 ? (
                   <span
-                    className={
-                      isPrimary
-                        ? 'rounded bg-white/15 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white'
-                        : undefined
-                    }
-                    data-testid={selected || isPrimary ? 'in-evidenza-badge' : undefined}
+                    className={onDark ? bbInEvidenzaBadgeOnDark : bbInEvidenzaBadgeOnLight}
+                    data-testid="in-evidenza-badge"
                   >
                     In evidenza
                   </span>
                 ) : null}
               </span>
-              <span
-                className={`tabular-nums ${
-                  isPrimary ? 'text-base font-semibold text-white' : 'text-sm font-semibold text-slate-900'
-                }`}
-              >
+              <span className={scoreClass}>
                 {scoreLabel}
                 {scoreLabel !== 'N/D' ? (
-                  <span className={isPrimary ? 'text-white/70' : 'text-slate-400'}> / 100</span>
+                  <span className={mutedClass}> / 100</span>
                 ) : null}
               </span>
-              <span
-                className={`text-[10px] font-medium ${
-                  isPrimary ? 'text-white/75' : 'text-slate-500'
-                }`}
-              >
-                {originMicroLabel(op.origin)}
-              </span>
+              <span className={originClass}>{originMicroLabel(op.origin)}</span>
             </button>
           )
         })}
