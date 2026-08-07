@@ -17,7 +17,7 @@ from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
 )
 
 GOAL_INTENSITY_V5_MONITORING_VERSION = "cecchino_goal_intensity_v5_monitoring_v1"
-GOAL_INTENSITY_V5_READINESS_VERSION = "cecchino_goal_intensity_v5_readiness_v1"
+GOAL_INTENSITY_V5_READINESS_VERSION = "cecchino_goal_intensity_v5_readiness_v2"
 GOAL_INTENSITY_V5_READINESS_POLICY_VERSION = (
     "cecchino_goal_intensity_v5_readiness_policy_v1"
 )

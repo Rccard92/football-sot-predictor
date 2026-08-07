@@ -76,6 +76,8 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Bundle Phase 2C | `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (invariato) |
 | Scoring | `cecchino_goal_intensity_v5_official_support_scoring_v1` |
 | Finalization | `cecchino_goal_intensity_v5_phase_2d_finalization_v1` |
+| Audit | stored vs recomputed; `cecchino_goal_intensity_v5_official_support_explanations_v1` |
+| Readiness | `cecchino_goal_intensity_v5_readiness_v2` (official branch; QA post-cutover ≠ gate) |
 | Raw index | `GI_A_STRICT_CORE` |
 | Heads | ge2←GI_A; total/ge3/btts←GI_E |
 | Role | `contextual_support_only` |
@@ -195,7 +197,7 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 |--------|-----------|------------------|-------------------|
 | Acquistabilità | Preview monitorata | `candidate_2` / validation_v1 | module-monitoring |
 | Balance v5 | Ufficiale monitorato | `cecchino_balance_v5_v3` | module-monitoring |
-| Goal Intensity v5 | Preview research | `goal_intensity_v5_preview` | module-monitoring |
+| Goal Intensity v5 | Supporto ufficiale | `goal_intensity_v5_official_support` | module-monitoring |
 | Segnali | Operativo | `signals_lab` | module-monitoring |
 
 Export: `GET /api/cecchino/module-monitoring/{module_key}/analysis-pack.zip`.

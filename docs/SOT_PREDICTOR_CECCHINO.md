@@ -2,6 +2,10 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Fix — Goal Intensity official audit + monitoring (2026-08-07)
+
+Chiusura modulo `cecchino_goal_intensity_v5_official_support_v1`: audit Today = scorer canonico + stored vs recomputed; Monitoraggio Moduli readiness/export = `official_support` (non Preview research). Phase 2B solo archivio. Nessun cambio formule/snapshot/bundle. Dettaglio: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
+
 ## Fix — Eleggibilità KPI V2 e rimozione guard API (2026-08-06)
 
 | Voce | Dettaglio |

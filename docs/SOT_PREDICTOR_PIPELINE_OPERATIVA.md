@@ -321,10 +321,11 @@ flowchart TD
 
 1. Dry-run: `GET /api/cecchino/module-monitoring/goal-intensity-v5/finalization?benchmark_job_id=2&dry_run=true`
 2. Verificare `freeze_allowed`, mapping target, coefficienti, definition hash.
-3. Freeze (manuale post-deploy): `POST /api/admin/cecchino/module-monitoring/goal-intensity-v5/finalization/freeze` con `confirm=FREEZE_GOAL_INTENSITY_V5_OFFICIAL_SUPPORT_V1`.
+3. Freeze (già eseguito in produzione: bundle ID 3 active): `POST …/finalization/freeze` con confirm token.
 4. Verificare bundle attivo = `cecchino_goal_intensity_v5_official_support_bundle_v1`; preview superseded; v2.1 invariato.
 5. Nuovi snapshot Today solo con `source_snapshot_at > official.frozen_at` (nessun backfill).
 6. Fallback V4 atomico se feature V5 incomplete; Signals restano blocked.
+7. Post-cutover (2026-08-07): audit Today = stored vs recomputed su scorer canonico; Monitoraggio readiness_v2 / soft overview = `official_support`; Phase 2B solo Archivio ricerca; QA sample ≠ gate promozione.
 
 ## Intensità Goal Avanzata v5 — Phase 2C (2026-08-06)
 

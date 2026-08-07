@@ -132,6 +132,48 @@ def _consistency(
     return {"status": "mismatch", "delta": round(delta, 10)}
 
 
+def _stored_vs_recomputed(
+    stored: Any,
+    recomputed: Any,
+    *,
+    abs_tol: float = 1e-6,
+    rounding_tol: float = 0.015,
+) -> dict[str, Any]:
+    """Confronto esplicito stored snapshot vs ricalcolo scorer canonico."""
+    s = safe_float(stored) if stored is not None else None
+    if s is None and stored is not None:
+        s = stored
+    r = safe_float(recomputed) if recomputed is not None else None
+    if r is None and recomputed is not None:
+        r = recomputed
+    cons = _consistency(s, r, abs_tol=abs_tol, rounding_tol=rounding_tol)
+    status = cons["status"]
+    if status == "not_verifiable":
+        status = "unavailable"
+    return {
+        "stored": s,
+        "recomputed": r,
+        "delta": cons.get("delta"),
+        "tolerance": {"abs": abs_tol, "rounding": rounding_tol},
+        "consistency_status": status,
+    }
+
+
+def _aggregate_consistency_status(statuses: list[str]) -> str:
+    """match solo se tutti match; rounding_match se solo match/rounding; altrimenti mismatch/unavailable."""
+    if not statuses:
+        return "unavailable"
+    if any(s == "mismatch" for s in statuses):
+        return "mismatch"
+    if any(s in {"unavailable", "not_verifiable"} for s in statuses):
+        return "unavailable"
+    if any(s == "rounding_match" for s in statuses):
+        return "rounding_match"
+    if all(s == "match" for s in statuses):
+        return "match"
+    return "unavailable"
+
+
 def _present_candidates(snap: CecchinoGoalIntensityV5PreviewSnapshot) -> set[str]:
     scores = snap.candidate_scores_payload or {}
     present = {str(k) for k in scores.keys()}
@@ -1069,7 +1111,7 @@ def _build_official_support_explanations(
     snap: CecchinoGoalIntensityV5PreviewSnapshot,
     bundle: CecchinoGoalIntensityV5PreviewBundle,
 ) -> dict[str, Any]:
-    """Audit operativo: unico indice GI_A + teste target-specifiche. Nessun candidato archiviato."""
+    """Audit operativo: unica fonte = score_official_support_with_bundle. Nessun candidato archiviato."""
     from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
         OFFICIAL_AUDIT_VERSION,
         OFFICIAL_MODULE_VERSION,
@@ -1090,20 +1132,27 @@ def _build_official_support_explanations(
     if missing:
         warnings.append(f"Feature mancanti: {', '.join(missing)}")
 
+    # UNICA fonte di verità operativa: scorer ufficiale canonico
     audit = score_official_support_with_bundle(features, bundle)
-    ecdfs = _ecdfs_from_bundle(bundle)
-    pct = {k: ecdf.transform(safe_float(features.get(k))) for k, ecdf in ecdfs.items()}
-    full_pillars = _pillar_scores_from_pct(pct)
-    composite = _composite_scores(full_pillars)
-    raw_audit = _round(composite.get(RAW_INDEX_ID))
-    raw_stored = safe_float((snap.candidate_scores_payload or {}).get(RAW_INDEX_ID))
+    audit_scores = audit.get("candidate_scores") or {}
+    audit_pillars = audit.get("pillar_scores") or {}
+    raw_recomputed = safe_float(audit_scores.get(RAW_INDEX_ID))
+    if raw_recomputed is None:
+        raw_recomputed = safe_float(audit.get("primary_candidate_score"))
+
+    stored_op = (snap.calibrated_predictions_payload or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
+    audit_op = (audit.get("calibrated_predictions") or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
+
+    raw_stored = safe_float(stored_op.get("raw_score"))
+    if raw_stored is None:
+        raw_stored = safe_float((snap.candidate_scores_payload or {}).get(RAW_INDEX_ID))
     if raw_stored is None:
         raw_stored = safe_float(snap.primary_candidate_score)
 
+    raw_cmp = _stored_vs_recomputed(raw_stored, raw_recomputed)
+
     cal_root = bundle.calibration_payload or {}
     op_cal = cal_root.get(OPERATIONAL_CALIBRATION_KEY) or {}
-    stored_op = (snap.calibrated_predictions_payload or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
-    audit_op = (audit.get("calibrated_predictions") or {}).get(OPERATIONAL_CALIBRATION_KEY) or {}
 
     head_defs = [
         ("expected_total_goals", "total_goals_ft", "linear", "Stima totale gol"),
@@ -1112,42 +1161,70 @@ def _build_official_support_explanations(
         ("probability_btts", "btts_ft", "logistic", "Gol (BTTS)"),
     ]
     target_heads: dict[str, Any] = {}
+    head_statuses: list[str] = []
     for out_key, target, transform, label in head_defs:
         cal = op_cal.get(target) or {}
         intercept = safe_float(cal.get("intercept"))
         coef = safe_float(cal.get("coefficient"))
         stored_v = safe_float(stored_op.get(out_key))
-        audit_v = safe_float(audit_op.get(out_key))
-        consistent = (
-            stored_v is not None
-            and audit_v is not None
-            and abs(stored_v - audit_v) < 1e-4
-        )
+        recomputed_v = safe_float(audit_op.get(out_key))
+        cmp = _stored_vs_recomputed(stored_v, recomputed_v)
+        head_statuses.append(cmp["consistency_status"])
         target_heads[out_key] = {
             "label_it": label,
             "target": target,
-            "raw_score": raw_audit,
+            "raw_score": raw_recomputed,
             "raw_index_id": RAW_INDEX_ID,
             "intercept": intercept,
             "coefficient": coef,
             "transform": transform,
             "result_stored": stored_v,
-            "result_audit": audit_v,
+            "result_audit": recomputed_v,
+            "stored": cmp["stored"],
+            "recomputed": cmp["recomputed"],
+            "delta": cmp["delta"],
+            "tolerance": cmp["tolerance"],
+            "consistency_status": cmp["consistency_status"],
             "calibration_source": TARGET_CALIBRATION_MAPPING.get(target),
             "bundle_version": bundle.version,
             "consistency": {
-                "status": "ok" if consistent else ("unavailable" if stored_v is None else "mismatch"),
-                "stored_vs_audit": consistent,
+                "status": cmp["consistency_status"],
+                "stored_vs_audit": cmp["consistency_status"] in {"match", "rounding_match"},
+                "delta": cmp["delta"],
             },
         }
+
+    all_statuses = [raw_cmp["consistency_status"], *head_statuses]
+    consistency_status = _aggregate_consistency_status(all_statuses)
+    if consistency_status == "mismatch":
+        warnings.append(
+            "Mismatch stored vs audit: valori persistiti e ricalcolo scorer divergono. "
+            "Nessuna correzione automatica dello snapshot."
+        )
+    elif consistency_status == "unavailable":
+        warnings.append("Consistency non verificabile per uno o più valori (stored o recomputed assenti).")
+
+    audit_status = "ok"
+    if missing or consistency_status in {"mismatch", "unavailable"}:
+        audit_status = "partial"
 
     defs = bundle.candidate_definitions_payload or {}
     freeze_at = _ensure_utc(bundle.frozen_at)
     source_at = _ensure_utc(snap.source_snapshot_at)
+    definition_hash = snap.candidate_definition_hash or bundle.candidate_definition_hash
+
+    source_identity = {
+        "today_fixture_id": int(row.id),
+        "snapshot_id": snap.id,
+        "bundle_id": snap.bundle_id,
+        "bundle_version": bundle.version,
+        "candidate_definition_hash": definition_hash,
+    }
 
     return _json_safe(
         {
-            "status": "ok" if not missing else "partial",
+            "status": audit_status,
+            "consistency_status": consistency_status,
             "audit_version": OFFICIAL_AUDIT_VERSION,
             "module": MODULE,
             "module_version": OFFICIAL_MODULE_VERSION,
@@ -1158,6 +1235,7 @@ def _build_official_support_explanations(
             "no_operational_recalculation": True,
             "diagnostic_re_evaluation_only": True,
             "source_mode": "persisted_goal_intensity_v5_official_snapshot",
+            "source_identity": source_identity,
             "fixture": {
                 "today_fixture_id": int(row.id),
                 "home_team": row.home_team_name,
@@ -1168,8 +1246,7 @@ def _build_official_support_explanations(
                 "snapshot_id": snap.id,
                 "bundle_id": snap.bundle_id,
                 "bundle_version": bundle.version,
-                "candidate_definition_hash": snap.candidate_definition_hash
-                or bundle.candidate_definition_hash,
+                "candidate_definition_hash": definition_hash,
                 "source_snapshot_at": _iso_z(source_at),
                 "bundle_frozen_at": _iso_z(freeze_at),
                 "feature_status": snap.feature_status,
@@ -1177,21 +1254,23 @@ def _build_official_support_explanations(
             "index": {
                 "id": RAW_INDEX_ID,
                 "score_stored": raw_stored,
-                "score_audit": raw_audit,
+                "score_audit": raw_recomputed,
+                "stored": raw_cmp["stored"],
+                "recomputed": raw_cmp["recomputed"],
+                "delta": raw_cmp["delta"],
+                "tolerance": raw_cmp["tolerance"],
+                "consistency_status": raw_cmp["consistency_status"],
                 "formula": "mean(OP1, DV1, MT1, OV1)",
                 "components": {
-                    "OP1_HOME_LONG_TERM": _round(full_pillars.get("OP1_HOME_LONG_TERM")),
-                    "DV1_MEAN_CONCEDED": _round(full_pillars.get("DV1_MEAN_CONCEDED")),
-                    "MT1_LONG_TERM": _round(full_pillars.get("MT1_LONG_TERM")),
-                    "OV1_STD": _round(full_pillars.get("OV1_STD")),
+                    "OP1_HOME_LONG_TERM": safe_float(audit_pillars.get("OP1_HOME_LONG_TERM")),
+                    "DV1_MEAN_CONCEDED": safe_float(audit_pillars.get("DV1_MEAN_CONCEDED")),
+                    "MT1_LONG_TERM": safe_float(audit_pillars.get("MT1_LONG_TERM")),
+                    "OV1_STD": safe_float(audit_pillars.get("OV1_STD")),
                 },
                 "features_raw": {k: features.get(k) for k in OFFICIAL_SUPPORT_REQUIRED_FEATURE_KEYS},
                 "consistency": {
-                    "status": "ok"
-                    if raw_stored is not None
-                    and raw_audit is not None
-                    and abs(raw_stored - raw_audit) < 1e-4
-                    else "partial",
+                    "status": raw_cmp["consistency_status"],
+                    "delta": raw_cmp["delta"],
                 },
             },
             "target_heads": target_heads,
@@ -1208,6 +1287,8 @@ def _build_official_support_explanations(
                 "normalization_method": NORMALIZATION_METHOD,
                 "bundle_id_used_for_audit": bundle.id,
                 "active_bundle_not_used_for_coefficients": True,
+                "canonical_scorer": "score_official_support_with_bundle",
+                "no_parallel_raw_recompute": True,
                 "no_blending": True,
                 "no_refit": True,
             },

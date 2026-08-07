@@ -1,7 +1,8 @@
 """Readiness Intensità Goal Avanzata v5 — monitoring/governance.
 
-Riusa gate di build_prospective_monitoring e MINIMUM_PROSPECTIVE_MATCHES.
-Signals sempre blocked; decision default continue_monitoring.
+Branch semantico: bundle official → supporto ufficiale post-cutover (QC only);
+bundle preview/legacy → Phase 2B / continue_monitoring storico.
+Signals sempre blocked.
 """
 
 from __future__ import annotations
@@ -97,9 +98,19 @@ def build_goal_intensity_v5_readiness(
     date_to: date | None = None,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OPERATIONAL_STATUS,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+        is_official_bundle,
+    )
+
+    bundle = get_active_bundle(db)
     cache_key = (
         GOAL_INTENSITY_V5_READINESS_VERSION,
         GOAL_INTENSITY_V5_READINESS_POLICY_VERSION,
+        getattr(bundle, "id", None),
+        getattr(bundle, "version", None),
         date_from,
         date_to,
         competition_id,
@@ -111,7 +122,6 @@ def build_goal_intensity_v5_readiness(
             out["cache_hit"] = True
             return out
 
-    bundle = get_active_bundle(db)
     policy = build_goal_intensity_v5_readiness_policy_payload()
     monitoring = build_prospective_monitoring(db, bundle)
     all_snaps: list[CecchinoGoalIntensityV5PreviewSnapshot] = []
@@ -216,19 +226,35 @@ def build_goal_intensity_v5_readiness(
         if completed_n >= MIN_PROSPECTIVE_COMPLETED
         else ("wait" if all_n == 0 or completed_n < MIN_PROSPECTIVE_COMPLETED else "fail")
     )
+    official = is_official_bundle(bundle)
     progress_gates = [
         _gate(
             key="minimum_prospective_completed",
             category="prospective",
-            status=sample_status,
+            status=sample_status if not official else "info",
             value=completed_n,
-            threshold=MIN_PROSPECTIVE_COMPLETED,
+            threshold=MIN_PROSPECTIVE_COMPLETED if not official else None,
             numerator=completed_n,
-            denominator=MIN_PROSPECTIVE_COMPLETED,
-            reason_codes=["prospective_not_started"]
-            if all_n == 0
-            else (["insufficient_completed_sample"] if completed_n < MIN_PROSPECTIVE_COMPLETED else []),
-            label_it="Campione prospettico completed minimo",
+            denominator=MIN_PROSPECTIVE_COMPLETED if not official else None,
+            reason_codes=(
+                []
+                if official
+                else (
+                    ["prospective_not_started"]
+                    if all_n == 0
+                    else (
+                        ["insufficient_completed_sample"]
+                        if completed_n < MIN_PROSPECTIVE_COMPLETED
+                        else []
+                    )
+                )
+            ),
+            promotion_blocking=not official,
+            label_it=(
+                "Quality monitoring post-cutover (campione informativo)"
+                if official
+                else "Campione prospettico completed minimo"
+            ),
         )
     ]
 
@@ -247,9 +273,19 @@ def build_goal_intensity_v5_readiness(
         "continue_prospective_monitoring": "Continua raccolta prospettica",
         "revise_candidate_definition": "Revisiona definizione candidati",
         "phase_2b_replacement_review": "Revisione manuale Phase 2B",
+        "monitor_post_cutover_quality": "Monitora qualità post-cutover",
     }
 
-    if all_n == 0:
+    if official:
+        maturity = "external_validation_completed"
+        maturity_it = "Validazione esterna completata"
+        recommended_next_step = "monitor_post_cutover_quality"
+        blocking = []
+        phase = {
+            "status": "not_applicable_official_support",
+            "note_it": "Phase 2B appartiene all'Archivio ricerca; non determina lo status ufficiale.",
+        }
+    elif all_n == 0:
         maturity = "prospective_not_started"
         maturity_it = "Raccolta prospettica non iniziata"
     elif completed_n == 0:
@@ -268,38 +304,48 @@ def build_goal_intensity_v5_readiness(
         maturity = "validation_in_progress"
         maturity_it = "Valutazione in corso"
 
-    # Benchmark Phase 2B (informativo; non altera Signals)
-    phase_2b_benchmark: dict[str, Any] = {
-        "status": "skipped_below_minimum",
-        "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
-        "paired_complete_n": 0,
-        "recommended_next_step": recommended_next_step,
-    }
-    if completed_n >= MIN_PROSPECTIVE_COMPLETED:
-        try:
-            from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
-                build_goal_intensity_v4_v5_prospective_benchmark,
-                build_phase_2b_benchmark_summary,
-            )
+    # Benchmark Phase 2B: solo path preview/legacy; mai gate ufficiale
+    phase_2b_benchmark: dict[str, Any]
+    if official:
+        phase_2b_benchmark = {
+            "status": "not_applicable_official_support",
+            "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
+            "paired_complete_n": 0,
+            "recommended_next_step": "monitor_post_cutover_quality",
+            "note_it": "Phase 2B non eseguita come gate sul bundle ufficiale.",
+        }
+    else:
+        phase_2b_benchmark = {
+            "status": "skipped_below_minimum",
+            "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
+            "paired_complete_n": 0,
+            "recommended_next_step": recommended_next_step,
+        }
+        if completed_n >= MIN_PROSPECTIVE_COMPLETED:
+            try:
+                from app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark import (
+                    build_goal_intensity_v4_v5_prospective_benchmark,
+                    build_phase_2b_benchmark_summary,
+                )
 
-            benchmark_payload = build_goal_intensity_v4_v5_prospective_benchmark(
-                db,
-                date_from=date_from,
-                date_to=date_to,
-                competition_id=competition_id,
-            )
-            phase_2b_benchmark = build_phase_2b_benchmark_summary(benchmark_payload)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "phase_2b_benchmark_failed error_code=%s", type(exc).__name__
-            )
-            phase_2b_benchmark = {
-                "status": "unavailable",
-                "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
-                "paired_complete_n": 0,
-                "blocking_reasons": [type(exc).__name__],
-                "recommended_next_step": recommended_next_step,
-            }
+                benchmark_payload = build_goal_intensity_v4_v5_prospective_benchmark(
+                    db,
+                    date_from=date_from,
+                    date_to=date_to,
+                    competition_id=competition_id,
+                )
+                phase_2b_benchmark = build_phase_2b_benchmark_summary(benchmark_payload)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "phase_2b_benchmark_failed error_code=%s", type(exc).__name__
+                )
+                phase_2b_benchmark = {
+                    "status": "unavailable",
+                    "benchmark_version": "cecchino_goal_intensity_v4_v5_prospective_benchmark_v1",
+                    "paired_complete_n": 0,
+                    "blocking_reasons": [type(exc).__name__],
+                    "recommended_next_step": recommended_next_step,
+                }
 
     first_completed = None
     earliest = None
@@ -316,8 +362,70 @@ def build_goal_intensity_v5_readiness(
         if completed_rows:
             ts = min(s.result_attached_at for s in completed_rows if s.result_attached_at)
             first_completed = ts.isoformat() if ts else None
-            # earliest review dipende dal gate 200: non calcolabile fino a sample
-            earliest = None if completed_n < MIN_PROSPECTIVE_COMPLETED else first_completed
+            if official:
+                earliest = first_completed
+            else:
+                earliest = None if completed_n < MIN_PROSPECTIVE_COMPLETED else first_completed
+
+    if official:
+        operational_status = OPERATIONAL_STATUS
+        operational_status_label_it = "Supporto ufficiale"
+        current_decision = "support_module_active"
+        current_decision_label_it = "Modulo di supporto attivo"
+        signals_label = "Non collegato ai Segnali"
+        scientific_block = {
+            "phase_2b_readiness": phase,
+            "phase_2b_benchmark": phase_2b_benchmark,
+            "blocking_issues": [],
+            "scientific_evidence": "external_validation_completed",
+            "scientific_evidence_label_it": "Validazione esterna completata",
+            "quality_monitoring": {
+                "snapshots": all_n,
+                "completed": completed_n,
+                "pending": pending_n,
+                "incomplete": incomplete_n,
+                "error": error_n,
+                "locked": locked_n,
+            },
+            # Research archive only — not loaded into operational maturity
+            "calibration": None,
+            "candidates": None,
+        }
+        manual_review_status = "not_applicable_official_support"
+        progress_minimum = None
+        progress_pct = None
+        remaining = None
+        excess = None
+        minimum_reached = None
+    else:
+        operational_status = "preview_monitored"
+        operational_status_label_it = "Preview monitorata"
+        current_decision = "continue_monitoring"
+        current_decision_label_it = (
+            "Continua monitoraggio fino alla revisione manuale"
+            if maturity == "ready_for_manual_review"
+            else "Continua monitoraggio"
+        )
+        signals_label = "Bloccata"
+        scientific_block = {
+            "phase_2b_readiness": phase,
+            "phase_2b_benchmark": phase_2b_benchmark,
+            "blocking_issues": blocking,
+            "calibration": build_calibration(db, date_from=date_from, date_to=date_to),
+            "candidates": build_candidates(db, date_from=date_from, date_to=date_to),
+        }
+        manual_review_status = (
+            "eligible" if maturity == "ready_for_manual_review" else "not_eligible"
+        )
+        progress_minimum = MIN_PROSPECTIVE_COMPLETED
+        progress_pct = (
+            round((completed_n / MIN_PROSPECTIVE_COMPLETED) * 100.0, 2)
+            if MIN_PROSPECTIVE_COMPLETED
+            else 0.0
+        )
+        remaining = max(0, MIN_PROSPECTIVE_COMPLETED - completed_n)
+        excess = max(0, completed_n - MIN_PROSPECTIVE_COMPLETED)
+        minimum_reached = completed_n >= MIN_PROSPECTIVE_COMPLETED
 
     out = make_json_safe(
         {
@@ -325,24 +433,35 @@ def build_goal_intensity_v5_readiness(
             "readiness_version": GOAL_INTENSITY_V5_READINESS_VERSION,
             "policy_version": GOAL_INTENSITY_V5_READINESS_POLICY_VERSION,
             "policy": policy,
-            "operational_status": "preview_monitored",
-            "operational_status_label_it": "Preview monitorata",
+            "operational_status": operational_status,
+            "operational_status_label_it": operational_status_label_it,
             "scientific_maturity": maturity,
             "scientific_maturity_label_it": maturity_it,
-            "signals_integration_status": "blocked",
-            "signals_integration_status_label_it": "Bloccata",
-            "current_decision": "continue_monitoring",
-            "current_decision_label_it": (
-                "Continua monitoraggio fino alla revisione manuale"
-                if maturity == "ready_for_manual_review"
-                else "Continua monitoraggio"
+            "scientific_evidence": (
+                "external_validation_completed" if official else None
             ),
+            "scientific_evidence_label_it": (
+                "Validazione esterna completata" if official else None
+            ),
+            "role": ROLE if official else None,
+            "role_label_it": (
+                "Supporto contestuale mercati goal" if official else None
+            ),
+            "signals_integration_status": (
+                SIGNALS_INTEGRATION_STATUS if official else "blocked"
+            ),
+            "signals_integration_status_label_it": signals_label,
+            "current_decision": current_decision,
+            "current_decision_label_it": current_decision_label_it,
             "recommended_next_step": recommended_next_step,
             "recommended_next_step_label_it": next_step_labels.get(
                 str(recommended_next_step), str(recommended_next_step)
             ),
-            "manual_review_status": (
-                "eligible" if maturity == "ready_for_manual_review" else "not_eligible"
+            "manual_review_status": manual_review_status,
+            "post_cutover_qc_only": official,
+            "no_gate_on_200": official,
+            "collection_note_it": (
+                "Raccolta snapshot post-cutover" if official else None
             ),
             "technical_gates": {"gates": tech_gates},
             "prospective_gates": {"gates": progress_gates},
@@ -353,16 +472,15 @@ def build_goal_intensity_v5_readiness(
                 "incomplete": incomplete_n,
                 "error": error_n,
                 "snapshots": all_n,
-                "minimum": MIN_PROSPECTIVE_COMPLETED,
-                "progress_pct": round(
-                    (completed_n / MIN_PROSPECTIVE_COMPLETED) * 100.0, 2
-                )
-                if MIN_PROSPECTIVE_COMPLETED
-                else 0.0,
-                "remaining": max(0, MIN_PROSPECTIVE_COMPLETED - completed_n),
-                "excess": max(0, completed_n - MIN_PROSPECTIVE_COMPLETED),
-                "minimum_reached": completed_n >= MIN_PROSPECTIVE_COMPLETED,
-                "first_snapshot_at": (normalized.get("coverage_global") or {}).get("first_snapshot"),
+                "minimum": progress_minimum,
+                "progress_pct": progress_pct,
+                "remaining": remaining,
+                "excess": excess,
+                "minimum_reached": minimum_reached,
+                "quality_monitoring": official,
+                "first_snapshot_at": (normalized.get("coverage_global") or {}).get(
+                    "first_snapshot"
+                ),
                 "first_completed_at": first_completed,
                 "earliest_theoretical_review_at": earliest,
             },
@@ -370,17 +488,13 @@ def build_goal_intensity_v5_readiness(
             "coverage_in_period": normalized.get("coverage_in_period"),
             "monitoring_normalized": normalized,
             "phase_2b_benchmark": phase_2b_benchmark,
-            "scientific": {
-                "phase_2b_readiness": phase,
-                "phase_2b_benchmark": phase_2b_benchmark,
-                "blocking_issues": blocking,
-                "calibration": build_calibration(db, date_from=date_from, date_to=date_to),
-                "candidates": build_candidates(db, date_from=date_from, date_to=date_to),
-            },
+            "scientific": scientific_block,
             "data_health": health,
             "overview_summary": build_overview(
                 db, date_from=date_from, date_to=date_to, competition_id=competition_id
             ),
+            "bundle_id": getattr(bundle, "id", None),
+            "bundle_version": getattr(bundle, "version", None),
             "cache_hit": False,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "filters": {
@@ -422,7 +536,9 @@ def build_goal_intensity_v5_dossier_files(
         "Solo readiness/monitoring. Non sostituisce lo ZIP forensic.\n"
         f"Readiness: {GOAL_INTENSITY_V5_READINESS_VERSION}\n"
         f"Policy: {GOAL_INTENSITY_V5_READINESS_POLICY_VERSION}\n"
-        "Signals: blocked. Decisione default: continue_monitoring.\n"
+        f"Operational: {readiness.get('operational_status')}\n"
+        f"Decision: {readiness.get('current_decision')}\n"
+        "Signals: blocked / non collegati.\n"
     ).encode("utf-8")
 
     return {

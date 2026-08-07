@@ -34,9 +34,9 @@ from app.services.cecchino.cecchino_module_monitoring_exports import (
 )
 
 
-def test_export_version_is_v11():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v11"
-    assert "v11" in MONITORING_EXPORT_VERSION
+def test_export_version_is_v12():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v12"
+    assert "v12" in MONITORING_EXPORT_VERSION
 
 
 def test_goal_schema_contract_includes_canonical_files():
@@ -62,7 +62,7 @@ def test_policy_immutable_and_aligned_to_preview():
     assert policy["default_decision"] == "continue_monitoring"
     assert policy["version"] == GOAL_INTENSITY_V5_READINESS_POLICY_VERSION
     assert GOAL_INTENSITY_V5_MONITORING_VERSION.endswith("_v1")
-    assert GOAL_INTENSITY_V5_READINESS_VERSION.endswith("_v1")
+    assert GOAL_INTENSITY_V5_READINESS_VERSION.endswith("_v2")
     assert GOAL_INTENSITY_V5_EXPORT_VERSION.endswith("_v1")
 
 
@@ -148,9 +148,11 @@ def _snap(status: str, attached: bool = False):
 def test_readiness_199_insufficient_sample():
     clear_goal_intensity_v5_readiness_cache()
     from app.models.cecchino_goal_intensity_v5_preview import SNAPSHOT_COMPLETED
+    from app.services.cecchino.cecchino_goal_intensity_v5_preview import PREVIEW_BUNDLE_VERSION
 
     bundle = MagicMock()
     bundle.id = 1
+    bundle.version = PREVIEW_BUNDLE_VERSION
     bundle.candidate_definition_hash = "abc"
     snaps = [_snap(SNAPSHOT_COMPLETED, attached=True) for _ in range(199)]
 
@@ -196,14 +198,17 @@ def test_readiness_199_insufficient_sample():
     assert report["signals_integration_status"] == "blocked"
     assert report["current_decision"] == "continue_monitoring"
     assert report["manual_review_status"] == "not_eligible"
+    assert report["operational_status"] == "preview_monitored"
 
 
 def test_readiness_200_ready_for_manual_review():
     clear_goal_intensity_v5_readiness_cache()
     from app.models.cecchino_goal_intensity_v5_preview import SNAPSHOT_COMPLETED
+    from app.services.cecchino.cecchino_goal_intensity_v5_preview import PREVIEW_BUNDLE_VERSION
 
     bundle = MagicMock()
     bundle.id = 1
+    bundle.version = PREVIEW_BUNDLE_VERSION
     bundle.candidate_definition_hash = "abc"
     snaps = [_snap(SNAPSHOT_COMPLETED, attached=True) for _ in range(200)]
 
@@ -241,6 +246,18 @@ def test_readiness_200_ready_for_manual_review():
             "app.services.cecchino.cecchino_goal_intensity_v5_readiness.build_candidates",
             return_value={},
         ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark.build_goal_intensity_v4_v5_prospective_benchmark",
+            return_value={"status": "ok", "paired_complete_n": 200},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v4_v5_benchmark.build_phase_2b_benchmark_summary",
+            return_value={
+                "status": "ok",
+                "paired_complete_n": 200,
+                "recommended_next_step": "phase_2b_replacement_review",
+            },
+        ),
     ):
         report = build_goal_intensity_v5_readiness(db)
 
@@ -249,6 +266,7 @@ def test_readiness_200_ready_for_manual_review():
     assert report["signals_integration_status"] == "blocked"
     assert report["current_decision"] == "continue_monitoring"
     assert report["manual_review_status"] == "eligible"
+    assert report["operational_status"] == "preview_monitored"
 
 
 def test_dossier_zip_serializes_with_jsonable_encoder():

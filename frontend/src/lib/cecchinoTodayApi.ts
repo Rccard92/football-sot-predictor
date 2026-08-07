@@ -2255,10 +2255,20 @@ export type CecchinoGiV5ExplanationsResponse = {
   message?: string
   audit_version?: string
   module?: string
+  module_version?: string
+  presentation?: string
+  consistency_status?: string
   generated_at?: string
   no_operational_recalculation?: boolean
   diagnostic_re_evaluation_only?: boolean
   source_mode?: string
+  source_identity?: {
+    today_fixture_id?: number
+    snapshot_id?: number
+    bundle_id?: number
+    bundle_version?: string
+    candidate_definition_hash?: string | null
+  }
   fixture?: {
     today_fixture_id: number
     local_fixture_id?: number | null
@@ -2273,15 +2283,22 @@ export type CecchinoGiV5ExplanationsResponse = {
     bundle_id?: number
     bundle_version?: string
     candidate_version?: string
+    candidate_definition_hash?: string | null
     source_snapshot_at?: string | null
     bundle_frozen_at?: string | null
     snapshot_status?: string
+    feature_status?: string | null
     freeze_check?: Record<string, boolean | null>
     reason_codes?: unknown
   }
-  dimensions: Record<string, CecchinoGiV5DimensionExplanation>
-  candidates: Record<string, CecchinoGiV5CandidateExplanation>
+  index?: Record<string, unknown>
+  target_heads?: Record<string, Record<string, unknown>>
+  /** Legacy preview dimensions; null/absent for official_support. */
+  dimensions?: Record<string, CecchinoGiV5DimensionExplanation> | null
+  /** Legacy candidates; null for official_support. */
+  candidates?: Record<string, CecchinoGiV5CandidateExplanation> | null
   additional_candidates?: Record<string, unknown>
+  archived_candidates_hidden?: boolean
   warnings?: string[]
   metadata?: Record<string, unknown>
 }

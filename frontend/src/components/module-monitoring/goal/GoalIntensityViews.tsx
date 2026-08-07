@@ -143,25 +143,37 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
     (coverageLegacy.minimum_prospective_matches as number | undefined) ??
     (data.minimum_sample as number | undefined) ??
     200
+  const isOfficial =
+    data.operational_status === 'official_support' ||
+    Boolean((data as { post_cutover_qc_only?: boolean }).post_cutover_qc_only) ||
+    Boolean((data as { no_gate_on_200?: boolean }).no_gate_on_200)
+  const operationalFallback = isOfficial ? 'Supporto ufficiale' : 'Preview monitorata'
+  const signalsFallback = isOfficial ? 'Non collegato ai Segnali' : 'Bloccata'
+  const decisionFallback = isOfficial
+    ? 'Modulo di supporto attivo'
+    : 'Continua monitoraggio'
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="gi-monitoring-overview">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-800">Goal Intensity v5 Overview</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Intensità Goal v5</h3>
         <p className="mt-1 text-xs text-slate-600">
-          Copertura globale e di periodo tenute separate. Signals sempre bloccati.
+          {isOfficial
+            ? 'Supporto ufficiale post-cutover. Snapshot solo bundle ufficiale. Signals non collegati.'
+            : 'Copertura globale e di periodo tenute separate. Signals sempre bloccati.'}
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MonitoringMetricCard
           label="Stato operativo"
-          value={String(data.operational_status_label_it || data.operational_status || 'Preview monitorata')}
+          value={String(data.operational_status_label_it || data.operational_status || operationalFallback)}
         />
         <MonitoringMetricCard
           label="Maturità scientifica"
           value={String(
             data.scientific_maturity_label_it ||
+              (data as { scientific_evidence_label_it?: string }).scientific_evidence_label_it ||
               data.scientific_maturity ||
               '—',
           )}
@@ -176,17 +188,51 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
         />
         <MonitoringMetricCard
           label="Integrazione Signals"
-          value={String(data.signals_integration_status_label_it || data.signals_integration_status || 'Bloccata')}
+          value={String(data.signals_integration_status_label_it || data.signals_integration_status || signalsFallback)}
         />
       </div>
 
+      {isOfficial ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Ruolo"
+            value={String(
+              (data as { role_label_it?: string }).role_label_it ||
+                (data as { role?: string }).role ||
+                'Supporto contestuale mercati goal',
+            )}
+          />
+          <MonitoringMetricCard
+            label="Evidenza"
+            value={String(
+              (data as { scientific_evidence_label_it?: string }).scientific_evidence_label_it ||
+                data.scientific_maturity_label_it ||
+                'Validazione esterna completata',
+            )}
+          />
+          <MonitoringMetricCard
+            label="Raccolta"
+            value={String(
+              (data as { collection_note_it?: string }).collection_note_it ||
+                'Snapshot post-cutover',
+            )}
+          />
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Copertura globale</h4>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {isOfficial ? 'Snapshot post-cutover (globali)' : 'Copertura globale'}
+        </h4>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard label="Snapshot globali" value={globalSnapshots == null ? '—' : String(globalSnapshots)} />
           <MonitoringMetricCard label="Completed globali" value={globalCompleted == null ? '—' : String(globalCompleted)} />
           <MonitoringMetricCard label="Pending globali" value={globalPending == null ? '—' : String(globalPending)} />
-          <MonitoringMetricCard label="Campione minimo" value={String(minimumSample)} />
+          {isOfficial ? (
+            <MonitoringMetricCard label="Quality monitoring" value="Post-cutover QC" />
+          ) : (
+            <MonitoringMetricCard label="Campione minimo" value={String(minimumSample)} />
+          )}
         </div>
       </div>
 
@@ -201,7 +247,7 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
         Decisione automatica:{' '}
-        {String(data.current_decision_label_it || data.current_decision || 'Continua monitoraggio')}
+        {String(data.current_decision_label_it || data.current_decision || decisionFallback)}
       </div>
 
       {(Boolean(covGlobal?.first_snapshot) || Boolean(covGlobal?.last_snapshot)) && (
@@ -788,7 +834,7 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MonitoringMetricCard
           label="Stato operativo"
-          value={String(data.operational_status_label_it || data.operational_status || 'Preview monitorata')}
+          value={String(data.operational_status_label_it || data.operational_status || 'Supporto ufficiale')}
         />
         <MonitoringMetricCard
           label="Maturità scientifica"
@@ -804,16 +850,18 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
         />
         <MonitoringMetricCard
           label="Integrazione Signals"
-          value={String(data.signals_integration_status_label_it || data.signals_integration_status || 'Bloccata')}
+          value={String(data.signals_integration_status_label_it || data.signals_integration_status || 'Non collegato ai Segnali')}
         />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
         Decisione automatica:{' '}
-        {String(data.current_decision_label_it || data.current_decision || 'Continua monitoraggio')}
+        {String(data.current_decision_label_it || data.current_decision || 'Modulo di supporto attivo')}
       </div>
 
-      {benchmark && Object.keys(benchmark).length > 0 && (
+      {benchmark &&
+        Object.keys(benchmark).length > 0 &&
+        String(benchmark.status || '') !== 'not_applicable_official_support' && (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
           <h4 className="text-sm font-semibold text-slate-800">Sintesi benchmark Phase 2B</h4>
           <p className="mt-1 text-xs text-slate-600">

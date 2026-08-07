@@ -104,45 +104,147 @@ function readOutputValue(outputs: Record<string, unknown> | undefined, key: stri
   return null
 }
 
+function consistencyBadge(status: string | null | undefined): {
+  label: string
+  className: string
+} {
+  if (status === 'match') {
+    return { label: 'Coerente', className: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+  }
+  if (status === 'rounding_match') {
+    return {
+      label: 'Coerente entro arrotondamento',
+      className: 'text-slate-700 bg-slate-100 border-slate-200',
+    }
+  }
+  if (status === 'mismatch') {
+    return {
+      label: 'Mismatch stored vs audit',
+      className: 'text-amber-900 bg-amber-50 border-amber-300',
+    }
+  }
+  return {
+    label: 'Non verificabile',
+    className: 'text-slate-600 bg-slate-50 border-slate-200',
+  }
+}
+
 function OfficialAuditCollapsible({
   explanations,
 }: {
   explanations: CecchinoGiV5ExplanationsResponse & {
     index?: Record<string, unknown>
     target_heads?: Record<string, Record<string, unknown>>
+    consistency_status?: string
+    source_identity?: Record<string, unknown>
+    warnings?: string[]
   }
 }) {
   const index = explanations.index || {}
   const heads = explanations.target_heads || {}
+  const topStatus = String(explanations.consistency_status || index.consistency_status || '')
+  const topBadge = consistencyBadge(topStatus)
+  const storedIndex =
+    (index.stored as number | null | undefined) ??
+    (index.score_stored as number | null | undefined)
+  const recomputedIndex =
+    (index.recomputed as number | null | undefined) ??
+    (index.score_audit as number | null | undefined)
+  const indexStatus = String(index.consistency_status || (index.consistency as { status?: string } | undefined)?.status || '')
+  const indexBadge = consistencyBadge(indexStatus)
+
   return (
     <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3" data-testid="gi-official-audit">
       <p className="text-xs font-semibold text-slate-800">Audit operativo</p>
       <p className="mt-1 text-[11px] text-slate-500">
-        Indice unico e teste per mercato. Nessun candidato research.
+        Valori persistiti (card) vs ricalcolo scorer ufficiale. Nessun candidato research.
       </p>
+      {topStatus ? (
+        <span
+          className={`mt-2 inline-block rounded border px-2 py-0.5 text-[11px] font-medium ${topBadge.className}`}
+          data-testid="gi-audit-top-consistency"
+        >
+          {topBadge.label}
+        </span>
+      ) : null}
+      {Array.isArray(explanations.warnings) && explanations.warnings.length > 0 ? (
+        <ul className="mt-2 space-y-0.5 text-[11px] text-amber-800">
+          {explanations.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      ) : null}
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-        <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
+        <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5" data-testid="gi-audit-index">
           <p className="text-slate-500">Indice</p>
           <p className="font-medium text-slate-900">{String(index.id ?? 'GI_A_STRICT_CORE')}</p>
-          <p className="font-mono">{fmt(index.score_audit as number | null | undefined, 2)}</p>
-          <p className="text-slate-500">{String(index.formula ?? '')}</p>
+          <p className="mt-1 font-mono text-base font-semibold text-slate-900" data-testid="gi-audit-index-stored">
+            {fmt(storedIndex, 2)}
+          </p>
+          <p className="text-[11px] text-slate-500">Stored snapshot</p>
+          <p className="mt-1 font-mono text-slate-700">
+            Ricalcolo audit: {fmt(recomputedIndex, 2)}
+          </p>
+          {index.delta != null ? (
+            <p className="font-mono text-[11px] text-slate-500">
+              Delta: {fmt(index.delta as number | null | undefined, 4)}
+            </p>
+          ) : null}
+          <span
+            className={`mt-1 inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${indexBadge.className}`}
+          >
+            {indexBadge.label}
+          </span>
         </div>
-        {Object.entries(heads).map(([key, head]) => (
-          <div key={key} className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
-            <p className="font-medium text-slate-800">{String(head.label_it ?? key)}</p>
-            <p className="text-slate-500">source: {String(head.calibration_source ?? '—')}</p>
-            <p className="font-mono">
-              i={fmt(head.intercept as number | null | undefined, 4)} · c=
-              {fmt(head.coefficient as number | null | undefined, 4)}
-            </p>
-            <p className="font-mono">
-              {String(head.transform)} → {fmt(head.result_audit as number | null | undefined, 4)}
-            </p>
-          </div>
-        ))}
+        {Object.entries(heads).map(([key, head]) => {
+          const stored =
+            (head.stored as number | null | undefined) ??
+            (head.result_stored as number | null | undefined)
+          const recomputed =
+            (head.recomputed as number | null | undefined) ??
+            (head.result_audit as number | null | undefined)
+          const status = String(
+            head.consistency_status ||
+              (head.consistency as { status?: string } | undefined)?.status ||
+              '',
+          )
+          const badge = consistencyBadge(status)
+          const isProb = key.startsWith('probability_')
+          return (
+            <div
+              key={key}
+              className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5"
+              data-testid={`gi-audit-head-${key}`}
+            >
+              <p className="font-medium text-slate-800">{String(head.label_it ?? key)}</p>
+              <p className="text-slate-500">
+                Fonte: {String(head.calibration_source ?? '—')}
+              </p>
+              <p className="mt-1 font-mono font-semibold text-slate-900">
+                Stored: {isProb ? fmtPct(stored) : fmt(stored, 2)}
+              </p>
+              <p className="font-mono text-slate-700">
+                Ricalcolo: {isProb ? fmtPct(recomputed) : fmt(recomputed, 2)}
+              </p>
+              <p className="font-mono text-[11px] text-slate-500">
+                Delta: {fmt(head.delta as number | null | undefined, 4)}
+              </p>
+              <span
+                className={`mt-1 inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${badge.className}`}
+              >
+                {badge.label}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
+}
+
+function fmtPct(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return `${(Number(v) * 100).toFixed(1)}%`
 }
 
 export function CecchinoGoalIntensityV5Panel({

@@ -7,6 +7,17 @@
 **Bundle candidate v2.1:** `cecchino_goal_intensity_v5_candidate_bundle_v2_1` (frozen, invariato)  
 **Ruolo:** `contextual_support_only` — Signals **bloccati**
 
+## Chiusura tecnica (2026-08-07) — audit + monitoring
+
+- Bundle official ID 3 già attivo in produzione; **nessun** freeze/refit/backfill/migrazione.
+- **Audit canonico:** unica fonte `score_official_support_with_bundle(feature_payload, bundle esatto snapshot)`.
+  Stored vs recomputed (raw, expected, ge2, ge3, BTTS) con `consistency_status` ∈ `{match, rounding_match, mismatch, unavailable}`; mismatch → `status=partial` + warning, nessuna correzione snapshot.
+  Payload: `source_identity` allineato alla card Today.
+- **Readiness official** (`cecchino_goal_intensity_v5_readiness_v2`): `official_support`, evidenza `external_validation_completed`, decision `support_module_active`, next `monitor_post_cutover_quality`. Sample post-cutover = QC only (`no_gate_on_200`); **non** retrocede a preview. Phase 2B **non** eseguita come gate official (Archivio ricerca).
+- Soft overview export: `status=official_support` (non `preview_research`). Conti solo bundle official.
+- Cache readiness: key include `bundle.id` + `bundle.version` + readiness_v2.
+- Formule / ECDF / coefficienti / snapshot persistiti invariati.
+
 ## Decisione finale (Phase 2D)
 
 Benchmark esterno Job ID **2** (full, `external_validation`) sul bundle v2.1:

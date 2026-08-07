@@ -1089,7 +1089,14 @@ def build_goal_intensity_module_overview(
     date_to: date,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
-    """Overview soft della preview Goal Intensity v5."""
+    """Overview soft Goal Intensity v5 (official support o preview research)."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_official_support import (
+        OPERATIONAL_STATUS,
+        ROLE,
+        SIGNALS_INTEGRATION_STATUS,
+        is_official_bundle,
+    )
+
     eligible, settled = _eligible_fixture_counts(
         db,
         date_from=date_from,
@@ -1097,13 +1104,22 @@ def build_goal_intensity_module_overview(
         competition_id=competition_id,
     )
     bundle = _active_goal_bundle(db)
-    warnings = [
-        "Preview research: metriche candidate e calibrazione disponibili nel pacchetto",
-    ]
+    official = is_official_bundle(bundle)
+    warnings: list[str] = []
+    if official:
+        warnings = [
+            "Supporto ufficiale: qualità post-cutover. Non collegato ai Segnali.",
+        ]
+    else:
+        warnings = [
+            "Preview research: metriche candidate e calibrazione disponibili nel pacchetto",
+        ]
     snapshots_count = 0
     global_snapshots_count = 0
     pending_count = 0
     completed_count = 0
+    incomplete_count = 0
+    error_count = 0
     monitoring_status = None
     monitoring: dict[str, Any] | None = None
     min_sample = None
@@ -1116,6 +1132,8 @@ def build_goal_intensity_module_overview(
         warnings.insert(0, "Bundle Goal Intensity v5 attivo assente")
     else:
         from app.models.cecchino_goal_intensity_v5_preview import (
+            SNAPSHOT_ERROR,
+            SNAPSHOT_INCOMPLETE,
             CecchinoGoalIntensityV5PreviewSnapshot,
         )
         from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
@@ -1140,6 +1158,12 @@ def build_goal_intensity_module_overview(
         ]
         snapshots_count = len(snaps)
         completed_count = sum(1 for s in snaps if s.result_attached_at is not None)
+        incomplete_count = sum(
+            1 for s in snaps if getattr(s, "snapshot_status", None) == SNAPSHOT_INCOMPLETE
+        )
+        error_count = sum(
+            1 for s in snaps if getattr(s, "snapshot_status", None) == SNAPSHOT_ERROR
+        )
         pending_count = max(0, snapshots_count - completed_count)
         scan_dates = [s.scan_date for s in snaps if s.scan_date is not None]
         if scan_dates:
@@ -1147,53 +1171,86 @@ def build_goal_intensity_module_overview(
             last_effective_date = max(scan_dates).isoformat()
         monitoring = build_prospective_monitoring(db, bundle)
         monitoring_status = monitoring.get("status")
-        min_sample = MINIMUM_PROSPECTIVE_MATCHES
-        if min_sample:
-            snapshot_collection_progress = min(
-                1.0, global_snapshots_count / min_sample
-            )
-            completed_results_progress = min(1.0, completed_count / min_sample)
+        if not official:
+            min_sample = MINIMUM_PROSPECTIVE_MATCHES
+            if min_sample:
+                snapshot_collection_progress = min(
+                    1.0, global_snapshots_count / min_sample
+                )
+                completed_results_progress = min(1.0, completed_count / min_sample)
     if eligible == 0:
         warnings.insert(0, "Nessuna fixture eleggibile nel periodo")
 
-    # Maturità scientifica allineata alla readiness policy (campione globale).
     global_completed = (
         sum(1 for s in all_snaps if s.result_attached_at is not None) if bundle is not None else 0
     )
     phase = {}
     blocking: list[str] = []
     recommended_next_step = "continue_prospective_monitoring"
-    if bundle is not None:
+    if bundle is not None and not official:
         phase = (monitoring or {}).get("phase_2b_readiness") or {}
-        if not phase and monitoring_status:
-            # monitoring already built above
-            pass
         blocking = list(phase.get("blocking_issues") or [])
         recommended_next_step = phase.get("recommended_next_step") or recommended_next_step
 
-    if bundle is None or global_completed == 0:
+    if official:
+        scientific_maturity = "external_validation_completed"
+        scientific_maturity_label_it = "Validazione esterna completata"
+        recommended_next_step = "monitor_post_cutover_quality"
+        status = OPERATIONAL_STATUS
+        current_decision = "support_module_active"
+        signals_status = SIGNALS_INTEGRATION_STATUS
+    elif bundle is None or global_completed == 0:
         scientific_maturity = "prospective_collecting" if bundle is not None else "raccolta_dati"
+        scientific_maturity_label_it = None
+        status = "preview_research" if bundle is not None else "blocked"
+        current_decision = "continue_monitoring"
+        signals_status = "blocked"
     elif global_completed < (min_sample or 200):
         scientific_maturity = "insufficient_completed_sample"
+        scientific_maturity_label_it = None
+        status = "preview_research"
+        current_decision = "continue_monitoring"
+        signals_status = "blocked"
     elif blocking:
         scientific_maturity = "review_required"
+        scientific_maturity_label_it = None
+        status = "preview_research"
+        current_decision = "continue_monitoring"
+        signals_status = "blocked"
     else:
         scientific_maturity = "ready_for_manual_review"
+        scientific_maturity_label_it = "Pronto per revisione manuale"
         recommended_next_step = (
             phase.get("recommended_next_step") or "phase_2b_replacement_review"
         )
+        status = "preview_research"
+        current_decision = "continue_monitoring"
+        signals_status = "blocked"
 
     return make_json_safe(
         {
             "module_key": "goal-intensity-v5",
-            "status": "preview_research" if bundle is not None else "blocked",
+            "status": status,
+            "operational_status": status if official else "preview_monitored" if bundle else "blocked",
+            "operational_status_label_it": (
+                "Supporto ufficiale"
+                if official
+                else ("Preview monitorata" if bundle is not None else None)
+            ),
             "scientific_maturity": scientific_maturity,
-            "scientific_maturity_label_it": (
-                "Pronto per revisione manuale"
-                if scientific_maturity == "ready_for_manual_review"
-                else None
+            "scientific_maturity_label_it": scientific_maturity_label_it,
+            "scientific_evidence": (
+                "external_validation_completed" if official else None
+            ),
+            "scientific_evidence_label_it": (
+                "Validazione esterna completata" if official else None
+            ),
+            "role": ROLE if official else None,
+            "role_label_it": (
+                "Supporto contestuale mercati goal" if official else None
             ),
             "version": bundle.version if bundle is not None else None,
+            "bundle_version": bundle.version if bundle is not None else None,
             "coverage": None,
             "fixtures": eligible if eligible else None,
             "settled": settled if eligible else None,
@@ -1203,14 +1260,34 @@ def build_goal_intensity_module_overview(
             "prospective_snapshots": snapshots_count if bundle is not None else None,
             "pending_snapshots": pending_count if bundle is not None else None,
             "completed_snapshots": completed_count if bundle is not None else None,
+            "incomplete_snapshots": incomplete_count if bundle is not None else None,
+            "error_snapshots": error_count if bundle is not None else None,
             "global_completed_snapshots": global_completed if bundle is not None else None,
             "minimum_sample": min_sample,
             "snapshot_collection_progress": snapshot_collection_progress,
             "completed_results_progress": completed_results_progress,
             "monitoring_status": monitoring_status,
             "recommended_next_step": recommended_next_step,
-            "signals_integration_status": "blocked",
-            "current_decision": "continue_monitoring",
+            "recommended_next_step_label_it": (
+                "Monitora qualità post-cutover"
+                if recommended_next_step == "monitor_post_cutover_quality"
+                else None
+            ),
+            "signals_integration_status": signals_status,
+            "signals_integration_status_label_it": (
+                "Non collegato ai Segnali" if official else "Bloccata"
+            ),
+            "current_decision": current_decision,
+            "current_decision_label_it": (
+                "Modulo di supporto attivo"
+                if current_decision == "support_module_active"
+                else "Continua monitoraggio"
+            ),
+            "post_cutover_qc_only": official,
+            "no_gate_on_200": official,
+            "collection_note_it": (
+                "Raccolta snapshot post-cutover" if official else None
+            ),
             "first_effective_date": first_effective_date,
             "last_effective_date": last_effective_date,
             "last_snapshot_at": last_effective_date,

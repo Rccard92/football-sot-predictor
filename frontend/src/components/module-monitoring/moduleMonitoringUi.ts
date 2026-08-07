@@ -84,6 +84,7 @@ export const READINESS_LABELS: Record<string, string> = {
   candidate_under_review: 'Candidato in revisione',
   official_monitored: 'Ufficiale monitorato',
   official_descriptive_monitored: 'Ufficiale descrittivo monitorato',
+  official_support: 'Supporto ufficiale',
   preview_research: 'Preview research',
   operational: 'Operativo',
   preview_monitored: 'Preview monitorata',
@@ -141,6 +142,7 @@ const SCIENTIFIC_MATURITY_LABELS: Record<string, string> = {
   prospective_not_started: 'Raccolta prospettica non iniziata',
   prospective_collecting: 'Raccolta prospettica in corso',
   ready_for_manual_review: 'Pronto per revisione manuale',
+  external_validation_completed: 'Validazione esterna completata',
   evidenza_sufficiente: 'Evidenza sufficiente',
   pronta_per_revisione: 'Pronta per revisione',
   promossa: 'Promossa',
@@ -213,18 +215,33 @@ export function dataCoverageLabel(item: CoverageItem): string {
 
 const OPERATIONAL_STATUS_LABELS: Record<string, string> = {
   official_descriptive_monitored: 'Ufficiale descrittivo monitorato',
+  official_support: 'Supporto ufficiale',
+  preview_monitored: 'Preview monitorata',
+  preview_research: 'Preview research',
 }
 
 const SCIENTIFIC_STATUS_LABELS: Record<string, string> = {
   prospective_not_started: 'Raccolta prospettica non iniziata',
   prospective_collecting: 'Raccolta prospettica in corso',
   ready_for_manual_review: 'Pronto per revisione manuale',
+  external_validation_completed: 'Validazione esterna completata',
 }
 
 const GOVERNANCE_DECISION_LABELS: Record<string, string> = {
   continue_monitoring: 'Continua monitoraggio',
   freeze_as_descriptive: 'Mantieni come descrittivo',
   request_formula_review: 'Richiedi revisione formula',
+  support_module_active: 'Modulo di supporto attivo',
+  monitor_post_cutover_quality: 'Monitora qualità post-cutover',
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  contextual_support_only: 'Supporto contestuale mercati goal',
+}
+
+export function roleLabelIt(role: string | null | undefined): string {
+  if (!role) return 'Ruolo non disponibile'
+  return ROLE_LABELS[role] || role
 }
 
 const COLLECTION_HEALTH_LABELS: Record<string, string> = {

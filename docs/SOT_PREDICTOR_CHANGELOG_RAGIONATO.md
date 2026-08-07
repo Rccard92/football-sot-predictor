@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Goal Intensity official audit + monitoring closure (2026-08-07)
+
+- Cosa: audit Today allineato allo snapshot (`score_official_support_with_bundle` unica fonte; stored vs recomputed); readiness/export FE `official_support` al posto di Preview research/Phase 2B.
+- Non toccato: bundle ID 3, formule, ECDF, snapshot, Signals, migrazioni.
+
 ## Feat — Goal Intensity V5 official support module (2026-08-06)
 
 - Perché: trasformare la research multi-candidato in un unico modulo operativo di supporto contestuale.

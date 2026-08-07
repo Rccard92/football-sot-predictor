@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal — Official support closure audit/monitoring (2026-08-07)
+
+Chiusura tecnica post-cutover: audit stored-vs-recomputed su scorer canonico; readiness/export `official_support` (Phase 2B solo archivio); sample post-cutover = quality monitoring, non gate promozione. Bundle ID 3 invariato; nessun refit/backfill/migrazione. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
+
 ## Intensità Goal — Official support Phase 2D (2026-08-06)
 
 Modulo operativo `cecchino_goal_intensity_v5_official_support_v1` (`official_support`, ruolo `contextual_support_only`). Raw unico `GI_A_STRICT_CORE`; teste target-specifiche (ge2←GI_A; total/ge3/BTTS←GI_E) da bundle candidate v2.1 senza refit. Evidenza: Job benchmark storico ID 2 (`external_validation`). Fallback V4 atomico. Signals blocked. Cutover `strict_after_official_freeze`, nessun backfill. Dry-run/freeze: `…/goal-intensity-v5/finalization`. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
