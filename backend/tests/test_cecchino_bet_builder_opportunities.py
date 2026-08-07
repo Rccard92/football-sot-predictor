@@ -545,9 +545,13 @@ def test_aggregate_origins_and_sort(monkeypatch):
                 "status": "ok",
                 "balance_version": "cecchino_balance_v5_v3",
                 "f36_index": 50,
+                "f36_class": "Equilibrio",
                 "dominance_index": 40,
+                "dominance_class": "Debole",
                 "draw_credibility_index": 30,
-                "gap_coherence_index": 20,
+                "draw_credibility_class": "Pareggio forte",
+                "gap_index": 20,
+                "gap_class": "Confermato",
                 "source_mode": "prospective_scan",
                 "pre_match_verified": True,
             },
@@ -732,6 +736,164 @@ def test_readonly_no_writes(monkeypatch):
     assert db.commit.call_count == 0
     assert db.delete.call_count == 0
     assert db.flush.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# BET-01.1 — Balance V5 context mapping (snapshot monitoring keys)
+# ---------------------------------------------------------------------------
+
+
+def _canonical_balance_snapshot(**overrides) -> dict:
+    base = {
+        "status": "ok",
+        "balance_version": "cecchino_balance_v5_v3",
+        "snapshot_version": "cecchino_balance_v5_monitoring_snapshot_v2",
+        "f36_index": 73.99,
+        "f36_class": "Equilibrio",
+        "dominance_index": 29.57,
+        "dominance_class": "Debole",
+        "draw_credibility_index": 45.14,
+        "draw_credibility_class": "Pareggio forte",
+        "gap_index": 75.9,
+        "gap_class": "Confermato",
+        "source_mode": "prospective_scan",
+        "pre_match_verified": True,
+        "prob_1_norm": 0.33,
+        "prob_x_norm": 0.34,
+        "prob_2_norm": 0.33,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_balance_context_four_pillars_from_canonical_snapshot(monkeypatch):
+    """BET-01.1: mapping gap_index/*_class → pillars + gap_coherence_index."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {
+            "status": "ok",
+            "items": [_v31_item(SEL_DRAW, score=80)],
+            "source_mode": "persisted_pre_match_snapshot",
+            "generated_at": "2026-08-07T10:00:00+00:00",
+        },
+    )
+    rows = [
+        _fixture_row(
+            fid=11,
+            kpi_rows=[_kpi_row(SEL_DRAW, book=2.2, cecchino=1.9)],
+            signals_matrix=_matrix_v3(draw_yes=2),
+            balance=_canonical_balance_snapshot(),
+        )
+    ]
+    db = _mock_db(rows)
+    payload = aggregate_bet_builder_opportunities(db, scan_date=date(2026, 8, 8))
+    draw = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW)
+    ctx = draw["context_support"]
+    assert ctx["available"] is True
+    assert ctx["module"] == "balance_v5"
+    assert ctx["status"] == "raw_context_only"
+    pl = ctx["payload"]
+    assert pl["gap_coherence_index"] == 75.9
+    pillars = pl["pillars"]
+    assert pillars["f36"] == {"index": 73.99, "class_label": "Equilibrio"}
+    assert pillars["dominance"] == {"index": 29.57, "class_label": "Debole"}
+    assert pillars["draw_credibility"] == {"index": 45.14, "class_label": "Pareggio forte"}
+    assert pillars["gap_coherence"] == {"index": 75.9, "class_label": "Confermato"}
+    assert "supports" not in pl
+    assert "contradicts" not in pl
+
+
+def test_balance_context_gap_absent_stays_null(monkeypatch):
+    """BET-01.1: senza gap_index lo pillar 4 resta null (nessuna formula inventata)."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {
+            "status": "ok",
+            "items": [_v31_item(SEL_HOME, score=70)],
+            "source_mode": "persisted_pre_match_snapshot",
+            "generated_at": "2026-08-07T10:00:00+00:00",
+        },
+    )
+    snap = _canonical_balance_snapshot()
+    del snap["gap_index"]
+    del snap["gap_class"]
+    rows = [
+        _fixture_row(
+            fid=12,
+            kpi_rows=[_kpi_row(SEL_HOME, book=2.0, cecchino=1.8)],
+            signals_matrix=_matrix_v3(home_si=True),
+            balance=snap,
+        )
+    ]
+    db = _mock_db(rows)
+    payload = aggregate_bet_builder_opportunities(db, scan_date=date(2026, 8, 8))
+    home = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_HOME)
+    pl = home["context_support"]["payload"]
+    assert pl["gap_coherence_index"] is None
+    assert pl["pillars"]["gap_coherence"]["index"] is None
+    assert pl["pillars"]["gap_coherence"]["class_label"] is None
+    # altri tre pilastri ancora valorizzati
+    assert pl["pillars"]["f36"]["index"] == 73.99
+    assert pl["pillars"]["f36"]["class_label"] == "Equilibrio"
+    assert pl["dominance_index"] == 29.57
+    assert pl["draw_credibility_index"] == 45.14
+
+
+def test_balance_context_does_not_recalculate_or_alter_other_context(monkeypatch):
+    """BET-01.1: solo remapping; opportunity/GI/aggregation invariati strutturalmente."""
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.get_active_bundle",
+        lambda _db: None,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **kw: {
+            "status": "ok",
+            "items": [
+                _v31_item(SEL_DRAW, score=90),
+                _v31_item(SEL_OVER_2_5, score=55),
+            ],
+            "source_mode": "persisted_pre_match_snapshot",
+            "generated_at": "2026-08-07T10:00:00+00:00",
+        },
+    )
+    rows = [
+        _fixture_row(
+            fid=13,
+            kpi_rows=[
+                _kpi_row(SEL_DRAW, book=2.2, cecchino=1.9),
+                _kpi_row(SEL_OVER_2_5, book=2.0, cecchino=1.7),
+            ],
+            signals_matrix=_matrix_v3(draw_yes=2),
+            balance=_canonical_balance_snapshot(),
+        )
+    ]
+    db = _mock_db(rows)
+    payload = aggregate_bet_builder_opportunities(db, scan_date=date(2026, 8, 8))
+    assert payload["purchasability_policy"] == PURCHASABILITY_POLICY
+    keys = {o["opportunity_key"] for o in payload["opportunities"]}
+    assert "13:DRAW" in keys
+    assert "13:OVER_2_5" in keys
+    draw = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_DRAW)
+    over = next(o for o in payload["opportunities"] if o["market"]["market_key"] == SEL_OVER_2_5)
+    assert draw["origin"] == ORIGIN_PRICE_AND_SIGNALS
+    assert draw["context_support"]["module"] == "balance_v5"
+    assert draw["context_support"]["payload"]["gap_coherence_index"] == 75.9
+    # O/U non usa Balance; GI context invariato (bundle assente → unavailable)
+    assert over["context_support"]["module"] != "balance_v5"
+    assert over["purchasability_v31"]["score"] == 55
+    # nessuna chiave formula inventata nel payload Balance
+    bal = draw["context_support"]["payload"]
+    assert "gap_coherence_formula" not in bal
+    assert bal["f36_index"] == 73.99
 
 
 # ---------------------------------------------------------------------------

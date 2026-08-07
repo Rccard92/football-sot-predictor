@@ -451,6 +451,23 @@ def _balance_context(row: CecchinoTodayFixture) -> dict[str, Any]:
             "reason": "balance_v5_unavailable",
             "payload": None,
         }
+    # Snapshot monitoring canonico: gap_index / *_class (compact_balance_v5_monitoring_snapshot).
+    # Fallback sui nomi legacy/errati solo per retrocompatibilità payload non canonici.
+    gap_index = payload.get("gap_index")
+    if gap_index is None:
+        gap_index = payload.get("gap_coherence_index")
+    f36_class = payload.get("f36_class")
+    if f36_class is None:
+        f36_class = payload.get("f36_class_label")
+    dominance_class = payload.get("dominance_class")
+    if dominance_class is None:
+        dominance_class = payload.get("dominance_class_label")
+    draw_credibility_class = payload.get("draw_credibility_class")
+    if draw_credibility_class is None:
+        draw_credibility_class = payload.get("draw_credibility_class_label")
+    gap_class = payload.get("gap_class")
+    if gap_class is None:
+        gap_class = payload.get("gap_coherence_class_label")
     # Solo contesto raw — nessun supports/contradicts
     return {
         "available": True,
@@ -466,25 +483,25 @@ def _balance_context(row: CecchinoTodayFixture) -> dict[str, Any]:
             "pillars": {
                 "f36": {
                     "index": payload.get("f36_index"),
-                    "class_label": payload.get("f36_class_label"),
+                    "class_label": f36_class,
                 },
                 "dominance": {
                     "index": payload.get("dominance_index"),
-                    "class_label": payload.get("dominance_class_label"),
+                    "class_label": dominance_class,
                 },
                 "draw_credibility": {
                     "index": payload.get("draw_credibility_index"),
-                    "class_label": payload.get("draw_credibility_class_label"),
+                    "class_label": draw_credibility_class,
                 },
                 "gap_coherence": {
-                    "index": payload.get("gap_coherence_index"),
-                    "class_label": payload.get("gap_coherence_class_label"),
+                    "index": gap_index,
+                    "class_label": gap_class,
                 },
             },
             "f36_index": payload.get("f36_index"),
             "dominance_index": payload.get("dominance_index"),
             "draw_credibility_index": payload.get("draw_credibility_index"),
-            "gap_coherence_index": payload.get("gap_coherence_index"),
+            "gap_coherence_index": gap_index,
             "prob_1_norm": payload.get("prob_1_norm"),
             "prob_x_norm": payload.get("prob_x_norm"),
             "prob_2_norm": payload.get("prob_2_norm"),

@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-01.1 Balance V5 context mapping (2026-08-07)
+
+- Perché: su produzione Gap Coherence e class_label risultavano null nel Bet Builder mentre Cecchino Today li mostrava correttamente (stessa fixture).
+- Cosa: `_balance_context` allineato allo snapshot monitoring canonico (`gap_index` / `*_class` da `balance_v5_monitoring`); output Bet Builder espone `pillars.*.class_label` e `gap_coherence_index` senza ricalcolo.
+- Impatto: solo read-model Bet Builder; formule Balance, Today, KPI, Segnali, Acquistabilità, GI, opportunity aggregation invariati; nessuna migrazione.
+- Non fatto: nuova matematica Balance, supports/contradicts (BET-04).
+
 ## Feat — Bet Builder BET-01 Opportunity Aggregator (2026-08-07)
 
 - Perché: fondazione backend read-only per un pannello Bet Builder separato da Cecchino Today (analisi manuale invariata).

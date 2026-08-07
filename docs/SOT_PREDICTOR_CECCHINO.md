@@ -21,6 +21,10 @@ Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-ma
 | Endpoint | `GET /api/cecchino/bet-builder/opportunities` |
 | Divieti | Bet Builder Score, consigli, stake, API esterne, write, migrazione |
 
+### BET-01.1 — Balance V5 context mapping (2026-08-07)
+
+Read-model Balance del Bet Builder allineato allo snapshot `cecchino_output_json.balance_v5_monitoring`: legge `gap_index` / `f36_class` / `dominance_class` / `draw_credibility_class` / `gap_class` (non i nomi errati `gap_coherence_index` / `*_class_label`). Espone `pillars.*.index` + `class_label` e top-level `gap_coherence_index`. Nessuna formula Balance ricalcolata; Today invariato.
+
 Roadmap: BET-02 UI · BET-03 cart · BET-04 alignment + mercati KPI restanti.
 
 ## Fix — Goal Intensity official audit + monitoring (2026-08-07)
