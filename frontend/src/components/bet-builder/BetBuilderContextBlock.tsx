@@ -9,6 +9,7 @@ import { BetBuilderGoalIntensityContext } from './BetBuilderGoalIntensityContext
 type Props = {
   context: BetBuilderContextSupport
   marketLabel: string
+  compact?: boolean
 }
 
 function isBalancePayload(
@@ -28,7 +29,7 @@ function isGiPayload(
   )
 }
 
-export function BetBuilderContextBlock({ context, marketLabel }: Props) {
+export function BetBuilderContextBlock({ context, marketLabel, compact = false }: Props) {
   if (
     !context.available &&
     context.reason === 'no_validated_context_module'
@@ -49,12 +50,16 @@ export function BetBuilderContextBlock({ context, marketLabel }: Props) {
   }
 
   if (context.module === 'balance_v5' && isBalancePayload(context.payload)) {
-    return <BetBuilderBalanceContext payload={context.payload} />
+    return <BetBuilderBalanceContext payload={context.payload} compact={compact} />
   }
 
   if (context.module === 'goal_intensity_v5' && isGiPayload(context.payload)) {
     return (
-      <BetBuilderGoalIntensityContext payload={context.payload} marketLabel={marketLabel} />
+      <BetBuilderGoalIntensityContext
+        payload={context.payload}
+        marketLabel={marketLabel}
+        compact={compact}
+      />
     )
   }
 

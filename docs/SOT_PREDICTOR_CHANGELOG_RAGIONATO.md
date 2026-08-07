@@ -1,11 +1,18 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-02.1 group opportunities by fixture (2026-08-07)
+
+- Perché: troppe card (1 opportunity = 1 card) rendevano la stessa partita ripetuta; UX inefficiente.
+- Cosa: grouping client per `today_fixture_id`; `BetBuilderFixtureCard` + `BetBuilderOpportunityRow`; filtri opportunity-first; sort fixture = max metrica visibile; progressive 12 fixture; summary «Partite con opportunity»; context Balance/GI compact.
+- Impatto: solo frontend; backend BET-01, Today, formule/moduli invariati; nessuna migrazione; nessun Fixture/Bet Builder Score; nessun cart.
+- Non fatto: cart BET-03, alignment BET-04, card NO BET.
+
 ## Feat — Bet Builder BET-02 Opportunity Board (2026-08-07)
 
 - Perché: visualizzare le opportunity BET-01 in un workspace dedicato, senza sostituire Cecchino Today.
 - Cosa: route `/bet-builder`, nav, card opportunity (quota/segnali/V3.1/Balance/GI raw), filtri/sort client-side, progressive rendering, auto-refresh su `source_revision`, deep-link Today `?date=&fixture=`.
 - Impatto: solo frontend; backend/formule/moduli invariati; nessuna migrazione; nessun cart/score aggregato.
-- Non fatto: cart BET-03, alignment BET-04, Bet Builder Score.
+- Non fatto: cart BET-03, alignment BET-04, Bet Builder Score. (Raggruppamento fixture: BET-02.1)
 
 ## Fix — Bet Builder BET-01.1 Balance V5 context mapping (2026-08-07)
 

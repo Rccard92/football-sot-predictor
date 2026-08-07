@@ -11,12 +11,23 @@ Tab **Bet Builder** (`/bet-builder`): orchestratore visivo delle opportunity BET
 | Route / nav | `/bet-builder` full-width; voce CECCHINO dopo Today |
 | Dati | Solo response BET-01; nessuna nuova formula/API/write |
 | Filtri | Market (11), origine, paese/lega/search, Acquistabilità min opzionale — tutti client-side |
-| Sort default | Acquistabilità V3.1 ↓ (null in fondo) |
-| Card | Quote, Segnali, V3.1 `/100`, Balance 4 pilastri raw, GI raw; no verdict alignment |
+| Sort default | Acquistabilità V3.1 ↓ (null in fondo) sulle fixture via max opportunity visibile |
+| Card | 1 card = 1 fixture; opportunity row con Quote/Segnali/V3.1 `/100`, Balance/GI compact raw |
 | Refresh | Fetch + focus/visibility; poll ~60s idle / ~2.5s scan running; replace su `source_revision` |
-| Deep-link | CTA → `/cecchino-today?date=&fixture=` (Today legge date/fixture minimo) |
-| Progressive | Prime 24 + Mostra altre |
-| Divieti | Bet Builder Score, cart/schedina (BET-03), stake, probabilità di vincita |
+| Deep-link | CTA unica per fixture → `/cecchino-today?date=&fixture=` |
+| Progressive | Prime **12** fixture + Mostra altre |
+| Divieti | Bet Builder Score, Fixture Score, cart/schedina (BET-03), stake, probabilità di vincita |
+
+### BET-02.1 — Raggruppamento Opportunity per Fixture (2026-08-07)
+
+| Tema | Regola |
+|------|--------|
+| Grouping | `today_fixture_id` dopo filter opportunity; pipeline filter → sort interne → group → sort fixture → slice |
+| NO BET | Non visualizzato; fonte solo `response.opportunities` |
+| Filtri | Opportunity-first: dentro la card solo i mercati che passano il filtro |
+| Sort interne | V3.1 desc → origin (`price_and_signals` > `signals` > `price`) → yes_count → edge → key |
+| Summary | + Partite con opportunity (unique client-side); conteggi filtrati «N partite · M opportunity» |
+| Backend / Today | Invariati |
 
 Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
 

@@ -14,9 +14,53 @@ function fmtEdge(n: number | null | undefined): string {
 
 type Props = {
   price: BetBuilderPriceValue
+  compact?: boolean
 }
 
-export function BetBuilderPriceBlock({ price }: Props) {
+export function BetBuilderPriceBlock({ price, compact = false }: Props) {
+  if (compact) {
+    return (
+      <div aria-label="Valore quota" className="space-y-1.5" data-testid="price-compact">
+        {!price.present ? (
+          <p className="text-xs text-slate-500">Nessun valore quota rilevato</p>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Book</p>
+            <p className="text-base font-semibold tabular-nums text-slate-900">
+              {fmtQuota(price.quota_book)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Cecchino
+            </p>
+            <p className="text-base font-semibold tabular-nums text-slate-900">
+              {fmtQuota(price.quota_cecchino)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Edge</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">
+              {fmtEdge(price.edge_pct)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rating</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">
+              {price.rating != null ? `${price.rating}` : '—'}
+              {price.rating_label ? (
+                <span className="ml-1 text-xs font-medium text-slate-600">
+                  · {price.rating_label}
+                </span>
+              ) : null}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section aria-label="Valore quota" className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">

@@ -3,13 +3,37 @@ import { bbBadge } from './betBuilderStyles'
 
 type Props = {
   purchasability: BetBuilderPurchasabilityV31
+  compact?: boolean
 }
 
-export function BetBuilderPurchasabilityBlock({ purchasability }: Props) {
+export function BetBuilderPurchasabilityBlock({ purchasability, compact = false }: Props) {
   const score = purchasability.score
   const hasScore = score != null && !Number.isNaN(score)
   const clamped = hasScore ? Math.max(0, Math.min(100, score)) : 0
   const quality = purchasability.calculation_quality
+
+  if (compact) {
+    return (
+      <div
+        className="flex flex-wrap items-center gap-2"
+        aria-label="Acquistabilità V3.1"
+        data-testid="purchasability-compact"
+      >
+        <p className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+          {hasScore ? Math.round(score) : 'N/D'}
+          {hasScore ? <span className="text-sm font-medium text-slate-500"> / 100</span> : null}
+        </p>
+        {purchasability.class ? (
+          <span className="text-sm font-semibold text-slate-700">{purchasability.class}</span>
+        ) : null}
+        {quality === 'provisional' ? (
+          <span className={`${bbBadge} border-amber-200 bg-amber-50 text-amber-900`}>
+            Provvisoria
+          </span>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <section aria-label="Acquistabilità V3.1" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 sm:p-4">

@@ -1,10 +1,20 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-02.1 — Fixture cards (2026-08-07)
+
+1. Operatore apre `/bet-builder`.
+2. FE chiama `GET /api/cecchino/bet-builder/opportunities?date=` (giornata intera).
+3. Filtri opportunity → sort interne → group by `today_fixture_id` → sort fixture (max metrica) → progressive 12 fixture.
+4. Summary giornata (server) + Partite con opportunity (unique client) + conteggi filtrati sopra le card.
+5. Poll soft invariato; nuova `source_revision` ricostruisce i gruppi (fixture può comparire/sparire).
+6. CTA unica «Apri analisi manuale» per fixture → Today `?date=&fixture=`.
+7. Nessuna write, nessun cart (BET-03), nessun Fixture Score.
+
 ## Bet Builder BET-02 — Opportunity Board UI (2026-08-07)
 
 1. Operatore apre `/bet-builder` (o nav Cecchino → Bet Builder).
 2. FE chiama `GET /api/cecchino/bet-builder/opportunities?date=` (giornata intera).
-3. Summary / market chips / filtri / sort / card lavorano **solo client-side** sul payload.
+3. Summary / market chips / filtri / sort / card lavorano **solo client-side** sul payload (dal BET-02.1: card per fixture).
 4. Poll soft: ~60s se idle; ~2.5s se `source_scan_status` running; replace completo se `source_revision` cambia.
 5. CTA card apre Cecchino Today con `?date=&fixture=` (Today seleziona la fixture se presente).
 6. Nessuna write, nessuna cache analitica persistente, nessun cart (BET-03).

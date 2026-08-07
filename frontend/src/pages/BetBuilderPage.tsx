@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BetBuilderFilters } from '../components/bet-builder/BetBuilderFilters'
+import { BetBuilderFixtureCard } from '../components/bet-builder/BetBuilderFixtureCard'
 import { BetBuilderHeader } from '../components/bet-builder/BetBuilderHeader'
-import { BetBuilderOpportunityCard } from '../components/bet-builder/BetBuilderOpportunityCard'
 import { BetBuilderSummary } from '../components/bet-builder/BetBuilderSummary'
 import {
   bbCard,
@@ -16,7 +16,9 @@ import {
   BET_BUILDER_POLL_IDLE_MS,
   BET_BUILDER_POLL_RUNNING_MS,
   DEFAULT_BET_BUILDER_FILTERS,
-  filterAndSortOpportunities,
+  buildBetBuilderFixtureGroups,
+  countFilteredOpportunities,
+  countUniqueFixtures,
   isIsoDate,
   isScanRunning,
   nextVisibleLimit,
@@ -157,14 +159,24 @@ export function BetBuilderPage() {
     setVisibleLimit(BET_BUILDER_PAGE_SIZE)
   }, [])
 
-  const filtered = useMemo(
-    () => filterAndSortOpportunities(data?.opportunities ?? [], filters),
+  const groups = useMemo(
+    () => buildBetBuilderFixtureGroups(data?.opportunities ?? [], filters),
     [data?.opportunities, filters],
   )
 
   const visible = useMemo(
-    () => sliceProgressive(filtered, visibleLimit),
-    [filtered, visibleLimit],
+    () => sliceProgressive(groups, visibleLimit),
+    [groups, visibleLimit],
+  )
+
+  const fixturesWithOpportunity = useMemo(
+    () => countUniqueFixtures(data?.opportunities ?? []),
+    [data?.opportunities],
+  )
+
+  const filteredOpportunityCount = useMemo(
+    () => countFilteredOpportunities(groups),
+    [groups],
   )
 
   const countries = useMemo(
@@ -181,7 +193,7 @@ export function BetBuilderPage() {
 
   const lastUpdated = resolveLastUpdatedIso(data?.freshness, data?.source_generated_from)
   const hasRawOpportunities = (data?.opportunities.length ?? 0) > 0
-  const filtersRestrictive = hasRawOpportunities && filtered.length === 0
+  const filtersRestrictive = hasRawOpportunities && groups.length === 0
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-6 overflow-x-hidden">
@@ -227,7 +239,10 @@ export function BetBuilderPage() {
 
       {!loading && !error && data ? (
         <>
-          <BetBuilderSummary summary={data.summary} />
+          <BetBuilderSummary
+            summary={data.summary}
+            fixturesWithOpportunity={fixturesWithOpportunity}
+          />
           <BetBuilderFilters
             filters={filters}
             byMarket={data.summary.by_market ?? {}}
@@ -238,7 +253,7 @@ export function BetBuilderPage() {
             onChange={onFiltersChange}
           />
 
-          {filtered.length === 0 ? (
+          {groups.length === 0 ? (
             <div
               className={`${bbCard} border-dashed px-4 py-10 text-center`}
               data-testid="bet-builder-empty"
@@ -265,26 +280,34 @@ export function BetBuilderPage() {
             </div>
           ) : (
             <>
+              <p
+                className="text-sm text-slate-600"
+                data-testid="bet-builder-filtered-counts"
+              >
+                {groups.length} {groups.length === 1 ? 'partita' : 'partite'} ·{' '}
+                {filteredOpportunityCount}{' '}
+                {filteredOpportunityCount === 1 ? 'opportunity' : 'opportunity'}
+              </p>
               <div className={bbGridCards} data-testid="bet-builder-cards">
-                {visible.map((op) => (
-                  <BetBuilderOpportunityCard
-                    key={op.opportunity_key}
-                    opportunity={op}
+                {visible.map((group) => (
+                  <BetBuilderFixtureCard
+                    key={group.todayFixtureId}
+                    group={group}
                     scanDate={data.scan_date || selectedDate}
                   />
                 ))}
               </div>
-              {visibleLimit < filtered.length ? (
+              {visibleLimit < groups.length ? (
                 <div className="flex justify-center">
                   <button
                     type="button"
                     className={bbSecondaryBtn}
                     data-testid="bet-builder-show-more"
                     onClick={() =>
-                      setVisibleLimit((n) => nextVisibleLimit(n, filtered.length))
+                      setVisibleLimit((n) => nextVisibleLimit(n, groups.length))
                     }
                   >
-                    Mostra altre ({filtered.length - visibleLimit} rimanenti)
+                    Mostra altre ({groups.length - visibleLimit} rimanenti)
                   </button>
                 </div>
               ) : null}

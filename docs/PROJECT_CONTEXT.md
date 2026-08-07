@@ -2,6 +2,18 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-02.1 — Raggruppamento per fixture (2026-08-07)
+
+UX: **1 card = 1 partita**; N opportunity interne filtrate. Solo frontend; backend BET-01 invariato.
+
+- Grouping client su `fixture.today_fixture_id` dopo filtri opportunity
+- Fixture senza opportunity (NO BET implicito) **non** visualizzate; nessuna card NO BET; nessuna fetch Today extra
+- Sort fixture = max metrica visibile (V3.1 / yes_count / edge / kickoff); sort interne V3.1 → origin → yes → edge → key
+- Summary: Fixture eleggibili · Partite con opportunity (unique id) · Opportunity; conteggi filtrati sopra le card
+- Progressive: **12** fixture card + Mostra altre (slice dopo group; partita mai spezzata)
+- Deep-link unico per fixture; auto-refresh `source_revision` ricostruisce i gruppi
+- **Nessun** Fixture/Bet Builder Score; **nessun** cart (BET-03); Today invariato
+
 ## Bet Builder BET-02 — Opportunity Board (2026-08-07)
 
 UI full-width **read-only** su payload BET-01. Non sostituisce Cecchino Today (analisi manuale).
@@ -12,7 +24,7 @@ UI full-width **read-only** su payload BET-01. Non sostituisce Cecchino Today (a
 - Opportunity price OR signals; Balance/GI solo context raw (nessuna alignment rule)
 - Auto-refresh su `source_revision` (focus/visibility + poll 60s / 2.5s se scan running)
 - Deep-link Today: `/cecchino-today?date=&fixture=`
-- Progressive rendering (24 + Mostra altre); mobile-first; **nessun cart** (BET-03); **nessun Bet Builder Score**
+- Progressive rendering per **fixture** (12 + Mostra altre, BET-02.1); mobile-first; **nessun cart** (BET-03); **nessun Bet Builder Score**
 - Client tipizzato: `frontend/src/lib/cecchinoBetBuilderApi.ts` + `frontend/src/components/bet-builder/`
 
 ## Bet Builder BET-01 — Opportunity Aggregator (2026-08-07)

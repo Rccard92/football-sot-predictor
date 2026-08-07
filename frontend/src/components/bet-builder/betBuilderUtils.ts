@@ -4,7 +4,7 @@ import type {
   BetBuilderOrigin,
 } from '../../lib/cecchinoBetBuilderApi'
 
-export const BET_BUILDER_PAGE_SIZE = 24
+export const BET_BUILDER_PAGE_SIZE = 12
 
 export const BET_BUILDER_POLL_IDLE_MS = 60_000
 export const BET_BUILDER_POLL_RUNNING_MS = 2_500
@@ -37,7 +37,27 @@ export const DEFAULT_BET_BUILDER_FILTERS: BetBuilderFilterState = {
   sort: 'purchasability_desc',
 }
 
+export type BetBuilderFixtureOriginCounts = {
+  total: number
+  price_only: number
+  signals_only: number
+  price_and_signals: number
+}
+
+export type BetBuilderFixtureGroup = {
+  todayFixtureId: number
+  fixture: BetBuilderOpportunity['fixture']
+  opportunities: BetBuilderOpportunity[]
+  counts: BetBuilderFixtureOriginCounts
+}
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+const ORIGIN_RANK: Record<BetBuilderOrigin, number> = {
+  price_and_signals: 0,
+  signals: 1,
+  price: 2,
+}
 
 export function isIsoDate(value: string | null | undefined): value is string {
   if (!value || !ISO_DATE_RE.test(value)) return false
@@ -134,6 +154,7 @@ function cmpKickoffAsc(a: string | null | undefined, b: string | null | undefine
   return a!.localeCompare(b!)
 }
 
+/** Sort legacy flat list (usato da test regressione / compatibilità). */
 export function sortOpportunities(
   opportunities: BetBuilderOpportunity[],
   sort: BetBuilderSortKey,
@@ -161,6 +182,135 @@ export function filterAndSortOpportunities(
   filters: BetBuilderFilterState,
 ): BetBuilderOpportunity[] {
   return sortOpportunities(filterOpportunities(opportunities, filters), filters.sort)
+}
+
+/** Ordinamento deterministico delle opportunity dentro una fixture (§11). */
+export function sortOpportunitiesWithinFixture(
+  opportunities: BetBuilderOpportunity[],
+): BetBuilderOpportunity[] {
+  const copy = [...opportunities]
+  copy.sort((a, b) => {
+    const byScore = cmpNullableNumberDesc(
+      a.purchasability_v31.score,
+      b.purchasability_v31.score,
+    )
+    if (byScore !== 0) return byScore
+    const byOrigin = ORIGIN_RANK[a.origin] - ORIGIN_RANK[b.origin]
+    if (byOrigin !== 0) return byOrigin
+    const byYes = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
+    if (byYes !== 0) return byYes
+    const byEdge = cmpNullableNumberDesc(a.price_value.edge_pct, b.price_value.edge_pct)
+    if (byEdge !== 0) return byEdge
+    return a.opportunity_key.localeCompare(b.opportunity_key)
+  })
+  return copy
+}
+
+export function fixtureOpportunityCounts(
+  opportunities: BetBuilderOpportunity[],
+): BetBuilderFixtureOriginCounts {
+  let price_only = 0
+  let signals_only = 0
+  let price_and_signals = 0
+  for (const op of opportunities) {
+    if (op.origin === 'price') price_only += 1
+    else if (op.origin === 'signals') signals_only += 1
+    else price_and_signals += 1
+  }
+  return {
+    total: opportunities.length,
+    price_only,
+    signals_only,
+    price_and_signals,
+  }
+}
+
+export function groupOpportunitiesByFixture(
+  opportunities: BetBuilderOpportunity[],
+): BetBuilderFixtureGroup[] {
+  const map = new Map<number, BetBuilderOpportunity[]>()
+  const order: number[] = []
+  for (const op of opportunities) {
+    const id = op.fixture.today_fixture_id
+    const existing = map.get(id)
+    if (existing) {
+      existing.push(op)
+    } else {
+      map.set(id, [op])
+      order.push(id)
+    }
+  }
+  return order.map((id) => {
+    const ops = sortOpportunitiesWithinFixture(map.get(id) ?? [])
+    const first = ops[0]
+    return {
+      todayFixtureId: id,
+      fixture: first.fixture,
+      opportunities: ops,
+      counts: fixtureOpportunityCounts(ops),
+    }
+  })
+}
+
+function maxNullable(values: Array<number | null | undefined>): number | null {
+  let best: number | null = null
+  for (const v of values) {
+    if (v == null || Number.isNaN(v)) continue
+    if (best == null || v > best) best = v
+  }
+  return best
+}
+
+export function sortFixtureGroups(
+  groups: BetBuilderFixtureGroup[],
+  sort: BetBuilderSortKey,
+): BetBuilderFixtureGroup[] {
+  const copy = [...groups]
+  copy.sort((a, b) => {
+    let primary: number
+    if (sort === 'purchasability_desc') {
+      primary = cmpNullableNumberDesc(
+        maxNullable(a.opportunities.map((o) => o.purchasability_v31.score)),
+        maxNullable(b.opportunities.map((o) => o.purchasability_v31.score)),
+      )
+    } else if (sort === 'signals_desc') {
+      primary = cmpNullableNumberDesc(
+        maxNullable(a.opportunities.map((o) => o.signals.yes_count)),
+        maxNullable(b.opportunities.map((o) => o.signals.yes_count)),
+      )
+    } else if (sort === 'edge_desc') {
+      primary = cmpNullableNumberDesc(
+        maxNullable(a.opportunities.map((o) => o.price_value.edge_pct)),
+        maxNullable(b.opportunities.map((o) => o.price_value.edge_pct)),
+      )
+    } else {
+      primary = cmpKickoffAsc(a.fixture.kickoff, b.fixture.kickoff)
+    }
+    if (primary !== 0) return primary
+    return a.todayFixtureId - b.todayFixtureId
+  })
+  return copy
+}
+
+export function buildBetBuilderFixtureGroups(
+  opportunities: BetBuilderOpportunity[],
+  filters: BetBuilderFilterState,
+): BetBuilderFixtureGroup[] {
+  const filtered = filterOpportunities(opportunities, filters)
+  const grouped = groupOpportunitiesByFixture(filtered)
+  return sortFixtureGroups(grouped, filters.sort)
+}
+
+export function countUniqueFixtures(opportunities: BetBuilderOpportunity[]): number {
+  const ids = new Set<number>()
+  for (const op of opportunities) {
+    ids.add(op.fixture.today_fixture_id)
+  }
+  return ids.size
+}
+
+export function countFilteredOpportunities(groups: BetBuilderFixtureGroup[]): number {
+  return groups.reduce((sum, g) => sum + g.opportunities.length, 0)
 }
 
 export function sliceProgressive<T>(items: T[], limit: number): T[] {
