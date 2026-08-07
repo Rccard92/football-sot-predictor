@@ -2,6 +2,26 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-02.2 — Premium UX/UI Redesign (2026-08-07)
+
+Ridisegno **solo frontend** del Bet Builder. Nessuna nuova formula, nessun nuovo score, nessun backend change.
+
+| Tema | Regola |
+|------|--------|
+| Primary | `group.opportunities[0]` dopo sort canonico BET-02.1 (post-filtro). Badge UI **IN EVIDENZA** — non è recommendation / “migliore” / “sicura” |
+| Selector | Opportunity secondarie come tab/pill (label · V3.1 · origine); 1 sola opportunity completa nel panel |
+| Selected | Stato locale per card; fallback a primary se key assente dopo filter/revision |
+| Vista | Compatta (default, context collassato) / Analisi (context espanso); solo FE |
+| V3.1 | Ring SVG compatto `score /100` (no progress bar dominante) |
+| Signals | Dot SI/NO + conteggio; HOME direct; X PT derived |
+| Context | Balance / GI collapsible; layout compatto 2×2 / 4 col |
+| Motion | Framer Motion breve + `useReducedMotion` |
+| Refresh | Sonner toast su nuova `source_revision` (non al primo load); poll invariato |
+| Layout | 1 card per riga; header/summary/filtri compatti; market chips scroll mobile |
+| Divieti | Nessun cart BET-03; nessun Bet Builder / Fixture Score; backend invariato |
+
+Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-02 — Opportunity Board (2026-08-07)
 
 Tab **Bet Builder** (`/bet-builder`): orchestratore visivo delle opportunity BET-01. Cecchino Today resta il workspace di analisi manuale completa.

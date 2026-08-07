@@ -10,6 +10,10 @@ const apiMock = vi.hoisted(() => ({
   todayIsoRome: vi.fn(() => '2026-08-08'),
 }))
 
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+}))
+
 vi.mock('../lib/cecchinoBetBuilderApi', async () => {
   const actual = await vi.importActual<typeof import('../lib/cecchinoBetBuilderApi')>(
     '../lib/cecchinoBetBuilderApi',
@@ -29,6 +33,14 @@ vi.mock('../lib/cecchinoTodayApi', async () => {
     todayIsoRome: apiMock.todayIsoRome,
   }
 })
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: toastMock.success,
+    error: vi.fn(),
+    message: vi.fn(),
+  },
+}))
 
 function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOpportunity {
   return {
@@ -148,11 +160,16 @@ function renderPage(initial = '/bet-builder?date=2026-08-08') {
   )
 }
 
+function openAdvancedFilters() {
+  fireEvent.click(screen.getByTestId('bet-builder-filters-toggle'))
+}
+
 describe('BetBuilderPage', () => {
   beforeEach(() => {
     vi.useRealTimers()
     apiMock.fetchBetBuilderOpportunities.mockReset()
     apiMock.todayIsoRome.mockReturnValue('2026-08-08')
+    toastMock.success.mockReset()
   })
 
   afterEach(() => {
@@ -172,7 +189,7 @@ describe('BetBuilderPage', () => {
     expect(apiMock.fetchBetBuilderOpportunities).toHaveBeenCalledWith({ date: '2026-08-08' })
   })
 
-  it('raggruppa 3 opportunity stessa fixture in 1 card', async () => {
+  it('raggruppa 3 opportunity stessa fixture in 1 card con selector', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -200,8 +217,10 @@ describe('BetBuilderPage', () => {
     await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(1))
     const card = screen.getByTestId('bet-builder-fixture-card')
     expect(card.getAttribute('data-fixture-id')).toBe('16511')
-    expect(within(card).getAllByTestId('bet-builder-opportunity-row')).toHaveLength(3)
+    expect(within(card).getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(3)
+    expect(within(card).getAllByTestId('bet-builder-opportunity-row')).toHaveLength(1)
     expect(within(card).getByText('3 opportunity')).toBeTruthy()
+    expect(within(card).getAllByTestId('in-evidenza-badge').length).toBeGreaterThan(0)
     expect(screen.getByTestId('bet-builder-filtered-counts').textContent).toMatch(/1 partita · 3 opportunity/)
   })
 
@@ -250,13 +269,12 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(2))
     expect(screen.getByRole('tab', { name: 'X, 1' })).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: '1, 1' }))
     await waitFor(() => {
-      const rows = screen.getAllByTestId('bet-builder-opportunity-row')
-      expect(rows).toHaveLength(1)
-      expect(rows[0].getAttribute('data-market')).toBe('HOME')
+      expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(1)
+      expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe('HOME')
     })
     expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(1)
     expect(apiMock.fetchBetBuilderOpportunities).toHaveBeenCalledTimes(1)
@@ -282,18 +300,15 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(2))
+    openAdvancedFilters()
     fireEvent.click(screen.getByRole('button', { name: 'Segnali' }))
     await waitFor(() => {
-      const rows = screen.getAllByTestId('bet-builder-opportunity-row')
-      expect(rows).toHaveLength(1)
-      expect(rows[0].getAttribute('data-origin')).toBe('signals')
-      expect(rows[0].getAttribute('data-market')).toBe('OVER_2_5')
+      const row = screen.getByTestId('bet-builder-opportunity-row')
+      expect(row.getAttribute('data-origin')).toBe('signals')
+      expect(row.getAttribute('data-market')).toBe('OVER_2_5')
     })
-    expect(screen.getByText('Nessun valore quota rilevato')).toBeTruthy()
-    expect(
-      screen.queryByTestId('bet-builder-opportunity-row')?.getAttribute('data-market'),
-    ).toBe('OVER_2_5')
+    expect(screen.getAllByText('Nessun valore quota rilevato').length).toBeGreaterThan(0)
   })
 
   it('price-only e price+signals restano visibili', async () => {
@@ -314,13 +329,13 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(2))
     expect(screen.getAllByText('QUOTA').length).toBeGreaterThan(0)
+    openAdvancedFilters()
     fireEvent.click(screen.getByRole('button', { name: 'Quota + Segnali' }))
     await waitFor(() => {
-      const rows = screen.getAllByTestId('bet-builder-opportunity-row')
-      expect(rows).toHaveLength(1)
-      expect(rows[0].getAttribute('data-origin')).toBe('price_and_signals')
+      const row = screen.getByTestId('bet-builder-opportunity-row')
+      expect(row.getAttribute('data-origin')).toBe('price_and_signals')
     })
   })
 
@@ -367,7 +382,7 @@ describe('BetBuilderPage', () => {
     expect(within(cards[2]).getByText('N/D')).toBeTruthy()
   })
 
-  it('opportunity interne ordinate V3.1 desc', async () => {
+  it('opportunity interne ordinate V3.1 desc; primary IN EVIDENZA; click secondary cambia detail', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -390,20 +405,45 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(3))
-    const rows = screen.getAllByTestId('bet-builder-opportunity-row')
-    expect(rows[0].getAttribute('data-market')).toBe('DRAW')
-    expect(rows[1].getAttribute('data-market')).toBe('HOME')
-    expect(rows[2].getAttribute('data-market')).toBe('AWAY')
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(3))
+    const tabs = screen.getAllByTestId('bet-builder-opportunity-tab')
+    expect(tabs[0].getAttribute('data-market')).toBe('DRAW')
+    expect(tabs[0].getAttribute('data-primary')).toBe('true')
+    expect(tabs[1].getAttribute('data-market')).toBe('HOME')
+    expect(tabs[1].getAttribute('data-primary')).toBe('false')
+    expect(tabs[2].getAttribute('data-market')).toBe('AWAY')
+    expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe(
+      'DRAW',
+    )
+    expect(screen.getByTestId('in-evidenza-badge-panel')).toBeTruthy()
+    fireEvent.click(tabs[1])
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe(
+        'HOME',
+      ),
+    )
+    await waitFor(() => expect(screen.queryByTestId('in-evidenza-badge-panel')).toBeNull())
   })
 
-  it('visualizza HOME direct, DRAW consensus, X PT derived', async () => {
+  it('single opportunity: no useless tab row; badge 1 opportunity + IN EVIDENZA', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-fixture-card')).toBeTruthy())
+    const card = screen.getByTestId('bet-builder-fixture-card')
+    expect(screen.queryAllByTestId('bet-builder-opportunity-tab')).toHaveLength(0)
+    expect(within(card).getByText('1 opportunity')).toBeTruthy()
+    expect(within(card).getByTestId('in-evidenza-badge')).toBeTruthy()
+    expect(within(card).getByTestId('in-evidenza-badge-panel')).toBeTruthy()
+  })
+
+  it('visualizza HOME direct, DRAW consensus, X PT derived via selector', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
           baseOpportunity({
             opportunity_key: 'home',
             market: { market_key: 'HOME', label: '1' },
+            purchasability_v31: { available: true, score: 95 },
             signals: {
               available: true,
               present: true,
@@ -419,6 +459,7 @@ describe('BetBuilderPage', () => {
           baseOpportunity({
             opportunity_key: 'draw24',
             market: { market_key: 'DRAW', label: 'X' },
+            purchasability_v31: { available: true, score: 80 },
             signals: {
               available: true,
               present: true,
@@ -453,6 +494,7 @@ describe('BetBuilderPage', () => {
           baseOpportunity({
             opportunity_key: 'xpt',
             market: { market_key: 'DRAW_PT', label: 'X PT' },
+            purchasability_v31: { available: true, score: 70 },
             signals: {
               available: true,
               present: true,
@@ -476,24 +518,37 @@ describe('BetBuilderPage', () => {
     await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(2))
     expect(screen.getByText('Segnale diretto')).toBeTruthy()
     expect(screen.getByText(/D · SI/)).toBeTruthy()
+
+    const card1 = screen.getAllByTestId('bet-builder-fixture-card')[0]
+    const tabs = within(card1).getAllByTestId('bet-builder-opportunity-tab')
+    fireEvent.click(tabs.find((t) => t.getAttribute('data-market') === 'DRAW')!)
+    await waitFor(() => expect(screen.getByText(/2 \/ 4 SI/)).toBeTruthy())
     expect(screen.getByText(/Segnali 2\/4/)).toBeTruthy()
-    expect(screen.getByText(/Segnali 4\/4/)).toBeTruthy()
-    expect(screen.getByText('Derivato dal consenso X')).toBeTruthy()
-    expect(screen.getAllByTestId('context-unavailable').length).toBeGreaterThan(0)
+
+    fireEvent.click(tabs.find((t) => t.getAttribute('data-market') === 'DRAW_PT')!)
+    await waitFor(() => expect(screen.getByText('Derivato dal consenso X')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('view-mode-analysis'))
+    await waitFor(() => expect(screen.getByText(/4 \/ 4 SI/)).toBeTruthy())
   })
 
-  it('mostra Balance 4 pilastri incluso Gap Coherence', async () => {
+  it('Balance collapsed in compact; expanded in analysis', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-context-toggle')).toBeTruthy())
+    expect(screen.queryByTestId('balance-pillar-gap_coherence')).toBeNull()
+    fireEvent.click(screen.getByTestId('view-mode-analysis'))
     await waitFor(() => expect(screen.getByTestId('balance-pillar-gap_coherence')).toBeTruthy())
     expect(screen.getByTestId('balance-pillar-f36').textContent).toMatch(/73\.99/)
     expect(screen.getByTestId('balance-pillar-dominance').textContent).toMatch(/29\.57/)
     expect(screen.getByTestId('balance-pillar-draw_credibility').textContent).toMatch(/45\.14/)
     expect(screen.getByTestId('balance-pillar-gap_coherence').textContent).toMatch(/75\.9/)
     expect(screen.getByTestId('balance-pillar-gap_coherence').textContent).toMatch(/Confermato/)
+    fireEvent.click(screen.getByTestId('view-mode-compact'))
+    await waitFor(() => expect(screen.queryByTestId('balance-pillar-gap_coherence')).toBeNull())
   })
 
-  it('mostra Goal Intensity official e fallback', async () => {
+  it('mostra Goal Intensity official e fallback in analysis', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -541,6 +596,8 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(2))
+    fireEvent.click(screen.getByTestId('view-mode-analysis'))
     await waitFor(() => expect(screen.getByText('V5 ufficiale')).toBeTruthy())
     expect(screen.getByText('Fallback V4')).toBeTruthy()
     expect(screen.getByText('2.80')).toBeTruthy()
@@ -570,7 +627,6 @@ describe('BetBuilderPage', () => {
         purchasability_v31: { available: true, score: 100 - i, class: 'Alta' },
       }),
     )
-    // fixture 1 has two ops — must not be split
     opportunities.push(
       baseOpportunity({
         opportunity_key: 'op-0-b',
@@ -593,12 +649,13 @@ describe('BetBuilderPage', () => {
     await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(12))
     const first = screen.getAllByTestId('bet-builder-fixture-card')[0]
     expect(first.getAttribute('data-fixture-id')).toBe('1')
-    expect(within(first).getAllByTestId('bet-builder-opportunity-row')).toHaveLength(2)
+    expect(within(first).getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(2)
+    expect(within(first).getAllByTestId('bet-builder-opportunity-row')).toHaveLength(1)
     fireEvent.click(screen.getByTestId('bet-builder-show-more'))
     await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(15))
   })
 
-  it('auto-refresh 3→1 aggiorna card; 1→0 elimina; 0→1 aggiunge', async () => {
+  it('auto-refresh 3→1 aggiorna card; Sonner solo su revision nuova; 1→0 elimina; 0→1 aggiunge', async () => {
     const fx = baseOpportunity().fixture
     apiMock.fetchBetBuilderOpportunities
       .mockResolvedValueOnce(
@@ -657,14 +714,19 @@ describe('BetBuilderPage', () => {
     renderPage()
     await waitFor(() => {
       expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(1)
-      expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(3)
+      expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(3)
     })
+    expect(toastMock.success).not.toHaveBeenCalled()
 
     window.dispatchEvent(new Event('focus'))
     await waitFor(() => {
+      expect(screen.queryAllByTestId('bet-builder-opportunity-tab')).toHaveLength(0)
       expect(screen.getAllByTestId('bet-builder-opportunity-row')).toHaveLength(1)
-      expect(screen.getByTestId('revision-updated-banner')).toBeTruthy()
     })
+    expect(toastMock.success).toHaveBeenCalledWith('Dati Bet Builder aggiornati', {
+      description: 'Nuova scansione Cecchino ricevuta',
+    })
+    expect(screen.queryByTestId('revision-updated-banner')).toBeNull()
 
     window.dispatchEvent(new Event('focus'))
     await waitFor(() => expect(screen.getByTestId('bet-builder-empty')).toBeTruthy())
@@ -676,7 +738,7 @@ describe('BetBuilderPage', () => {
     })
   })
 
-  it('deep-link CTA unica per fixture', async () => {
+  it('deep-link CTA unica per fixture; no cart', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -691,19 +753,26 @@ describe('BetBuilderPage', () => {
     )
     const link = screen.getByRole('link', { name: /Apri analisi manuale/i })
     expect(link.getAttribute('href')).toBe('/cecchino-today?date=2026-08-08&fixture=16511')
+    expect(screen.queryByRole('button', { name: /^\+$/ })).toBeNull()
+    expect(screen.queryByText(/schedina/i)).toBeNull()
+    expect(screen.queryByText(/moltiplicatore/i)).toBeNull()
   })
 
-  it('Acquistabilità come score /100 non probabilità; nessun fixture score', async () => {
+  it('Acquistabilità come score /100 non probabilità; nessun nuovo score; V3.1 reale', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
-    await waitFor(() => expect(screen.getByText(/86/)).toBeTruthy())
-    expect(screen.getByText(/\/ 100/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('purchasability-ring')).toBeTruthy())
+    expect(screen.getByText('86')).toBeTruthy()
+    expect(screen.getByText('/100')).toBeTruthy()
     expect(screen.queryByText(/fixture score/i)).toBeNull()
+    expect(screen.queryByText(/bet builder score/i)).toBeNull()
     expect(screen.queryByText(/sicura/i)).toBeNull()
+    expect(screen.queryByText(/consigliata/i)).toBeNull()
+    expect(screen.queryByText(/raccomandata/i)).toBeNull()
     expect(screen.queryByText(/probabilità di vincita/i)).toBeNull()
   })
 
-  it('sostituisce dati su source_revision nuova e mostra banner running', async () => {
+  it('sostituisce dati su source_revision nuova e mostra banner running; Sonner su change', async () => {
     apiMock.fetchBetBuilderOpportunities
       .mockResolvedValueOnce(
         baseResponse({
@@ -733,10 +802,60 @@ describe('BetBuilderPage', () => {
     renderPage()
     await waitFor(() => expect(screen.getByTestId('scan-running-banner')).toBeTruthy())
     expect(screen.getByText('Old Team')).toBeTruthy()
+    expect(toastMock.success).not.toHaveBeenCalled()
 
     window.dispatchEvent(new Event('focus'))
     await waitFor(() => expect(screen.getByText('New Team')).toBeTruthy())
-    expect(screen.getByTestId('revision-updated-banner')).toBeTruthy()
+    expect(toastMock.success).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Old Team')).toBeNull()
+  })
+
+  it('4+ opportunity selector; compact mode default; analysis preserves selection', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'a',
+            market: { market_key: 'DRAW', label: 'X' },
+            purchasability_v31: { available: true, score: 90 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'b',
+            market: { market_key: 'HOME', label: '1' },
+            purchasability_v31: { available: true, score: 80 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'c',
+            market: { market_key: 'AWAY', label: '2' },
+            purchasability_v31: { available: true, score: 70 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'd',
+            market: { market_key: 'ONE_X', label: '1X' },
+            purchasability_v31: { available: true, score: 60 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'e',
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            purchasability_v31: { available: true, score: 50 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(5))
+    expect(screen.getByTestId('view-mode-compact').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getAllByTestId('bet-builder-opportunity-tab')[2])
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe(
+        'AWAY',
+      ),
+    )
+    fireEvent.click(screen.getByTestId('view-mode-analysis'))
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe(
+        'AWAY',
+      ),
+    )
   })
 })

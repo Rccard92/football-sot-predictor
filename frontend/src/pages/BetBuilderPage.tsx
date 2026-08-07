@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { BetBuilderFilters } from '../components/bet-builder/BetBuilderFilters'
 import { BetBuilderFixtureCard } from '../components/bet-builder/BetBuilderFixtureCard'
 import { BetBuilderHeader } from '../components/bet-builder/BetBuilderHeader'
@@ -26,6 +27,7 @@ import {
   sliceProgressive,
   uniqueSorted,
   type BetBuilderFilterState,
+  type BetBuilderViewMode,
 } from '../components/bet-builder/betBuilderUtils'
 import {
   fetchBetBuilderOpportunities,
@@ -45,11 +47,10 @@ export function BetBuilderPage() {
   const [filters, setFilters] = useState<BetBuilderFilterState>(DEFAULT_BET_BUILDER_FILTERS)
   const [secondaryOpen, setSecondaryOpen] = useState(false)
   const [visibleLimit, setVisibleLimit] = useState(BET_BUILDER_PAGE_SIZE)
-  const [revisionBanner, setRevisionBanner] = useState(false)
+  const [viewMode, setViewMode] = useState<BetBuilderViewMode>('compact')
 
   const revisionRef = useRef<string | null>(null)
   const dateRef = useRef(selectedDate)
-  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlightRef = useRef(false)
 
   useEffect(() => {
@@ -68,7 +69,6 @@ export function BetBuilderPage() {
       setSearchParams({ date: next }, { replace: true })
       setFilters(DEFAULT_BET_BUILDER_FILTERS)
       setVisibleLimit(BET_BUILDER_PAGE_SIZE)
-      setRevisionBanner(false)
       revisionRef.current = null
     },
     [setSearchParams],
@@ -81,9 +81,9 @@ export function BetBuilderPage() {
     setData(payload)
     setError(null)
     if (soft && changed) {
-      setRevisionBanner(true)
-      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
-      bannerTimerRef.current = setTimeout(() => setRevisionBanner(false), 5000)
+      toast.success('Dati Bet Builder aggiornati', {
+        description: 'Nuova scansione Cecchino ricevuta',
+      })
     }
   }, [])
 
@@ -148,12 +148,6 @@ export function BetBuilderPage() {
     return () => window.clearInterval(id)
   }, [data?.source_scan_status, load])
 
-  useEffect(() => {
-    return () => {
-      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
-    }
-  }, [])
-
   const onFiltersChange = useCallback((patch: Partial<BetBuilderFilterState>) => {
     setFilters((prev) => ({ ...prev, ...patch }))
     setVisibleLimit(BET_BUILDER_PAGE_SIZE)
@@ -194,16 +188,22 @@ export function BetBuilderPage() {
   const lastUpdated = resolveLastUpdatedIso(data?.freshness, data?.source_generated_from)
   const hasRawOpportunities = (data?.opportunities.length ?? 0) > 0
   const filtersRestrictive = hasRawOpportunities && groups.length === 0
+  const eligible =
+    typeof data?.summary.fixtures_eligible_total === 'number'
+      ? data.summary.fixtures_eligible_total
+      : data?.summary.fixtures_considered
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6 overflow-x-hidden">
+    <div className="mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden">
       <BetBuilderHeader
         date={selectedDate}
         onDateChange={setDate}
         sourceScanStatus={data?.source_scan_status ?? data?.freshness?.source_scan_status}
         lastUpdatedIso={lastUpdated}
         freshnessWarning={data?.freshness?.freshness_warning}
-        revisionUpdatedBanner={revisionBanner}
+        fixturesEligible={eligible}
+        fixturesWithOpportunity={data ? fixturesWithOpportunity : undefined}
+        opportunitiesTotal={data?.summary.opportunities_total}
       />
 
       {loading ? (
@@ -214,8 +214,24 @@ export function BetBuilderPage() {
           data-testid="bet-builder-loading"
         >
           <span className="sr-only">Caricamento opportunity Bet Builder</span>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className={`${bbSkeleton} h-64`} />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className={`${bbSkeleton} space-y-3 p-4`} data-testid="bet-builder-skeleton">
+              <div className="flex justify-between">
+                <div className="h-3 w-32 rounded bg-slate-300/80" />
+                <div className="h-6 w-14 rounded bg-slate-300/80" />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="h-12 w-12 rounded-full bg-slate-300/80" />
+                <div className="h-4 w-20 rounded bg-slate-300/60" />
+                <div className="h-12 w-12 rounded-full bg-slate-300/80" />
+              </div>
+              <div className="flex gap-2">
+                <div className="h-14 w-20 rounded-xl bg-slate-300/70" />
+                <div className="h-14 w-20 rounded-xl bg-slate-300/50" />
+                <div className="h-14 w-20 rounded-xl bg-slate-300/50" />
+              </div>
+              <div className="h-28 rounded-2xl bg-slate-300/60" />
+            </div>
           ))}
         </div>
       ) : null}
@@ -251,6 +267,8 @@ export function BetBuilderPage() {
             secondaryOpen={secondaryOpen}
             onToggleSecondary={() => setSecondaryOpen((v) => !v)}
             onChange={onFiltersChange}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
 
           {groups.length === 0 ? (
@@ -294,6 +312,7 @@ export function BetBuilderPage() {
                     key={group.todayFixtureId}
                     group={group}
                     scanDate={data.scan_date || selectedDate}
+                    viewMode={viewMode}
                   />
                 ))}
               </div>

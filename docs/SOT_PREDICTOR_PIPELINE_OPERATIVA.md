@@ -1,5 +1,15 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-02.2 — UX redesign (2026-08-07)
+
+1. Operatore apre `/bet-builder`.
+2. FE chiama `GET /api/cecchino/bet-builder/opportunities?date=` (invariato).
+3. Filtri → group → sort; primary = `opportunities[0]`; selector per le altre; una selected panel per card.
+4. Vista Compatta/Analisi controlla solo collapse del context (Balance/GI).
+5. Soft poll: nuova `source_revision` → replace dati + Sonner «Dati Bet Builder aggiornati» (non al primo load).
+6. CTA «Apri analisi manuale» invariata → Today `?date=&fixture=`.
+7. Nessuna write, nessun cart, nessun nuovo score, nessun backend change.
+
 ## Bet Builder BET-02.1 — Fixture cards (2026-08-07)
 
 1. Operatore apre `/bet-builder`.

@@ -2,6 +2,14 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-02.2 — Premium UX/UI Redesign (2026-08-07)
+
+- Primary opportunity = `group.opportunities[0]` dopo sort BET-02.1 (post-filtro); badge **IN EVIDENZA** ≠ recommendation
+- Una fixture card = una selected opportunity completa + tab per le secondarie
+- Vista Compatta (default) / Analisi; V3.1 ring; signals visuali; context Balance/GI collapsible
+- Framer Motion leggero + `prefers-reduced-motion`; Sonner su nuova `source_revision`
+- **Nessun** backend change; **nessun** nuovo score; **nessun** cart (BET-03); nessuna migrazione
+
 ## Bet Builder BET-01.2 — Price gate allineato a V3.1 (2026-08-07)
 
 Price trigger non è più solo Book > Cecchino. Nuovo gate = gate teorico Acquistabilità V3.1:

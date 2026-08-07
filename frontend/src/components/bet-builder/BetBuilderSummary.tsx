@@ -13,10 +13,10 @@ export function BetBuilderSummary({ summary, fixturesWithOpportunity }: Props) {
       : summary.fixtures_considered
 
   const items: Array<{ key: string; label: string; value: number }> = [
-    { key: 'fixtures_eligible_total', label: 'Fixture eleggibili', value: eligible ?? 0 },
+    { key: 'fixtures_eligible_total', label: 'Fixture', value: eligible ?? 0 },
     {
       key: 'fixtures_with_opportunity',
-      label: 'Partite con opportunity',
+      label: 'Con opportunity',
       value: fixturesWithOpportunity,
     },
     {
@@ -25,28 +25,31 @@ export function BetBuilderSummary({ summary, fixturesWithOpportunity }: Props) {
       value: summary.opportunities_total ?? 0,
     },
     { key: 'price_only', label: 'Solo quota', value: summary.price_only ?? 0 },
-    { key: 'signals_only', label: 'Solo Segnali', value: summary.signals_only ?? 0 },
+    { key: 'signals_only', label: 'Solo segnali', value: summary.signals_only ?? 0 },
     {
       key: 'price_and_signals',
-      label: 'Quota + Segnali',
+      label: 'Quota + segnali',
       value: summary.price_and_signals ?? 0,
     },
   ]
 
   return (
-    <section aria-label="Summary giornata" className="space-y-2">
-      <h2 className="text-sm font-semibold text-slate-800">Summary</h2>
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible md:grid-cols-3 lg:grid-cols-6">
-        {items.map((item) => (
+    <section aria-label="Summary giornata" data-testid="bet-builder-summary">
+      <div
+        className={`${bbCard} -mx-1 flex gap-0 overflow-x-auto scroll-smooth sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6`}
+      >
+        {items.map((item, i) => (
           <div
             key={item.key}
-            className={`${bbCard} min-w-[140px] shrink-0 px-3 py-3 sm:min-w-0`}
+            className={`min-w-[7.5rem] shrink-0 px-3 py-3 sm:min-w-0 ${
+              i > 0 ? 'border-l border-slate-100' : ''
+            }`}
             data-testid={`summary-${item.key}`}
           >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              {item.label}
+            <p className="text-xl font-semibold tabular-nums text-slate-900 sm:text-2xl">
+              {item.value}
             </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{item.value}</p>
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">{item.label}</p>
           </div>
         ))}
       </div>

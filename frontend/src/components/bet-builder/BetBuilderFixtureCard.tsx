@@ -1,34 +1,44 @@
+import { motion, useReducedMotion } from 'framer-motion'
+import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { BetBuilderFixtureGroup } from './betBuilderUtils'
-import { BetBuilderOpportunityRow } from './BetBuilderOpportunityRow'
+import type { BetBuilderFixtureGroup, BetBuilderViewMode } from './betBuilderUtils'
+import {
+  formatKickoffShort,
+  getPrimaryOpportunity,
+  resolveSelectedOpportunity,
+} from './betBuilderUtils'
+import { BetBuilderOpportunitySelector } from './BetBuilderOpportunitySelector'
+import { BetBuilderSelectedOpportunityPanel } from './BetBuilderSelectedOpportunityPanel'
 import { bbCard, bbCardPadding, bbSecondaryBtn } from './betBuilderStyles'
-import { formatKickoffShort } from './betBuilderUtils'
 
 type Props = {
   group: BetBuilderFixtureGroup
   scanDate: string
+  viewMode: BetBuilderViewMode
 }
 
 function TeamLogo({
   name,
   logo,
+  sizeClass,
 }: {
   name: string
   logo?: string | null
+  sizeClass: string
 }) {
   if (logo) {
     return (
       <img
         src={logo}
         alt={`Logo ${name}`}
-        className="h-9 w-9 shrink-0 rounded-full object-cover bg-slate-100"
+        className={`${sizeClass} shrink-0 rounded-full object-cover bg-slate-100`}
         loading="lazy"
       />
     )
   }
   return (
     <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500"
+      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500`}
       aria-hidden
     >
       {(name || '?').slice(0, 1).toUpperCase()}
@@ -36,85 +46,107 @@ function TeamLogo({
   )
 }
 
-function formatOriginBreakdown(counts: BetBuilderFixtureGroup['counts']): string {
-  const parts: string[] = []
-  if (counts.price_and_signals > 0) {
-    parts.push(
-      `${counts.price_and_signals} Quota + Segnali`,
-    )
-  }
-  if (counts.signals_only > 0) {
-    parts.push(`${counts.signals_only} Segnali`)
-  }
-  if (counts.price_only > 0) {
-    parts.push(`${counts.price_only} Quota`)
-  }
-  return parts.join(' · ')
-}
+export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
+  const reduceMotion = useReducedMotion()
+  const panelId = useId()
+  const primary = getPrimaryOpportunity(group)
+  /** Intent utente; se key assente dopo filter/revision → resolveSelectedOpportunity fa fallback. */
+  const [userSelectedKey, setUserSelectedKey] = useState<string | null>(null)
 
-export function BetBuilderFixtureCard({ group, scanDate }: Props) {
+  const selected = resolveSelectedOpportunity(group.opportunities, userSelectedKey)
   const homeName = group.fixture.home.name ?? 'Home'
   const awayName = group.fixture.away.name ?? 'Away'
   const country = group.fixture.country ?? ''
   const league = group.fixture.league ?? ''
   const meta = [country, league].filter(Boolean).join(' · ')
   const analysisHref = `/cecchino-today?date=${encodeURIComponent(scanDate)}&fixture=${group.todayFixtureId}`
-  const n = group.counts.total
-  const opportunityLabel = n === 1 ? '1 opportunity' : `${n} opportunity`
-  const breakdown = formatOriginBreakdown(group.counts)
+  const isPrimarySelected =
+    Boolean(selected && primary && selected.opportunity_key === primary.opportunity_key)
 
   return (
-    <article
+    <motion.article
       className={`${bbCard} ${bbCardPadding} flex flex-col gap-4`}
       data-testid="bet-builder-fixture-card"
       data-fixture-id={group.todayFixtureId}
+      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
     >
-      <header className="space-y-3">
-        <div className="min-w-0">
-          {meta ? <p className="truncate text-xs font-medium text-slate-500">{meta}</p> : null}
-          <p className="text-sm font-semibold tabular-nums text-slate-800">
+      <header className="space-y-3 border-b border-slate-100 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {meta ? (
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{meta}</p>
+          ) : (
+            <span />
+          )}
+          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-slate-800">
             {formatKickoffShort(group.fixture.kickoff)}
-          </p>
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <TeamLogo name={homeName} logo={group.fixture.home.logo} />
-            <span className="truncate text-sm font-semibold text-slate-900">{homeName}</span>
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
+            <TeamLogo
+              name={homeName}
+              logo={group.fixture.home.logo}
+              sizeClass="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14"
+            />
+            <span className="line-clamp-2 text-[15px] font-semibold leading-snug text-slate-900 sm:text-base md:text-lg">
+              {homeName}
+            </span>
           </div>
-          <span className="shrink-0 text-xs font-medium uppercase text-slate-400">vs</span>
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-            <span className="truncate text-right text-sm font-semibold text-slate-900">
+          <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            vs
+          </span>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5 sm:gap-3">
+            <span className="line-clamp-2 text-right text-[15px] font-semibold leading-snug text-slate-900 sm:text-base md:text-lg">
               {awayName}
             </span>
-            <TeamLogo name={awayName} logo={group.fixture.away.logo} />
+            <TeamLogo
+              name={awayName}
+              logo={group.fixture.away.logo}
+              sizeClass="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14"
+            />
           </div>
-        </div>
-
-        <div className="space-y-0.5">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            {opportunityLabel}
-          </p>
-          {breakdown ? <p className="text-xs text-slate-500">{breakdown}</p> : null}
         </div>
       </header>
 
-      <div className="flex flex-col gap-0" data-testid="bet-builder-fixture-opportunities">
-        {group.opportunities.map((op) => (
-          <BetBuilderOpportunityRow key={op.opportunity_key} opportunity={op} />
-        ))}
-      </div>
+      <BetBuilderOpportunitySelector
+        opportunities={group.opportunities}
+        selectedKey={selected?.opportunity_key ?? ''}
+        onSelect={setUserSelectedKey}
+        panelId={panelId}
+      />
 
-      <div className="mt-auto pt-1">
+      {selected ? (
+        <div data-testid="bet-builder-fixture-opportunities">
+          <div
+            data-testid="bet-builder-opportunity-row"
+            data-origin={selected.origin}
+            data-market={selected.market.market_key}
+            data-opportunity-key={selected.opportunity_key}
+          >
+            <BetBuilderSelectedOpportunityPanel
+              opportunity={selected}
+              isPrimary={isPrimarySelected}
+              viewMode={viewMode}
+              panelId={panelId}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-auto flex justify-stretch pt-1 sm:justify-end">
         <Link
           to={analysisHref}
-          className={`${bbSecondaryBtn} w-full`}
+          className={`${bbSecondaryBtn} w-full sm:w-auto`}
           aria-label={`Apri analisi manuale ${homeName} vs ${awayName}`}
           data-testid="bet-builder-manual-analysis"
         >
-          Apri analisi manuale
+          Apri analisi manuale →
         </Link>
       </div>
-    </article>
+    </motion.article>
   )
 }
+

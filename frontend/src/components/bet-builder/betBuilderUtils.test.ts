@@ -4,15 +4,20 @@ import {
   BET_BUILDER_PAGE_SIZE,
   DEFAULT_BET_BUILDER_FILTERS,
   buildBetBuilderFixtureGroups,
+  countActiveFilters,
   countFilteredOpportunities,
   countUniqueFixtures,
   filterAndSortOpportunities,
   filterOpportunities,
   fixtureOpportunityCounts,
+  formatPurchasabilityTab,
+  getPrimaryOpportunity,
   groupOpportunitiesByFixture,
   isIsoDate,
   isScanRunning,
   nextVisibleLimit,
+  originMicroLabel,
+  resolveSelectedOpportunity,
   shiftIsoDate,
   sliceProgressive,
   sortFixtureGroups,
@@ -433,5 +438,131 @@ describe('betBuilderUtils', () => {
     expect(visible).toHaveLength(1)
     expect(visible[0].todayFixtureId).toBe(99)
     expect(visible[0].opportunities).toHaveLength(3)
+  })
+
+  it('primary opportunity is first after canonical sort — not a new score', () => {
+    const ops = [
+      baseOp({
+        opportunity_key: 'low',
+        market: { market_key: 'AWAY', label: '2' },
+        purchasability_v31: { available: true, score: 40 },
+      }),
+      baseOp({
+        opportunity_key: 'high',
+        market: { market_key: 'DRAW', label: 'X' },
+        purchasability_v31: { available: true, score: 90 },
+      }),
+      baseOp({
+        opportunity_key: 'mid',
+        market: { market_key: 'HOME', label: '1' },
+        purchasability_v31: { available: true, score: 70 },
+      }),
+    ]
+    const group = groupOpportunitiesByFixture(ops)[0]
+    const primary = getPrimaryOpportunity(group)
+    expect(primary?.opportunity_key).toBe('high')
+    expect(primary).toBe(group.opportunities[0])
+  })
+
+  it('single opportunity: primary equals only item', () => {
+    const group = groupOpportunitiesByFixture([baseOp({ opportunity_key: 'only' })])[0]
+    expect(group.opportunities).toHaveLength(1)
+    expect(getPrimaryOpportunity(group)?.opportunity_key).toBe('only')
+  })
+
+  it('resolveSelectedOpportunity falls back when key missing or removed', () => {
+    const ops = sortOpportunitiesWithinFixture([
+      baseOp({
+        opportunity_key: 'a',
+        purchasability_v31: { available: true, score: 90 },
+      }),
+      baseOp({
+        opportunity_key: 'b',
+        market: { market_key: 'HOME', label: '1' },
+        purchasability_v31: { available: true, score: 70 },
+      }),
+    ])
+    expect(resolveSelectedOpportunity(ops, 'b')?.opportunity_key).toBe('b')
+    expect(resolveSelectedOpportunity(ops, 'gone')?.opportunity_key).toBe('a')
+    expect(resolveSelectedOpportunity(ops, null)?.opportunity_key).toBe('a')
+    expect(resolveSelectedOpportunity([], 'a')).toBeNull()
+  })
+
+  it('primary after filter is first visible opportunity', () => {
+    const ops = [
+      baseOp({
+        opportunity_key: 'draw',
+        market: { market_key: 'DRAW', label: 'X' },
+        purchasability_v31: { available: true, score: 95 },
+      }),
+      baseOp({
+        opportunity_key: 'home',
+        market: { market_key: 'HOME', label: '1' },
+        purchasability_v31: { available: true, score: 60 },
+      }),
+    ]
+    const filtered = buildBetBuilderFixtureGroups(ops, {
+      ...DEFAULT_BET_BUILDER_FILTERS,
+      market: 'HOME',
+    })
+    expect(getPrimaryOpportunity(filtered[0])?.opportunity_key).toBe('home')
+  })
+
+  it('formatPurchasabilityTab handles null V3.1 as N/D', () => {
+    expect(formatPurchasabilityTab(86)).toBe('86')
+    expect(formatPurchasabilityTab(null)).toBe('N/D')
+    expect(formatPurchasabilityTab(undefined)).toBe('N/D')
+  })
+
+  it('origin micro labels and active filter count', () => {
+    expect(originMicroLabel('price')).toBe('Quota')
+    expect(originMicroLabel('signals')).toBe('Segnali')
+    expect(originMicroLabel('price_and_signals')).toBe('Q + S')
+    expect(countActiveFilters(DEFAULT_BET_BUILDER_FILTERS)).toBe(0)
+    expect(
+      countActiveFilters({
+        ...DEFAULT_BET_BUILDER_FILTERS,
+        origin: 'signals',
+        country: 'Italy',
+        search: 'Inter',
+        minPurchasability: 70,
+      }),
+    ).toBe(3)
+  })
+
+  it('mobile selector data: label + V3.1 + origin for each opportunity', () => {
+    const group = groupOpportunitiesByFixture([
+      baseOp({
+        opportunity_key: 'x',
+        market: { market_key: 'DRAW', label: 'X' },
+        purchasability_v31: { available: true, score: 86 },
+        origin: 'price_and_signals',
+      }),
+      baseOp({
+        opportunity_key: 'ox',
+        market: { market_key: 'ONE_X', label: '1X' },
+        purchasability_v31: { available: true, score: 71 },
+        origin: 'price',
+      }),
+      baseOp({
+        opportunity_key: 'nd',
+        market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+        purchasability_v31: { available: false, score: null },
+        origin: 'signals',
+      }),
+    ])[0]
+    const selectorData = group.opportunities.map((o) => ({
+      label: o.market.label,
+      score: formatPurchasabilityTab(o.purchasability_v31.score),
+      origin: originMicroLabel(o.origin),
+      isPrimary: o.opportunity_key === getPrimaryOpportunity(group)?.opportunity_key,
+    }))
+    expect(selectorData[0]).toEqual({
+      label: 'X',
+      score: '86',
+      origin: 'Q + S',
+      isPrimary: true,
+    })
+    expect(selectorData[2].score).toBe('N/D')
   })
 })

@@ -1,5 +1,14 @@
-import { bbCard, bbCardPadding, bbChipIdle, bbInput, bbMuted } from './betBuilderStyles'
-import { formatUpdatedAt, isScanRunning, shiftIsoDate } from './betBuilderUtils'
+import {
+  bbChipIdle,
+  bbInput,
+  bbMuted,
+} from './betBuilderStyles'
+import {
+  formatDisplayDateIt,
+  formatUpdatedTimeShort,
+  isScanRunning,
+  shiftIsoDate,
+} from './betBuilderUtils'
 
 type Props = {
   date: string
@@ -7,7 +16,9 @@ type Props = {
   sourceScanStatus?: string | null
   lastUpdatedIso?: string | null
   freshnessWarning?: string | null
-  revisionUpdatedBanner?: boolean
+  fixturesEligible?: number
+  fixturesWithOpportunity?: number
+  opportunitiesTotal?: number
 }
 
 export function BetBuilderHeader({
@@ -16,23 +27,47 @@ export function BetBuilderHeader({
   sourceScanStatus,
   lastUpdatedIso,
   freshnessWarning,
-  revisionUpdatedBanner,
+  fixturesEligible,
+  fixturesWithOpportunity,
+  opportunitiesTotal,
 }: Props) {
   const running = isScanRunning(sourceScanStatus)
+  const updated = formatUpdatedTimeShort(lastUpdatedIso)
 
   return (
-    <header className="space-y-4">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          Bet Builder
-        </h1>
-        <p className={`${bbMuted} max-w-3xl`}>
-          Opportunity generate dai dati Cecchino Today. Quota, Segnali e Acquistabilità restano
-          evidenze distinte.
+    <header className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Bet Builder</h1>
+        <p className="text-sm font-medium capitalize text-slate-600">
+          {formatDisplayDateIt(date)}
         </p>
       </div>
 
-      <div className={`${bbCard} ${bbCardPadding} flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between`}>
+      {(fixturesEligible != null ||
+        fixturesWithOpportunity != null ||
+        opportunitiesTotal != null) && (
+        <p className={`${bbMuted} text-sm`}>
+          {fixturesEligible != null ? (
+            <span className="tabular-nums">{fixturesEligible} fixture eleggibili</span>
+          ) : null}
+          {fixturesWithOpportunity != null ? (
+            <>
+              {fixturesEligible != null ? ' · ' : null}
+              <span className="tabular-nums">
+                {fixturesWithOpportunity} partite con opportunity
+              </span>
+            </>
+          ) : null}
+          {opportunitiesTotal != null ? (
+            <>
+              {' · '}
+              <span className="tabular-nums">{opportunitiesTotal} opportunity</span>
+            </>
+          ) : null}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Selezione giorno">
           <button
             type="button"
@@ -40,7 +75,7 @@ export function BetBuilderHeader({
             aria-label="Giorno precedente"
             onClick={() => onDateChange(shiftIsoDate(date, -1))}
           >
-            ‹
+            ←
           </button>
           <label className="sr-only" htmlFor="bet-builder-date">
             Data
@@ -60,21 +95,15 @@ export function BetBuilderHeader({
             aria-label="Giorno successivo"
             onClick={() => onDateChange(shiftIsoDate(date, 1))}
           >
-            ›
+            →
           </button>
         </div>
 
-        <div className="space-y-1 text-sm text-slate-600">
+        <div className="text-sm text-slate-600">
           <p>
-            Stato sorgente:{' '}
+            Stato:{' '}
             <span className="font-semibold text-slate-800">
-              {sourceScanStatus ?? 'n/d'}
-            </span>
-          </p>
-          <p>
-            Ultimo aggiornamento:{' '}
-            <span className="font-semibold tabular-nums text-slate-800">
-              {formatUpdatedAt(lastUpdatedIso)}
+              {running ? 'In aggiornamento' : `Aggiornato ${updated}`}
             </span>
           </p>
           {freshnessWarning ? (
@@ -92,16 +121,6 @@ export function BetBuilderHeader({
           data-testid="scan-running-banner"
         >
           Aggiornamento Cecchino in corso
-        </div>
-      ) : null}
-
-      {revisionUpdatedBanner ? (
-        <div
-          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950"
-          role="status"
-          data-testid="revision-updated-banner"
-        >
-          Dati aggiornati dalla nuova scansione Cecchino
         </div>
       ) : null}
     </header>

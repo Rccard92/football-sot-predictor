@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-02.2 Premium UX/UI Redesign (2026-08-07)
+
+- Perché: più opportunity per fixture rendevano le card lunghe e senza gerarchia primaria/secondaria.
+- Cosa: opportunity selector + selected panel; primary = prima opportunity canonica (badge «IN EVIDENZA»); vista Compatta/Analisi; header/summary/filtri compatti; ring V3.1; signals visuali; context collapsible; Framer Motion + Sonner su `source_revision`.
+- Impatto: solo frontend; backend BET-01, formule V3.1/Signals/Balance/GI, price gate, Today invariati; nessuna migrazione; nessun nuovo score; nessun cart.
+- Non fatto: cart BET-03, alignment BET-04.
+
 ## Fix — Bet Builder BET-01.2 price gate aligned to V3.1 (2026-08-07)
 
 - Perché: PRICE_VALUE su solo Book > Cecchino faceva entrare mercati con edge debole e Rating KPI basso (es. X con rating 26 / consensus 1/4) senza Acquistabilità V3.1.

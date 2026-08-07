@@ -17,6 +17,9 @@ export type BetBuilderSortKey =
   | 'edge_desc'
   | 'kickoff_asc'
 
+/** Vista densità UI — solo frontend, nessun score. */
+export type BetBuilderViewMode = 'compact' | 'analysis'
+
 export type BetBuilderFilterState = {
   market: BetBuilderMarketFilter
   origin: BetBuilderOriginFilter
@@ -99,6 +102,79 @@ export function originBadgeLabel(origin: BetBuilderOrigin): string {
   if (origin === 'price') return 'QUOTA'
   if (origin === 'signals') return 'SEGNALI'
   return 'QUOTA + SEGNALI'
+}
+
+/** Micro-label origine per tab selector (sempre con testo). */
+export function originMicroLabel(origin: BetBuilderOrigin): string {
+  if (origin === 'price') return 'Quota'
+  if (origin === 'signals') return 'Segnali'
+  return 'Q + S'
+}
+
+/**
+ * Opportunity principale = prima dopo sort canonico BET-02.1.
+ * Non è un nuovo score / recommendation.
+ */
+export function getPrimaryOpportunity(
+  group: Pick<BetBuilderFixtureGroup, 'opportunities'> | null | undefined,
+): BetBuilderOpportunity | null {
+  const ops = group?.opportunities
+  if (!ops || ops.length === 0) return null
+  return ops[0] ?? null
+}
+
+/** Risolve selected: match per key, altrimenti primary (ops[0]). */
+export function resolveSelectedOpportunity(
+  opportunities: BetBuilderOpportunity[],
+  selectedKey: string | null | undefined,
+): BetBuilderOpportunity | null {
+  if (!opportunities.length) return null
+  if (selectedKey) {
+    const found = opportunities.find((o) => o.opportunity_key === selectedKey)
+    if (found) return found
+  }
+  return opportunities[0] ?? null
+}
+
+/** Acquistabilità V3.1 per tab: numero arrotondato oppure N/D. */
+export function formatPurchasabilityTab(score: number | null | undefined): string {
+  if (score == null || Number.isNaN(score)) return 'N/D'
+  return String(Math.round(score))
+}
+
+/**
+ * Conta filtri avanzati attivi (origin/country/league/minPurchasability).
+ * Search resta in toolbar e non entra nel badge Filtri.
+ */
+export function countActiveFilters(filters: BetBuilderFilterState): number {
+  let n = 0
+  if (filters.origin !== 'all') n += 1
+  if (filters.country) n += 1
+  if (filters.league) n += 1
+  if (filters.minPurchasability != null) n += 1
+  return n
+}
+
+export function formatDisplayDateIt(dateIso: string): string {
+  if (!isIsoDate(dateIso)) return dateIso
+  const d = new Date(`${dateIso}T12:00:00Z`)
+  return d.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Rome',
+  })
+}
+
+export function formatUpdatedTimeShort(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Rome',
+  })
 }
 
 export function uniqueSorted(values: Array<string | null | undefined>): string[] {

@@ -1,5 +1,5 @@
 import type { BetBuilderPriceValue } from '../../lib/cecchinoBetBuilderApi'
-import { bbBadge } from './betBuilderStyles'
+import { bbBadge, bbMetricCell } from './betBuilderStyles'
 
 function fmtQuota(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—'
@@ -18,53 +18,16 @@ type Props = {
 }
 
 export function BetBuilderPriceBlock({ price, compact = false }: Props) {
-  if (compact) {
-    return (
-      <div aria-label="Valore quota" className="space-y-1.5" data-testid="price-compact">
-        {!price.present ? (
-          <p className="text-xs text-slate-500">Nessun valore quota rilevato</p>
-        ) : null}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Book</p>
-            <p className="text-base font-semibold tabular-nums text-slate-900">
-              {fmtQuota(price.quota_book)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Cecchino
-            </p>
-            <p className="text-base font-semibold tabular-nums text-slate-900">
-              {fmtQuota(price.quota_cecchino)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Edge</p>
-            <p className="text-sm font-semibold tabular-nums text-slate-900">
-              {fmtEdge(price.edge_pct)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rating</p>
-            <p className="text-sm font-semibold tabular-nums text-slate-900">
-              {price.rating != null ? `${price.rating}` : '—'}
-              {price.rating_label ? (
-                <span className="ml-1 text-xs font-medium text-slate-600">
-                  · {price.rating_label}
-                </span>
-              ) : null}
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <section aria-label="Valore quota" className="space-y-3">
+    <section
+      aria-label="Valore quota"
+      className="space-y-2"
+      data-testid={compact ? 'price-compact' : 'price-block'}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quota</h3>
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          Quota
+        </h3>
         {price.present ? (
           <span className={`${bbBadge} border-emerald-200 bg-emerald-50 text-emerald-800`}>
             Valore quota
@@ -74,31 +37,35 @@ export function BetBuilderPriceBlock({ price, compact = false }: Props) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Book</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">
+      <div className={`grid grid-cols-2 gap-2 ${compact ? '' : 'sm:grid-cols-4'}`}>
+        <div className={bbMetricCell}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Book</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
             {fmtQuota(price.quota_book)}
           </p>
         </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Cecchino</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">
+        <div className={bbMetricCell}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Cecchino
+          </p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
             {fmtQuota(price.quota_cecchino)}
           </p>
         </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Edge</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
+        <div className={bbMetricCell}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Edge</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">
             {fmtEdge(price.edge_pct)}
           </p>
         </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Rating</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
+        <div className={bbMetricCell}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rating</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-slate-900">
             {price.rating != null ? `${price.rating}` : '—'}
             {price.rating_label ? (
-              <span className="ml-1 text-sm font-medium text-slate-600">· {price.rating_label}</span>
+              <span className="ml-1 text-xs font-medium text-slate-600">
+                · {price.rating_label}
+              </span>
             ) : null}
           </p>
         </div>
