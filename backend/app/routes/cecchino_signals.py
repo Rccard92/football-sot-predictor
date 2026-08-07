@@ -17,6 +17,7 @@ from app.schemas.cecchino_signals import (
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY
 from app.services.cecchino.cecchino_signal_aggregation import (
+    MonitoringVersionNotAllowed,
     SignalFormulaVersionNotAllowed,
     build_signals_summary,
     export_signals_csv,
@@ -111,6 +112,7 @@ def cecchino_signals_summary(
     include_diagnostics: bool = Query(default=False),
     signal_formula_version: str = Query(default="current"),
     acquisition_filter: str = Query(default="acquired"),
+    monitoring_version: str | None = Query(default=None),
     consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
@@ -129,9 +131,12 @@ def cecchino_signals_summary(
             include_diagnostics=include_diagnostics,
             signal_formula_version=signal_formula_version,
             acquisition_filter=acquisition_filter,
+            monitoring_version=monitoring_version,
             consensus_yes_count_min=consensus_yes_count_min,
         )
     except SignalFormulaVersionNotAllowed as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MonitoringVersionNotAllowed as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -151,6 +156,7 @@ def cecchino_signals_activations(
     offset: int = Query(default=0, ge=0),
     signal_formula_version: str = Query(default="current"),
     acquisition_filter: str = Query(default="acquired"),
+    monitoring_version: str | None = Query(default=None),
     consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
@@ -170,9 +176,12 @@ def cecchino_signals_activations(
             offset=offset,
             signal_formula_version=signal_formula_version,
             acquisition_filter=acquisition_filter,
+            monitoring_version=monitoring_version,
             consensus_yes_count_min=consensus_yes_count_min,
         )
     except SignalFormulaVersionNotAllowed as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MonitoringVersionNotAllowed as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -190,6 +199,7 @@ def cecchino_signals_export_csv(
     only_current: bool = Query(default=True),
     signal_formula_version: str = Query(default="current"),
     acquisition_filter: str = Query(default="acquired"),
+    monitoring_version: str | None = Query(default=None),
     consensus_yes_count_min: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ):
@@ -207,9 +217,12 @@ def cecchino_signals_export_csv(
             only_current=only_current,
             signal_formula_version=signal_formula_version,
             acquisition_filter=acquisition_filter,
+            monitoring_version=monitoring_version,
             consensus_yes_count_min=consensus_yes_count_min,
         )
     except SignalFormulaVersionNotAllowed as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MonitoringVersionNotAllowed as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return PlainTextResponse(
         content=csv_text,

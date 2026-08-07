@@ -167,6 +167,16 @@ describe('Monitoraggio Segnali Lab — filtri formula/acquisition', () => {
     })
     expect(url).toContain('signal_formula_version=current')
     expect(url).toContain('acquisition_filter=acquired')
+    expect(url).toContain('monitoring_version=v2')
+  })
+
+  it('include monitoring_version nell’export URL', () => {
+    const url = buildCecchinoSignalsExportUrl({
+      date_from: '2026-08-01',
+      date_to: '2026-08-06',
+      monitoring_version: 'v1',
+    })
+    expect(url).toContain('monitoring_version=v1')
   })
 })
 

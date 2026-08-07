@@ -15,6 +15,10 @@ type SignalMinBookOddsPanelProps = {
   variant?: 'monitoring' | 'lab'
   dateFrom: string
   dateTo: string
+  /** Nasconde il titolo H2 (es. quando wrappato in accordion). */
+  hideTitle?: boolean
+  /** Rimuove bordo/padding esterni per embedding. */
+  embedded?: boolean
   onBacktestComplete?: (summary: SignalMinBookOddsBacktestSummary | null) => void | Promise<void>
 }
 
@@ -50,6 +54,8 @@ export function SignalMinBookOddsPanel({
   variant = 'monitoring',
   dateFrom,
   dateTo,
+  hideTitle = false,
+  embedded = false,
   onBacktestComplete,
 }: SignalMinBookOddsPanelProps) {
   const isLab = variant === 'lab'
@@ -206,36 +212,48 @@ export function SignalMinBookOddsPanel({
 
   const busy = saving || backtesting
 
+  const shellClass = embedded
+    ? 'space-y-0'
+    : isLab
+      ? 'rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 via-white to-slate-50/60 p-5 shadow-sm'
+      : 'rounded-lg border border-slate-200 bg-white p-4'
+
   return (
-    <section
-      className={
-        isLab
-          ? 'rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 via-white to-slate-50/60 p-5 shadow-sm'
-          : 'rounded-lg border border-slate-200 bg-white p-4'
-      }
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Soglie quota book</h2>
-          <p className="mt-1 text-sm text-slate-600">{SIGNAL_VALUE_FILTER_NOTE}</p>
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Abbassare una soglia fa rientrare solo segnali che erano già SI nella matrice e già a
-            valore rispetto alla quota Cecchino. Non trasforma formule NO in SI. Se quota book &lt;
-            quota Cecchino o mancano quote, il segnale non entra comunque: la soglia minima è solo
-            il terzo filtro.
-          </p>
+    <section className={shellClass} data-testid="signal-min-book-odds-panel">
+      {!hideTitle && (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Soglie quota book</h2>
+            <p className="mt-1 text-sm text-slate-600">{SIGNAL_VALUE_FILTER_NOTE}</p>
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Abbassare una soglia fa rientrare solo segnali che erano già SI nella matrice e già a
+              valore rispetto alla quota Cecchino. Non trasforma formule NO in SI. Se quota book &lt;
+              quota Cecchino o mancano quote, il segnale non entra comunque: la soglia minima è solo
+              il terzo filtro.
+            </p>
+          </div>
+          {dirty && (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+              Modifiche non salvate
+            </span>
+          )}
         </div>
-        {dirty && (
+      )}
+      {hideTitle && dirty && (
+        <div className="mb-3 flex justify-end">
           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
             Modifiche non salvate
           </span>
-        )}
-      </div>
+        </div>
+      )}
+      {hideTitle && (
+        <p className="mb-3 text-xs text-slate-600">{SIGNAL_VALUE_FILTER_NOTE}</p>
+      )}
 
       {loading ? (
-        <p className="mt-4 text-sm text-slate-500">Caricamento soglie…</p>
+        <p className={`${hideTitle ? '' : 'mt-4 '}text-sm text-slate-500`}>Caricamento soglie…</p>
       ) : (
-        <div className="mt-4 overflow-x-auto">
+        <div className={`${hideTitle ? '' : 'mt-4 '}overflow-x-auto`}>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">

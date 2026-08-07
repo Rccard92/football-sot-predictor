@@ -1,5 +1,9 @@
 import { Link } from 'react-router-dom'
 import type { SignalActivationRow } from '../../../lib/cecchinoSignalsApi'
+import {
+  formatConsensusYesColumns,
+  formatConsensusRatio,
+} from '../../cecchino-lab/signalsLabUtils'
 import { formatSignalLabel, formatTargetLabel, statusBadgeClass, statusLabel } from './signalsHeatmapUtils'
 
 type Props = {
@@ -33,6 +37,72 @@ function QuotaBookCell({ row }: { row: SignalActivationRow }) {
   )
 }
 
+function shortColumnLabel(col: string): string {
+  const raw = col.replace(/^EXCEL_/, '')
+  if (raw === 'SCALA') return 'SCALA'
+  return raw
+}
+
+function ConfirmationsCell({ row }: { row: SignalActivationRow }) {
+  const group = row.signal_group
+  const cols = formatConsensusYesColumns(row.consensus_yes_columns)
+  const shortCols =
+    cols === '—'
+      ? '—'
+      : cols
+          .split(', ')
+          .map((c) => shortColumnLabel(c.replace(/^Excel /, 'EXCEL_')))
+          .join(' · ')
+
+  if (group === 'HOME' || group === 'AWAY') {
+    return (
+      <div className="space-y-0.5" data-testid="confirmations-direct">
+        <p className="text-xs font-medium text-slate-800">Segnale diretto</p>
+        <p className="text-[11px] text-slate-600">D · SI</p>
+        <span className="inline-flex rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
+          Single-formula
+        </span>
+      </div>
+    )
+  }
+
+  if (group === 'DRAW_PT') {
+    const ratio = formatConsensusRatio(row)
+    return (
+      <div className="space-y-0.5" data-testid="confirmations-draw-pt">
+        <p className="text-xs font-medium text-slate-800">Derivato X</p>
+        <p className="tabular-nums text-[11px] text-slate-700">{ratio} SI</p>
+        {shortCols !== '—' && <p className="text-[10px] text-slate-500">{shortCols}</p>}
+      </div>
+    )
+  }
+
+  const yes = row.consensus_yes_count ?? 0
+  const available = row.consensus_available_count
+  const ratio =
+    available != null ? `${yes} / ${available} SI` : formatConsensusRatio(row) + ' SI'
+  const single = yes === 1 && (available == null || available > 1)
+
+  return (
+    <div
+      className={`space-y-0.5 ${single ? 'text-amber-900' : 'text-slate-800'}`}
+      data-testid="confirmations-ratio"
+    >
+      <p className={`tabular-nums text-xs font-medium ${single ? 'text-amber-800' : ''}`}>
+        {ratio}
+      </p>
+      {shortCols !== '—' && (
+        <p className={`text-[10px] ${single ? 'text-amber-700/80' : 'text-slate-500'}`}>
+          {shortCols}
+        </p>
+      )}
+      {single && (
+        <p className="text-[10px] text-amber-700/90">Conferma singola</p>
+      )}
+    </div>
+  )
+}
+
 export function SignalsActivationsTable({ items }: Props) {
   if (items.length === 0) {
     return <p className="text-sm text-slate-500">Nessun segnale nel periodo selezionato.</p>
@@ -48,6 +118,7 @@ export function SignalsActivationsTable({ items }: Props) {
               <th className="px-2 py-2 text-left">Match</th>
               <th className="px-2 py-2 text-left">Campionato</th>
               <th className="px-2 py-2 text-left">Segnale</th>
+              <th className="px-2 py-2 text-left">Conferme</th>
               <th className="px-2 py-2 text-left">Colonna</th>
               <th className="px-2 py-2 text-left">Target</th>
               <th className="px-2 py-2 text-left">Esito</th>
@@ -73,6 +144,9 @@ export function SignalsActivationsTable({ items }: Props) {
                 </td>
                 <td className="px-2 py-2">{row.league_name ?? '—'}</td>
                 <td className="px-2 py-2">{formatSignalLabel(row.signal_group, row.signal_label)}</td>
+                <td className="px-2 py-2">
+                  <ConfirmationsCell row={row} />
+                </td>
                 <td className="px-2 py-2">{row.source_column.replace('EXCEL_', 'Excel ')}</td>
                 <td className="px-2 py-2">{formatTargetLabel(row)}</td>
                 <td className="px-2 py-2">
@@ -124,6 +198,9 @@ export function SignalsActivationsTable({ items }: Props) {
               {formatSignalLabel(row.signal_group, row.signal_label)} ·{' '}
               {row.source_column.replace('EXCEL_', 'Excel ')} · {formatTargetLabel(row)}
             </p>
+            <div className="mt-2">
+              <ConfirmationsCell row={row} />
+            </div>
             {row.evaluation_reason && (
               <p className="mt-1 text-[10px] text-slate-500">{row.evaluation_reason}</p>
             )}

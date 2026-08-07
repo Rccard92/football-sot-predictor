@@ -903,6 +903,16 @@ Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-o
 - Derived rebuild (no full scan): dry-run + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3` su `POST …/historical/runs/{run_id}/derived-rebuild`; zero API; provenance `derived_refresh`; non overwrite `source_git_commit`.
 - Alembic head resta `20260806170000`.
 
+## Cecchino — Monitoraggio Segnali V1/V2 (SIGNALS-MON-02, 2026-08-07)
+
+- Parametro `monitoring_version=v1|v2` su `GET …/signals/summary|activations|export.csv` (default effettivo = v2 / acquired).
+- V1 → `acquisition_filter=all` (baseline permissiva: 1 SI value-gated sullo stesso segno).
+- V2 → `acquisition_filter=acquired` (consenso ≥2 stesso segno; HOME/AWAY exempt).
+- Precedenza: `monitoring_version` vince su `acquisition_filter`; versione invalida → 422.
+- Nessun ricalcolo consensus; nessuna migration; zero-write su storico già persistito.
+- UI `/monitoraggio-segnali`: selector V1/V2, badge distinto da Formula V3, accordion soglie chiuso, CSV con colonne consensus/monitoring_version.
+- **Invariato:** consensus policy, formule V3, X PT, Cecchino Today, Bet Builder.
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 - Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.

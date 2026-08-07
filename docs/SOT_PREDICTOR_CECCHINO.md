@@ -1250,6 +1250,22 @@ Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs
 - **Derived rebuild** (senza full scan): `POST …/historical/runs/{run_id}/derived-rebuild` — dry-run default + confirm `REBUILD_CECCHINO_LAB_DERIVED_V3`; zero API esterne; provenance in `summary_json.derived_refresh`; **non** sovrascrive `source_git_commit`.
 - **FE:** badge `Formula corrente V3`; `raw_signal_value` tipizzato `'SI'|'NO'|null`.
 
+## Cecchino — Monitoraggio Segnali V1/V2 (SIGNALS-MON-02, 2026-08-07)
+
+Coorti di **lettura** del monitoraggio (non versioni di formula). Formula operativa resta `cecchino_signals_matrix_v3_draw_dfg_decimal2`.
+
+| Versione | Mapping interno | Regola |
+|----------|-----------------|--------|
+| **V1 · Base** | `acquisition_filter=all` | SI value-gated (book ≥ Cecchino + soglia min); anche 1 SI sullo stesso `signal_group` |
+| **V2 · Confermato** (default) | `acquisition_filter=acquired` | multi-formula: `consensus_yes_count >= 2`; HOME/AWAY: single-formula exempt |
+
+Esempi sullo **stesso** segno X (DRAW):
+
+- `X = SI NO NO NO` → V1 sì, V2 no
+- `X = SI SI NO NO` → V1 sì, V2 sì
+
+**Non** si sommano SI di mercati diversi sulla stessa fixture (X 1/4 + Over 1/4 + 1X 1/5 ≠ V2). X PT invariato (`inherit_draw_consensus`). Parametro API `monitoring_version` ha precedenza su `acquisition_filter` se entrambi presenti; invalido → 422. Replay storico zero-write. Models-summary resta acquired-only indipendente dalla versione UI. Nessuna migration.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 - Formula D42 (SEGNO X, Excel D): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).

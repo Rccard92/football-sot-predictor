@@ -39,9 +39,27 @@ from app.services.cecchino.cecchino_signal_value_gate import VALUE_REASON_OK, si
 DEFAULT_SIGNAL_FORMULA_VERSION_FILTER = "current"
 DEFAULT_ACQUISITION_FILTER = "acquired"
 
+# Dimensioni Monitoraggio (coorti di lettura) — distinte da signal_formula_version V1/V2/V3.
+MONITORING_VERSION_V1 = "v1"
+MONITORING_VERSION_V2 = "v2"
+DEFAULT_MONITORING_VERSION = MONITORING_VERSION_V2
+
+_MONITORING_VERSION_TO_ACQUISITION = {
+    MONITORING_VERSION_V1: "all",
+    MONITORING_VERSION_V2: "acquired",
+}
+_ACQUISITION_TO_MONITORING_VERSION = {
+    "all": MONITORING_VERSION_V1,
+    "acquired": MONITORING_VERSION_V2,
+}
+
 
 class SignalFormulaVersionNotAllowed(ValueError):
     """Filtro formula non ammesso nel monitoraggio operativo current-only."""
+
+
+class MonitoringVersionNotAllowed(ValueError):
+    """monitoring_version non ammesso (solo v1|v2). Distinto da signal_formula_version."""
 
 
 def resolve_operational_signal_formula_version(signal_formula_version: str | None) -> str:
@@ -53,6 +71,30 @@ def resolve_operational_signal_formula_version(signal_formula_version: str | Non
         f"signal_formula_version non ammesso nel monitoraggio operativo: {raw!r}. "
         f"Consentiti: 'current' o '{CURRENT_SIGNAL_FORMULA_VERSION}'.",
     )
+
+
+def resolve_monitoring_version(
+    monitoring_version: str | None = None,
+    acquisition_filter: str | None = None,
+) -> tuple[str | None, str]:
+    """Risolve coorte Monitoraggio V1/V2 → acquisition_filter effettivo.
+
+    Precedenza: se ``monitoring_version`` è valorizzato vince sempre sul filtro
+    acquisizione (anche in conflitto). Se assente, si conserva ``acquisition_filter``
+    (compat Lab) e si deriva un monitoring_version informativo solo per all/acquired.
+    """
+    raw_mv = (monitoring_version or "").strip().lower() if monitoring_version is not None else ""
+    if raw_mv:
+        if raw_mv not in _MONITORING_VERSION_TO_ACQUISITION:
+            raise MonitoringVersionNotAllowed(
+                f"monitoring_version non ammesso: {monitoring_version!r}. "
+                f"Consentiti: '{MONITORING_VERSION_V1}' o '{MONITORING_VERSION_V2}'.",
+            )
+        return raw_mv, _MONITORING_VERSION_TO_ACQUISITION[raw_mv]
+
+    raw_af = (acquisition_filter or DEFAULT_ACQUISITION_FILTER).strip()
+    derived = _ACQUISITION_TO_MONITORING_VERSION.get(raw_af)
+    return derived, raw_af
 
 
 def _apply_formula_version_filter(query, signal_formula_version: str | None):
@@ -378,9 +420,14 @@ def build_signals_summary(
     signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
     acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
     consensus_yes_count_min: int | None = None,
+    monitoring_version: str | None = None,
 ) -> dict[str, Any]:
     # When all_models=True, model_key filter is skipped
     mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    resolved_mv, effective_af = resolve_monitoring_version(
+        monitoring_version,
+        acquisition_filter,
+    )
     filters = {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -393,7 +440,8 @@ def build_signals_summary(
         "only_current": only_current,
         "all_models": all_models,
         "signal_formula_version": signal_formula_version or DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
-        "acquisition_filter": acquisition_filter or DEFAULT_ACQUISITION_FILTER,
+        "acquisition_filter": effective_af,
+        "monitoring_version": resolved_mv,
         "consensus_yes_count_min": consensus_yes_count_min,
     }
     rows = list(
@@ -411,7 +459,7 @@ def build_signals_summary(
                 only_current=only_current,
                 all_models=all_models,
                 signal_formula_version=signal_formula_version,
-                acquisition_filter=acquisition_filter,
+                acquisition_filter=effective_af,
                 consensus_yes_count_min=consensus_yes_count_min,
             ),
         ).all(),
@@ -521,9 +569,14 @@ def list_signal_activations(
     signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
     acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
     consensus_yes_count_min: int | None = None,
+    monitoring_version: str | None = None,
 ) -> dict[str, Any]:
     # When all_models=True, model_key filter is skipped
     mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    resolved_mv, effective_af = resolve_monitoring_version(
+        monitoring_version,
+        acquisition_filter,
+    )
     query = _base_query(
         db,
         date_from=date_from,
@@ -537,7 +590,7 @@ def list_signal_activations(
         only_current=only_current,
         all_models=all_models,
         signal_formula_version=signal_formula_version,
-        acquisition_filter=acquisition_filter,
+        acquisition_filter=effective_af,
         consensus_yes_count_min=consensus_yes_count_min,
     )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -551,7 +604,14 @@ def list_signal_activations(
         ).all(),
     )
     items = [_serialize_activation_row(row) for row in rows]
-    return {"items": items, "total": int(total), "limit": limit, "offset": offset}
+    return {
+        "items": items,
+        "total": int(total),
+        "limit": limit,
+        "offset": offset,
+        "monitoring_version": resolved_mv,
+        "acquisition_filter": effective_af,
+    }
 
 
 def _format_target_market_label(row: CecchinoSignalActivation) -> str | None:
@@ -714,6 +774,7 @@ def export_signals_csv(
     signal_formula_version: str | None = DEFAULT_SIGNAL_FORMULA_VERSION_FILTER,
     acquisition_filter: str | None = DEFAULT_ACQUISITION_FILTER,
     consensus_yes_count_min: int | None = None,
+    monitoring_version: str | None = None,
 ) -> str:
     from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
         load_signal_min_book_odds,
@@ -721,6 +782,10 @@ def export_signals_csv(
 
     min_book_odds = load_signal_min_book_odds(db)
     mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    resolved_mv, effective_af = resolve_monitoring_version(
+        monitoring_version,
+        acquisition_filter,
+    )
     payload = list_signal_activations(
         db,
         date_from=date_from,
@@ -735,8 +800,9 @@ def export_signals_csv(
         limit=100_000,
         offset=0,
         signal_formula_version=signal_formula_version,
-        acquisition_filter=acquisition_filter,
+        acquisition_filter=effective_af,
         consensus_yes_count_min=consensus_yes_count_min,
+        monitoring_version=None,
     )
     summary = build_signals_summary(
         db,
@@ -750,10 +816,12 @@ def export_signals_csv(
         evaluation_status=evaluation_status,
         only_current=only_current,
         signal_formula_version=signal_formula_version,
-        acquisition_filter=acquisition_filter,
+        acquisition_filter=effective_af,
         consensus_yes_count_min=consensus_yes_count_min,
+        monitoring_version=None,
     )
     overall = summary.get("overall") or {}
+    mv_for_csv = resolved_mv if resolved_mv is not None else ""
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -781,6 +849,12 @@ def export_signals_csv(
             "Edge",
             "Rating",
             "Motivo valutazione",
+            "monitoring_version",
+            "consensus_yes_count",
+            "consensus_available_count",
+            "consensus_required_count",
+            "consensus_passed",
+            "acquisition_status",
         ],
     )
     for item in payload["items"]:
@@ -803,6 +877,13 @@ def export_signals_csv(
             item,
             min_book_odds=min_book_odds,
         )
+        consensus_passed = item.get("consensus_passed")
+        if consensus_passed is True:
+            consensus_passed_csv = "SI"
+        elif consensus_passed is False:
+            consensus_passed_csv = "NO"
+        else:
+            consensus_passed_csv = ""
         writer.writerow(
             [
                 kickoff_date,
@@ -828,6 +909,12 @@ def export_signals_csv(
                 item.get("edge_pct"),
                 item.get("rating"),
                 item.get("evaluation_reason"),
+                mv_for_csv,
+                item.get("consensus_yes_count"),
+                item.get("consensus_available_count"),
+                item.get("consensus_required_count"),
+                consensus_passed_csv,
+                item.get("acquisition_status"),
             ],
         )
     writer.writerow([])

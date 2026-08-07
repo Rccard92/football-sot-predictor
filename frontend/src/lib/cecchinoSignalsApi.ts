@@ -27,6 +27,19 @@ export type SignalsBucket = {
 export const DEFAULT_SIGNAL_FORMULA_VERSION = 'current'
 export const DEFAULT_ACQUISITION_FILTER = 'acquired'
 
+/** Coorti Monitoraggio (distinte da signal_formula_version V1/V2/V3). */
+export const MONITORING_VERSION_V1 = 'v1'
+export const MONITORING_VERSION_V2 = 'v2'
+export const DEFAULT_MONITORING_VERSION = MONITORING_VERSION_V2
+
+export type MonitoringVersion = typeof MONITORING_VERSION_V1 | typeof MONITORING_VERSION_V2
+
+export function parseMonitoringVersion(raw: string | null | undefined): MonitoringVersion {
+  const v = (raw ?? '').trim().toLowerCase()
+  if (v === MONITORING_VERSION_V1) return MONITORING_VERSION_V1
+  return MONITORING_VERSION_V2
+}
+
 export const CURRENT_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v3_draw_dfg_decimal2'
 export const PREVIOUS_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v2_draw_dfg'
 export const LEGACY_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v1_legacy'
@@ -168,6 +181,8 @@ export type SignalsActivationsResponse = {
   total: number
   limit: number
   offset: number
+  monitoring_version?: string | null
+  acquisition_filter?: string | null
 }
 
 export type SignalsFilters = {
@@ -183,6 +198,7 @@ export type SignalsFilters = {
   include_diagnostics?: boolean
   signal_formula_version?: string
   acquisition_filter?: string
+  monitoring_version?: MonitoringVersion | string
   consensus_yes_count_min?: number
 }
 
@@ -205,6 +221,7 @@ function signalsFilterQueryParams(
       : undefined,
     signal_formula_version: filters.signal_formula_version ?? DEFAULT_SIGNAL_FORMULA_VERSION,
     acquisition_filter: filters.acquisition_filter ?? DEFAULT_ACQUISITION_FILTER,
+    monitoring_version: filters.monitoring_version ?? DEFAULT_MONITORING_VERSION,
     consensus_yes_count_min: filters.consensus_yes_count_min,
     limit: filters.limit,
     offset: filters.offset,

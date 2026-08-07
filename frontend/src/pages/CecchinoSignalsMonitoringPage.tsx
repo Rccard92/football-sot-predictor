@@ -3,27 +3,31 @@ import { useSearchParams } from 'react-router-dom'
 import { SignalsActivationsTable } from '../components/cecchino/signals/SignalsActivationsTable'
 import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/SignalsFormulaLegendAccordion'
 import { SignalsHeatmapMatrix } from '../components/cecchino/signals/SignalsHeatmapMatrix'
+import { SignalsMinBookOddsAccordion } from '../components/cecchino/signals/SignalsMinBookOddsAccordion'
 import { SignalsMonitoringKpiCards } from '../components/cecchino/signals/SignalsMonitoringKpiCards'
+import { SignalsMonitoringVersionSelector } from '../components/cecchino/signals/SignalsMonitoringVersionSelector'
 import { SignalsTopRanking } from '../components/cecchino/signals/SignalsTopRanking'
 import { SignalsTakenOddsLegend } from '../components/cecchino/signals/SignalsTakenOddsLegend'
-import { SignalMinBookOddsPanel } from '../components/cecchino/SignalMinBookOddsPanel'
 import { SignalsWeightModelCards } from '../components/cecchino/signals/SignalsWeightModelCards'
 import {
   backfillCecchinoSignals,
   backtestCecchinoWeightModels,
   buildCecchinoSignalsExportUrl,
   CECCHINO_WEIGHT_MODEL_KEYS,
+  DEFAULT_MONITORING_VERSION,
   DEFAULT_WEIGHT_MODEL_KEY,
   EVAL_STATUSES,
   getCecchinoSignalsActivations,
   getCecchinoSignalsModelsSummary,
   getCecchinoSignalsSummary,
+  parseMonitoringVersion,
   revaluateCecchinoSignals,
   formatMinBookOddsBacktestMessage,
   SELECTED_MODEL_STORAGE_KEY,
   SIGNAL_GROUPS,
   SOURCE_COLUMNS,
   type ModelsSummaryResponse,
+  type MonitoringVersion,
   type SignalsDiagnostics,
   type SignalsFilters,
   type SignalsSummaryResponse,
@@ -51,7 +55,7 @@ function resolveDefaultModelKey(models: WeightModelSummary[]): string {
 }
 
 export function CecchinoSignalsMonitoringPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') ?? todayLocalIso())
   const [dateTo, setDateTo] = useState(searchParams.get('date_to') ?? todayLocalIso())
   const [signalGroup, setSignalGroup] = useState(searchParams.get('signal_group') ?? '')
@@ -59,6 +63,7 @@ export function CecchinoSignalsMonitoringPage() {
   const [evaluationStatus, setEvaluationStatus] = useState('')
   const [countryName, setCountryName] = useState('')
   const [leagueName, setLeagueName] = useState('')
+  const monitoringVersion = parseMonitoringVersion(searchParams.get('monitoring_version'))
   const [selectedModelKey, setSelectedModelKey] = useState(readStoredModelKey)
   const [modelsSummary, setModelsSummary] = useState<ModelsSummaryResponse | null>(null)
   const [summary, setSummary] = useState<SignalsSummaryResponse | null>(null)
@@ -67,7 +72,10 @@ export function CecchinoSignalsMonitoringPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const defaultModelResolved = useRef(false)
+  const actionsMenuRef = useRef<HTMLDivElement>(null)
+  const urlBootstrapped = useRef(false)
 
   const filters: SignalsFilters = useMemo(
     () => ({
@@ -81,6 +89,7 @@ export function CecchinoSignalsMonitoringPage() {
       league_name: leagueName || undefined,
       only_current: true,
       include_diagnostics: true,
+      monitoring_version: monitoringVersion,
     }),
     [
       dateFrom,
@@ -91,6 +100,7 @@ export function CecchinoSignalsMonitoringPage() {
       evaluationStatus,
       countryName,
       leagueName,
+      monitoringVersion,
     ],
   )
 
@@ -98,6 +108,33 @@ export function CecchinoSignalsMonitoringPage() {
   const diagnostics: SignalsDiagnostics | undefined = summary?.diagnostics
   const hasAnyModelData = (modelsSummary?.models ?? []).some((m) => m.activations > 0)
   const hasFixturesInRange = (diagnostics?.today_fixtures_count ?? 0) > 0
+
+  const syncMonitoringVersionToUrl = useCallback(
+    (version: MonitoringVersion) => {
+      const next = new URLSearchParams(searchParams)
+      next.set('monitoring_version', version)
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  useEffect(() => {
+    if (urlBootstrapped.current) return
+    urlBootstrapped.current = true
+    const raw = searchParams.get('monitoring_version')
+    if (!raw || (raw !== 'v1' && raw !== 'v2')) {
+      syncMonitoringVersionToUrl(DEFAULT_MONITORING_VERSION)
+    }
+  }, [searchParams, syncMonitoringVersionToUrl])
+
+  const handleMonitoringVersionChange = useCallback(
+    (version: MonitoringVersion) => {
+      setSummary(null)
+      setItems([])
+      syncMonitoringVersionToUrl(version)
+    },
+    [syncMonitoringVersionToUrl],
+  )
 
   const handleSelectModel = useCallback((modelKey: string) => {
     setSelectedModelKey(modelKey)
@@ -131,7 +168,11 @@ export function CecchinoSignalsMonitoringPage() {
         }
       }
 
-      const activeFilters: SignalsFilters = { ...filters, model_key: modelKey }
+      const activeFilters: SignalsFilters = {
+        ...filters,
+        model_key: modelKey,
+        monitoring_version: monitoringVersion,
+      }
       const [summaryRes, listRes] = await Promise.all([
         getCecchinoSignalsSummary(activeFilters),
         getCecchinoSignalsActivations({ ...activeFilters, limit: 200, offset: 0 }),
@@ -143,9 +184,11 @@ export function CecchinoSignalsMonitoringPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateFrom, dateTo, filters, selectedModelKey])
+  }, [dateFrom, dateTo, filters, selectedModelKey, monitoringVersion])
 
   useEffect(() => {
+    // Fetch coorte: setState interno a loadData (loading/summary) è intenzionale.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on filter change
     void loadData()
   }, [loadData])
 
@@ -153,7 +196,26 @@ export function CecchinoSignalsMonitoringPage() {
     defaultModelResolved.current = false
   }, [dateFrom, dateTo])
 
+  useEffect(() => {
+    if (!actionsOpen) return
+    const onDoc = (ev: MouseEvent) => {
+      if (!actionsMenuRef.current?.contains(ev.target as Node)) {
+        setActionsOpen(false)
+      }
+    }
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setActionsOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [actionsOpen])
+
   const handleBacktestModels = async () => {
+    setActionsOpen(false)
     setActionLoading(true)
     setActionMessage(null)
     try {
@@ -178,6 +240,7 @@ export function CecchinoSignalsMonitoringPage() {
   }
 
   const handleUpdateResults = async () => {
+    setActionsOpen(false)
     setActionLoading(true)
     setActionMessage(null)
     try {
@@ -194,6 +257,7 @@ export function CecchinoSignalsMonitoringPage() {
   }
 
   const handleSyncSignals = async () => {
+    setActionsOpen(false)
     setActionLoading(true)
     setActionMessage(null)
     try {
@@ -228,6 +292,7 @@ export function CecchinoSignalsMonitoringPage() {
     'Ricalcola il filtro valore su tutte le partite del periodo: restano monitorati solo i segnali SI con quota book ≥ quota Cecchino e quota book ≥ soglia minima del segno. Le activation senza valore o sotto soglia verranno disattivate (nessuna cancellazione). Continuare?'
 
   const handleRemapMapping = async () => {
+    setActionsOpen(false)
     if (!window.confirm(VALUE_FILTER_CONFIRM)) return
     setActionLoading(true)
     setActionMessage(null)
@@ -252,6 +317,7 @@ export function CecchinoSignalsMonitoringPage() {
   }
 
   const handleRevaluate = async () => {
+    setActionsOpen(false)
     setActionLoading(true)
     setActionMessage(null)
     try {
@@ -276,6 +342,7 @@ export function CecchinoSignalsMonitoringPage() {
   }
 
   const handleExport = () => {
+    setActionsOpen(false)
     window.open(buildCecchinoSignalsExportUrl(filters), '_blank')
   }
 
@@ -283,6 +350,7 @@ export function CecchinoSignalsMonitoringPage() {
     'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
 
   const handleRecomputeCecchino = async () => {
+    setActionsOpen(false)
     if (!window.confirm(RECOMPUTE_WARNING)) return
     setActionLoading(true)
     setActionMessage(null)
@@ -302,30 +370,25 @@ export function CecchinoSignalsMonitoringPage() {
     }
   }
 
+  const cohortBusy = loading
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6" data-testid="signals-monitoring-page">
       <header>
         <h1 className="text-2xl font-semibold text-slate-900">Monitoraggio Segnali Cecchino</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Analisi aggregata dei segnali SI/NO e verifica dell&apos;esito reale dopo il risultato
-          delle partite.
-        </p>
-        <p className="mt-2 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
-          Monitoraggio = segnali comprabili: SI + quota book ≥ quota Cecchino + soglia minima del segno.
-          La matrice in dettaglio partita resta invariata.
-        </p>
-        <p className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
-          X PT usa quote reali dal Pannello KPI (mercato primo tempo). Viene creato solo quando la X
-          finale è accesa, passa il filtro valore e anche X PT supera quota Cecchino e soglia minima 1.90.
-        </p>
       </header>
 
-      <SignalMinBookOddsPanel
+      <SignalsMonitoringVersionSelector
+        value={monitoringVersion}
+        onChange={handleMonitoringVersionChange}
+      />
+
+      <SignalsMinBookOddsAccordion
         dateFrom={dateFrom}
         dateTo={dateTo}
-        onBacktestComplete={async (summary) => {
+        onBacktestComplete={async (btSummary) => {
           await loadData()
-          if (summary) setActionMessage(formatMinBookOddsBacktestMessage(summary))
+          if (btSummary) setActionMessage(formatMinBookOddsBacktestMessage(btSummary))
         }}
       />
 
@@ -412,75 +475,95 @@ export function CecchinoSignalsMonitoringPage() {
             />
           </label>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void loadData()}
             disabled={loading || actionLoading}
-            className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="min-h-[44px] rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
             Aggiorna
           </button>
-          <button
-            type="button"
-            onClick={() => void handleSyncSignals()}
-            disabled={actionLoading}
-            className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50"
-          >
-            Sincronizza segnali
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleUpdateResults()}
-            disabled={actionLoading}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-          >
-            Aggiorna risultati giornata
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRemapMapping()}
-            disabled={actionLoading}
-            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-          >
-            Ricalcola filtro valore
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRevaluate()}
-            disabled={actionLoading}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-          >
-            Rivaluta segnali
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleBacktestModels()}
-            disabled={actionLoading}
-            className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            Ricalcola modelli A–F
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRecomputeCecchino()}
-            disabled={actionLoading}
-            className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
-          >
-            Ricalcola Cecchino con nuovi pesi
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
-          >
-            Esporta CSV
-          </button>
+          <div className="relative" ref={actionsMenuRef}>
+            <button
+              type="button"
+              aria-expanded={actionsOpen}
+              aria-haspopup="menu"
+              data-testid="monitoring-actions-menu"
+              onClick={() => setActionsOpen((v) => !v)}
+              disabled={actionLoading}
+              className="min-h-[44px] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Azioni
+            </button>
+            {actionsOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 z-30 mt-1 min-w-[240px] rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-sky-900 hover:bg-sky-50"
+                  onClick={() => void handleSyncSignals()}
+                >
+                  Sincronizza segnali
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-slate-800 hover:bg-slate-50"
+                  onClick={() => void handleUpdateResults()}
+                >
+                  Aggiorna risultati giornata
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-amber-900 hover:bg-amber-50"
+                  onClick={() => void handleRemapMapping()}
+                >
+                  Ricalcola filtro valore
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-slate-800 hover:bg-slate-50"
+                  onClick={() => void handleRevaluate()}
+                >
+                  Rivaluta segnali
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-indigo-900 hover:bg-indigo-50"
+                  onClick={() => void handleBacktestModels()}
+                >
+                  Ricalcola modelli A–F
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-violet-900 hover:bg-violet-50"
+                  onClick={() => void handleRecomputeCecchino()}
+                >
+                  Ricalcola Cecchino con nuovi pesi
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2.5 text-left text-sm text-slate-800 hover:bg-slate-50"
+                  onClick={handleExport}
+                >
+                  Esporta CSV
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino e soglia minima)
-          già presenti nel DB
-          e non consuma API.
+          già presenti nel DB e non consuma API.
         </p>
       </section>
 
@@ -507,14 +590,13 @@ export function CecchinoSignalsMonitoringPage() {
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
             <p>
               Ci sono {diagnostics.today_fixtures_count} partite Cecchino nel periodo selezionato,
-              ma i segnali non sono ancora stati sincronizzati. Clicca &quot;Sincronizza
-              segnali&quot; per creare lo storico.
+              ma i segnali non sono ancora stati sincronizzati. Usa Azioni → Sincronizza segnali.
             </p>
             <button
               type="button"
               onClick={() => void handleSyncSignals()}
               disabled={actionLoading}
-              className="mt-2 rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              className="mt-2 min-h-[44px] rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
             >
               Sincronizza ora
             </button>
@@ -525,7 +607,7 @@ export function CecchinoSignalsMonitoringPage() {
         diagnostics.current_signal_activations_count > 0 &&
         diagnostics.evaluated_count === 0 && (
           <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-            Segnali presenti ma non ancora valutati. Aggiorna i risultati o clicca Rivaluta segnali.
+            Segnali presenti ma non ancora valutati. Aggiorna i risultati o usa Rivaluta segnali.
           </p>
         )}
 
@@ -539,7 +621,7 @@ export function CecchinoSignalsMonitoringPage() {
             type="button"
             onClick={() => void handleRemapMapping()}
             disabled={actionLoading}
-            className="mt-2 rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            className="mt-2 min-h-[44px] rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >
             Ricalcola filtro valore
           </button>
@@ -549,14 +631,14 @@ export function CecchinoSignalsMonitoringPage() {
       {hasFixturesInRange && !hasAnyModelData && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
           <p>
-            Per questo intervallo non esiste ancora il backtest dei modelli. Clicca Ricalcola
+            Per questo intervallo non esiste ancora il backtest dei modelli. Usa Azioni → Ricalcola
             modelli A–F.
           </p>
           <button
             type="button"
             onClick={() => void handleBacktestModels()}
             disabled={actionLoading}
-            className="mt-2 rounded-md bg-indigo-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="mt-2 min-h-[44px] rounded-md bg-indigo-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
             Calcola modelli A–F
           </button>
@@ -568,6 +650,12 @@ export function CecchinoSignalsMonitoringPage() {
         <p className="mt-1 text-xs text-slate-500">
           Backtest comparativo offline sui pesi 1X2 — non modifica il Cecchino Today live.
         </p>
+        <p
+          className="mt-1 text-xs italic text-slate-500"
+          data-testid="models-summary-independence-label"
+        >
+          Confronto modelli indipendente dalla versione Monitoraggio
+        </p>
         <div className="mt-3">
           <SignalsWeightModelCards
             models={modelsSummary?.models ?? []}
@@ -578,49 +666,64 @@ export function CecchinoSignalsMonitoringPage() {
         </div>
       </section>
 
-      {summary && (
-        <SignalsMonitoringKpiCards
-          overall={summary.overall}
-          title={`Statistiche modello selezionato: ${selectedModel?.short_label ?? `Modello ${selectedModelKey}`}`}
-        />
-      )}
-      {summary && <SignalsTakenOddsLegend />}
-
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-800">
-          Heatmap Segnale × Colonna — {selectedModel?.short_label ?? `Modello ${selectedModelKey}`}
-        </h2>
-        {selectedModel && (
-          <p className="mt-1 text-xs text-slate-500">
-            Pesi: Totali {selectedModel.weights.split(' / ')[0]}%, Casa/Trasferta{' '}
-            {selectedModel.weights.split(' / ')[1]}%, Ultime 6 {selectedModel.weights.split(' / ')[2]}%,
-            Ultime 5 C/F {selectedModel.weights.split(' / ')[3]}%
+      <div
+        className={`space-y-6 transition-opacity motion-reduce:transition-none ${
+          cohortBusy ? 'opacity-50' : 'opacity-100'
+        }`}
+        data-testid="monitoring-cohort-panel"
+        aria-busy={cohortBusy}
+      >
+        {cohortBusy && !summary && (
+          <p className="text-sm text-slate-500" data-testid="monitoring-loading">
+            Caricamento coorte monitoraggio…
           </p>
         )}
-        <div className="mt-3">
-          {summary ? (
-            <SignalsHeatmapMatrix summary={summary} />
-          ) : loading ? (
-            <p className="text-sm text-slate-500">Caricamento heatmap...</p>
-          ) : null}
-        </div>
-        <p className="mt-3 text-xs text-slate-500">
-          UNDER 2.5 e OVER 2.5 sono valutati sul risultato Full Time.
-        </p>
-        <SignalsFormulaLegendAccordion />
-      </section>
+        {summary && (
+          <SignalsMonitoringKpiCards
+            overall={summary.overall}
+            title={`Statistiche modello selezionato: ${selectedModel?.short_label ?? `Modello ${selectedModelKey}`}`}
+            monitoringVersion={monitoringVersion}
+          />
+        )}
+        {summary && <SignalsTakenOddsLegend />}
 
-      {summary && (
-        <>
-          <SignalsTopRanking summary={summary} />
-          <section className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-800">Dettaglio partite</h2>
-            <div className="mt-3">
-              <SignalsActivationsTable items={items} />
-            </div>
-          </section>
-        </>
-      )}
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-slate-800">
+            Heatmap Segnale × Colonna — {selectedModel?.short_label ?? `Modello ${selectedModelKey}`}
+          </h2>
+          {selectedModel && (
+            <p className="mt-1 text-xs text-slate-500">
+              Pesi: Totali {selectedModel.weights.split(' / ')[0]}%, Casa/Trasferta{' '}
+              {selectedModel.weights.split(' / ')[1]}%, Ultime 6{' '}
+              {selectedModel.weights.split(' / ')[2]}%, Ultime 5 C/F{' '}
+              {selectedModel.weights.split(' / ')[3]}%
+            </p>
+          )}
+          <div className="mt-3">
+            {summary ? (
+              <SignalsHeatmapMatrix summary={summary} />
+            ) : loading ? (
+              <p className="text-sm text-slate-500">Caricamento heatmap...</p>
+            ) : null}
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            UNDER 2.5 e OVER 2.5 sono valutati sul risultato Full Time.
+          </p>
+          <SignalsFormulaLegendAccordion />
+        </section>
+
+        {summary && (
+          <>
+            <SignalsTopRanking summary={summary} />
+            <section className="rounded-lg border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold text-slate-800">Dettaglio partite</h2>
+              <div className="mt-3">
+                <SignalsActivationsTable items={items} />
+              </div>
+            </section>
+          </>
+        )}
+      </div>
     </div>
   )
 }

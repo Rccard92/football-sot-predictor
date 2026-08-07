@@ -1,9 +1,11 @@
-import type { SignalsBucket } from '../../../lib/cecchinoSignalsApi'
+import type { MonitoringVersion, SignalsBucket } from '../../../lib/cecchinoSignalsApi'
+import { SIGNAL_FORMULA_CURRENT_BADGE } from '../../../lib/cecchinoSignalsApi'
 import { formatOdds, formatTakenProfit } from './signalsHeatmapUtils'
 
 type Props = {
   overall: SignalsBucket
   title?: string
+  monitoringVersion?: MonitoringVersion
 }
 
 const cards: Array<{ key: keyof SignalsBucket; label: string }> = [
@@ -20,10 +22,33 @@ function formatAvgSignalsPerFixture(value: number | null | undefined): string {
   return value.toFixed(1)
 }
 
-export function SignalsMonitoringKpiCards({ overall, title }: Props) {
+export function SignalsMonitoringKpiCards({ overall, title, monitoringVersion }: Props) {
+  const monitoringBadge =
+    monitoringVersion === 'v1' ? 'Monitoraggio V1' : monitoringVersion === 'v2' ? 'Monitoraggio V2' : null
+
   return (
-    <div className="space-y-3">
-      {title && <h2 className="text-sm font-semibold text-slate-800">{title}</h2>}
+    <div className="space-y-3" data-testid="signals-monitoring-kpi">
+      <div className="flex flex-wrap items-center gap-2">
+        {title && <h2 className="text-sm font-semibold text-slate-800">{title}</h2>}
+        {monitoringBadge && (
+          <span
+            data-testid="monitoring-version-badge"
+            className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+              monitoringVersion === 'v1'
+                ? 'border-slate-300 bg-slate-100 text-slate-700'
+                : 'border-indigo-300 bg-indigo-50 text-indigo-800'
+            }`}
+          >
+            {monitoringBadge}
+          </span>
+        )}
+        <span
+          data-testid="formula-version-badge"
+          className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600"
+        >
+          {SIGNAL_FORMULA_CURRENT_BADGE}
+        </span>
+      </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {cards.map((card) => (
           <div key={card.key} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
