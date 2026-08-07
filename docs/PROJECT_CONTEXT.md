@@ -2,13 +2,25 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-03 — Selezione manuale + carrello schedina (2026-08-07)
+
+- Cart **manuale** client-side: l'utente aggiunge ogni opportunity con CTA «+ Aggiungi alla schedina»; **nessun** auto-add della primary
+- Policy **max 1 selection per `today_fixture_id`**; altra market stessa fixture → CTA sostituzione esplicita (mai silent)
+- Persistenza `localStorage` key `sot.betBuilder.cart.v1:<YYYY-MM-DD>`, version `bet_builder_cart_v1`; isolamento per data
+- Snapshot UX (quote/added_at/revision); dati analitici sempre dalla response BET-01 completa (non filtered)
+- Reconcile su ogni response / `source_revision`: current vs stale; stale resta visibile, esclusa dal moltiplicatore
+- Moltiplicatore = prodotto aritmetico quote Book **current** (solo se tutte current + finite + >0); altrimenti N/D; **nessuno** stake/vincita/Kelly/score
+- UI: floating cart; drawer destro desktop / bottom sheet mobile; Sonner moderato; sync `storage` multi-tab
+- **Nessun** backend; **nessuna** migrazione; evidence sort v2 / Signals / V3.1 / context invariati; Alembic head `20260806213000`
+- Roadmap: BET-04 alignment Balance/GI + mercati KPI restanti
+
 ## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
 
 - Evidence sort **v2** (`bet_builder_evidence_sort_v2`): origin Q+S > signals > price → **V3.1 DESC** → `signals.passed` → `yes_count` → `context.available` → rating → edge → key
 - Dentro la stessa origin family, Acquistabilità V3.1 precede i Signals (es. Q+S 85+2 SI > Q+S 25+4 SI); signals-only resta sopra price-only
 - Signals UI: consensus = `yes_count / available_count` + soglia `required_count` separata; **non** più `yes / required`
 - X PT derived e HOME/AWAY direct invariati; primary = prima dopo evidence sort v2; layout BET-02.3 invariato
-- **Nessun** backend; **nessun** nuovo score; **nessun** cart; nessuna migrazione; Alembic head `20260806213000`
+- **Nessun** backend; **nessun** nuovo score; cart aggiunto in BET-03; nessuna migrazione; Alembic head `20260806213000`
 
 ## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
 

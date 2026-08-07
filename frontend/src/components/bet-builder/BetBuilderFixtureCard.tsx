@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
+import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import type { BetBuilderFixtureGroup, BetBuilderViewMode } from './betBuilderUtils'
 import {
   formatKickoffShort,
@@ -9,12 +10,23 @@ import {
 } from './betBuilderUtils'
 import { BetBuilderOpportunitySelector } from './BetBuilderOpportunitySelector'
 import { BetBuilderSelectedOpportunityPanel } from './BetBuilderSelectedOpportunityPanel'
+import type { BetBuilderCartCtaState } from './cart/betBuilderCartUtils'
 import { bbCard, bbCardPadding, bbSecondaryBtn } from './betBuilderStyles'
+
+type CartHandlers = {
+  getCtaFor: (opportunity: BetBuilderOpportunity) => BetBuilderCartCtaState
+  cartOpportunityKeys: ReadonlySet<string>
+  fixtureCartLabel?: string
+  onAdd: (opportunity: BetBuilderOpportunity) => void
+  onReplace: (opportunity: BetBuilderOpportunity) => void
+  onRemove: (opportunity: BetBuilderOpportunity) => void
+}
 
 type Props = {
   group: BetBuilderFixtureGroup
   scanDate: string
   viewMode: BetBuilderViewMode
+  cart?: CartHandlers
 }
 
 function TeamLogo({
@@ -46,7 +58,7 @@ function TeamLogo({
   )
 }
 
-export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
+export function BetBuilderFixtureCard({ group, scanDate, viewMode, cart }: Props) {
   const reduceMotion = useReducedMotion()
   const panelId = useId()
   const primary = getPrimaryOpportunity(group)
@@ -62,6 +74,7 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
   const analysisHref = `/cecchino-today?date=${encodeURIComponent(scanDate)}&fixture=${group.todayFixtureId}`
   const isPrimarySelected =
     Boolean(selected && primary && selected.opportunity_key === primary.opportunity_key)
+  const cartCta = selected && cart ? cart.getCtaFor(selected) : undefined
 
   return (
     <motion.article
@@ -116,6 +129,8 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
         selectedKey={selected?.opportunity_key ?? ''}
         onSelect={setUserSelectedKey}
         panelId={panelId}
+        cartOpportunityKeys={cart?.cartOpportunityKeys}
+        fixtureCartLabel={cart?.fixtureCartLabel}
       />
 
       {selected ? (
@@ -131,6 +146,14 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
               isPrimary={isPrimarySelected}
               viewMode={viewMode}
               panelId={panelId}
+              cartCta={cartCta}
+              onCartAdd={cart ? () => cart.onAdd(selected) : undefined}
+              onCartReplace={cart ? () => cart.onReplace(selected) : undefined}
+              onCartRemove={
+                cart
+                  ? () => cart.onRemove(selected)
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -149,4 +172,3 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode }: Props) {
     </motion.article>
   )
 }
-

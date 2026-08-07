@@ -4,6 +4,8 @@ import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import { BetBuilderContextBlock } from './BetBuilderContextBlock'
 import { BetBuilderPurchasabilityRing } from './BetBuilderPurchasabilityRing'
 import { BetBuilderSignalsBlock } from './BetBuilderSignalsBlock'
+import { BetBuilderCartAddButton } from './cart/BetBuilderCartAddButton'
+import type { BetBuilderCartCtaState } from './cart/betBuilderCartUtils'
 import {
   bbBadge,
   bbInEvidenzaBadge,
@@ -18,6 +20,10 @@ type Props = {
   isPrimary: boolean
   viewMode: BetBuilderViewMode
   panelId: string
+  cartCta?: BetBuilderCartCtaState
+  onCartAdd?: () => void
+  onCartReplace?: () => void
+  onCartRemove?: () => void
 }
 
 function originBadgeClass(origin: BetBuilderOpportunity['origin']): string {
@@ -42,6 +48,10 @@ export function BetBuilderSelectedOpportunityPanel({
   isPrimary,
   viewMode,
   panelId,
+  cartCta,
+  onCartAdd,
+  onCartReplace,
+  onCartRemove,
 }: Props) {
   const reduceMotion = useReducedMotion()
   const contextId = useId()
@@ -60,6 +70,7 @@ export function BetBuilderSelectedOpportunityPanel({
   const hasContext =
     opportunity.context_support.available ||
     opportunity.context_support.reason === 'no_validated_context_module'
+  const showCart = Boolean(cartCta && onCartAdd && onCartReplace && onCartRemove)
 
   return (
     <AnimatePresence mode="wait">
@@ -105,12 +116,22 @@ export function BetBuilderSelectedOpportunityPanel({
               )}
             </div>
           </div>
-          {/* Slot riservato futuro CTA "+" BET-03 — non implementato */}
-          <div
-            className="hidden min-h-11 min-w-11 sm:block"
-            aria-hidden
-            data-testid="bet-builder-cart-slot"
-          />
+          {showCart && cartCta ? (
+            <BetBuilderCartAddButton
+              opportunity={opportunity}
+              cta={cartCta}
+              onAdd={onCartAdd!}
+              onReplace={onCartReplace!}
+              onRemove={onCartRemove!}
+              layout="desktop"
+            />
+          ) : (
+            <div
+              className="hidden min-h-11 min-w-11 sm:block"
+              aria-hidden
+              data-testid="bet-builder-cart-slot"
+            />
+          )}
         </div>
 
         <div
@@ -172,6 +193,19 @@ export function BetBuilderSelectedOpportunityPanel({
             />
           </div>
         </div>
+
+        {showCart && cartCta ? (
+          <div className="sm:hidden" data-testid="bet-builder-cart-slot-mobile">
+            <BetBuilderCartAddButton
+              opportunity={opportunity}
+              cta={cartCta}
+              onAdd={onCartAdd!}
+              onReplace={onCartReplace!}
+              onRemove={onCartRemove!}
+              layout="mobile"
+            />
+          </div>
+        ) : null}
 
         {hasContext ? (
           <div className="border-t border-slate-100 pt-3">

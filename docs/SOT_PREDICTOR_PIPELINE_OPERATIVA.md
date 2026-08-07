@@ -1,5 +1,15 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-03 — Cart manuale (2026-08-07)
+
+1. Operatore apre `/bet-builder` → board BET-02.4 invariata (evidence sort v2, primary, selector).
+2. CTA «+ Aggiungi alla schedina» sul panel selected → cart floating aggiornato (nessun auto-add).
+3. Stessa fixture già in cart → CTA «Sostituisci …» esplicita; conferma utente.
+4. Floating → drawer (desktop) / bottom sheet (mobile): riepilogo, remove, svuota (+ undo Sonner).
+5. Soft poll / nuova `source_revision`: cart riconciliato su opportunities complete; quote current; stale resta.
+6. Moltiplicatore = prodotto quote Book current (o N/D); persistenza localStorage per data.
+7. Nessuna write backend, nessuna migrazione, nessuno stake/score/auto-bet.
+
 ## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
 
 1. Operatore apre `/bet-builder` → default sort **Forza evidenze ↓** (policy `bet_builder_evidence_sort_v2`).

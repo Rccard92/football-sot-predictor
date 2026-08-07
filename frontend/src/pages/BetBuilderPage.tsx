@@ -29,9 +29,13 @@ import {
   type BetBuilderFilterState,
   type BetBuilderViewMode,
 } from '../components/bet-builder/betBuilderUtils'
+import { BetBuilderCartButton } from '../components/bet-builder/cart/BetBuilderCartButton'
+import { BetBuilderCartDrawer } from '../components/bet-builder/cart/BetBuilderCartDrawer'
+import { useBetBuilderCart } from '../components/bet-builder/cart/useBetBuilderCart'
 import {
   fetchBetBuilderOpportunities,
   type BetBuilderOpportunitiesResponse,
+  type BetBuilderOpportunity,
 } from '../lib/cecchinoBetBuilderApi'
 import { todayIsoRome } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
@@ -153,6 +157,18 @@ export function BetBuilderPage() {
     setVisibleLimit(BET_BUILDER_PAGE_SIZE)
   }, [])
 
+  // Cart riconcilia contro opportunities COMPLETE — mai contro filtered.
+  const cart = useBetBuilderCart({
+    date: selectedDate,
+    opportunities: data?.opportunities ?? [],
+    sourceRevision: data?.source_revision ?? null,
+  })
+
+  const cartOpportunityKeys = useMemo(
+    () => new Set(cart.cart.items.map((i) => i.opportunity_key)),
+    [cart.cart.items],
+  )
+
   const groups = useMemo(
     () => buildBetBuilderFixtureGroups(data?.opportunities ?? [], filters),
     [data?.opportunities, filters],
@@ -194,7 +210,7 @@ export function BetBuilderPage() {
       : data?.summary.fixtures_considered
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-3 overflow-x-hidden sm:space-y-4">
+    <div className="mx-auto w-full max-w-[1400px] space-y-3 overflow-x-hidden pb-24 sm:space-y-4 md:pb-20">
       <BetBuilderHeader
         date={selectedDate}
         onDateChange={setDate}
@@ -313,6 +329,19 @@ export function BetBuilderPage() {
                     group={group}
                     scanDate={data.scan_date || selectedDate}
                     viewMode={viewMode}
+                    cart={{
+                      getCtaFor: cart.getCtaFor,
+                      cartOpportunityKeys,
+                      fixtureCartLabel: cart.fixtureCartLabel(group.todayFixtureId),
+                      onAdd: cart.add,
+                      onReplace: cart.replace,
+                      onRemove: (opportunity: BetBuilderOpportunity) => {
+                        cart.remove({
+                          today_fixture_id: opportunity.fixture.today_fixture_id,
+                          opportunity_key: opportunity.opportunity_key,
+                        })
+                      },
+                    }}
                   />
                 ))}
               </div>
@@ -334,6 +363,21 @@ export function BetBuilderPage() {
           )}
         </>
       ) : null}
+
+      <BetBuilderCartButton
+        selectionCount={cart.selectionCount}
+        combinedOdds={cart.combinedOdds}
+        onOpen={() => cart.setOpen(true)}
+      />
+      <BetBuilderCartDrawer
+        open={cart.isOpen}
+        onClose={() => cart.setOpen(false)}
+        date={selectedDate}
+        items={cart.resolvedItems}
+        combinedOdds={cart.combinedOdds}
+        onRemove={cart.remove}
+        onClear={cart.clear}
+      />
     </div>
   )
 }

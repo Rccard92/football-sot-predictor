@@ -12,6 +12,7 @@ const apiMock = vi.hoisted(() => ({
 
 const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
+  message: vi.fn(),
 }))
 
 vi.mock('../lib/cecchinoBetBuilderApi', async () => {
@@ -38,7 +39,7 @@ vi.mock('sonner', () => ({
   toast: {
     success: toastMock.success,
     error: vi.fn(),
-    message: vi.fn(),
+    message: toastMock.message,
   },
 }))
 
@@ -170,11 +171,14 @@ describe('BetBuilderPage', () => {
     apiMock.fetchBetBuilderOpportunities.mockReset()
     apiMock.todayIsoRome.mockReturnValue('2026-08-08')
     toastMock.success.mockReset()
+    toastMock.message.mockReset()
+    window.localStorage.clear()
   })
 
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
+    window.localStorage.clear()
   })
 
   it('carica response BET-01 e mostra summary con partite con opportunity', async () => {
@@ -1115,7 +1119,7 @@ describe('BetBuilderPage', () => {
     })
   })
 
-  it('deep-link CTA unica per fixture; no cart', async () => {
+  it('deep-link CTA unica per fixture; floating cart presente senza auto-add', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -1130,9 +1134,252 @@ describe('BetBuilderPage', () => {
     )
     const link = screen.getByRole('link', { name: /Apri analisi manuale/i })
     expect(link.getAttribute('href')).toBe('/cecchino-today?date=2026-08-08&fixture=16511')
-    expect(screen.queryByRole('button', { name: /^\+$/ })).toBeNull()
-    expect(screen.queryByText(/schedina/i)).toBeNull()
-    expect(screen.queryByText(/moltiplicatore/i)).toBeNull()
+    expect(screen.getByTestId('bet-builder-floating-cart')).toBeTruthy()
+    expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/Schedina · 0/)
+    expect(screen.queryByTestId('bet-builder-cart-added-badge')).toBeNull()
+  })
+
+  it('BET-03: add CTA, floating count/multiplier, open/close cart', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'a',
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.0 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-add-cta').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByTestId('bet-builder-cart-add-cta')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/Schedina · 1/),
+    )
+    expect(screen.getByTestId('bet-builder-floating-multiplier').textContent).toBe('×2.00')
+    expect(screen.getAllByTestId('bet-builder-cart-added-badge').length).toBeGreaterThan(0)
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Aggiunta alla schedina',
+      expect.objectContaining({ description: expect.stringContaining('X') }),
+    )
+
+    fireEvent.click(screen.getByTestId('bet-builder-floating-cart-button'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cart-panel')).toBeTruthy())
+    expect(screen.getByTestId('bet-builder-cart-multiplier').textContent).toBe('×2.00')
+    expect(screen.getByTestId('bet-builder-cart-item')).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId('bet-builder-cart-close'))
+    await waitFor(() => expect(screen.queryByTestId('bet-builder-cart-panel')).toBeNull())
+  })
+
+  it('BET-03: primary non auto-added; secondary add + replace same fixture', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'p',
+            market: { market_key: 'DRAW', label: 'X' },
+            origin: 'price_and_signals',
+            purchasability_v31: { ...baseOpportunity().purchasability_v31, score: 90 },
+            signals: { ...baseOpportunity().signals, yes_count: 3, available_count: 4 },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.1, present: true },
+          }),
+          baseOpportunity({
+            opportunity_key: 's',
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            origin: 'price',
+            purchasability_v31: { ...baseOpportunity().purchasability_v31, score: 70 },
+            signals: { ...baseOpportunity().signals, yes_count: 1, available_count: 4, passed: false },
+            price_value: { ...baseOpportunity().price_value, quota_book: 1.8, present: true },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 0/))
+    expect(screen.queryByTestId('bet-builder-cart-added-badge')).toBeNull()
+
+    const tabs = await screen.findAllByTestId('bet-builder-opportunity-tab')
+    fireEvent.click(tabs.find((t) => t.getAttribute('data-opportunity-key') === 's')!)
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-selected-opportunity').getAttribute('data-opportunity-key')).toBe(
+        's',
+      ),
+    )
+    fireEvent.click(screen.getAllByTestId('bet-builder-cart-add-cta')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 1/),
+    )
+
+    fireEvent.click(tabs.find((t) => t.getAttribute('data-opportunity-key') === 'p')!)
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-replace-cta').length).toBeGreaterThan(0))
+    expect(screen.getAllByTestId('bet-builder-cart-replace-cta')[0].textContent).toMatch(
+      /Sostituisci Over 2\.5 con X/,
+    )
+    fireEvent.click(screen.getAllByTestId('bet-builder-cart-replace-cta')[0])
+    await waitFor(() =>
+      expect(screen.getAllByTestId('bet-builder-in-cart-badge').length).toBeGreaterThan(0),
+    )
+    fireEvent.click(screen.getByTestId('bet-builder-floating-cart-button'))
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-item')).toHaveLength(1))
+    expect(screen.getByTestId('bet-builder-cart-item').getAttribute('data-opportunity-key')).toBe('p')
+  })
+
+  it('BET-03: multi fixture multiplier, remove, clear, filters/sort preserve cart', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'f1',
+            fixture: { ...baseOpportunity().fixture, today_fixture_id: 1, home: { name: 'A' }, country: 'Italy' },
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.0 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'f2',
+            fixture: { ...baseOpportunity().fixture, today_fixture_id: 2, home: { name: 'B' }, country: 'Spain' },
+            market: { market_key: 'HOME', label: '1' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 1.5 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'f3',
+            fixture: { ...baseOpportunity().fixture, today_fixture_id: 3, home: { name: 'C' }, country: 'Italy' },
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 1.95 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(3))
+
+    for (const card of screen.getAllByTestId('bet-builder-fixture-card')) {
+      fireEvent.click(within(card).getAllByTestId('bet-builder-cart-add-cta')[0])
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 3/),
+    )
+    expect(screen.getByTestId('bet-builder-floating-multiplier').textContent).toBe('×5.85')
+
+    openAdvancedFilters()
+    fireEvent.change(screen.getByLabelText('Filtro paese'), { target: { value: 'Spain' } })
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(1))
+    expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 3/)
+
+    fireEvent.change(screen.getByTestId('bet-builder-sort'), {
+      target: { value: 'purchasability_desc' },
+    })
+    expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 3/)
+
+    fireEvent.click(screen.getByTestId('bet-builder-floating-cart-button'))
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-item')).toHaveLength(3))
+    fireEvent.click(screen.getAllByTestId('bet-builder-cart-item-remove')[0])
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-item')).toHaveLength(2))
+
+    fireEvent.click(screen.getByTestId('bet-builder-cart-clear'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cart-empty')).toBeTruthy())
+    expect(toastMock.message).toHaveBeenCalledWith(
+      'Schedina svuotata',
+      expect.objectContaining({ action: expect.anything() }),
+    )
+  })
+
+  it('BET-03: source_revision reconciliation quote + stale; persistence remount', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        source_revision: 'rev-1',
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'keep',
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.1 },
+          }),
+        ],
+      }),
+    )
+    const { unmount } = renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-cart-add-cta').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByTestId('bet-builder-cart-add-cta')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 1/),
+    )
+    unmount()
+
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        source_revision: 'rev-2',
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'keep',
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.0 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 1/),
+    )
+    expect(screen.getByTestId('bet-builder-floating-multiplier').textContent).toBe('×2.00')
+
+    fireEvent.click(screen.getByTestId('bet-builder-floating-cart-button'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cart-item-odds-changed')).toBeTruthy())
+    expect(screen.getByTestId('bet-builder-cart-item-odds-changed').textContent).toMatch(/2\.10 → 2\.00/)
+
+    cleanup()
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        source_revision: 'rev-3',
+        opportunities: [],
+        summary: {
+          ...baseResponse().summary,
+          opportunities_total: 0,
+        },
+      }),
+    )
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-cart-button').textContent).toMatch(/· 1/),
+    )
+    fireEvent.click(screen.getByTestId('bet-builder-floating-cart-button'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cart-item').getAttribute('data-status')).toBe('stale'))
+    expect(screen.getByTestId('bet-builder-cart-multiplier').textContent).toBe('N/D')
+    expect(screen.getByTestId('bet-builder-cart-multiplier-incomplete')).toBeTruthy()
+  })
+
+  it('BET-03: one-per-fixture across two fixtures; no stake/profit wording', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: '10:x',
+            fixture: { ...baseOpportunity().fixture, today_fixture_id: 10 },
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 2.0 },
+          }),
+          baseOpportunity({
+            opportunity_key: '11:x',
+            fixture: { ...baseOpportunity().fixture, today_fixture_id: 11, home: { name: 'Other' } },
+            market: { market_key: 'DRAW', label: 'X' },
+            price_value: { ...baseOpportunity().price_value, quota_book: 1.5 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(2))
+    for (const card of screen.getAllByTestId('bet-builder-fixture-card')) {
+      fireEvent.click(within(card).getAllByTestId('bet-builder-cart-add-cta')[0])
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId('bet-builder-floating-multiplier').textContent).toBe('×3.00'),
+    )
+    expect(screen.queryByText(/consigliata/i)).toBeNull()
+    expect(screen.queryByText(/stake/i)).toBeNull()
+    expect(screen.queryByText(/vincita/i)).toBeNull()
+    expect(screen.queryByText(/Kelly/i)).toBeNull()
   })
 
   it('Acquistabilità come score /100 non probabilità; nessun nuovo score; V3.1 reale', async () => {

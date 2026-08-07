@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-03 manual selection cart (2026-08-07)
+
+- Perché: BET-01/02 individuano e presentano opportunity ma non permettono di costruire manualmente una combinazione; serviva uno strumento di composizione senza auto-bet.
+- Cosa: cart client-side (utils + hook + floating/drawer); one-selection-per-fixture con replace esplicito; localStorage per data; reconcile current/stale su response completa e `source_revision`; moltiplicatore = product quote Book current; CTA add/added/replace; badge IN CART distinto da primary/selected.
+- Impatto: solo frontend; backend BET-01, evidence sort v2, Signals, V3.1, context, Today invariati; nessuna migrazione; nessun score/stake/vincita/auto-combination.
+- Non fatto: alignment/verdict Balance/GI (BET-04); mercati KPI restanti; save-slip backend.
+
 ## Fix — Bet Builder BET-02.4 evidence ranking v2 + signal counts (2026-08-07)
 
 - Perché: dentro Q+S, opportunity con molti segnali ma V3.1 bassa salivano troppo; UI mostrava `yes / required` (es. `4 / 2 SI`) confondendo soglia e formule disponibili.

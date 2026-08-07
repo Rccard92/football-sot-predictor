@@ -20,6 +20,10 @@ type Props = {
   selectedKey: string
   onSelect: (key: string) => void
   panelId: string
+  /** Opportunity keys currently in the manual cart (distinct from primary/selected). */
+  cartOpportunityKeys?: ReadonlySet<string>
+  /** Market label already in cart for this fixture (other markets can replace). */
+  fixtureCartLabel?: string
 }
 
 export function BetBuilderOpportunitySelector({
@@ -27,14 +31,19 @@ export function BetBuilderOpportunitySelector({
   selectedKey,
   onSelect,
   panelId,
+  cartOpportunityKeys,
+  fixtureCartLabel,
 }: Props) {
   const primary = getPrimaryOpportunity({ opportunities })
   const primaryKey = primary?.opportunity_key
   const n = opportunities.length
+  const inCartSet = cartOpportunityKeys
 
   if (n === 0) return null
 
   if (n === 1) {
+    const only = opportunities[0]
+    const inCart = inCartSet?.has(only.opportunity_key) ?? false
     return (
       <div className="flex flex-wrap items-center gap-2" data-testid="bet-builder-opportunity-selector">
         <span className={`${bbBadge} border-slate-200 bg-slate-50 text-slate-700`}>
@@ -43,15 +52,37 @@ export function BetBuilderOpportunitySelector({
         <span className={bbInEvidenzaBadge} data-testid="in-evidenza-badge">
           In evidenza
         </span>
+        {inCart ? (
+          <span
+            className={`${bbBadge} border-slate-300 bg-slate-100 text-slate-800`}
+            data-testid="bet-builder-in-cart-badge"
+          >
+            ✓ Aggiunta
+          </span>
+        ) : null}
       </div>
     )
   }
 
+  const fixtureOccupied =
+    Boolean(fixtureCartLabel) &&
+    !opportunities.some((op) => inCartSet?.has(op.opportunity_key))
+
   return (
     <div className="space-y-2" data-testid="bet-builder-opportunity-selector">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {n} opportunity
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {n} opportunity
+        </p>
+        {fixtureCartLabel ? (
+          <span
+            className={`${bbBadge} border-slate-200 bg-slate-50 text-slate-600`}
+            data-testid="bet-builder-fixture-in-cart-hint"
+          >
+            In schedina: {fixtureCartLabel}
+          </span>
+        ) : null}
+      </div>
       <div
         className="-mx-1 flex max-w-full gap-2 overflow-x-auto scroll-smooth px-1 pb-1 snap-x snap-mandatory sm:flex-wrap sm:overflow-visible sm:pb-0"
         role="tablist"
@@ -60,6 +91,7 @@ export function BetBuilderOpportunitySelector({
         {opportunities.map((op, index) => {
           const isPrimary = op.opportunity_key === primaryKey
           const selected = op.opportunity_key === selectedKey
+          const inCart = inCartSet?.has(op.opportunity_key) ?? false
           const scoreLabel = formatPurchasabilityTab(op.purchasability_v31.score)
           let className = bbOppTabIdle
           if (isPrimary && selected) className = bbOppTabPrimarySelected
@@ -104,20 +136,38 @@ export function BetBuilderOpportunitySelector({
               data-opportunity-key={op.opportunity_key}
               data-primary={isPrimary ? 'true' : 'false'}
               data-selected={selected ? 'true' : 'false'}
+              data-in-cart={inCart ? 'true' : 'false'}
               data-market={op.market.market_key}
               data-origin={op.origin}
               onClick={() => onSelect(op.opportunity_key)}
             >
               <span className="flex w-full items-center justify-between gap-2">
                 <span className={labelClass}>{op.market.label}</span>
-                {isPrimary && index === 0 ? (
-                  <span
-                    className={onDark ? bbInEvidenzaBadgeOnDark : bbInEvidenzaBadgeOnLight}
-                    data-testid="in-evidenza-badge"
-                  >
-                    In evidenza
-                  </span>
-                ) : null}
+                <span className="flex shrink-0 items-center gap-1">
+                  {inCart ? (
+                    <span
+                      className={
+                        onDark
+                          ? 'inline-flex items-center rounded bg-white/20 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white'
+                          : `${bbBadge} border-slate-300 bg-slate-100 px-1 py-px text-[9px] text-slate-800`
+                      }
+                      data-testid="bet-builder-in-cart-badge"
+                      aria-label="Aggiunta alla schedina"
+                    >
+                      ✓
+                    </span>
+                  ) : fixtureOccupied ? (
+                    <span className="sr-only">La fixture ha già una selezione in schedina</span>
+                  ) : null}
+                  {isPrimary && index === 0 ? (
+                    <span
+                      className={onDark ? bbInEvidenzaBadgeOnDark : bbInEvidenzaBadgeOnLight}
+                      data-testid="in-evidenza-badge"
+                    >
+                      In evidenza
+                    </span>
+                  ) : null}
+                </span>
               </span>
               <span className={scoreClass}>
                 {scoreLabel}

@@ -2,6 +2,24 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-03 — Selezione manuale + carrello schedina (2026-08-07)
+
+Strumento di **composizione manuale** solo frontend. Nessuna auto-combination, nessuno stake, nessun Bet Builder Score, nessun backend.
+
+| Tema | Regola |
+|------|--------|
+| Principio | L'utente sceglie ogni opportunity; il sistema calcola solo il prodotto delle quote Book current |
+| Identity | `date` + `today_fixture_id` + `opportunity_key` |
+| One-per-fixture | Max 1 selection per fixture; sostituzione esplicita via CTA |
+| Storage | `sot.betBuilder.cart.v1:<YYYY-MM-DD>` · version `bet_builder_cart_v1` · parser safe |
+| Reconcile | Contro `data.opportunities` completa; filtri/sort non toccano il cart |
+| `source_revision` | Riconcilia quote/status; stale non eliminata; riapparizione → current |
+| Moltiplicatore | Product current Book odds; N/D se stale/missing/invalid; round solo display |
+| UI | Floating + drawer/sheet; PRIMARY / SELECTED / IN CART distinti |
+| Divieti | No auto-add primary; no stake/vincita/Kelly; no Score; no backend; no BET-04 |
+
+Roadmap: BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
 
 Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun backend change.
@@ -14,9 +32,9 @@ Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun 
 | Signals UI | Consensus: `yes_count / available_count` + `Soglia ≥required_count`; available null → niente denominatore inventato |
 | X PT / HOME-AWAY | Derived / direct invariati (niente soglia consenso su HOME/AWAY) |
 | Layout | BET-02.3 invariato (emerald primary, `xl:grid-cols-2`, selector) |
-| Divieti | Nessun score aggregato; nessun cart BET-03; nessun backend; nessuna conferma Balance/GI |
+| Divieti | Nessun score aggregato; nessun auto-bet; cart in BET-03; nessun backend; nessuna conferma Balance/GI |
 
-Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
+Roadmap: BET-04 alignment + mercati KPI restanti.
 
 ## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
 
