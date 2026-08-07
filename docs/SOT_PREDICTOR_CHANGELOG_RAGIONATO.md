@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-02 Opportunity Board (2026-08-07)
+
+- Perché: visualizzare le opportunity BET-01 in un workspace dedicato, senza sostituire Cecchino Today.
+- Cosa: route `/bet-builder`, nav, card opportunity (quota/segnali/V3.1/Balance/GI raw), filtri/sort client-side, progressive rendering, auto-refresh su `source_revision`, deep-link Today `?date=&fixture=`.
+- Impatto: solo frontend; backend/formule/moduli invariati; nessuna migrazione; nessun cart/score aggregato.
+- Non fatto: cart BET-03, alignment BET-04, Bet Builder Score.
+
 ## Fix — Bet Builder BET-01.1 Balance V5 context mapping (2026-08-07)
 
 - Perché: su produzione Gap Coherence e class_label risultavano null nel Bet Builder mentre Cecchino Today li mostrava correttamente (stessa fixture).
@@ -12,7 +19,7 @@
 - Perché: fondazione backend read-only per un pannello Bet Builder separato da Cecchino Today (analisi manuale invariata).
 - Cosa: aggregator opportunity = price OR signals; evidenza Segnali V3 pre-value-gate; Acquistabilità **solo V3.1**; context Balance/GI raw; `source_revision` SHA-256; endpoint GET; client FE tipizzato; test freshness/rescan.
 - Impatto: Today/KPI/Segnali/V3 operativa/Balance/GI invariati; nessuna migrazione; V3.1 resta shadow fuori Bet Builder.
-- Non fatto: UI BET-02, cart BET-03, alignment rules BET-04, Bet Builder Score.
+- Non fatto: UI BET-02 (completata in seguito), cart BET-03, alignment rules BET-04, Bet Builder Score.
 
 ## Fix — Goal Intensity official audit + monitoring closure (2026-08-07)
 

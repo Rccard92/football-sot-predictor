@@ -7,6 +7,7 @@ import { MobileTopBar } from './MobileTopBar'
 import { Sidebar } from './Sidebar'
 
 const CECCHINO_TODAY_PATH = '/cecchino-today'
+const BET_BUILDER_PATH = '/bet-builder'
 const CECCHINO_LAB_PATH = '/cecchino-lab'
 const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
 const MONITORAGGIO_SEGNO_1_PATH = '/monitoraggio-segno-1'
@@ -16,6 +17,8 @@ export function Layout() {
   const isFullWidthWorkspace =
     location.pathname === CECCHINO_TODAY_PATH ||
     location.pathname.startsWith(`${CECCHINO_TODAY_PATH}/`) ||
+    location.pathname === BET_BUILDER_PATH ||
+    location.pathname.startsWith(`${BET_BUILDER_PATH}/`) ||
     location.pathname === CECCHINO_LAB_PATH ||
     location.pathname.startsWith(`${CECCHINO_LAB_PATH}/`) ||
     location.pathname === MONITORAGGIO_MODULI_PATH ||

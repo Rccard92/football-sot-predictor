@@ -2,6 +2,19 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-02 — Opportunity Board (2026-08-07)
+
+UI full-width **read-only** su payload BET-01. Non sostituisce Cecchino Today (analisi manuale).
+
+- Route: `/bet-builder` (`BetBuilderPage`); nav CECCHINO dopo Today
+- Fonte: `GET /api/cecchino/bet-builder/opportunities?date=` (giornata intera; filtri client-side)
+- Acquistabilità: **V3.1 only** come score `/100` (non probabilità); sort default score desc (null in fondo)
+- Opportunity price OR signals; Balance/GI solo context raw (nessuna alignment rule)
+- Auto-refresh su `source_revision` (focus/visibility + poll 60s / 2.5s se scan running)
+- Deep-link Today: `/cecchino-today?date=&fixture=`
+- Progressive rendering (24 + Mostra altre); mobile-first; **nessun cart** (BET-03); **nessun Bet Builder Score**
+- Client tipizzato: `frontend/src/lib/cecchinoBetBuilderApi.ts` + `frontend/src/components/bet-builder/`
+
 ## Bet Builder BET-01 — Opportunity Aggregator (2026-08-07)
 
 Layer **read-only** di orchestrazione su dati canonici Cecchino Today. **Non** è un modello, non sostituisce Cecchino Today, non altera scan/KPI/Segnali/Balance/GI/Acquistabilità operativa.
@@ -12,9 +25,9 @@ Layer **read-only** di orchestrazione su dati canonici Cecchino Today. **Non** �
 - Purchasability policy Bet Builder: `v31_only` (`cecchino_bet_builder_purchasability_v31_only_v1`) — **nessun fallback V3**; V3.1 non promossa globalmente
 - Opportunity = **price OR signals** (`book_gt_cecchino_v1` ∨ consensus/direct evidence)
 - Endpoint: `GET /api/cecchino/bet-builder/opportunities?date=YYYY-MM-DD`
-- Client FE: `frontend/src/lib/cecchinoBetBuilderApi.ts` (solo contratto; UI in BET-02)
+- Client FE: `frontend/src/lib/cecchinoBetBuilderApi.ts`
 - Nessuna migrazione, nessuna cache stale, nessuna API esterna, nessuna write
-- Roadmap: BET-02 UI · BET-03 cart · BET-04 alignment + altri mercati
+- Roadmap: BET-03 cart · BET-04 alignment + altri mercati
 
 ## Intensità Goal — Official support closure audit/monitoring (2026-08-07)
 

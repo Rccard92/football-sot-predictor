@@ -21,6 +21,7 @@ import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoring
 import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
 import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
+import { BetBuilderPage } from './pages/BetBuilderPage'
 import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoLabHistoricalRunPage } from './pages/CecchinoLabHistoricalRunPage'
 import { CecchinoLabHistoricalKpiSignalsPage } from './pages/CecchinoLabHistoricalKpiSignalsPage'
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/" element={<UpcomingMatches />} />
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
+          <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route
             path="/cecchino-lab/historical-scans/:runId/kpi-signals"

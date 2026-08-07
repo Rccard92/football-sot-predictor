@@ -2,6 +2,24 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-02 — Opportunity Board (2026-08-07)
+
+Tab **Bet Builder** (`/bet-builder`): orchestratore visivo delle opportunity BET-01. Cecchino Today resta il workspace di analisi manuale completa.
+
+| Tema | Regola |
+|------|--------|
+| Route / nav | `/bet-builder` full-width; voce CECCHINO dopo Today |
+| Dati | Solo response BET-01; nessuna nuova formula/API/write |
+| Filtri | Market (11), origine, paese/lega/search, Acquistabilità min opzionale — tutti client-side |
+| Sort default | Acquistabilità V3.1 ↓ (null in fondo) |
+| Card | Quote, Segnali, V3.1 `/100`, Balance 4 pilastri raw, GI raw; no verdict alignment |
+| Refresh | Fetch + focus/visibility; poll ~60s idle / ~2.5s scan running; replace su `source_revision` |
+| Deep-link | CTA → `/cecchino-today?date=&fixture=` (Today legge date/fixture minimo) |
+| Progressive | Prime 24 + Mostra altre |
+| Divieti | Bet Builder Score, cart/schedina (BET-03), stake, probabilità di vincita |
+
+Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-01 — Opportunity Aggregator (2026-08-07)
 
 Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-match; Bet Builder aggrega opportunity read-only.
@@ -24,8 +42,6 @@ Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-ma
 ### BET-01.1 — Balance V5 context mapping (2026-08-07)
 
 Read-model Balance del Bet Builder allineato allo snapshot `cecchino_output_json.balance_v5_monitoring`: legge `gap_index` / `f36_class` / `dominance_class` / `draw_credibility_class` / `gap_class` (non i nomi errati `gap_coherence_index` / `*_class_label`). Espone `pillars.*.index` + `class_label` e top-level `gap_coherence_index`. Nessuna formula Balance ricalcolata; Today invariato.
-
-Roadmap: BET-02 UI · BET-03 cart · BET-04 alignment + mercati KPI restanti.
 
 ## Fix — Goal Intensity official audit + monitoring (2026-08-07)
 

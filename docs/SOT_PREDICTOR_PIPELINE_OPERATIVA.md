@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-02 — Opportunity Board UI (2026-08-07)
+
+1. Operatore apre `/bet-builder` (o nav Cecchino → Bet Builder).
+2. FE chiama `GET /api/cecchino/bet-builder/opportunities?date=` (giornata intera).
+3. Summary / market chips / filtri / sort / card lavorano **solo client-side** sul payload.
+4. Poll soft: ~60s se idle; ~2.5s se `source_scan_status` running; replace completo se `source_revision` cambia.
+5. CTA card apre Cecchino Today con `?date=&fixture=` (Today seleziona la fixture se presente).
+6. Nessuna write, nessuna cache analitica persistente, nessun cart (BET-03).
+
 ## Bet Builder BET-01 — read-model su scan Today (2026-08-07)
 
 1. Scan / rescan Cecchino Today produce KPI, `signals_matrix` V3, `purchasability_preview_v31`, Balance monitoring, GI snapshot.
@@ -7,7 +16,7 @@
 3. Opportunity = price (`book > cecchino`) **oppure** signal evidence pre-value-gate.
 4. Nuova scan → nuovi `updated_at` / V3.1 / job → nuovo `source_revision`; nessuna cache applicativa.
 5. Pre-match only (`upcoming` + kickoff futuro); `excluded_post_kickoff` nel summary.
-6. Cecchino Today UI/scan **invariati**; Bet Builder non scrive.
+6. Cecchino Today UI/scan **invariati** a livello analitico; Bet Builder non scrive.
 
 ## Segnali KPI — 19 mercati + filtri Acquistabilità (2026-08-06)
 

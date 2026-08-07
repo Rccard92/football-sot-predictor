@@ -1,6 +1,6 @@
 /**
  * Client API Bet Builder BET-01 — contratti tipizzati + fetch opportunities.
- * UI completa in BET-02; qui solo il contratto client.
+ * UI Opportunity Board in BET-02; qui solo il contratto client.
  */
 
 import { requestJson } from './api'
@@ -76,12 +76,57 @@ export type BetBuilderPurchasabilityV31 = {
   reason?: string
 }
 
+export type BetBuilderBalancePillar = {
+  index: number | null
+  class_label: string | null
+}
+
+export type BetBuilderBalanceContextPayload = {
+  status?: unknown
+  version?: string | null
+  snapshot_version?: string | null
+  source_mode?: string | null
+  pillar_order?: string[]
+  pillars: {
+    f36?: BetBuilderBalancePillar
+    dominance?: BetBuilderBalancePillar
+    draw_credibility?: BetBuilderBalancePillar
+    gap_coherence?: BetBuilderBalancePillar
+  }
+  f36_index?: number | null
+  dominance_index?: number | null
+  draw_credibility_index?: number | null
+  gap_coherence_index?: number | null
+  prob_1_norm?: number | null
+  prob_x_norm?: number | null
+  prob_2_norm?: number | null
+  snapshot_timestamp?: string | null
+  pre_match_verified?: boolean | null
+}
+
+export type BetBuilderGoalIntensityContextPayload = {
+  module_version?: string | null
+  bundle_version?: string | null
+  source?: string | null
+  presentation?: string | null
+  official?: boolean
+  data_quality?: Record<string, unknown> | null
+  raw_index?: string | null
+  raw_index_score?: number | null
+  expected_total_goals?: number | null
+  expected_total_goals_calibration_source?: string | null
+  probability_selection?: number | null
+  probability_opposite?: number | null
+  calibration_source?: string | null
+  market_key?: string
+}
+
 export type BetBuilderContextSupport = {
   available: boolean
   module?: string | null
   status?: string
   reason?: string
-  payload?: Record<string, unknown> | null
+  payload?: BetBuilderBalanceContextPayload | BetBuilderGoalIntensityContextPayload | null
 }
 
 export type BetBuilderOpportunity = {
@@ -130,6 +175,30 @@ export type BetBuilderOpportunitiesSummary = {
   by_market: Record<string, number>
 }
 
+export type BetBuilderSourceGeneratedFrom = {
+  scan_date?: string
+  fixture_count?: number
+  max_fixture_updated_at?: string | null
+  max_purchasability_v31_generated_at?: string | null
+  max_goal_intensity_snapshot_at?: string | null
+  latest_scan_job?: {
+    job_id?: string
+    status?: string
+    finished_at?: string | null
+    updated_at?: string | null
+    started_at?: string | null
+  } | null
+}
+
+export type BetBuilderResponseFreshness = {
+  source_scan_date?: string
+  source_scan_status?: string | null
+  freshness_warning?: string | null
+  max_fixture_updated_at?: string | null
+  max_purchasability_v31_generated_at?: string | null
+  max_goal_intensity_snapshot_at?: string | null
+}
+
 export type BetBuilderOpportunitiesResponse = {
   contract_version: string
   aggregator_version: string
@@ -138,9 +207,9 @@ export type BetBuilderOpportunitiesResponse = {
   purchasability_policy: string
   scan_date: string
   source_revision: string
-  source_generated_from?: Record<string, unknown>
+  source_generated_from?: BetBuilderSourceGeneratedFrom
   source_scan_status?: string | null
-  freshness: Record<string, unknown>
+  freshness: BetBuilderResponseFreshness
   summary: BetBuilderOpportunitiesSummary
   opportunities: BetBuilderOpportunity[]
 }
@@ -150,6 +219,43 @@ export type FetchBetBuilderOpportunitiesParams = {
   market_key?: string
   origin?: BetBuilderOrigin
 }
+
+/** Chiavi mercato BET-01 (allineate al backend). */
+export const BET_BUILDER_MARKET_KEYS = [
+  'HOME',
+  'DRAW',
+  'AWAY',
+  'ONE_X',
+  'X_TWO',
+  'ONE_TWO',
+  'DRAW_PT',
+  'OVER_1_5',
+  'UNDER_1_5',
+  'OVER_2_5',
+  'UNDER_2_5',
+] as const
+
+export type BetBuilderMarketKey = (typeof BET_BUILDER_MARKET_KEYS)[number]
+
+export type BetBuilderMarketChip = {
+  key: 'all' | BetBuilderMarketKey
+  label: string
+}
+
+export const BET_BUILDER_MARKET_CHIPS: BetBuilderMarketChip[] = [
+  { key: 'all', label: 'Tutti' },
+  { key: 'HOME', label: '1' },
+  { key: 'DRAW', label: 'X' },
+  { key: 'AWAY', label: '2' },
+  { key: 'ONE_X', label: '1X' },
+  { key: 'X_TWO', label: 'X2' },
+  { key: 'ONE_TWO', label: '12' },
+  { key: 'DRAW_PT', label: 'X PT' },
+  { key: 'OVER_1_5', label: 'Over 1.5' },
+  { key: 'UNDER_1_5', label: 'Under 1.5' },
+  { key: 'OVER_2_5', label: 'Over 2.5' },
+  { key: 'UNDER_2_5', label: 'Under 2.5' },
+]
 
 export async function fetchBetBuilderOpportunities(
   params: FetchBetBuilderOpportunitiesParams,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   CecchinoTodayDetailPanel,
   CecchinoTodayDetailPlaceholder,
@@ -43,6 +44,24 @@ import { formatFetchError } from '../utils/formatFetchError'
 import { AdminHttpError } from '../lib/api'
 
 const POLL_RETRY_MAX = 3
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function isIsoDateParam(value: string | null): value is string {
+  if (!value || !ISO_DATE_RE.test(value)) return false
+  const d = new Date(`${value}T12:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value
+}
+
+function listHasFixture(list: CecchinoTodayListResponse, fixtureId: number): boolean {
+  for (const country of list.countries ?? []) {
+    for (const league of country.leagues ?? []) {
+      for (const fx of league.fixtures ?? []) {
+        if (fx.today_fixture_id === fixtureId) return true
+      }
+    }
+  }
+  return false
+}
 
 function jobToScanReport(job: CecchinoTodayScanJob): CecchinoTodayScanReport {
   const rs = job.result_summary
@@ -64,6 +83,7 @@ function jobToScanReport(job: CecchinoTodayScanJob): CecchinoTodayScanReport {
 }
 
 export function CecchinoTodayPage() {
+  const [searchParams] = useSearchParams()
   const [selectedDay, setSelectedDay] = useState(todayIsoRome())
   const [days, setDays] = useState<CecchinoTodayDay[]>([])
   const [list, setList] = useState<CecchinoTodayListResponse | null>(null)
@@ -88,6 +108,8 @@ export function CecchinoTodayPage() {
     text: string
     tone: 'ok' | 'warn' | 'err'
   } | null>(null)
+  const pendingFixtureFromUrlRef = useRef<number | null>(null)
+  const skipNextSelectedIdResetRef = useRef(false)
 
   const handleKpiPanelUpdate = useCallback((panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => {
     setDetail((prev) => {
@@ -358,7 +380,15 @@ export function CecchinoTodayPage() {
     const init = async () => {
       const daysRes = await loadDays()
       if (cancelled) return
-      const today = daysRes?.selected_default ?? daysRes?.today ?? todayIsoRome()
+      const dateFromUrl = searchParams.get('date')
+      const fixtureFromUrl = searchParams.get('fixture')
+      if (fixtureFromUrl && /^\d+$/.test(fixtureFromUrl)) {
+        pendingFixtureFromUrlRef.current = Number(fixtureFromUrl)
+        skipNextSelectedIdResetRef.current = true
+      }
+      const today = isIsoDateParam(dateFromUrl)
+        ? dateFromUrl
+        : (daysRes?.selected_default ?? daysRes?.today ?? todayIsoRome())
       setSelectedDay(today)
       await loadList(today)
       if (cancelled) return
@@ -384,7 +414,7 @@ export function CecchinoTodayPage() {
       cancelled = true
       stopPolling()
     }
-  }, [attachToJob, loadDays, loadList, stopPolling])
+  }, [attachToJob, loadDays, loadList, searchParams, stopPolling])
 
   useEffect(() => {
     if (!dayNavReady.current) return
@@ -393,13 +423,26 @@ export function CecchinoTodayPage() {
       stopPolling()
       setScanDayLoading(false)
     }
-    setSelectedId(null)
+    if (skipNextSelectedIdResetRef.current) {
+      skipNextSelectedIdResetRef.current = false
+    } else {
+      setSelectedId(null)
+    }
     setListHidden(false)
     setFixtureDrawerOpen(false)
     setDetail(null)
     void loadList(selectedDay)
     void resumeActiveJobForDay(selectedDay)
   }, [selectedDay, loadList, resumeActiveJobForDay, stopPolling])
+
+  useEffect(() => {
+    const pending = pendingFixtureFromUrlRef.current
+    if (pending == null || !list) return
+    if (listHasFixture(list, pending)) {
+      setSelectedId(pending)
+    }
+    pendingFixtureFromUrlRef.current = null
+  }, [list])
 
   useEffect(() => {
     const load = async () => {
