@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Cecchino Today competition filter high-confidence harden (2026-08-07)
+
+- Perché: match femminili fuori scope (es. Colombia / Liga Femenina / Millonarios W vs Santa Fe W) passavano il competition gate: haystack senza nomi squadra, matching substring, keyword `femenina` assente (`femenil` non è sottostringa di `femenina`).
+- Cosa: normalizzazione deterministica (lower, diacritici, punteggiatura/trattini/parentesi, spazi); matching token/phrase; campi league + round + home/away; women/cup/friendly/youth solo ad alta confidenza (entrambe le squadre con suffisso token `W`/`(W)` o marker espliciti; youth team-only richiede entrambe le parti). Nessuna regola su livello campionato / divisioni inferiori / sola lettera W / Junior / suffisso B.
+- Impatto: solo nuove scansioni post-deploy; status esistenti `excluded_women|cup|friendly|youth`; gate Betfair/stats/final eligibility/Signals/GI/purchasability/KPI/ICM e `eligible_guard` invariati; **nessun backfill**, storico immutato, nessuna migration.
+- Non fatto: riclassificazione righe precedenti; blacklist campionati minori; nuovi eligibility status; frontend.
+
 ## Fix — Bet Builder BET-03.1 mobile responsive polish (2026-08-07)
 
 - Perché: verifica reale su smartphone mostrava overlap Acquistabilità/Quota, badge fuori cella, Signals derived compressi, meta/kickoff instabile, scrollbar opportunity invasiva.

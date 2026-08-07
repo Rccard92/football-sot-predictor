@@ -1563,6 +1563,13 @@ flowchart TD
   finalGate -->|excluded_*| debugExcluded[Debug escluse admin]
 ```
 
+### Competition filter — harden high-confidence (2026-08-07)
+
+- **Policy:** hard-exclude solo women / cup / friendly / youth con marker inequivocabili; campionati maschili regolari (Serie B, Championship, Segunda, Ligue 2, Liga 2, Primera B, …) restano ammessi al gate successivo (Betfair/stats/…).
+- **Causa storica Liga Femenina:** metadata league senza `femenina` nelle keyword + nessun uso di home/away → match processato come eleggibile.
+- **Logica attuale:** normalizzazione + token/phrase; campi `league.*` / `fixture.round` / nomi squadra; entrambe le squadre con token finale `W`/`(W)` o marker Women/Ladies/… → `excluded_women`.
+- **Vincolo:** nessuna riclassificazione dello storico; solo nuove scan. Nessuna migration. Monotonicità `eligible` invariata.
+
 ## Post-scan: rivalidazione
 
 `POST /api/admin/cecchino/today/revalidate-day` rilegge gli snapshot JSON già salvati (`odds_snapshot`, `stats_snapshot`, `cecchino_output`, `kpi_panel`) e aggiorna `eligibility_status` senza chiamate API-Football.

@@ -1542,6 +1542,10 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 
 ## Cecchino Today — discovery giornaliera v0.3 (timeline, filtri, risultati)
 
+### Competition filter high-confidence (2026-08-07)
+
+Hard-exclude solo `excluded_women` / `excluded_cup` / `excluded_friendly` / `excluded_youth` con marker inequivocabili (normalizzazione + token/phrase; campi league/round + home/away). Caso tipico corretto: Liga Femenina + entrambe le squadre con suffisso `W`. **Non** esclude campionati maschili di livello inferiore per il solo livello. **Nessun backfill**: lo storico resta immutato; solo nuove scan. `cecchino_today_eligible_guard` e gli altri gate invariati.
+
 ### Protezione monotonicità eligible (2026-07-26)
 
 Invariante: una fixture che raggiunge `eligible` resta `eligible` per quella `scan_date` e `provider_fixture_id`.

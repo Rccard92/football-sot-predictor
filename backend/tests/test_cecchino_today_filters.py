@@ -14,20 +14,90 @@ from app.services.cecchino.cecchino_today_competition_filter import is_cecchino_
 from app.services.cecchino.cecchino_today_fixture_filter import is_fixture_not_started
 
 
-def _item(*, league_name="Serie A", league_type="League", round="", status="NS", kickoff=None):
+def _item(
+    *,
+    league_name="Serie A",
+    league_type="League",
+    country="Italy",
+    round="",
+    status="NS",
+    kickoff=None,
+    home="A",
+    away="B",
+):
     return {
-        "league": {"name": league_name, "country": "Italy", "type": league_type, "round": round, "season": 2025, "id": 135},
+        "league": {
+            "name": league_name,
+            "country": country,
+            "type": league_type,
+            "round": round,
+            "season": 2025,
+            "id": 135,
+        },
         "fixture": {
             "id": 1,
             "date": kickoff or "2026-06-04T18:45:00+00:00",
             "status": {"short": status},
         },
-        "teams": {"home": {"name": "A"}, "away": {"name": "B"}},
+        "teams": {"home": {"name": home}, "away": {"name": away}},
     }
 
 
 def test_excludes_women_league():
     allowed, status = is_cecchino_allowed_competition(_item(league_name="Serie A Women"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_colombia_liga_femenina_millonarios_w():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(
+            league_name="Liga Femenina",
+            country="Colombia",
+            home="Millonarios W",
+            away="Santa Fe W",
+        )
+    )
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_league_femenina():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="Liga Femenina", country="Colombia"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_league_feminina():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="Campeonato Feminina"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_league_frauen():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="Frauen-Bundesliga", country="Germany"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_league_ladies():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="FA Women's Super League"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_both_teams_autonomous_w_suffix():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Primera A", country="Colombia", home="Millonarios W", away="Santa Fe (W)")
+    )
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_both_teams_explicit_women_markers():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Friendly Tournament", home="Arsenal Women", away="Chelsea Ladies")
+    )
     assert not allowed
     assert status == ELIGIBILITY_EXCLUDED_WOMEN
 
@@ -44,14 +114,115 @@ def test_excludes_friendly_keyword():
     assert status == ELIGIBILITY_EXCLUDED_FRIENDLY
 
 
+def test_excludes_international_friendly():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="International Friendly"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_FRIENDLY
+
+
 def test_excludes_youth_keyword():
     allowed, status = is_cecchino_allowed_competition(_item(league_name="Premier League U21"))
     assert not allowed
     assert status == ELIGIBILITY_EXCLUDED_YOUTH
 
 
+def test_excludes_youth_u19_u23_and_reserve():
+    for name in ("U19 League", "Championship U23", "Reserve League"):
+        allowed, status = is_cecchino_allowed_competition(_item(league_name=name))
+        assert not allowed, name
+        assert status == ELIGIBILITY_EXCLUDED_YOUTH, name
+
+
+def test_excludes_youth_both_teams_only():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Premier League", home="Arsenal U21", away="Chelsea U23")
+    )
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_YOUTH
+
+
 def test_allows_league():
     allowed, status = is_cecchino_allowed_competition(_item())
+    assert allowed
+    assert status is None
+
+
+def test_allows_colombia_primera_a_millonarios():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(
+            league_name="Primera A",
+            country="Colombia",
+            home="Millonarios",
+            away="Santa Fe",
+        )
+    )
+    assert allowed
+    assert status is None
+
+
+def test_allows_regular_male_leagues_anti_false_positive():
+    cases = [
+        ("Serie A", "Italy"),
+        ("Serie B", "Italy"),
+        ("Premier League", "England"),
+        ("Championship", "England"),
+        ("Segunda División", "Spain"),
+        ("Ligue 2", "France"),
+        ("Liga 2", "Romania"),
+        ("Primera B", "Colombia"),
+    ]
+    for name, country in cases:
+        allowed, status = is_cecchino_allowed_competition(_item(league_name=name, country=country))
+        assert allowed, name
+        assert status is None, name
+
+
+def test_allows_single_team_trailing_w():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Primera A", country="Colombia", home="Millonarios W", away="Santa Fe")
+    )
+    assert allowed
+    assert status is None
+
+
+def test_allows_internal_w_in_team_name():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Ekstraklasa", country="Poland", home="Wisła Kraków", away="Lech Poznań")
+    )
+    assert allowed
+    assert status is None
+
+
+def test_allows_club_suffix_b():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Serie B", home="Genoa", away="Palermo")
+    )
+    assert allowed
+    assert status is None
+    allowed2, status2 = is_cecchino_allowed_competition(
+        _item(league_name="Primera División", country="Argentina", home="Estudiantes", away="Banfield")
+    )
+    assert allowed2
+    assert status2 is None
+
+
+def test_allows_professional_junior_club():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(
+            league_name="Primera A",
+            country="Colombia",
+            home="Atlético Junior",
+            away="Millonarios",
+        )
+    )
+    assert allowed
+    assert status is None
+
+
+def test_allows_single_youth_team_without_competition_marker():
+    allowed, status = is_cecchino_allowed_competition(
+        _item(league_name="Premier League", home="Arsenal U21", away="Chelsea")
+    )
     assert allowed
     assert status is None
 
