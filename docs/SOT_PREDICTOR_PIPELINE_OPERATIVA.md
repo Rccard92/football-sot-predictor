@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-01 — read-model su scan Today (2026-08-07)
+
+1. Scan / rescan Cecchino Today produce KPI, `signals_matrix` V3, `purchasability_preview_v31`, Balance monitoring, GI snapshot.
+2. `GET /api/cecchino/bet-builder/opportunities?date=` legge lo **stato current** (batch fixture + job + GI snapshots).
+3. Opportunity = price (`book > cecchino`) **oppure** signal evidence pre-value-gate.
+4. Nuova scan → nuovi `updated_at` / V3.1 / job → nuovo `source_revision`; nessuna cache applicativa.
+5. Pre-match only (`upcoming` + kickoff futuro); `excluded_post_kickoff` nel summary.
+6. Cecchino Today UI/scan **invariati**; Bet Builder non scrive.
+
 ## Segnali KPI — 19 mercati + filtri Acquistabilità (2026-08-06)
 
 1. Migration: `alembic upgrade head` (revision `20260806120000`, colonne snapshot V3/V3.1 nullable; poi `20260806143000` per `purchasability_v31_registry_status`).

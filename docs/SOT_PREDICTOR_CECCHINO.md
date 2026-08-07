@@ -2,6 +2,27 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-01 — Opportunity Aggregator (2026-08-07)
+
+Workspace orchestrazione **separato** da Cecchino Today. Today resta match-by-match; Bet Builder aggrega opportunity read-only.
+
+| Tema | Regola |
+|------|--------|
+| Opportunity | `PRICE_VALUE OR SIGNAL_VALUE` (mai AND obbligatorio) |
+| Price | `book_gt_cecchino_v1` da riga KPI (`quota_book > quota_cecchino` / `edge_pct > 0`); rating/score_acquisto solo display |
+| Signals | Matrice V3 current + consensus policy min-two; **non** `is_acquired` come unico trigger; pre-value-gate |
+| HOME/AWAY | `direct_single_formula` (exempt ≥2) |
+| X PT | `derived_from_draw_consensus` da DRAW (`inherit_draw_consensus`); nessun formula inventata |
+| Mercati BET-01 | 11: 1/X/2, 1X/X2/12, X PT, O/U 1.5, O/U 2.5 |
+| Acquistabilità | **V3.1 only**; se assente → N/D; mai fallback V3; registry_status reale preservato |
+| Ordinamento | score_v31 desc → origin dual → yes_count → edge → kickoff → key |
+| Context | Balance V5 su 1/X/2; GI official support su O/U; nessun supports/contradicts (BET-04) |
+| Freshness | Ogni GET legge Today current; `source_revision` SHA-256; nessuna tabella snapshot Bet Builder |
+| Endpoint | `GET /api/cecchino/bet-builder/opportunities` |
+| Divieti | Bet Builder Score, consigli, stake, API esterne, write, migrazione |
+
+Roadmap: BET-02 UI · BET-03 cart · BET-04 alignment + mercati KPI restanti.
+
 ## Fix — Goal Intensity official audit + monitoring (2026-08-07)
 
 Chiusura modulo `cecchino_goal_intensity_v5_official_support_v1`: audit Today = scorer canonico + stored vs recomputed; Monitoraggio Moduli readiness/export = `official_support` (non Preview research). Phase 2B solo archivio. Nessun cambio formule/snapshot/bundle. Dettaglio: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.

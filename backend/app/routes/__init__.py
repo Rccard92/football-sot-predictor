@@ -11,6 +11,7 @@ from app.routes import (
     cecchino_research,
     cecchino_signals,
     cecchino_today,
+    cecchino_bet_builder,
     cecchino_lab,
     cecchino_home_wins,
     admin,
@@ -94,6 +95,7 @@ api_router.include_router(cecchino_research.router)
 api_router.include_router(cecchino_signals.router)
 api_router.include_router(cecchino_today.router)
 api_router.include_router(cecchino_today.admin_router)
+api_router.include_router(cecchino_bet_builder.router)
 api_router.include_router(cecchino_lab.router)
 api_router.include_router(cecchino_lab.admin_router)
 api_router.include_router(cecchino_home_wins.router)

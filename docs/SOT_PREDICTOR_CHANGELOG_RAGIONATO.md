@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-01 Opportunity Aggregator (2026-08-07)
+
+- Perché: fondazione backend read-only per un pannello Bet Builder separato da Cecchino Today (analisi manuale invariata).
+- Cosa: aggregator opportunity = price OR signals; evidenza Segnali V3 pre-value-gate; Acquistabilità **solo V3.1**; context Balance/GI raw; `source_revision` SHA-256; endpoint GET; client FE tipizzato; test freshness/rescan.
+- Impatto: Today/KPI/Segnali/V3 operativa/Balance/GI invariati; nessuna migrazione; V3.1 resta shadow fuori Bet Builder.
+- Non fatto: UI BET-02, cart BET-03, alignment rules BET-04, Bet Builder Score.
+
 ## Fix — Goal Intensity official audit + monitoring closure (2026-08-07)
 
 - Cosa: audit Today allineato allo snapshot (`score_official_support_with_bundle` unica fonte; stored vs recomputed); readiness/export FE `official_support` al posto di Preview research/Phase 2B.

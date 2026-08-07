@@ -2,6 +2,20 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-01 — Opportunity Aggregator (2026-08-07)
+
+Layer **read-only** di orchestrazione su dati canonici Cecchino Today. **Non** è un modello, non sostituisce Cecchino Today, non altera scan/KPI/Segnali/Balance/GI/Acquistabilità operativa.
+
+- Contratto: `cecchino_bet_builder_contract_v1`
+- Aggregator: `cecchino_bet_builder_opportunity_aggregator_v1`
+- Signal evidence: `cecchino_bet_builder_signal_evidence_v1` (pre-value-gate, formula V3 only)
+- Purchasability policy Bet Builder: `v31_only` (`cecchino_bet_builder_purchasability_v31_only_v1`) — **nessun fallback V3**; V3.1 non promossa globalmente
+- Opportunity = **price OR signals** (`book_gt_cecchino_v1` ∨ consensus/direct evidence)
+- Endpoint: `GET /api/cecchino/bet-builder/opportunities?date=YYYY-MM-DD`
+- Client FE: `frontend/src/lib/cecchinoBetBuilderApi.ts` (solo contratto; UI in BET-02)
+- Nessuna migrazione, nessuna cache stale, nessuna API esterna, nessuna write
+- Roadmap: BET-02 UI · BET-03 cart · BET-04 alignment + altri mercati
+
 ## Intensità Goal — Official support closure audit/monitoring (2026-08-07)
 
 Chiusura tecnica post-cutover: audit stored-vs-recomputed su scorer canonico; readiness/export `official_support` (Phase 2B solo archivio); sample post-cutover = quality monitoring, non gate promozione. Bundle ID 3 invariato; nessun refit/backfill/migrazione. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
