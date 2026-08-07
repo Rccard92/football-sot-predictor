@@ -89,10 +89,10 @@ export function BetBuilderSelectedOpportunityPanel({
         data-origin={opportunity.origin}
         data-market={opportunity.market.market_key}
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1.5">
+        <div className="flex max-w-full flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 max-w-full space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+              <h3 className="break-words text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
                 {opportunity.market.label}
               </h3>
               {isPrimary ? (
@@ -135,7 +135,7 @@ export function BetBuilderSelectedOpportunityPanel({
         </div>
 
         <div
-          className="grid grid-cols-2 gap-2"
+          className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2"
           data-testid="bet-builder-core-metrics"
         >
           <div className={bbMetricCell}>
@@ -151,20 +151,22 @@ export function BetBuilderSelectedOpportunityPanel({
             </p>
             {price.present ? (
               <span
-                className={`${bbBadge} mt-1 border-emerald-200 bg-emerald-50 text-emerald-800`}
+                className={`${bbBadge} mt-1 max-w-full self-start whitespace-normal border-emerald-200 bg-emerald-50 text-emerald-800`}
               >
                 Valore quota
               </span>
             ) : (
               <p className="mt-1 text-xs text-slate-500">Nessun valore quota rilevato</p>
             )}
-            <p className="mt-2 text-lg font-semibold tabular-nums text-slate-900">
+            <p className="mt-2 whitespace-nowrap text-lg font-semibold tabular-nums text-slate-900">
               {fmtQuota(price.quota_book)}
             </p>
             <p className="text-xs text-slate-500">Book</p>
             <p className="mt-1 text-base font-semibold tabular-nums text-slate-800">
-              {fmtQuota(price.quota_cecchino)}
-              <span className="ml-1 text-xs font-medium text-slate-500">Cecchino</span>
+              <span className="whitespace-nowrap">{fmtQuota(price.quota_cecchino)}</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500 sm:ml-1 sm:mt-0 sm:inline">
+                Cecchino
+              </span>
             </p>
           </div>
 
@@ -172,13 +174,15 @@ export function BetBuilderSelectedOpportunityPanel({
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               Edge
             </p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+            <p className="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-slate-900">
               {fmtEdge(price.edge_pct)}
             </p>
             <p className="mt-2 text-sm font-semibold tabular-nums text-slate-800">
-              {price.rating != null ? price.rating : '—'}
+              <span className="whitespace-nowrap">
+                {price.rating != null ? price.rating : '—'}
+              </span>
               {price.rating_label ? (
-                <span className="ml-1 text-xs font-medium text-slate-600">
+                <span className="mt-0.5 block text-xs font-medium text-slate-600 sm:ml-1 sm:mt-0 sm:inline">
                   · {price.rating_label}
                 </span>
               ) : null}

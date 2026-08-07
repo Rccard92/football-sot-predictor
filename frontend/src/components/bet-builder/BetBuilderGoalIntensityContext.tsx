@@ -51,7 +51,7 @@ export function BetBuilderGoalIntensityContext({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             Expected
           </p>
@@ -59,16 +59,16 @@ export function BetBuilderGoalIntensityContext({
             {fmtGoals(payload.expected_total_goals)}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2">
-          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2">
+          <p className="break-words text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             Selected · {marketLabel}
           </p>
           <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
             {fmtPct(payload.probability_selection)}
           </p>
         </div>
-        <div className="col-span-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2 sm:col-span-1">
-          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <div className="col-span-2 min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2 sm:col-span-1">
+          <p className="break-words text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             Opposite · {oppositeLabel(marketLabel)}
           </p>
           <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">

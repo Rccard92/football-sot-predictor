@@ -23,7 +23,7 @@ export function BetBuilderPurchasabilityRing({ purchasability, size = 'lg' }: Pr
 
   return (
     <div
-      className="flex items-center gap-3"
+      className="flex max-w-full flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3"
       aria-label={label}
       data-testid="purchasability-ring"
     >
@@ -70,22 +70,30 @@ export function BetBuilderPurchasabilityRing({ purchasability, size = 'lg' }: Pr
           ) : null}
         </div>
       </div>
-      <div className="min-w-0 space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+      <div className="min-w-0 max-w-full space-y-1">
+        <p className="break-words text-[10px] font-semibold uppercase tracking-wide text-slate-400">
           Acquistabilità
         </p>
         {purchasability.class ? (
-          <p className="text-sm font-semibold text-slate-800">{purchasability.class}</p>
+          <p className="break-words text-sm font-semibold text-slate-800">
+            {purchasability.class}
+          </p>
         ) : hasScore ? null : (
           <p className="text-sm text-slate-500">Non disponibile</p>
         )}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex max-w-full flex-wrap gap-1">
           {quality === 'provisional' ? (
-            <span className={`${bbBadge} border-amber-200 bg-amber-50 text-amber-900`}>
+            <span
+              className={`${bbBadge} max-w-full self-start whitespace-normal border-amber-200 bg-amber-50 text-amber-900`}
+            >
               Provvisoria
             </span>
           ) : quality === 'full' ? (
-            <span className={`${bbBadge} border-slate-200 bg-white text-slate-700`}>Completa</span>
+            <span
+              className={`${bbBadge} max-w-full self-start whitespace-normal border-slate-200 bg-white text-slate-700`}
+            >
+              Completa
+            </span>
           ) : null}
         </div>
       </div>

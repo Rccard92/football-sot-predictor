@@ -2,6 +2,23 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-03.1 — Mobile responsive polish (2026-08-07)
+
+Fix **solo layout mobile** della card Bet Builder. Nessuna modifica a logica cart, ranking, formule o backend.
+
+| Tema | Regola |
+|------|--------|
+| Scope | Responsive 320–430px; desktop BET-02.4/BET-03 invariato |
+| Metric grid | `grid-cols-1` → `min-[360px]:grid-cols-2`; celle `min-w-0` + overflow safe |
+| Ring | Mobile `flex-col`; `sm:flex-row`; badge Completa/Provvisoria wrap-safe |
+| Signals | Derived: colonne su riga separata; direct HOME/AWAY invariato |
+| Header | Meta/kickoff `grid-cols-[minmax(0,1fr)_auto]`; team max 2 righe `break-words` |
+| Selector | Scroll interno; scrollbar nascosta mobile; snap invariato |
+| Cart | BET-03 invariato (solo verifica CSS CTA) |
+| Divieti | No logic cart; no evidence sort; no backend; no formule; no migrazione |
+
+Roadmap: BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-03 — Selezione manuale + carrello schedina (2026-08-07)
 
 Strumento di **composizione manuale** solo frontend. Nessuna auto-combination, nessuno stake, nessun Bet Builder Score, nessun backend.

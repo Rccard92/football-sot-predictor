@@ -7,6 +7,7 @@ import {
   bbOppTabIdle,
   bbOppTabPrimary,
   bbOppTabPrimarySelected,
+  bbOppTabScroll,
   bbOppTabSelected,
 } from './betBuilderStyles'
 import {
@@ -84,9 +85,10 @@ export function BetBuilderOpportunitySelector({
         ) : null}
       </div>
       <div
-        className="-mx-1 flex max-w-full gap-2 overflow-x-auto scroll-smooth px-1 pb-1 snap-x snap-mandatory sm:flex-wrap sm:overflow-visible sm:pb-0"
+        className={bbOppTabScroll}
         role="tablist"
         aria-label="Seleziona opportunity"
+        data-testid="bet-builder-opportunity-tablist"
       >
         {opportunities.map((op, index) => {
           const isPrimary = op.opportunity_key === primaryKey

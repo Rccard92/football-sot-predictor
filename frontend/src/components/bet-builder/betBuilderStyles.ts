@@ -36,6 +36,10 @@ export const bbGridCards = 'mx-auto grid w-full grid-cols-1 gap-4 xl:grid-cols-2
 export const bbMarketChipScroll =
   '-mx-1 flex gap-2 overflow-x-auto scroll-smooth px-1 pb-1 snap-x snap-mandatory [scrollbar-width:thin] sm:flex-wrap sm:overflow-visible'
 
+/** Scroll orizzontale opportunity: scrollbar nascosta su mobile, wrap da sm. */
+export const bbOppTabScroll =
+  '-mx-1 flex max-w-full gap-2 overflow-x-auto scroll-smooth px-1 pr-3 pb-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0 sm:pr-1'
+
 export const bbOppTabBase =
   'inline-flex min-h-11 min-w-[4.5rem] shrink-0 snap-start flex-col items-start justify-center gap-0.5 rounded-xl border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2'
 
@@ -51,7 +55,7 @@ export const bbOppTabPrimary = `${bbOppTabBase} border-emerald-300 bg-emerald-50
 export const bbOppTabPrimarySelected = `${bbOppTabBase} border-emerald-600 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-700/40`
 
 export const bbMetricCell =
-  'rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5'
+  'min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5'
 
 export const bbInEvidenzaBadge =
   'inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-900'

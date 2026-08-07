@@ -491,7 +491,7 @@ describe('BetBuilderPage', () => {
     ).toBeTruthy()
   })
 
-  it('layout cards: 1 colonna base, xl:grid-cols-2; metriche 2x2', async () => {
+  it('layout cards: 1 colonna base, xl:grid-cols-2; metriche mobile 1→2 col', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
     await waitFor(() => expect(screen.getByTestId('bet-builder-cards')).toBeTruthy())
@@ -500,8 +500,161 @@ describe('BetBuilderPage', () => {
     expect(grid.className).toMatch(/xl:grid-cols-2/)
     expect(grid.className).not.toMatch(/max-w-4xl/)
     const metrics = screen.getByTestId('bet-builder-core-metrics')
-    expect(metrics.className).toMatch(/grid-cols-2/)
+    expect(metrics.className).toMatch(/grid-cols-1/)
+    expect(metrics.className).toMatch(/min-\[360px\]:grid-cols-2/)
     expect(metrics.className).not.toMatch(/sm:grid-cols-4/)
+  })
+
+  it('BET-03.1: ring stacked mobile, badge wrap, meta/kickoff grid, selector hide-scrollbar', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'a',
+            market: { market_key: 'DRAW', label: 'X' },
+            purchasability_v31: {
+              available: true,
+              score: 86,
+              class: 'Molto Alta',
+              calculation_quality: 'full',
+            },
+            price_value: {
+              ...baseOpportunity().price_value,
+              quota_book: 4.1,
+              quota_cecchino: 2.26,
+              rating: 100,
+              rating_label: 'Elite',
+            },
+            fixture: {
+              ...baseOpportunity().fixture,
+              country: 'Sweden',
+              league: 'Division 2 - Västra Götaland',
+              home: { name: 'Belmont Swansea' },
+              away: { name: 'Lambton Jaffas' },
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'b',
+            market: { market_key: 'HOME', label: '1' },
+            origin: 'price',
+            purchasability_v31: { available: true, score: 70 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'c',
+            market: { market_key: 'AWAY', label: '2' },
+            origin: 'signals',
+            purchasability_v31: { available: true, score: 60 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'd',
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            origin: 'price',
+            purchasability_v31: { available: true, score: 55 },
+          }),
+          baseOpportunity({
+            opportunity_key: 'e',
+            market: { market_key: 'UNDER_2_5', label: 'Under 2.5' },
+            origin: 'signals',
+            purchasability_v31: { available: true, score: 50 },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('purchasability-ring')).toBeTruthy())
+
+    const ring = screen.getByTestId('purchasability-ring')
+    expect(ring.className).toMatch(/flex-col/)
+    expect(ring.className).toMatch(/sm:flex-row/)
+    expect(screen.getByText('Completa').className).toMatch(/whitespace-normal/)
+    expect(screen.getByText('Completa').className).toMatch(/max-w-full/)
+
+    const metaRow = screen.getByTestId('bet-builder-fixture-meta')
+    expect(metaRow.className).toMatch(/grid-cols-\[minmax\(0,1fr\)_auto\]/)
+    expect(screen.getByText(/SWEDEN · DIVISION 2/i).className).toMatch(/min-w-0/)
+    expect(screen.getByText(/SWEDEN · DIVISION 2/i).className).toMatch(/break-words/)
+
+    const homeName = screen.getByText('Belmont Swansea')
+    expect(homeName.className).toMatch(/line-clamp-2/)
+    expect(homeName.className).toMatch(/break-words/)
+    const awayName = screen.getByText('Lambton Jaffas')
+    expect(awayName.className).toMatch(/line-clamp-2/)
+    expect(awayName.className).toMatch(/break-words/)
+
+    const tablist = screen.getByTestId('bet-builder-opportunity-tablist')
+    expect(tablist.className).toMatch(/overflow-x-auto/)
+    expect(tablist.className).toMatch(/scrollbar-width:none/)
+    expect(tablist.className).toMatch(/sm:flex-wrap/)
+    expect(screen.getAllByTestId('bet-builder-opportunity-tab')).toHaveLength(5)
+
+    expect(screen.getByText('Cecchino').className).toMatch(/block/)
+    expect(screen.getByText('Cecchino').className).toMatch(/sm:inline/)
+    expect(screen.getByText(/· Elite/).className).toMatch(/block/)
+    expect(screen.getByText(/· Elite/).className).toMatch(/sm:inline/)
+
+    expect(screen.getByTestId('bet-builder-context-toggle')).toBeTruthy()
+    expect(screen.getByTestId('bet-builder-cart-slot-mobile')).toBeTruthy()
+  })
+
+  it('BET-03.1: derived Signals columns separate; direct invariato; Provvisoria wrap-safe', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'xpt',
+            market: { market_key: 'DRAW_PT', label: 'X PT' },
+            purchasability_v31: {
+              available: true,
+              score: 64,
+              class: 'Alta',
+              calculation_quality: 'provisional',
+            },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'derived_from_draw_consensus',
+              yes_count: 3,
+              required_count: 2,
+              available_count: 4,
+              yes_columns: ['E', 'F', 'G'],
+              passed: true,
+              source_group: 'DRAW',
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'home',
+            market: { market_key: 'HOME', label: '1' },
+            origin: 'signals',
+            purchasability_v31: { available: true, score: 50 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'direct_single_formula',
+              yes_count: 1,
+              required_count: 1,
+              available_count: 1,
+              yes_columns: ['D'],
+              passed: true,
+            },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Derivato dal consenso X')).toBeTruthy())
+    const signals = screen.getByTestId('signals-block')
+    expect(within(signals).getByText('3 / 4 SI')).toBeTruthy()
+    expect(within(signals).getByText('E · F · G')).toBeTruthy()
+    expect(within(signals).queryByText(/3 \/ 4 SI · E/)).toBeNull()
+    expect(screen.getByText('Provvisoria').className).toMatch(/whitespace-normal/)
+
+    fireEvent.click(
+      screen.getAllByTestId('bet-builder-opportunity-tab').find((t) =>
+        t.getAttribute('data-market') === 'HOME',
+      )!,
+    )
+    await waitFor(() => expect(screen.getByText('Segnale diretto')).toBeTruthy())
+    expect(screen.getByText(/D · SI/)).toBeTruthy()
   })
 
   it('header date navigation allineata; una sola rappresentazione primaria desktop', async () => {

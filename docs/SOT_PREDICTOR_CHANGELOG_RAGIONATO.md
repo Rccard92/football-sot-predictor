@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-03.1 mobile responsive polish (2026-08-07)
+
+- Perché: verifica reale su smartphone mostrava overlap Acquistabilità/Quota, badge fuori cella, Signals derived compressi, meta/kickoff instabile, scrollbar opportunity invasiva.
+- Cosa: solo CSS/responsive — metric grid `1 → min-[360px]:2`; ring stacked mobile; badge wrap-safe; Signals derived colonne separate; meta/kickoff grid stabile; selector hide-scrollbar; team names `break-words` max 2 righe; Balance/GI `min-w-0`.
+- Impatto: solo frontend layout; cart BET-03, evidence sort v2, Signals data, V3.1, context, backend, formule invariati; nessuna migrazione.
+- Non fatto: BET-04 alignment/verdict; redesign desktop.
+
 ## Feat — Bet Builder BET-03 manual selection cart (2026-08-07)
 
 - Perché: BET-01/02 individuano e presentano opportunity ma non permettono di costruire manualmente una combinazione; serviva uno strumento di composizione senza auto-bet.

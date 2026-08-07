@@ -2,6 +2,15 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-03.1 — Mobile responsive polish (2026-08-07)
+
+- Fix **solo CSS/responsive** card Bet Builder a 320–430px; desktop invariato
+- Metric grid `grid-cols-1` / `min-[360px]:grid-cols-2`; celle `min-w-0`; ring stacked mobile (`flex-col` → `sm:flex-row`)
+- Signals derived: colonne separate dal count; direct HOME/AWAY invariato
+- Meta/kickoff grid stabile; team names max 2 righe; selector scroll interno con scrollbar nascosta
+- **Cart BET-03 invariato**; evidence sort v2 / V3.1 / context / backend invariati; nessuna migrazione; Alembic head `20260806213000`
+- Roadmap: BET-04 alignment Balance/GI + mercati KPI restanti
+
 ## Bet Builder BET-03 — Selezione manuale + carrello schedina (2026-08-07)
 
 - Cart **manuale** client-side: l'utente aggiunge ogni opportunity con CTA «+ Aggiungi alla schedina»; **nessun** auto-add della primary

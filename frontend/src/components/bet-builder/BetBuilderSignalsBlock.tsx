@@ -85,7 +85,7 @@ function ConsensusBody({
       ) : null}
       <ConsensusCountLine signals={signals} columnsInline={columnsInline} />
       {!columnsInline && columns ? (
-        <p className="text-xs font-medium text-slate-600">{columns}</p>
+        <p className="break-words text-xs font-medium text-slate-600">{columns}</p>
       ) : null}
       <ConsensusThreshold required={signals.required_count} />
       <ConsensusFailedNote passed={signals.passed === true} />
@@ -112,17 +112,18 @@ export function BetBuilderSignalsBlock({ signals, marketKey, compact = false }: 
     )
   } else if (signals.evidence_mode === 'direct_single_formula') {
     body = (
-      <div className="space-y-1">
+      <div className="min-w-0 max-w-full space-y-1">
         <p className="text-xs font-semibold text-slate-900">Segnale diretto</p>
         {columns ? (
-          <p className="text-sm font-semibold tabular-nums text-slate-800">
+          <p className="break-words text-sm font-semibold tabular-nums text-slate-800">
             {columns} · SI
           </p>
         ) : null}
       </div>
     )
   } else if (signals.evidence_mode === 'derived_from_draw_consensus') {
-    body = <ConsensusBody signals={signals} title="Derivato dal consenso X" columnsInline />
+    // Mobile-first: colonne su riga separata (niente columnsInline) per evitare compressione.
+    body = <ConsensusBody signals={signals} title="Derivato dal consenso X" />
   } else {
     body = <ConsensusBody signals={signals} />
   }
@@ -130,7 +131,7 @@ export function BetBuilderSignalsBlock({ signals, marketKey, compact = false }: 
   return (
     <section
       aria-label={`Segnali Cecchino ${marketKey}`}
-      className="space-y-1"
+      className="min-w-0 max-w-full space-y-1"
       data-testid={compact ? 'signals-compact' : 'signals-block'}
     >
       <h3 className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">

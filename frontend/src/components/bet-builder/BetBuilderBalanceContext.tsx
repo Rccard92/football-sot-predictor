@@ -42,17 +42,19 @@ export function BetBuilderBalanceContext({ payload }: Props) {
           return (
             <div
               key={key}
-              className="rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2"
+              className="min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-100 bg-slate-50/70 px-2.5 py-2"
               data-testid={`balance-pillar-${key}`}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <p className="break-words text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                 {label}
               </p>
               <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">
                 {fmtIndex(index)}
               </p>
               {classLabel ? (
-                <p className="mt-0.5 text-xs font-medium text-slate-600">{classLabel}</p>
+                <p className="mt-0.5 break-words text-xs font-medium text-slate-600">
+                  {classLabel}
+                </p>
               ) : null}
             </div>
           )

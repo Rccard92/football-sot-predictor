@@ -86,13 +86,18 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode, cart }: Props
       transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
     >
       <header className="space-y-3 border-b border-slate-100 pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1"
+          data-testid="bet-builder-fixture-meta"
+        >
           {meta ? (
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{meta}</p>
+            <p className="min-w-0 break-words text-xs font-medium uppercase tracking-wide text-slate-500">
+              {meta}
+            </p>
           ) : (
             <span />
           )}
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-slate-800">
+          <span className="shrink-0 justify-self-end rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-slate-800">
             {formatKickoffShort(group.fixture.kickoff)}
           </span>
         </div>
@@ -104,7 +109,7 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode, cart }: Props
               logo={group.fixture.home.logo}
               sizeClass="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14"
             />
-            <span className="line-clamp-2 text-[15px] font-semibold leading-snug text-slate-900 sm:text-base md:text-lg">
+            <span className="line-clamp-2 min-w-0 break-words text-[15px] font-semibold leading-tight text-slate-900 sm:text-base md:text-lg">
               {homeName}
             </span>
           </div>
@@ -112,7 +117,7 @@ export function BetBuilderFixtureCard({ group, scanDate, viewMode, cart }: Props
             vs
           </span>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5 sm:gap-3">
-            <span className="line-clamp-2 text-right text-[15px] font-semibold leading-snug text-slate-900 sm:text-base md:text-lg">
+            <span className="line-clamp-2 min-w-0 break-words text-right text-[15px] font-semibold leading-tight text-slate-900 sm:text-base md:text-lg">
               {awayName}
             </span>
             <TeamLogo
