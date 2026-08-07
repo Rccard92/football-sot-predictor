@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-02.4 evidence ranking v2 + signal counts (2026-08-07)
+
+- Perché: dentro Q+S, opportunity con molti segnali ma V3.1 bassa salivano troppo; UI mostrava `yes / required` (es. `4 / 2 SI`) confondendo soglia e formule disponibili.
+- Cosa: comparator v2 origin → V3.1 → passed → yes_count → context → rating → edge; Signals UI `yes / available` + soglia `required` separata; dots su `available_count`; policy `bet_builder_evidence_sort_v2`.
+- Impatto: solo frontend; primary e fixture default sort seguono v2; layout BET-02.3 / origin / price gate / V3.1 / Balance / GI invariati; nessuna migrazione; nessun cart.
+- Non fatto: cart BET-03, alignment/verdict context BET-04.
+
 ## Fix — Bet Builder BET-02.3 evidence-first ranking and layout (2026-08-07)
 
 - Perché: default V3.1-first non portava in cima le opportunity con quadro evidenze più ricco; primary quasi-nera confusa con selected; 1 colonna desktop lenta; header data disallineato.

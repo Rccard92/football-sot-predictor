@@ -74,7 +74,7 @@ function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBui
       present: true,
       evidence_mode: 'consensus',
       yes_count: 2,
-      required_count: 4,
+      required_count: 2,
       available_count: 4,
       yes_columns: ['E', 'F'],
       passed: true,
@@ -637,7 +637,7 @@ describe('BetBuilderPage', () => {
               present: true,
               evidence_mode: 'consensus',
               yes_count: 2,
-              required_count: 4,
+              required_count: 2,
               available_count: 4,
               yes_columns: ['E', 'F'],
               passed: true,
@@ -657,7 +657,7 @@ describe('BetBuilderPage', () => {
               present: true,
               evidence_mode: 'consensus',
               yes_count: 4,
-              required_count: 4,
+              required_count: 2,
               available_count: 4,
               yes_columns: ['D', 'E', 'F', 'G'],
               passed: true,
@@ -672,10 +672,11 @@ describe('BetBuilderPage', () => {
               present: true,
               evidence_mode: 'derived_from_draw_consensus',
               yes_count: 2,
-              required_count: 4,
+              required_count: 2,
               available_count: 4,
               yes_columns: ['E', 'F'],
               passed: true,
+              source_group: 'DRAW',
             },
             context_support: {
               available: false,
@@ -695,22 +696,217 @@ describe('BetBuilderPage', () => {
       .getAllByTestId('bet-builder-opportunity-tab')
       .find((t) => t.getAttribute('data-market') === 'HOME')!
     fireEvent.click(homeTab)
-    await waitFor(() => expect(screen.getByText('Segnale diretto')).toBeTruthy())
-    expect(screen.getByText(/D · SI/)).toBeTruthy()
+    await waitFor(() => expect(within(card1).getByText('Segnale diretto')).toBeTruthy())
+    expect(within(card1).getByText(/D · SI/)).toBeTruthy()
+    expect(within(card1).queryByText(/Soglia/)).toBeNull()
 
     const tabs = within(card1).getAllByTestId('bet-builder-opportunity-tab')
     fireEvent.click(tabs.find((t) => t.getAttribute('data-market') === 'DRAW')!)
-    await waitFor(() => expect(screen.getByText(/2 \/ 4 SI/)).toBeTruthy())
-    expect(screen.getByText(/Segnali 2\/4/)).toBeTruthy()
+    await waitFor(() => expect(within(card1).getByText(/2 \/ 4 SI/)).toBeTruthy())
+    expect(within(card1).getByText(/Soglia ≥2/)).toBeTruthy()
+    expect(within(card1).queryByText(/2 \/ 2 SI/)).toBeNull()
+    expect(within(card1).getByText(/Segnali 2\/4/)).toBeTruthy()
 
     fireEvent.click(tabs.find((t) => t.getAttribute('data-market') === 'DRAW_PT')!)
-    await waitFor(() => expect(screen.getByText('Derivato dal consenso X')).toBeTruthy())
+    await waitFor(() => expect(within(card1).getByText('Derivato dal consenso X')).toBeTruthy())
+    expect(within(card1).getByText(/2 \/ 4 SI/)).toBeTruthy()
+    expect(within(card1).getByText(/Soglia ≥2/)).toBeTruthy()
 
     fireEvent.click(screen.getByTestId('view-mode-analysis'))
     const cardFull = screen
       .getAllByTestId('bet-builder-fixture-card')
       .find((c) => within(c).queryByText('FullYes'))!
     await waitFor(() => expect(within(cardFull).getByText(/4 \/ 4 SI/)).toBeTruthy())
+    expect(within(cardFull).getByText(/Soglia ≥2/)).toBeTruthy()
+    expect(within(cardFull).queryByText(/4 \/ 2 SI/)).toBeNull()
+  })
+
+  it('Signals consensus: 3/4, 1/4 failed, available null, unavailable, AWAY direct', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'c34',
+            market: { market_key: 'DRAW', label: 'X' },
+            purchasability_v31: { available: true, score: 90 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'consensus',
+              yes_count: 3,
+              required_count: 2,
+              available_count: 4,
+              yes_columns: ['D', 'E', 'G'],
+              passed: true,
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'c14-fail',
+            market: { market_key: 'ONE_X', label: '1X' },
+            origin: 'price',
+            purchasability_v31: { available: true, score: 80 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'consensus',
+              yes_count: 1,
+              required_count: 2,
+              available_count: 4,
+              yes_columns: ['D'],
+              passed: false,
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'avail-null',
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            fixture: {
+              ...baseOpportunity().fixture,
+              today_fixture_id: 3,
+              home: { name: 'NullAvail' },
+            },
+            purchasability_v31: { available: true, score: 70 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'consensus',
+              yes_count: 3,
+              required_count: 2,
+              available_count: null as unknown as number,
+              yes_columns: ['D', 'E', 'F'],
+              passed: true,
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'unavail',
+            market: { market_key: 'UNDER_2_5', label: 'Under 2.5' },
+            fixture: {
+              ...baseOpportunity().fixture,
+              today_fixture_id: 4,
+              home: { name: 'NoSignals' },
+            },
+            purchasability_v31: { available: true, score: 60 },
+            signals: {
+              available: false,
+              present: false,
+              evidence_mode: 'consensus',
+              yes_count: 0,
+              required_count: 2,
+              available_count: 0,
+              yes_columns: [],
+              passed: false,
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'away',
+            market: { market_key: 'AWAY', label: '2' },
+            fixture: {
+              ...baseOpportunity().fixture,
+              today_fixture_id: 5,
+              home: { name: 'AwaySide' },
+            },
+            purchasability_v31: { available: true, score: 55 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'direct_single_formula',
+              yes_count: 1,
+              required_count: 1,
+              available_count: 1,
+              yes_columns: ['G'],
+              passed: true,
+            },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card').length).toBeGreaterThan(0))
+
+    const cardOnsala = screen
+      .getAllByTestId('bet-builder-fixture-card')
+      .find((c) => within(c).queryByText('Onsala'))!
+    await waitFor(() => expect(within(cardOnsala).getByText(/3 \/ 4 SI/)).toBeTruthy())
+    expect(within(cardOnsala).getByText(/Soglia ≥2/)).toBeTruthy()
+    expect(within(cardOnsala).queryByText(/3 \/ 2 SI/)).toBeNull()
+
+    const failTab = within(cardOnsala)
+      .getAllByTestId('bet-builder-opportunity-tab')
+      .find((t) => t.getAttribute('data-market') === 'ONE_X')!
+    fireEvent.click(failTab)
+    await waitFor(() => expect(within(cardOnsala).getByText(/1 \/ 4 SI/)).toBeTruthy())
+    expect(within(cardOnsala).getByText(/Soglia ≥2/)).toBeTruthy()
+    expect(within(cardOnsala).getByText('Consenso non raggiunto')).toBeTruthy()
+
+    const cardNull = screen
+      .getAllByTestId('bet-builder-fixture-card')
+      .find((c) => within(c).queryByText('NullAvail'))!
+    fireEvent.click(screen.getByTestId('view-mode-analysis'))
+    await waitFor(() => expect(within(cardNull).getByText(/^3 SI$/)).toBeTruthy())
+    expect(within(cardNull).getByText(/Soglia ≥2/)).toBeTruthy()
+    expect(within(cardNull).queryByText(/\d+ \/ \d+ SI/)).toBeNull()
+
+    const cardUnavail = screen
+      .getAllByTestId('bet-builder-fixture-card')
+      .find((c) => within(c).queryByText('NoSignals'))!
+    expect(within(cardUnavail).getByText(/Segnali non disponibili/)).toBeTruthy()
+    expect(within(cardUnavail).queryByText(/0 \/ 0/)).toBeNull()
+    expect(within(cardUnavail).queryByText(/0 \/ 2/)).toBeNull()
+
+    const cardAway = screen
+      .getAllByTestId('bet-builder-fixture-card')
+      .find((c) => within(c).queryByText('AwaySide'))!
+    expect(within(cardAway).getByText('Segnale diretto')).toBeTruthy()
+    expect(within(cardAway).getByText(/G · SI/)).toBeTruthy()
+    expect(within(cardAway).queryByText(/Soglia/)).toBeNull()
+  })
+
+  it('primary uses evidence sort v2: higher V3.1 Q+S wins over more signals', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
+      baseResponse({
+        opportunities: [
+          baseOpportunity({
+            opportunity_key: 'x-low',
+            market: { market_key: 'DRAW', label: 'X' },
+            origin: 'price_and_signals',
+            purchasability_v31: { available: true, score: 30 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'consensus',
+              yes_count: 4,
+              required_count: 2,
+              available_count: 4,
+              yes_columns: ['D', 'E', 'F', 'G'],
+              passed: true,
+            },
+          }),
+          baseOpportunity({
+            opportunity_key: 'o25-high',
+            market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+            origin: 'price_and_signals',
+            purchasability_v31: { available: true, score: 75 },
+            signals: {
+              available: true,
+              present: true,
+              evidence_mode: 'consensus',
+              yes_count: 2,
+              required_count: 2,
+              available_count: 4,
+              yes_columns: ['E', 'F'],
+              passed: true,
+            },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-fixture-card')).toBeTruthy())
+    const tabs = screen.getAllByTestId('bet-builder-opportunity-tab')
+    expect(tabs[0].getAttribute('data-market')).toBe('OVER_2_5')
+    expect(tabs[0].getAttribute('data-primary')).toBe('true')
+    expect(screen.getByTestId('bet-builder-opportunity-row').getAttribute('data-market')).toBe(
+      'OVER_2_5',
+    )
   })
 
   it('Balance collapsed in compact; expanded in analysis', async () => {

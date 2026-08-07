@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
+
+1. Operatore apre `/bet-builder` → default sort **Forza evidenze ↓** (policy `bet_builder_evidence_sort_v2`).
+2. FE: filtri opportunity → evidence sort v2 (origin → V3.1 → passed → yes_count → context → rating → edge) → primary = `ops[0]` → sort fixture.
+3. Primary resta evidence-first v2 anche se l’utente ordina globalmente per kickoff/V3.1/edge/segnali.
+4. Signals consensus in UI: `yes / available` + soglia `required` separata; X PT derived / HOME-AWAY direct invariati.
+5. Soft poll / Sonner invariati; CTA Today invariata.
+6. Nessuna write, nessun cart, nessun score aggregato, nessun backend change.
+
 ## Bet Builder BET-02.3 — Evidence-first ranking (2026-08-07)
 
 1. Operatore apre `/bet-builder` → default sort **Forza evidenze ↓**, filtri all, vista Compatta.

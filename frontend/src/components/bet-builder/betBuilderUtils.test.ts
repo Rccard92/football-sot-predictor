@@ -60,7 +60,7 @@ function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOppor
       present: true,
       evidence_mode: 'consensus',
       yes_count: 2,
-      required_count: 4,
+      required_count: 2,
       available_count: 4,
       yes_columns: ['E', 'F'],
       passed: true,
@@ -84,7 +84,7 @@ describe('betBuilderUtils', () => {
     expect(DEFAULT_BET_BUILDER_FILTERS.origin).toBe('all')
     expect(DEFAULT_BET_BUILDER_FILTERS.market).toBe('all')
     expect(DEFAULT_BET_BUILDER_FILTERS.minPurchasability).toBeNull()
-    expect(EVIDENCE_SORT_VERSION).toBe('bet_builder_evidence_sort_v1')
+    expect(EVIDENCE_SORT_VERSION).toBe('bet_builder_evidence_sort_v2')
   })
 
   it('validates iso dates and shifts days', () => {
@@ -149,25 +149,54 @@ describe('betBuilderUtils', () => {
   })
 
   describe('compareOpportunityEvidenceStrength', () => {
-    it('A: price_and_signals before price', () => {
-      const qs = baseOp({
-        opportunity_key: 'qs',
+    it('A: same origin — higher V3.1 before more signals', () => {
+      const highV31 = baseOp({
+        opportunity_key: 'qs-85',
         origin: 'price_and_signals',
-        purchasability_v31: { available: true, score: 50 },
+        signals: { ...baseOp().signals, yes_count: 2, passed: true },
+        purchasability_v31: { available: true, score: 85 },
       })
-      const price = baseOp({
-        opportunity_key: 'price',
-        origin: 'price',
-        purchasability_v31: { available: true, score: 99 },
+      const lowV31 = baseOp({
+        opportunity_key: 'qs-25',
+        origin: 'price_and_signals',
+        signals: { ...baseOp().signals, yes_count: 4, passed: true },
+        purchasability_v31: { available: true, score: 25 },
       })
-      expect(compareOpportunityEvidenceStrength(qs, price)).toBeLessThan(0)
-      expect(sortOpportunitiesByEvidenceStrength([price, qs]).map((o) => o.opportunity_key)).toEqual([
-        'qs',
-        'price',
-      ])
+      expect(compareOpportunityEvidenceStrength(highV31, lowV31)).toBeLessThan(0)
+      expect(
+        sortOpportunitiesByEvidenceStrength([lowV31, highV31]).map((o) => o.opportunity_key),
+      ).toEqual(['qs-85', 'qs-25'])
     })
 
-    it('B: higher consensus yes_count first at same origin', () => {
+    it('B: Q+S before signals-only even with lower V3.1', () => {
+      const qs = baseOp({
+        opportunity_key: 'qs-40',
+        origin: 'price_and_signals',
+        purchasability_v31: { available: true, score: 40 },
+      })
+      const signalsOnly = baseOp({
+        opportunity_key: 'sig-90',
+        origin: 'signals',
+        purchasability_v31: { available: true, score: 90 },
+      })
+      expect(compareOpportunityEvidenceStrength(qs, signalsOnly)).toBeLessThan(0)
+    })
+
+    it('C: signals-only before price-only even with V3.1 N/D vs 95', () => {
+      const signalsOnly = baseOp({
+        opportunity_key: 'sig-nd',
+        origin: 'signals',
+        purchasability_v31: { available: false, score: null },
+      })
+      const priceOnly = baseOp({
+        opportunity_key: 'price-95',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 95 },
+      })
+      expect(compareOpportunityEvidenceStrength(signalsOnly, priceOnly)).toBeLessThan(0)
+    })
+
+    it('D: same origin + same V3.1 — higher yes_count first', () => {
       const four = baseOp({
         opportunity_key: '4si',
         origin: 'price_and_signals',
@@ -183,23 +212,7 @@ describe('betBuilderUtils', () => {
       expect(compareOpportunityEvidenceStrength(four, two)).toBeLessThan(0)
     })
 
-    it('C: V3.1 score DESC when signal evidence equal', () => {
-      const high = baseOp({
-        opportunity_key: 'v90',
-        origin: 'price_and_signals',
-        signals: { ...baseOp().signals, yes_count: 3, passed: true },
-        purchasability_v31: { available: true, score: 90 },
-      })
-      const low = baseOp({
-        opportunity_key: 'v70',
-        origin: 'price_and_signals',
-        signals: { ...baseOp().signals, yes_count: 3, passed: true },
-        purchasability_v31: { available: true, score: 70 },
-      })
-      expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
-    })
-
-    it('D: context available is only a tie-break', () => {
+    it('E: context available is only a tie-break', () => {
       const withCtx = baseOp({
         opportunity_key: 'ctx',
         origin: 'price',
@@ -219,7 +232,7 @@ describe('betBuilderUtils', () => {
       expect(compareOpportunityEvidenceStrength(withCtx, noCtx)).toBeLessThan(0)
     })
 
-    it('E: rating DESC tie-break', () => {
+    it('F: rating DESC tie-break', () => {
       const high = baseOp({
         opportunity_key: 'r90',
         origin: 'price',
@@ -239,7 +252,7 @@ describe('betBuilderUtils', () => {
       expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
     })
 
-    it('F: edge DESC after rating', () => {
+    it('G: edge DESC after rating', () => {
       const high = baseOp({
         opportunity_key: 'e30',
         origin: 'price',
@@ -259,7 +272,25 @@ describe('betBuilderUtils', () => {
       expect(compareOpportunityEvidenceStrength(high, low)).toBeLessThan(0)
     })
 
-    it('G: no combined score — comparator returns relative order only', () => {
+    it('price_and_signals before price (origin first)', () => {
+      const qs = baseOp({
+        opportunity_key: 'qs',
+        origin: 'price_and_signals',
+        purchasability_v31: { available: true, score: 50 },
+      })
+      const price = baseOp({
+        opportunity_key: 'price',
+        origin: 'price',
+        purchasability_v31: { available: true, score: 99 },
+      })
+      expect(compareOpportunityEvidenceStrength(qs, price)).toBeLessThan(0)
+      expect(sortOpportunitiesByEvidenceStrength([price, qs]).map((o) => o.opportunity_key)).toEqual([
+        'qs',
+        'price',
+      ])
+    })
+
+    it('no combined score — comparator returns relative order only', () => {
       const a = baseOp({ opportunity_key: 'a', origin: 'signals' })
       const b = baseOp({ opportunity_key: 'b', origin: 'price' })
       const result = compareOpportunityEvidenceStrength(a, b)
@@ -313,19 +344,55 @@ describe('betBuilderUtils', () => {
       expect(compareOpportunityEvidenceStrength(consensus2, direct)).toBeLessThan(0)
     })
 
-    it('signals.passed true before false', () => {
+    it('signals.passed true before false at same V3.1', () => {
       const passed = baseOp({
         opportunity_key: 'pass',
         origin: 'signals',
+        purchasability_v31: { available: true, score: 50 },
         signals: { ...baseOp().signals, passed: true, yes_count: 1 },
       })
       const failed = baseOp({
         opportunity_key: 'fail',
         origin: 'signals',
+        purchasability_v31: { available: true, score: 50 },
         signals: { ...baseOp().signals, passed: false, yes_count: 4 },
       })
       expect(compareOpportunityEvidenceStrength(passed, failed)).toBeLessThan(0)
     })
+  })
+
+  it('primary prefers higher V3.1 within same origin Q+S', () => {
+    const ops = [
+      baseOp({
+        opportunity_key: 'x-low-v31',
+        origin: 'price_and_signals',
+        market: { market_key: 'DRAW', label: 'X' },
+        purchasability_v31: { available: true, score: 30 },
+        signals: {
+          ...baseOp().signals,
+          yes_count: 4,
+          available_count: 4,
+          required_count: 2,
+          passed: true,
+        },
+      }),
+      baseOp({
+        opportunity_key: 'o25-high-v31',
+        origin: 'price_and_signals',
+        market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
+        purchasability_v31: { available: true, score: 75 },
+        signals: {
+          ...baseOp().signals,
+          yes_count: 2,
+          available_count: 4,
+          required_count: 2,
+          passed: true,
+        },
+      }),
+    ]
+    const group = groupOpportunitiesByFixture(ops)[0]
+    expect(getPrimaryOpportunity(group)?.opportunity_key).toBe('o25-high-v31')
+    expect(getPrimaryOpportunity(group)?.market.label).toBe('Over 2.5')
   })
 
   it('primary prefers Q+S with lower V3.1 over price-only with higher V3.1', () => {

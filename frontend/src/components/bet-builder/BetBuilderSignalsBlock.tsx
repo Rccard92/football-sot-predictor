@@ -7,14 +7,13 @@ type Props = {
   compact?: boolean
 }
 
-function ConsensusDots({
-  yesCount,
-  required,
-}: {
-  yesCount: number
-  required: number
-}) {
-  const n = Math.max(1, required || 4)
+function isFiniteCount(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value)
+}
+
+function ConsensusDots({ yesCount, available }: { yesCount: number; available: number }) {
+  const n = Math.max(0, available)
+  if (n <= 0) return null
   return (
     <div className="flex items-center gap-1" aria-hidden>
       {Array.from({ length: n }, (_, i) => {
@@ -33,9 +32,76 @@ function ConsensusDots({
   )
 }
 
+function ConsensusCountLine({
+  signals,
+  columnsInline = false,
+}: {
+  signals: BetBuilderSignalsEvidence
+  columnsInline?: boolean
+}) {
+  const columns = signals.yes_columns?.length ? signals.yes_columns.join(' · ') : null
+  const hasAvailable = isFiniteCount(signals.available_count)
+  const countText = hasAvailable
+    ? `${signals.yes_count} / ${signals.available_count} SI`
+    : `${signals.yes_count} SI`
+
+  return (
+    <p className="text-sm font-semibold tabular-nums text-slate-800">
+      {countText}
+      {columnsInline && columns ? (
+        <span className="font-medium text-slate-600"> · {columns}</span>
+      ) : null}
+    </p>
+  )
+}
+
+function ConsensusThreshold({ required }: { required: number | null | undefined }) {
+  if (!isFiniteCount(required)) return null
+  return <p className="text-xs text-slate-500">Soglia ≥{required}</p>
+}
+
+function ConsensusFailedNote({ passed }: { passed: boolean }) {
+  if (passed) return null
+  return <p className="text-xs font-medium text-amber-700">Consenso non raggiunto</p>
+}
+
+function ConsensusBody({
+  signals,
+  title,
+  columnsInline = false,
+}: {
+  signals: BetBuilderSignalsEvidence
+  title?: string
+  columnsInline?: boolean
+}) {
+  const columns = signals.yes_columns?.length ? signals.yes_columns.join(' · ') : null
+  const hasAvailable = isFiniteCount(signals.available_count)
+
+  return (
+    <div className="space-y-1.5">
+      {title ? <p className="text-xs font-semibold text-slate-900">{title}</p> : null}
+      {hasAvailable ? (
+        <ConsensusDots yesCount={signals.yes_count} available={signals.available_count} />
+      ) : null}
+      <ConsensusCountLine signals={signals} columnsInline={columnsInline} />
+      {!columnsInline && columns ? (
+        <p className="text-xs font-medium text-slate-600">{columns}</p>
+      ) : null}
+      <ConsensusThreshold required={signals.required_count} />
+      <ConsensusFailedNote passed={signals.passed === true} />
+      {hasAvailable ? (
+        <p className="sr-only">
+          Segnali {signals.yes_count}/{signals.available_count}
+        </p>
+      ) : (
+        <p className="sr-only">Segnali {signals.yes_count}</p>
+      )}
+    </div>
+  )
+}
+
 export function BetBuilderSignalsBlock({ signals, marketKey, compact = false }: Props) {
   const columns = signals.yes_columns?.length ? signals.yes_columns.join(' · ') : null
-  const denom = signals.required_count || signals.available_count || 4
 
   let body: ReactNode
   if (!signals.available) {
@@ -56,29 +122,9 @@ export function BetBuilderSignalsBlock({ signals, marketKey, compact = false }: 
       </div>
     )
   } else if (signals.evidence_mode === 'derived_from_draw_consensus') {
-    body = (
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold text-slate-900">Derivato dal consenso X</p>
-        <ConsensusDots yesCount={signals.yes_count} required={denom} />
-        <p className="text-sm font-semibold tabular-nums text-slate-800">
-          {signals.yes_count} / {denom} SI
-          {columns ? <span className="font-medium text-slate-600"> · {columns}</span> : null}
-        </p>
-      </div>
-    )
+    body = <ConsensusBody signals={signals} title="Derivato dal consenso X" columnsInline />
   } else {
-    body = (
-      <div className="space-y-1.5">
-        <ConsensusDots yesCount={signals.yes_count} required={denom} />
-        <p className="text-sm font-semibold tabular-nums text-slate-900">
-          {signals.yes_count} / {denom} SI
-        </p>
-        <p className="sr-only">
-          Segnali {signals.yes_count}/{denom}
-        </p>
-        {columns ? <p className="text-xs font-medium text-slate-600">{columns}</p> : null}
-      </div>
-    )
+    body = <ConsensusBody signals={signals} />
   }
 
   return (

@@ -2,10 +2,18 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
+
+- Evidence sort **v2** (`bet_builder_evidence_sort_v2`): origin Q+S > signals > price → **V3.1 DESC** → `signals.passed` → `yes_count` → `context.available` → rating → edge → key
+- Dentro la stessa origin family, Acquistabilità V3.1 precede i Signals (es. Q+S 85+2 SI > Q+S 25+4 SI); signals-only resta sopra price-only
+- Signals UI: consensus = `yes_count / available_count` + soglia `required_count` separata; **non** più `yes / required`
+- X PT derived e HOME/AWAY direct invariati; primary = prima dopo evidence sort v2; layout BET-02.3 invariato
+- **Nessun** backend; **nessun** nuovo score; **nessun** cart; nessuna migrazione; Alembic head `20260806213000`
+
 ## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
 
 - Default sort: **Forza evidenze ↓** (`evidence_strength_desc`) — comparator lessicografico puro, **nessun** score aggregato
-- Ordine: origin Q+S > signals > price → `signals.passed` → `yes_count` → V3.1 → `context_support.available` (tie-break) → rating → edge → key
+- Ordine v1 (superseded by BET-02.4): origin Q+S > signals > price → `signals.passed` → `yes_count` → V3.1 → `context_support.available` (tie-break) → rating → edge → key
 - Primary = prima dopo evidence sort («IN EVIDENZA» ≠ consigliata); sort lista fixture non cambia la primary interna
 - Context: solo `available` (raw); **non** conferma Balance/GI (BET-04 ancora pending); filtro «Contesto disponibile»
 - UX: primary emerald (selected vs non-selected distinti); secondary selected slate; desktop `xl:grid-cols-2`; header date nav allineata

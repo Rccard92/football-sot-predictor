@@ -2,6 +2,22 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-02.4 — Evidence ranking v2 + Signal counts (2026-08-07)
+
+Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun backend change.
+
+| Tema | Regola |
+|------|--------|
+| Default sort | `evidence_strength_desc` — label UI «Forza evidenze ↓» |
+| Comparator v2 | Lessicografico: origin → **V3.1** → passed → yes_count → context.available → rating → edge → key. Policy `bet_builder_evidence_sort_v2` (non persistita) |
+| Primary | Prima opportunity dopo evidence sort v2; badge **IN EVIDENZA** ≠ recommendation |
+| Signals UI | Consensus: `yes_count / available_count` + `Soglia ≥required_count`; available null → niente denominatore inventato |
+| X PT / HOME-AWAY | Derived / direct invariati (niente soglia consenso su HOME/AWAY) |
+| Layout | BET-02.3 invariato (emerald primary, `xl:grid-cols-2`, selector) |
+| Divieti | Nessun score aggregato; nessun cart BET-03; nessun backend; nessuna conferma Balance/GI |
+
+Roadmap: BET-03 cart · BET-04 alignment + mercati KPI restanti.
+
 ## Bet Builder BET-02.3 — Evidence-first ranking + UX refinement (2026-08-07)
 
 Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun backend change.
@@ -9,7 +25,7 @@ Refinement **solo frontend**. Nessuna nuova formula, nessun nuovo score, nessun 
 | Tema | Regola |
 |------|--------|
 | Default sort | `evidence_strength_desc` — label UI «Forza evidenze ↓» |
-| Comparator | Lessicografico: origin → passed → yes_count → V3.1 → context.available → rating → edge → key. Policy version `bet_builder_evidence_sort_v1` (non persistita) |
+| Comparator | Lessicografico v1 (superseded): origin → passed → yes_count → V3.1 → context.available → rating → edge → key. Policy version `bet_builder_evidence_sort_v1` (non persistita) |
 | Primary | Prima opportunity dopo evidence sort; badge **IN EVIDENZA** ≠ recommendation |
 | Selected | Stato indipendente da primary; primary non-selected = emerald chiaro; primary selected = emerald pieno; secondary selected = slate/navy |
 | Context | `context_support.available` solo tie-break / filtro; status resta `raw_context_only`; **nessuna** conferma modulo (BET-04) |

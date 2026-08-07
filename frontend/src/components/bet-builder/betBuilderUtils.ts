@@ -20,7 +20,7 @@ export type BetBuilderSortKey =
   | 'kickoff_asc'
 
 /** Versione policy comparator frontend — non persistita, nessun score aggregato. */
-export const EVIDENCE_SORT_VERSION = 'bet_builder_evidence_sort_v1'
+export const EVIDENCE_SORT_VERSION = 'bet_builder_evidence_sort_v2'
 
 /** Vista densità UI — solo frontend, nessun score. */
 export type BetBuilderViewMode = 'compact' | 'analysis'
@@ -240,7 +240,8 @@ function cmpKickoffAsc(a: string | null | undefined, b: string | null | undefine
 }
 
 /**
- * Comparator lessicografico BET-02.3 — forza evidenze.
+ * Comparator lessicografico BET-02.4 (v2) — forza evidenze.
+ * Policy: origin → V3.1 → signals passed → yes_count → context available → rating → edge.
  * Nessuna somma, media, weighted score o KPI numerico aggregato.
  */
 export function compareOpportunityEvidenceStrength(
@@ -250,15 +251,16 @@ export function compareOpportunityEvidenceStrength(
   const byOrigin = ORIGIN_RANK[a.origin] - ORIGIN_RANK[b.origin]
   if (byOrigin !== 0) return byOrigin
 
+  // Dentro la stessa origin family, Acquistabilità V3.1 precede i Signals.
+  const byV31 = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
+  if (byV31 !== 0) return byV31
+
   const aPassed = a.signals.passed === true
   const bPassed = b.signals.passed === true
   if (aPassed !== bPassed) return aPassed ? -1 : 1
 
   const byYes = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
   if (byYes !== 0) return byYes
-
-  const byV31 = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
-  if (byV31 !== 0) return byV31
 
   // Nessun alignment canonico selection-specific (BET-04 non implementato).
   // Solo availability come tie-break descrittivo.
