@@ -1264,7 +1264,11 @@ Esempi sullo **stesso** segno X (DRAW):
 - `X = SI NO NO NO` → V1 sì, V2 no
 - `X = SI SI NO NO` → V1 sì, V2 sì
 
-**Non** si sommano SI di mercati diversi sulla stessa fixture (X 1/4 + Over 1/4 + 1X 1/5 ≠ V2). X PT invariato (`inherit_draw_consensus`). Parametro API `monitoring_version` ha precedenza su `acquisition_filter` se entrambi presenti; invalido → 422. Replay storico zero-write. Models-summary resta acquired-only indipendente dalla versione UI. Nessuna migration.
+**Non** si sommano SI di mercati diversi sulla stessa fixture (X 1/4 + Over 1/4 + 1X 1/5 ≠ V2). X PT invariato (`inherit_draw_consensus`). Parametro API `monitoring_version` ha precedenza su `acquisition_filter` se entrambi presenti; invalido → 422. Replay storico zero-write. Nessuna migration.
+
+### Models-summary → coorte V1/V2 (SIGNALS-MON-02.1)
+
+`GET /api/admin/cecchino/signals/models-summary?monitoring_version=v1|v2` (default **v2**) segue la coorte selezionata nello switch Monitoraggio. V1 include SI value-gated con ≥1 conferma (anche `rejected_insufficient_consensus`); V2 solo acquired canonical + HOME/AWAY exempt — equivalente al models-summary pre-task. Metadata response: `monitoring_version`, `acquisition_filter`. Pesi A–F e Modello F invariati; `POST …/backtest-models` resta generazione unica (nessun param monitoring_version). Nessun backfill automatico: se storici backtest non hanno persistito rejected, V1≈V2 su quel periodo.
 
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 

@@ -1,10 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Models-summary allineato a Monitoraggio V1/V2 SIGNALS-MON-02.1 (2026-08-07)
+
+- Perché: le card «Confronto modelli pesi» restavano sempre sulla coorte acquired (V2) mentre KPI/heatmap/ranking/export seguivano lo switch V1/V2.
+- Cosa: `models-summary` accetta `monitoring_version`; V1 = value-gated senza filtro acquired; V2 = acquired (regressione = pre-task); UI passa la versione, badge/microcopy coorte, reset cards al switch; docs aggiornate.
+- Impatto: sola lettura aggregata; pesi A–F / Modello F / backtest generation / formule / consensus / Today / Bet Builder invariati; nessuna migration; nessun backfill automatico.
+- Non fatto: delta V1 vs V2 dentro ogni card; ricalcolo matematico diverso per versione; write storica.
+
 ## Feat — Monitoraggio Segnali V1/V2 coorti SIGNALS-MON-02 (2026-08-07)
 
 - Perché: confrontare baseline permissiva (≥1 SI value-gated sullo stesso segno) vs coorte confermata (≥2 SI / HOME-AWAY exempt) senza cambiare la formula Signals V3.
 - Cosa: `monitoring_version=v1|v2` su summary/activations/export (mapping a `acquisition_filter` all/acquired); UI selector + URL state; accordion soglie; colonna Conferme; KPI/heatmap/ranking/CSV sulla stessa coorte; replay storico zero-write.
-- Impatto: solo lettura monitoraggio; consensus/formule/X PT/Today/Bet Builder invariati; nessuna migration; models-summary resta indipendente (label UI).
+- Impatto: solo lettura monitoraggio; consensus/formule/X PT/Today/Bet Builder invariati; nessuna migration. *(Aggiornato da SIGNALS-MON-02.1: models-summary segue la coorte V1/V2.)*
 - Non fatto: backfill distruttivo; colonne DB `monitoring_version`; modifica `compute_signal_group_consensus`.
 
 ## Fix — Cecchino Today competition filter high-confidence harden (2026-08-07)

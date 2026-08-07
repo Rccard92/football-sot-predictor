@@ -913,6 +913,14 @@ Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-o
 - UI `/monitoraggio-segnali`: selector V1/V2, badge distinto da Formula V3, accordion soglie chiuso, CSV con colonne consensus/monitoring_version.
 - **Invariato:** consensus policy, formule V3, X PT, Cecchino Today, Bet Builder.
 
+## Cecchino — Models-summary allineato a V1/V2 (SIGNALS-MON-02.1, 2026-08-07)
+
+- `GET …/signals/models-summary` accetta `monitoring_version` (default v2); response espone `monitoring_version` + `acquisition_filter`.
+- Card A–F: stessa coorte dello switch UI (V1 permissiva value-gated; V2 acquired = comportamento precedente).
+- Backtest A–F (`POST …/backtest-models`) resta dataset unico; dopo backtest `loadData()` ricarica la coorte corrente.
+- UI: badge V1/V2 sul blocco «Confronto modelli pesi», microcopy coorte, reset cards al switch (no stale), modello selezionato persistente.
+- **Invariato:** pesi A–F, Modello F, formule, consensus, Today, Bet Builder; nessuna migration / backfill.
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 - Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.

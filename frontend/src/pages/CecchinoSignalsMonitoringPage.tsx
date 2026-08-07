@@ -131,6 +131,7 @@ export function CecchinoSignalsMonitoringPage() {
     (version: MonitoringVersion) => {
       setSummary(null)
       setItems([])
+      setModelsSummary(null)
       syncMonitoringVersionToUrl(version)
     },
     [syncMonitoringVersionToUrl],
@@ -152,6 +153,7 @@ export function CecchinoSignalsMonitoringPage() {
       const modelsRes = await getCecchinoSignalsModelsSummary({
         date_from: dateFrom,
         date_to: dateTo,
+        monitoring_version: monitoringVersion,
       })
       setModelsSummary(modelsRes)
 
@@ -646,21 +648,32 @@ export function CecchinoSignalsMonitoringPage() {
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-800">Confronto modelli pesi</h2>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-800">Confronto modelli pesi</h2>
+          <span
+            className={`inline-flex shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+              monitoringVersion === 'v1'
+                ? 'border-slate-300 bg-slate-100 text-slate-700'
+                : 'border-indigo-200 bg-indigo-50 text-indigo-800'
+            }`}
+            data-testid="models-summary-version-badge"
+          >
+            {monitoringVersion === 'v1' ? 'V1' : 'V2'}
+          </span>
+        </div>
         <p className="mt-1 text-xs text-slate-500">
           Backtest comparativo offline sui pesi 1X2 — non modifica il Cecchino Today live.
         </p>
-        <p
-          className="mt-1 text-xs italic text-slate-500"
-          data-testid="models-summary-independence-label"
-        >
-          Confronto modelli indipendente dalla versione Monitoraggio
+        <p className="mt-1 text-xs text-slate-500" data-testid="models-summary-cohort-label">
+          {monitoringVersion === 'v1'
+            ? 'Coorte attiva · V1 Base · ≥1 SI'
+            : 'Coorte attiva · V2 Confermato · ≥2 SI sullo stesso segno · 1 e 2 restano single-formula'}
         </p>
         <div className="mt-3">
           <SignalsWeightModelCards
             models={modelsSummary?.models ?? []}
             selectedModelKey={selectedModelKey}
-            loading={loading}
+            loading={loading || !modelsSummary}
             onSelect={handleSelectModel}
           />
         </div>

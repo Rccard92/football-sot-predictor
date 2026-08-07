@@ -122,6 +122,10 @@ Contratto canonico `get_current_signal_contract()`: formula `cecchino_signals_ma
 
 Dimensioni **Monitoraggio** distinte da `signal_formula_version` (formule restano V3). Parametro `monitoring_version=v1|v2` su summary/activations/export: **V1** = SI value-gated anche con 1 conferma sullo stesso segno (`acquisition_filter=all`); **V2** default = consenso ≥2 stesso segno + HOME/AWAY single-formula (`acquired`). Nessun conteggio cross-market. Replay storico zero-write sui campi consensus già persistiti. Nessuna migration / backfill distruttivo / modifica consensus o formule.
 
+## Fix — Models-summary allineato a Monitoraggio V1/V2 (SIGNALS-MON-02.1, 2026-08-07)
+
+`GET …/signals/models-summary` accetta `monitoring_version=v1|v2` (default V2). Le card A–F leggono la stessa coorte dello switch UI: V1 = activation current V3 value-gated senza filtro acquired; V2 = solo acquired (backward-compat col comportamento precedente). Backtest A–F resta generazione unica/neutrale; pesi A–F e Modello F invariati; nessuna migration / write storica / ricalcolo formule. `unique_acquired_signs` resta conteggio acquired-canonical anche in response V1.
+
 ## Feat — Combine historical KPI with purchasability V3 STEP 4B (2026-08-02)
 
 Filtro Acquistabilità V3 minima sull’Analisi KPI storica (funnel copertura, gate failed ≠ 0); pagina autonoma Segnali A–F; CTA Storico: Analisi KPI · Segnali A–F · Report. Nessuna migration/scansione/replay; formule e Run #3 invariate.

@@ -249,6 +249,8 @@ export type ModelsSummaryResponse = {
   date_from: string
   date_to: string
   default_model_key: string
+  monitoring_version?: MonitoringVersion | string
+  acquisition_filter?: string
   models: WeightModelSummary[]
 }
 
@@ -374,11 +376,13 @@ export async function revaluateCecchinoSignals(params: {
 export async function getCecchinoSignalsModelsSummary(params: {
   date_from: string
   date_to: string
+  monitoring_version?: MonitoringVersion
 }): Promise<ModelsSummaryResponse> {
   return adminGetJson<ModelsSummaryResponse>(
     `/api/admin/cecchino/signals/models-summary${qs({
       date_from: params.date_from,
       date_to: params.date_to,
+      monitoring_version: params.monitoring_version ?? DEFAULT_MONITORING_VERSION,
     })}`,
   )
 }

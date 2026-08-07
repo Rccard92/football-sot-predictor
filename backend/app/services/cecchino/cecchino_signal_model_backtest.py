@@ -25,7 +25,12 @@ from app.services.cecchino.cecchino_engine import (
     compute_final_odds,
     picchetti_blocks_from_output_json,
 )
-from app.services.cecchino.cecchino_signal_aggregation import _bucket_counts, _enrich_taken_odds_metrics
+from app.services.cecchino.cecchino_signal_aggregation import (
+    DEFAULT_MONITORING_VERSION,
+    _bucket_counts,
+    _enrich_taken_odds_metrics,
+    resolve_monitoring_version,
+)
 from app.services.cecchino.cecchino_signal_consensus import (
     ACQ_REJECTED_INSUFFICIENT,
     CURRENT_SIGNAL_FORMULA_VERSION,
@@ -372,8 +377,21 @@ def backtest_cecchino_weight_models(
     }
 
 
-def build_models_summary(db: Session, *, date_from: date, date_to: date) -> dict[str, Any]:
-    """Summary comparativo per card modelli A–F (default: formula corrente + acquisiti)."""
+def build_models_summary(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    monitoring_version: str | None = None,
+) -> dict[str, Any]:
+    """Summary comparativo card A–F sulla coorte Monitoraggio V1/V2 (sola lettura).
+
+    V1 → tutte le activation current V3 value-gated (anche rejected consensus).
+    V2 → soltanto acquired canonical (comportamento pre-SIGNALS-MON-02.1).
+    unique_acquired_signs resta conteggio acquired-canonical (strategia A).
+    """
+    resolved_mv, effective_af = resolve_monitoring_version(monitoring_version, None)
+    only_acquired = effective_af == "acquired"
     models: list[dict[str, Any]] = []
     for mk in CECCHINO_WEIGHT_MODEL_KEYS:
         model = get_cecchino_weight_model(mk)
@@ -382,7 +400,7 @@ def build_models_summary(db: Session, *, date_from: date, date_to: date) -> dict
             date_from=date_from,
             date_to=date_to,
             model_key=mk,
-            only_acquired=True,
+            only_acquired=only_acquired,
             formula_version=CURRENT_SIGNAL_FORMULA_VERSION,
         )
         models.append(
@@ -413,6 +431,7 @@ def build_models_summary(db: Session, *, date_from: date, date_to: date) -> dict
         "default_model_key": CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
         "formula_version": CURRENT_SIGNAL_FORMULA_VERSION,
         "consensus_policy_version": SIGNAL_CONSENSUS_POLICY_VERSION,
-        "acquisition_filter": "acquired",
+        "monitoring_version": resolved_mv or DEFAULT_MONITORING_VERSION,
+        "acquisition_filter": effective_af,
         "models": models,
     }

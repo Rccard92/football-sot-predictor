@@ -48,32 +48,40 @@ function emptyBucket() {
   }
 }
 
-function setupApiMocks() {
-  modelsMock.mockResolvedValue({
-    date_from: '2026-08-01',
-    date_to: '2026-08-01',
-    default_model_key: 'F',
-    models: [
-      {
-        model_key: 'F',
-        label: 'Modello F',
-        short_label: 'F',
-        weights: '30 / 30 / 20 / 20',
-        activations: 2,
-        settled: 2,
-        won: 1,
-        lost: 1,
-        pending: 0,
-        win_rate: 50,
-        avg_won_book_odds: 2.1,
-        quota_void: 2,
-        void_margin: 0.1,
-        taken_profit_indicator: 0.05,
-      },
-    ],
+function setupApiMocks(options?: { modelsVersion?: 'v1' | 'v2'; modelsActivations?: number }) {
+  const monitoringVersion = options?.modelsVersion ?? 'v2'
+  const activations = options?.modelsActivations ?? 2
+  modelsMock.mockImplementation(async (params: { monitoring_version?: string }) => {
+    const version = params?.monitoring_version === 'v1' ? 'v1' : 'v2'
+    const act = version === 'v1' ? activations + 1 : activations
+    return {
+      date_from: '2026-08-01',
+      date_to: '2026-08-01',
+      default_model_key: 'F',
+      monitoring_version: version,
+      acquisition_filter: version === 'v1' ? 'all' : 'acquired',
+      models: [
+        {
+          model_key: 'F',
+          label: 'Modello F',
+          short_label: 'F',
+          weights: '30 / 30 / 20 / 20',
+          activations: act,
+          settled: act,
+          won: 1,
+          lost: act - 1,
+          pending: 0,
+          win_rate: version === 'v1' ? 33.3 : 50,
+          avg_won_book_odds: 2.1,
+          quota_void: version === 'v1' ? 3 : 2,
+          void_margin: 0.1,
+          taken_profit_indicator: version === 'v1' ? -0.3 : 0.05,
+        },
+      ],
+    }
   })
   summaryMock.mockResolvedValue({
-    filters: { monitoring_version: 'v2', acquisition_filter: 'acquired' },
+    filters: { monitoring_version: monitoringVersion, acquisition_filter: monitoringVersion === 'v1' ? 'all' : 'acquired' },
     overall: emptyBucket(),
     by_signal: [],
     by_column: [],
@@ -128,7 +136,7 @@ function setupApiMocks() {
     total: 1,
     limit: 200,
     offset: 0,
-    monitoring_version: 'v2',
+    monitoring_version: monitoringVersion,
   })
 }
 
@@ -200,6 +208,114 @@ describe('CecchinoSignalsMonitoringPage — V1/V2', () => {
     )
   })
 
+  it('models-summary riceve monitoring_version v2 di default', async () => {
+    renderPage()
+    await waitFor(() => expect(modelsMock).toHaveBeenCalled())
+    const first = modelsMock.mock.calls[0]?.[0]
+    expect(first?.monitoring_version).toBe('v2')
+  })
+
+  it('switch V1 richiama models-summary con v1 e aggiorna card', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 2')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('monitoring-version-v1'))
+    await waitFor(() => {
+      const last = modelsMock.mock.calls.at(-1)?.[0]
+      expect(last?.monitoring_version).toBe('v1')
+    })
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 3')).toBeTruthy())
+    expect(screen.getByTestId('models-summary-version-badge').textContent).toContain('V1')
+    expect(screen.getByTestId('models-summary-cohort-label').textContent).toContain(
+      'V1 Base',
+    )
+  })
+
+  it('ritorno a V2 aggiorna card e badge', async () => {
+    renderPage('/monitoraggio-segnali?monitoring_version=v1')
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 3')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('monitoring-version-v2'))
+    await waitFor(() => {
+      const last = modelsMock.mock.calls.at(-1)?.[0]
+      expect(last?.monitoring_version).toBe('v2')
+    })
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 2')).toBeTruthy())
+    expect(screen.getByTestId('models-summary-version-badge').textContent).toContain('V2')
+    expect(screen.getByTestId('models-summary-cohort-label').textContent).toContain(
+      'V2 Confermato',
+    )
+    expect(screen.getByTestId('models-summary-cohort-label').textContent).toContain(
+      'single-formula',
+    )
+  })
+
+  it('durante switch non mostra dati modelli stale sotto nuova versione', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 2')).toBeTruthy())
+    let resolveModels: ((value: unknown) => void) | undefined
+    modelsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveModels = resolve
+        }),
+    )
+    fireEvent.click(screen.getByTestId('monitoring-version-v1'))
+    expect(screen.getByTestId('models-summary-version-badge').textContent).toContain('V1')
+    await waitFor(() => expect(screen.getByTestId('models-summary-loading')).toBeTruthy())
+    expect(screen.queryByText('Segnali accesi: 2')).toBeNull()
+    resolveModels?.({
+      date_from: '2026-08-01',
+      date_to: '2026-08-01',
+      default_model_key: 'F',
+      monitoring_version: 'v1',
+      acquisition_filter: 'all',
+      models: [
+        {
+          model_key: 'F',
+          label: 'Modello F',
+          short_label: 'F',
+          weights: '30 / 30 / 20 / 20',
+          activations: 3,
+          settled: 3,
+          won: 1,
+          lost: 2,
+          pending: 0,
+          win_rate: 33.3,
+          avg_won_book_odds: 2.1,
+          quota_void: 3,
+          void_margin: 0.1,
+          taken_profit_indicator: -0.3,
+        },
+      ],
+    })
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 3')).toBeTruthy())
+  })
+
+  it('modello selezionato non viene resettato al cambio versione', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 2')).toBeTruthy())
+    expect(screen.getByRole('button', { name: /Win Rate/i })).toBeTruthy()
+    fireEvent.click(screen.getByTestId('monitoring-version-v1'))
+    await waitFor(() => expect(screen.getByText('Segnali accesi: 3')).toBeTruthy())
+    const selected = screen.getByRole('button', { name: /Win Rate/i })
+    expect(selected.className).toContain('ring-2')
+  })
+
+  it('label indipendente dalla versione Monitoraggio non esiste più', async () => {
+    renderPage()
+    await waitFor(() => expect(modelsMock).toHaveBeenCalled())
+    expect(screen.queryByTestId('models-summary-independence-label')).toBeNull()
+    expect(screen.queryByText(/indipendente dalla versione Monitoraggio/i)).toBeNull()
+  })
+
+  it('microcopy e badge coorte modelli corretti in V2', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('models-summary-version-badge')).toBeTruthy())
+    expect(screen.getByTestId('models-summary-version-badge').textContent).toBe('V2')
+    expect(screen.getByTestId('models-summary-cohort-label').textContent).toContain(
+      '≥2 SI sullo stesso segno',
+    )
+  })
+
   it('mostra loading/opacity al cambio versione', async () => {
     renderPage()
     await waitFor(() => expect(screen.getByTestId('monitoring-cohort-panel')).toBeTruthy())
@@ -232,15 +348,6 @@ describe('CecchinoSignalsMonitoringPage — V1/V2', () => {
     expect(titles.length).toBeLessThanOrEqual(2)
   })
 
-  it('label models-summary indipendente', async () => {
-    renderPage()
-    await waitFor(() =>
-      expect(screen.getByTestId('models-summary-independence-label').textContent).toContain(
-        'indipendente dalla versione Monitoraggio',
-      ),
-    )
-  })
-
   it('refresh conserva versione da URL', async () => {
     renderPage('/monitoraggio-segnali?monitoring_version=v1')
     await waitFor(() => expect(summaryMock).toHaveBeenCalled())
@@ -248,6 +355,7 @@ describe('CecchinoSignalsMonitoringPage — V1/V2', () => {
       'true',
     )
     expect(summaryMock.mock.calls.some((c) => c[0]?.monitoring_version === 'v1')).toBe(true)
+    expect(modelsMock.mock.calls.some((c) => c[0]?.monitoring_version === 'v1')).toBe(true)
   })
 })
 

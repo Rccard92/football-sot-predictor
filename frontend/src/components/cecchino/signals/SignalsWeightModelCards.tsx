@@ -14,8 +14,12 @@ function formatWinRate(rate: number | null | undefined): string {
 }
 
 export function SignalsWeightModelCards({ models, selectedModelKey, loading, onSelect }: Props) {
-  if (loading && models.length === 0) {
-    return <p className="text-sm text-slate-500">Caricamento modelli...</p>
+  if (loading) {
+    return (
+      <p className="text-sm text-slate-500" data-testid="models-summary-loading">
+        Caricamento modelli...
+      </p>
+    )
   }
 
   return (

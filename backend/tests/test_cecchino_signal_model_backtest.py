@@ -250,6 +250,8 @@ def test_build_models_summary_returns_six_models():
     assert len(payload["models"]) == 6
     keys = [m["model_key"] for m in payload["models"]]
     assert keys == list(CECCHINO_WEIGHT_MODEL_KEYS)
+    assert payload["monitoring_version"] == "v2"
+    assert payload["acquisition_filter"] == "acquired"
 
 
 def test_summary_filters_by_model_key():

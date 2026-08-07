@@ -92,9 +92,18 @@ def cecchino_signals_backtest_models(
 def cecchino_signals_models_summary(
     date_from: date = Query(...),
     date_to: date = Query(...),
+    monitoring_version: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    payload = build_models_summary(db, date_from=date_from, date_to=date_to)
+    try:
+        payload = build_models_summary(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            monitoring_version=monitoring_version,
+        )
+    except MonitoringVersionNotAllowed as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return JSONResponse(content=jsonable_encoder(payload))
 
 
