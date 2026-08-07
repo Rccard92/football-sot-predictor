@@ -86,6 +86,18 @@ def test_excludes_league_ladies():
     assert status == ELIGIBILITY_EXCLUDED_WOMEN
 
 
+def test_excludes_league_feminine():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="Division 1 Féminine"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
+def test_excludes_league_womens():
+    allowed, status = is_cecchino_allowed_competition(_item(league_name="Womens Premier League"))
+    assert not allowed
+    assert status == ELIGIBILITY_EXCLUDED_WOMEN
+
+
 def test_excludes_both_teams_autonomous_w_suffix():
     allowed, status = is_cecchino_allowed_competition(
         _item(league_name="Primera A", country="Colombia", home="Millonarios W", away="Santa Fe (W)")
@@ -124,6 +136,18 @@ def test_excludes_youth_keyword():
     allowed, status = is_cecchino_allowed_competition(_item(league_name="Premier League U21"))
     assert not allowed
     assert status == ELIGIBILITY_EXCLUDED_YOUTH
+
+
+def test_excludes_youth_hyphenated_and_spaced_u_ages():
+    for name in (
+        "Premier League U-21",
+        "U-23 League",
+        "Under-21 League",
+        "Sub-21 League",
+    ):
+        allowed, status = is_cecchino_allowed_competition(_item(league_name=name))
+        assert not allowed, name
+        assert status == ELIGIBILITY_EXCLUDED_YOUTH, name
 
 
 def test_excludes_youth_u19_u23_and_reserve():
@@ -195,15 +219,15 @@ def test_allows_internal_w_in_team_name():
 
 def test_allows_club_suffix_b():
     allowed, status = is_cecchino_allowed_competition(
-        _item(league_name="Serie B", home="Genoa", away="Palermo")
+        _item(
+            league_name="Primera Federación",
+            country="Spain",
+            home="Real Madrid B",
+            away="Barcelona B",
+        )
     )
     assert allowed
     assert status is None
-    allowed2, status2 = is_cecchino_allowed_competition(
-        _item(league_name="Primera División", country="Argentina", home="Estudiantes", away="Banfield")
-    )
-    assert allowed2
-    assert status2 is None
 
 
 def test_allows_professional_junior_club():

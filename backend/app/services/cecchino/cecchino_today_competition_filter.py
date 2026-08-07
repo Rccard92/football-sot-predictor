@@ -79,9 +79,9 @@ def _youth_age_hit(tokens: list[str]) -> bool:
             return True
         if _YOUTH_AGE_RE.match(tok):
             return True
-    # under 21 / sub 21 as consecutive tokens
+    # u 21 / under 21 / sub 21 as consecutive tokens (after punct→space normalize)
     for i, tok in enumerate(tokens):
-        if tok in ("under", "sub") and i + 1 < len(tokens):
+        if tok in ("u", "under", "sub") and i + 1 < len(tokens):
             nxt = tokens[i + 1]
             if nxt.isdigit() and 17 <= int(nxt) <= 23:
                 return True
