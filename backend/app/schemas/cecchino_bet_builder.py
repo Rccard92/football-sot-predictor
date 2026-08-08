@@ -1,4 +1,4 @@
-"""Schemas Bet Builder — contratto response BET-01 (documentazione OpenAPI)."""
+"""Schemas Bet Builder — contratto response BET-01 + BET-RESULTS-01 (documentazione OpenAPI)."""
 
 from __future__ import annotations
 
@@ -33,3 +33,32 @@ class BetBuilderOpportunitiesResponse(BaseModel):
     freshness: dict[str, Any]
     summary: dict[str, Any]
     opportunities: list[dict[str, Any]]
+
+
+class BetBuilderResultsQuery(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    outcome: str | None = None
+    market_key: str | None = None
+    origin: str | None = None
+    min_purchasability: float | None = None
+    sort: str | None = "recent"
+    limit: int = 50
+    offset: int = 0
+
+
+class BetBuilderResultsResponse(BaseModel):
+    """Contratto indicativo Results Monitor."""
+
+    contract_version: str
+    available_from: str
+    primary_selection_version: str
+    date_from: str
+    date_to: str
+    timezone: str
+    sort: str
+    limit: int
+    offset: int
+    total: int
+    summary: dict[str, Any]
+    fixtures: list[dict[str, Any]]

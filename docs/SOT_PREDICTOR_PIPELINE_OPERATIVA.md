@@ -1,5 +1,16 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
+
+1. Operatore apre `/bet-builder` → default **Pre-match** (invariato).
+2. Switch **Risultati** (`?view=results`) → `GET /api/cecchino/bet-builder/results` (date ≥ 08/08/2026).
+3. Backend ricostruisce opportunity (stesso builder pre-match, **senza** filtro operational); primary = Evidence Sort V2.
+4. Outcome: `evaluate_market_selection` + status match; cancelled/postponed → not_evaluable.
+5. KPI solo primary; secondary in accordion diagnostico; filtro «Analizza perse».
+6. Polling soft 45s se live/pending, più lento se settled; focus/visibility refresh.
+7. Aggiornamento score: riusa `POST /api/admin/cecchino/today/update-results` (Today) — nessun fetcher BB.
+8. Nessuna write Bet Builder, nessun freeze, nessun backfill, nessuna migration.
+
 ## Bet Builder BET-03 — Cart manuale (2026-08-07)
 
 1. Operatore apre `/bet-builder` → board BET-02.4 invariata (evidence sort v2, primary, selector).

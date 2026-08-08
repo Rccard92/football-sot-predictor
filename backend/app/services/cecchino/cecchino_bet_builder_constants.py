@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 BET_BUILDER_CONTRACT_VERSION = "cecchino_bet_builder_contract_v1"
 # v2 = price gate aligned to V3.1 theoretical gate
 BET_BUILDER_AGGREGATOR_VERSION = "cecchino_bet_builder_opportunity_aggregator_v2"
@@ -9,6 +11,11 @@ BET_BUILDER_SIGNAL_EVIDENCE_VERSION = "cecchino_bet_builder_signal_evidence_v1"
 BET_BUILDER_PURCHASABILITY_POLICY_VERSION = (
     "cecchino_bet_builder_purchasability_v31_only_v1"
 )
+
+# BET-RESULTS-01 — Outcome Monitor (read-only, no freeze / no backfill)
+BET_BUILDER_RESULTS_START_DATE = date(2026, 8, 8)
+BET_BUILDER_PRIMARY_SELECTION_VERSION = "bet_builder_evidence_sort_v2"
+BET_BUILDER_RESULTS_CONTRACT_VERSION = "cecchino_bet_builder_results_contract_v1"
 
 PURCHASABILITY_POLICY = "v31_only"
 

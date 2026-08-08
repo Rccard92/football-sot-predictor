@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-RESULTS-01 Outcome Monitor (2026-08-08)
+
+- Perché: il Bet Builder pre-match esclude live/finished; serviva un monitor post-match della predizione madre senza freeze né backfill.
+- Cosa: `GET /results` ricostruisce opportunity dagli snapshot Today (≥08/08/2026); primary Evidence Sort V2 backend; outcome via `evaluate_market_selection`; UI switch Pre-match/Risultati; KPI primary-only; filtro Perse; drawer analisi.
+- Impatto: Pre-match/cart/Evidence Sort FE/price gate/Signals gate/formule invariati; nessuna migration; nessuna API esterna nel GET; nessun causal analysis.
+- Non fatto: backfill storico; freeze snapshot; ROI/profit; spiegazioni causali post-match (task futuro).
+
 ## Fix — Models-summary allineato a Monitoraggio V1/V2 SIGNALS-MON-02.1 (2026-08-07)
 
 - Perché: le card «Confronto modelli pesi» restavano sempre sulla coorte acquired (V2) mentre KPI/heatmap/ranking/export seguivano lo switch V1/V2.

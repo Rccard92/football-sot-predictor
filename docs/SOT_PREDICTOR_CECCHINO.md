@@ -2,6 +2,22 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
+
+Vista **Risultati** sul Bet Builder: ricostruisce le opportunity post-kickoff dagli snapshot Today e valuta la predizione madre.
+
+| Tema | Regola |
+|------|--------|
+| Start date | `2026-08-08` Europe/Rome — nessun backfill precedente |
+| Freeze | **Nessuno** — nessuna tabella snapshot/history Bet Builder |
+| Migration | **Nessuna** |
+| Primary | Evidence Sort V2 (`bet_builder_evidence_sort_v2`) — stessa policy FE |
+| KPI | Solo primary; win_rate = won/(won+lost); pending/void esclusi |
+| Evaluation | `evaluate_market_selection` (FT; X PT → HT) |
+| Endpoint | `GET /api/cecchino/bet-builder/results` — solo DB persistito |
+| Pre-match | Invariato (`_is_pre_match_operational` resta) |
+| Cart / formule | Invariati; nessun causality engine |
+
 ## Bet Builder BET-03.1 — Mobile responsive polish (2026-08-07)
 
 Fix **solo layout mobile** della card Bet Builder. Nessuna modifica a logica cart, ranking, formule o backend.

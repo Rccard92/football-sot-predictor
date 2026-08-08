@@ -268,3 +268,105 @@ export async function fetchBetBuilderOpportunities(
     `/api/cecchino/bet-builder/opportunities?${qs.toString()}`,
   )
 }
+
+/** BET-RESULTS-01 — Outcome Monitor (read-only). */
+export const BET_BUILDER_RESULTS_START_DATE = '2026-08-08'
+
+export type BetBuilderPredictionOutcome =
+  | 'won'
+  | 'lost'
+  | 'pending'
+  | 'result_missing'
+  | 'not_evaluable'
+
+export type BetBuilderMatchStatus =
+  | 'upcoming'
+  | 'live'
+  | 'finished'
+  | 'postponed'
+  | 'cancelled'
+  | 'unknown'
+
+export type BetBuilderResultOpportunity = BetBuilderOpportunity & {
+  prediction_outcome: BetBuilderPredictionOutcome
+  evaluation_reason?: string | null
+  match_status?: BetBuilderMatchStatus
+}
+
+export type BetBuilderResultsFixture = {
+  fixture: BetBuilderOpportunity['fixture'] & {
+    match_status: BetBuilderMatchStatus
+    elapsed_minutes?: number | null
+    score: {
+      goals_home?: number | null
+      goals_away?: number | null
+      fulltime_home?: number | null
+      fulltime_away?: number | null
+      halftime_home?: number | null
+      halftime_away?: number | null
+    }
+  }
+  primary: BetBuilderResultOpportunity
+  other_opportunities: BetBuilderResultOpportunity[]
+  primary_selection_version?: string
+}
+
+export type BetBuilderResultsSummary = {
+  primary_predictions: number
+  settled: number
+  won: number
+  lost: number
+  pending: number
+  not_evaluable: number
+  result_missing?: number
+  live_or_pending?: number
+  win_rate: number | null
+}
+
+export type BetBuilderResultsResponse = {
+  contract_version: string
+  available_from: string
+  primary_selection_version: string
+  date_from: string
+  date_to: string
+  timezone: string
+  sort: string
+  limit: number
+  offset: number
+  total: number
+  summary: BetBuilderResultsSummary
+  fixtures: BetBuilderResultsFixture[]
+}
+
+export type FetchBetBuilderResultsParams = {
+  date_from?: string
+  date_to?: string
+  outcome?: BetBuilderPredictionOutcome
+  market_key?: string
+  origin?: BetBuilderOrigin
+  min_purchasability?: number
+  sort?: 'recent' | 'lost_first' | 'purchasability_desc'
+  limit?: number
+  offset?: number
+}
+
+export async function fetchBetBuilderResults(
+  params: FetchBetBuilderResultsParams = {},
+): Promise<BetBuilderResultsResponse> {
+  const qs = new URLSearchParams()
+  if (params.date_from) qs.set('date_from', params.date_from)
+  if (params.date_to) qs.set('date_to', params.date_to)
+  if (params.outcome) qs.set('outcome', params.outcome)
+  if (params.market_key) qs.set('market_key', params.market_key)
+  if (params.origin) qs.set('origin', params.origin)
+  if (params.min_purchasability != null) {
+    qs.set('min_purchasability', String(params.min_purchasability))
+  }
+  if (params.sort) qs.set('sort', params.sort)
+  if (params.limit != null) qs.set('limit', String(params.limit))
+  if (params.offset != null) qs.set('offset', String(params.offset))
+  const q = qs.toString()
+  return requestJson<BetBuilderResultsResponse>(
+    `/api/cecchino/bet-builder/results${q ? `?${q}` : ''}`,
+  )
+}

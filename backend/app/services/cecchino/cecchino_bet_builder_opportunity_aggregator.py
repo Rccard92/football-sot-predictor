@@ -869,55 +869,23 @@ def _load_gi_payloads_batch(
     return out, max_gi_at
 
 
-def aggregate_bet_builder_opportunities(
-    db: Session,
+def build_opportunities_for_rows(
+    rows: list[CecchinoTodayFixture],
     *,
-    scan_date: date,
-    market_key: str | None = None,
-    origin: str | None = None,
-    now: datetime | None = None,
-) -> dict[str, Any]:
-    """Read-model: legge stato current Today e aggrega opportunity."""
-    now = now or datetime.now(timezone.utc)
-    market_filter = str(market_key).strip().upper() if market_key else None
-    if market_filter and market_filter not in BET_BUILDER_MARKET_KEY_SET:
-        market_filter = None
-    origin_filter = str(origin).strip().lower() if origin else None
-    if origin_filter not in {
-        ORIGIN_PRICE,
-        ORIGIN_SIGNALS,
-        ORIGIN_PRICE_AND_SIGNALS,
-        None,
-    }:
-        origin_filter = None
+    gi_by_fixture: dict[int, dict[str, Any]],
+    market_filter: str | None = None,
+    origin_filter: str | None = None,
+    freshness_scan_date: date | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Costruisce opportunity dalle row Today (pre-match o post-kickoff).
 
-    source_scan_status, latest_job, freshness_warning = resolve_source_scan_status(
-        db, scan_date
-    )
-
-    all_eligible = list(
-        db.scalars(
-            select(CecchinoTodayFixture).where(
-                CecchinoTodayFixture.scan_date == scan_date,
-                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
-            )
-        ).all()
-    )
-
-    excluded_post_kickoff = 0
-    operational_rows: list[CecchinoTodayFixture] = []
-    for row in all_eligible:
-        if _is_pre_match_operational(row, now=now):
-            operational_rows.append(row)
-        else:
-            excluded_post_kickoff += 1
-
-    gi_by_fixture, max_gi_at = _load_gi_payloads_batch(db, operational_rows)
-
+    Riusato da Pre-match e Results — nessuna formula duplicata.
+    Ritorna (opportunities, max_v31_generated_at).
+    """
     opportunities: list[dict[str, Any]] = []
     max_v31_at: str | None = None
 
-    for row in operational_rows:
+    for row in rows:
         output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
         kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
         signals_matrix = output.get("signals_matrix") if isinstance(output, dict) else None
@@ -934,6 +902,15 @@ def aggregate_bet_builder_opportunities(
 
         gi_payload = gi_by_fixture.get(int(row.id))
         fixture_block = _fixture_block(row)
+        scan_date_iso = (
+            freshness_scan_date.isoformat()
+            if freshness_scan_date is not None
+            else (
+                row.scan_date.isoformat()
+                if getattr(row, "scan_date", None) is not None
+                else None
+            )
+        )
         markets = (
             [market_filter]
             if market_filter
@@ -984,7 +961,7 @@ def aggregate_bet_builder_opportunities(
                 "purchasability_v31": purch,
                 "context_support": ctx,
                 "freshness": {
-                    "source_scan_date": scan_date.isoformat(),
+                    "source_scan_date": scan_date_iso,
                     "fixture_updated_at": _iso(getattr(row, "updated_at", None)),
                     "signals_updated_at": signals_updated,
                     "purchasability_v31_generated_at": purch.get("generated_at"),
@@ -993,6 +970,61 @@ def aggregate_bet_builder_opportunities(
             }
             opportunities.append(opp)
 
+    return opportunities, max_v31_at
+
+
+def aggregate_bet_builder_opportunities(
+    db: Session,
+    *,
+    scan_date: date,
+    market_key: str | None = None,
+    origin: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Read-model: legge stato current Today e aggrega opportunity."""
+    now = now or datetime.now(timezone.utc)
+    market_filter = str(market_key).strip().upper() if market_key else None
+    if market_filter and market_filter not in BET_BUILDER_MARKET_KEY_SET:
+        market_filter = None
+    origin_filter = str(origin).strip().lower() if origin else None
+    if origin_filter not in {
+        ORIGIN_PRICE,
+        ORIGIN_SIGNALS,
+        ORIGIN_PRICE_AND_SIGNALS,
+        None,
+    }:
+        origin_filter = None
+
+    source_scan_status, latest_job, freshness_warning = resolve_source_scan_status(
+        db, scan_date
+    )
+
+    all_eligible = list(
+        db.scalars(
+            select(CecchinoTodayFixture).where(
+                CecchinoTodayFixture.scan_date == scan_date,
+                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+            )
+        ).all()
+    )
+
+    excluded_post_kickoff = 0
+    operational_rows: list[CecchinoTodayFixture] = []
+    for row in all_eligible:
+        if _is_pre_match_operational(row, now=now):
+            operational_rows.append(row)
+        else:
+            excluded_post_kickoff += 1
+
+    gi_by_fixture, max_gi_at = _load_gi_payloads_batch(db, operational_rows)
+
+    opportunities, max_v31_at = build_opportunities_for_rows(
+        operational_rows,
+        gi_by_fixture=gi_by_fixture,
+        market_filter=market_filter,
+        origin_filter=origin_filter,
+        freshness_scan_date=scan_date,
+    )
     opportunities.sort(key=_sort_key)
 
     source_generated_from = build_source_generated_from(

@@ -13,7 +13,8 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 | Score sintetico | **Nessuno** (divieto Bet Builder Score / confidence / combined) |
 | Acquistabilità in BB | Policy specifica `v31_only` — **non** promuove V3.1 nel registry globale |
 | Sorgenti | KPI Today, signals_matrix V3, purchasability_preview_v31, Balance monitoring, GI official support |
-| Stato | BET-01 foundation; UI/cart/alignment in BET-02/03/04 |
+| Results (BET-RESULTS-01) | Contratto `cecchino_bet_builder_results_contract_v1`; primary `bet_builder_evidence_sort_v2`; start `2026-08-08`; no freeze/backfill/migration |
+| Stato | BET-01 foundation; UI/cart BET-02/03; Outcome Monitor BET-RESULTS-01; alignment in BET-04 |
 
 ## Segnali Cecchino — formula V3 Decimal + current-only (2026-08-06)
 

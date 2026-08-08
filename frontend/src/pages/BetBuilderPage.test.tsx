@@ -2,11 +2,16 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BetBuilderOpportunitiesResponse, BetBuilderOpportunity } from '../lib/cecchinoBetBuilderApi'
+import type {
+  BetBuilderOpportunitiesResponse,
+  BetBuilderOpportunity,
+  BetBuilderResultsResponse,
+} from '../lib/cecchinoBetBuilderApi'
 import { BetBuilderPage } from './BetBuilderPage'
 
 const apiMock = vi.hoisted(() => ({
   fetchBetBuilderOpportunities: vi.fn(),
+  fetchBetBuilderResults: vi.fn(),
   todayIsoRome: vi.fn(() => '2026-08-08'),
 }))
 
@@ -22,6 +27,7 @@ vi.mock('../lib/cecchinoBetBuilderApi', async () => {
   return {
     ...actual,
     fetchBetBuilderOpportunities: apiMock.fetchBetBuilderOpportunities,
+    fetchBetBuilderResults: apiMock.fetchBetBuilderResults,
   }
 })
 
@@ -169,6 +175,30 @@ describe('BetBuilderPage', () => {
   beforeEach(() => {
     vi.useRealTimers()
     apiMock.fetchBetBuilderOpportunities.mockReset()
+    apiMock.fetchBetBuilderResults.mockReset()
+    apiMock.fetchBetBuilderResults.mockResolvedValue({
+      contract_version: 'cecchino_bet_builder_results_contract_v1',
+      available_from: '2026-08-08',
+      primary_selection_version: 'bet_builder_evidence_sort_v2',
+      date_from: '2026-08-08',
+      date_to: '2026-08-08',
+      timezone: 'Europe/Rome',
+      sort: 'recent',
+      limit: 50,
+      offset: 0,
+      total: 0,
+      summary: {
+        primary_predictions: 0,
+        settled: 0,
+        won: 0,
+        lost: 0,
+        pending: 0,
+        not_evaluable: 0,
+        live_or_pending: 0,
+        win_rate: null,
+      },
+      fixtures: [],
+    })
     apiMock.todayIsoRome.mockReturnValue('2026-08-08')
     toastMock.success.mockReset()
     toastMock.message.mockReset()
@@ -1634,5 +1664,233 @@ describe('BetBuilderPage', () => {
         'AWAY',
       ),
     )
+  })
+})
+
+describe('BetBuilderPage Results BET-RESULTS-01', () => {
+  function baseResultsResponse(
+    overrides: Partial<BetBuilderResultsResponse> = {},
+  ): BetBuilderResultsResponse {
+    const primary = {
+      ...baseOpportunity({
+        opportunity_key: '1:DRAW',
+        origin: 'price_and_signals' as const,
+        price_value: {
+          ...baseOpportunity().price_value,
+          quota_book: 4.1,
+        },
+      }),
+      prediction_outcome: 'lost' as const,
+      match_status: 'finished' as const,
+    }
+    const other = {
+      ...baseOpportunity({
+        opportunity_key: '1:UNDER_2_5',
+        market: { market_key: 'UNDER_2_5', label: 'Under 2.5' },
+        origin: 'price' as const,
+      }),
+      prediction_outcome: 'won' as const,
+      match_status: 'finished' as const,
+    }
+    return {
+      contract_version: 'cecchino_bet_builder_results_contract_v1',
+      available_from: '2026-08-08',
+      primary_selection_version: 'bet_builder_evidence_sort_v2',
+      date_from: '2026-08-08',
+      date_to: '2026-08-08',
+      timezone: 'Europe/Rome',
+      sort: 'recent',
+      limit: 50,
+      offset: 0,
+      total: 1,
+      summary: {
+        primary_predictions: 1,
+        settled: 1,
+        won: 0,
+        lost: 1,
+        pending: 0,
+        not_evaluable: 0,
+        live_or_pending: 0,
+        win_rate: 0,
+      },
+      fixtures: [
+        {
+          fixture: {
+            today_fixture_id: 1,
+            kickoff: '2026-08-08T18:00:00Z',
+            country: 'Sweden',
+            league: 'Division 2',
+            home: { name: 'Onsala', logo: null },
+            away: { name: 'Boljan', logo: null },
+            match_status: 'finished',
+            score: {
+              fulltime_home: 2,
+              fulltime_away: 1,
+              goals_home: 2,
+              goals_away: 1,
+              halftime_home: 1,
+              halftime_away: 0,
+            },
+          },
+          primary,
+          other_opportunities: [other],
+          primary_selection_version: 'bet_builder_evidence_sort_v2',
+        },
+      ],
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    vi.useRealTimers()
+    apiMock.fetchBetBuilderOpportunities.mockReset()
+    apiMock.fetchBetBuilderResults.mockReset()
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
+    apiMock.todayIsoRome.mockReturnValue('2026-08-08')
+    toastMock.success.mockReset()
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    window.localStorage.clear()
+  })
+
+  it('1. default view Pre-match', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-view-prematch')).toBeTruthy())
+    expect(screen.getByTestId('bet-builder-view-prematch').getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(apiMock.fetchBetBuilderOpportunities).toHaveBeenCalled()
+    expect(apiMock.fetchBetBuilderResults).not.toHaveBeenCalled()
+  })
+
+  it('2-3. switch Results e URL view=results', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-view-results')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('bet-builder-view-results'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-results-summary')).toBeTruthy())
+    expect(screen.getByTestId('bet-builder-results-subtitle').textContent).toMatch(
+      /Monitoraggio risultati/,
+    )
+    expect(apiMock.fetchBetBuilderResults).toHaveBeenCalled()
+  })
+
+  it('3. URL view=results carica Results', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('bet-builder-results-summary')).toBeTruthy())
+    expect(screen.getByTestId('results-kpi-lost').textContent).toBe('1')
+    expect(screen.getByTestId('results-kpi-primary-note').textContent).toMatch(/predizione madre/i)
+  })
+
+  it('5. Results start date — date picker min 2026-08-08', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-date-from')).toBeTruthy())
+    expect(screen.getByTestId('results-date-from').getAttribute('min')).toBe('2026-08-08')
+    expect(screen.getByTestId('bet-builder-results-available-from').textContent).toMatch(
+      /08\/08\/2026/,
+    )
+  })
+
+  it('6-7. KPI e quick filter Perse', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-kpi-predictions')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('results-kpi-lost-btn'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'lost' }),
+      ),
+    )
+    fireEvent.click(screen.getByTestId('results-analyze-lost'))
+    await waitFor(() =>
+      expect(screen.getByTestId('results-outcome-lost').className).toMatch(/slate-900|bg-slate/),
+    )
+  })
+
+  it('8-11. card score, primary badge, WON/LOST', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('result-score')).toBeTruthy())
+    expect(screen.getByTestId('result-score').textContent).toMatch(/2\s*[–-]\s*1/)
+    expect(screen.getByTestId('result-primary-block')).toBeTruthy()
+    expect(screen.getByTestId('result-outcome-badge').textContent).toMatch(/Persa/i)
+  })
+
+  it('12. LIVE badge', async () => {
+    const live = baseResultsResponse()
+    live.fixtures[0].fixture.match_status = 'live'
+    live.fixtures[0].primary.prediction_outcome = 'pending'
+    live.fixtures[0].primary.match_status = 'live'
+    apiMock.fetchBetBuilderResults.mockResolvedValue(live)
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('result-live-badge')).toBeTruthy())
+  })
+
+  it('13-14. pending wording e accordion other opportunities', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('result-others-toggle')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('result-others-toggle'))
+    expect(screen.getByTestId('result-others-list')).toBeTruthy()
+    expect(screen.getAllByTestId('result-other-row').length).toBeGreaterThan(0)
+  })
+
+  it('16-17. Analizza perdita apre drawer', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('result-analyze-cta')).toBeTruthy())
+    expect(screen.getByTestId('result-analyze-cta').textContent).toMatch(/Analizza perdita/)
+    fireEvent.click(screen.getByTestId('result-analyze-cta'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-result-drawer')).toBeTruthy())
+    expect(screen.getByTestId('drawer-primary')).toBeTruthy()
+    expect(screen.getByTestId('drawer-match')).toBeTruthy()
+  })
+
+  it('18. signal-only Book N/D', async () => {
+    const res = baseResultsResponse()
+    res.fixtures[0].primary.origin = 'signals'
+    res.fixtures[0].primary.price_value = {
+      ...res.fixtures[0].primary.price_value,
+      present: false,
+      quota_book: null,
+    }
+    apiMock.fetchBetBuilderResults.mockResolvedValue(res)
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('result-book').textContent).toBe('N/D'))
+  })
+
+  it('21. ritorno Pre-match', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('bet-builder-results-summary')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('bet-builder-view-prematch'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cards')).toBeTruthy())
+    expect(apiMock.fetchBetBuilderOpportunities).toHaveBeenCalled()
+  })
+
+  it('22. cart ancora funzionante in Pre-match', async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-cards')).toBeTruthy())
+    expect(screen.getByTestId('bet-builder-floating-cart')).toBeTruthy()
+  })
+
+  it('WON outcome badge', async () => {
+    const res = baseResultsResponse()
+    res.fixtures[0].primary.prediction_outcome = 'won'
+    res.summary.won = 1
+    res.summary.lost = 0
+    res.summary.win_rate = 1
+    apiMock.fetchBetBuilderResults.mockResolvedValue(res)
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() =>
+      expect(screen.getByTestId('result-outcome-badge').textContent).toMatch(/Vinta/i),
+    )
+    expect(screen.getByTestId('result-analyze-cta').textContent).toMatch(/Apri analisi/)
   })
 })

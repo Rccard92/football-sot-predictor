@@ -2,6 +2,16 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
+
+- Seconda modalità su `/bet-builder?view=results`: monitoraggio esito della **predizione madre** (Evidence Sort V2)
+- Disponibile dal **08/08/2026** (`BET_BUILDER_RESULTS_START_DATE`); **nessun backfill** di date precedenti
+- Read-only su `CecchinoTodayFixture` + snapshot esistenti; **nessun freeze**, **nessuna nuova tabella**, **nessuna migration**
+- Primary backend = `bet_builder_evidence_sort_v2` (parità FE); KPI **solo primary**; secondary solo diagnostiche
+- Evaluation via `evaluate_market_selection`; cancelled/postponed → `not_evaluable` (non LOST); X PT su HT
+- `GET /api/cecchino/bet-builder/results` — nessuna API esterna; Pre-match/cart/formule invariati
+- Nessuna causal analysis post-match
+
 ## Bet Builder BET-03.1 — Mobile responsive polish (2026-08-07)
 
 - Fix **solo CSS/responsive** card Bet Builder a 320–430px; desktop invariato
