@@ -149,11 +149,38 @@ export function resultsNeedActivePolling(
   })
 }
 
+export type ResultsQuickFilterApiParams = {
+  outcome?: BetBuilderPredictionOutcome
+  match_status?: BetBuilderMatchStatus
+}
+
+/**
+ * BET-RESULTS-01.2 — traduce il chip UI nei due assi API:
+ * match_status (In attesa / Live) vs prediction outcome (Vinte / Perse).
+ */
+export function mapResultsQuickFilterToApi(
+  filter: BetBuilderResultsOutcomeFilter,
+): ResultsQuickFilterApiParams {
+  switch (filter) {
+    case 'pending':
+      return { match_status: 'upcoming' }
+    case 'live':
+      return { match_status: 'live' }
+    case 'won':
+      return { outcome: 'won' }
+    case 'lost':
+      return { outcome: 'lost' }
+    case 'all':
+    default:
+      return {}
+  }
+}
+
+/** Legacy helper — solo asse outcome; preferire mapResultsQuickFilterToApi. */
 export function mapOutcomeFilterToApi(
   outcome: BetBuilderResultsOutcomeFilter,
 ): BetBuilderPredictionOutcome | undefined {
-  if (outcome === 'all' || outcome === 'live') return undefined
-  return outcome
+  return mapResultsQuickFilterToApi(outcome).outcome
 }
 
 /** BET-RESULTS-01.1 — auto kickoff_asc su «In attesa», override manuale, exit → recent. */

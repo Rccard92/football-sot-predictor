@@ -389,6 +389,7 @@ def aggregate_bet_builder_results(
     date_from: date | None = None,
     date_to: date | None = None,
     outcome: str | None = None,
+    match_status: str | None = None,
     market_key: str | None = None,
     origin: str | None = None,
     min_purchasability: float | None = None,
@@ -414,6 +415,11 @@ def aggregate_bet_builder_results(
     outcome_filter = str(outcome).strip().lower() if outcome else None
     if outcome_filter and outcome_filter not in VALID_OUTCOMES:
         outcome_filter = None
+
+    # BET-RESULTS-01.2 — asse match_status ortogonale a prediction outcome
+    match_status_filter = str(match_status).strip().lower() if match_status else None
+    if match_status_filter and match_status_filter not in MATCH_STATUS_CANONICAL:
+        match_status_filter = None
 
     market_filter = str(market_key).strip().upper() if market_key else None
     if market_filter and market_filter not in BET_BUILDER_MARKET_KEY_SET:
@@ -471,6 +477,8 @@ def aggregate_bet_builder_results(
     for fid, opps in by_fixture.items():
         row = row_by_id.get(fid)
         if row is None:
+            continue
+        if match_status_filter and normalize_match_status(row) != match_status_filter:
             continue
         enriched = [_enrich_opportunity_with_outcome(o, row) for o in opps]
         ranked = sort_opportunities_by_evidence_strength(enriched)

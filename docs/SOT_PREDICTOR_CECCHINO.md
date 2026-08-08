@@ -2,6 +2,23 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-RESULTS-01.2 — Match state vs prediction outcome (2026-08-08)
+
+Quick filter Results separa due assi ortogonali:
+
+| Tab UI | Asse | Param API |
+|--------|------|-----------|
+| Tutte | — | nessuno |
+| In attesa | Match state | `match_status=upcoming` |
+| Live | Match state | `match_status=live` |
+| Vinte | Prediction outcome | `outcome=won` |
+| Perse | Prediction outcome | `outcome=lost` |
+
+- LIVE + primary PENDING è valido: badge match LIVE + badge predizione IN ATTESA.
+- `outcome=pending` resta supportato API (compat) ma non è più la semantica della tab In attesa.
+- Sort 01.1 (`kickoff_asc` auto su In attesa) invariato; Live non auto-applica kickoff_asc.
+- Invariati: KPI, Analizza perse/perdita, drawer, Evidence Sort V2, Pre-match, cart.
+
 ## Bet Builder BET-RESULTS-01.1 — Sort pending kickoff ASC (2026-08-08)
 
 | Tema | Regola |

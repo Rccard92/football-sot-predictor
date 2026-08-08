@@ -55,6 +55,10 @@ def get_bet_builder_results(
         None,
         description="won | lost | pending | result_missing | not_evaluable",
     ),
+    match_status: str | None = Query(
+        None,
+        description="upcoming | live | finished | postponed | cancelled | unknown",
+    ),
     market_key: str | None = Query(None, description="Filtro market_key sulla primary"),
     origin: str | None = Query(
         None,
@@ -78,6 +82,7 @@ def get_bet_builder_results(
         date_from=date_from,
         date_to=date_to,
         outcome=outcome,
+        match_status=match_status,
         market_key=market_key,
         origin=origin,
         min_purchasability=min_purchasability,

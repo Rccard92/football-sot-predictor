@@ -342,6 +342,7 @@ export type FetchBetBuilderResultsParams = {
   date_from?: string
   date_to?: string
   outcome?: BetBuilderPredictionOutcome
+  match_status?: BetBuilderMatchStatus
   market_key?: string
   origin?: BetBuilderOrigin
   min_purchasability?: number
@@ -357,6 +358,7 @@ export async function fetchBetBuilderResults(
   if (params.date_from) qs.set('date_from', params.date_from)
   if (params.date_to) qs.set('date_to', params.date_to)
   if (params.outcome) qs.set('outcome', params.outcome)
+  if (params.match_status) qs.set('match_status', params.match_status)
   if (params.market_key) qs.set('market_key', params.market_key)
   if (params.origin) qs.set('origin', params.origin)
   if (params.min_purchasability != null) {

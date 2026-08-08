@@ -665,3 +665,329 @@ class TestKickoffAscSort:
             offset=1,
         )
         assert page2["fixtures"][0]["fixture"]["today_fixture_id"] == 3
+
+
+# ---------------------------------------------------------------------------
+# BET-RESULTS-01.2 — match_status vs prediction_outcome filters
+# ---------------------------------------------------------------------------
+
+
+def _patch_aggregate(monkeypatch, rows, market_by_fid: dict[int, str] | None = None):
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_results._load_gi_payloads_batch",
+        lambda db, rs: ({}, None),
+    )
+    market_by_fid = market_by_fid or {}
+
+    def fake_build(db_rows, **kw):
+        return [
+            _opp_built(
+                fid=r.id,
+                market_key=market_by_fid.get(r.id, SEL_HOME),
+                origin=ORIGIN_PRICE,
+            )
+            for r in db_rows
+        ], None
+
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_results.build_opportunities_for_rows",
+        fake_build,
+    )
+    return _mock_db(rows)
+
+
+def _ids(payload: dict) -> list[int]:
+    return [f["fixture"]["today_fixture_id"] for f in payload["fixtures"]]
+
+
+class TestMatchStatusFilter:
+    """Quick filter Results: In attesa/Live = match_status; Vinte/Perse = outcome."""
+
+    def test_live_pending_not_in_upcoming_but_in_live(self, monkeypatch):
+        row = _row(
+            fid=1,
+            match_status="live",
+            ft_home=None,
+            ft_away=None,
+            ht_home=None,
+            ht_away=None,
+        )
+        db = _patch_aggregate(monkeypatch, [row])
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        assert 1 not in _ids(upcoming)
+        assert 1 in _ids(live)
+        assert live["fixtures"][0]["primary"]["prediction_outcome"] == OUTCOME_PENDING
+
+    def test_upcoming_pending_in_upcoming_not_live(self, monkeypatch):
+        row = _row(
+            fid=2,
+            match_status="upcoming",
+            ft_home=None,
+            ft_away=None,
+            ht_home=None,
+            ht_away=None,
+        )
+        db = _patch_aggregate(monkeypatch, [row])
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        assert 2 in _ids(upcoming)
+        assert 2 not in _ids(live)
+
+    def test_finished_won_in_won_not_live_or_upcoming(self, monkeypatch):
+        row = _row(fid=3, match_status="finished", ft_home=2, ft_away=1)
+        db = _patch_aggregate(monkeypatch, [row], {3: SEL_HOME})
+        won = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            outcome="won",
+        )
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        assert 3 in _ids(won)
+        assert won["fixtures"][0]["primary"]["prediction_outcome"] == OUTCOME_WON
+        assert 3 not in _ids(live)
+        assert 3 not in _ids(upcoming)
+
+    def test_live_x_pt_won_in_live_and_won_not_upcoming(self, monkeypatch):
+        row = _row(
+            fid=4,
+            match_status="live",
+            ft_home=1,
+            ft_away=0,
+            ht_home=0,
+            ht_away=0,
+        )
+        db = _patch_aggregate(monkeypatch, [row], {4: SEL_DRAW_PT})
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        won = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            outcome="won",
+        )
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        assert 4 in _ids(live)
+        assert live["fixtures"][0]["primary"]["prediction_outcome"] == OUTCOME_WON
+        assert 4 in _ids(won)
+        assert 4 not in _ids(upcoming)
+
+    def test_live_x_pt_lost_in_live_and_lost_not_upcoming(self, monkeypatch):
+        row = _row(
+            fid=5,
+            match_status="live",
+            ft_home=1,
+            ft_away=0,
+            ht_home=1,
+            ht_away=0,
+        )
+        db = _patch_aggregate(monkeypatch, [row], {5: SEL_DRAW_PT})
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        lost = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            outcome="lost",
+        )
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        assert 5 in _ids(live)
+        assert live["fixtures"][0]["primary"]["prediction_outcome"] == OUTCOME_LOST
+        assert 5 in _ids(lost)
+        assert 5 not in _ids(upcoming)
+
+    def test_postponed_cancelled_out_of_upcoming_and_live(self, monkeypatch):
+        postponed = _row(
+            fid=6,
+            match_status="postponed",
+            ft_home=None,
+            ft_away=None,
+        )
+        cancelled = _row(
+            fid=7,
+            match_status="cancelled",
+            ft_home=None,
+            ft_away=None,
+        )
+        db = _patch_aggregate(monkeypatch, [postponed, cancelled])
+        upcoming = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+        )
+        live = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="live",
+        )
+        all_payload = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+        )
+        assert 6 not in _ids(upcoming)
+        assert 7 not in _ids(upcoming)
+        assert 6 not in _ids(live)
+        assert 7 not in _ids(live)
+        by_id = {f["fixture"]["today_fixture_id"]: f for f in all_payload["fixtures"]}
+        assert by_id[6]["primary"]["prediction_outcome"] == OUTCOME_NOT_EVALUABLE
+        assert by_id[7]["primary"]["prediction_outcome"] == OUTCOME_NOT_EVALUABLE
+
+    def test_upcoming_sort_excludes_live_kickoff(self, monkeypatch):
+        rows = [
+            _row(
+                fid=10,
+                match_status="live",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
+            ),
+            _row(
+                fid=12,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc),
+            ),
+            _row(
+                fid=14,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 14, 0, tzinfo=timezone.utc),
+            ),
+            _row(
+                fid=18,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 18, 0, tzinfo=timezone.utc),
+            ),
+        ]
+        db = _patch_aggregate(monkeypatch, rows)
+        payload = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            match_status="upcoming",
+            sort=SORT_KICKOFF_ASC,
+        )
+        assert _ids(payload) == [12, 14, 18]
+        assert 10 not in _ids(payload)
+
+    def test_outcome_pending_still_includes_live_backward_compat(self, monkeypatch):
+        """outcome=pending resta valido API ma NON è la semantica tab In attesa."""
+        live = _row(
+            fid=1,
+            match_status="live",
+            ft_home=None,
+            ft_away=None,
+        )
+        upcoming = _row(
+            fid=2,
+            match_status="upcoming",
+            ft_home=None,
+            ft_away=None,
+        )
+        db = _patch_aggregate(monkeypatch, [live, upcoming])
+        payload = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            outcome="pending",
+        )
+        assert set(_ids(payload)) == {1, 2}
+
+    def test_api_match_status_query_param(self, monkeypatch):
+        captured: dict = {}
+
+        def capture(db, **kw):
+            captured.clear()
+            captured.update(kw)
+            return {
+                "contract_version": BET_BUILDER_RESULTS_CONTRACT_VERSION,
+                "available_from": "2026-08-08",
+                "primary_selection_version": BET_BUILDER_PRIMARY_SELECTION_VERSION,
+                "date_from": "2026-08-08",
+                "date_to": "2026-08-08",
+                "timezone": "Europe/Rome",
+                "sort": "recent",
+                "limit": 50,
+                "offset": 0,
+                "total": 0,
+                "summary": {"won": 0, "lost": 0, "pending": 0},
+                "fixtures": [],
+            }
+
+        monkeypatch.setattr(
+            "app.routes.cecchino_bet_builder.aggregate_bet_builder_results",
+            capture,
+        )
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        client = TestClient(app)
+        res = client.get(
+            "/api/cecchino/bet-builder/results",
+            params={
+                "match_status": "upcoming",
+                "outcome": "won",
+                "date_from": "2026-08-08",
+                "date_to": "2026-08-08",
+            },
+        )
+        assert res.status_code == 200
+        assert captured.get("match_status") == "upcoming"
+        assert captured.get("outcome") == "won"

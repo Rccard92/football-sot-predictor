@@ -22,7 +22,7 @@ import {
   applyResultsFiltersPatch,
   clampResultsDate,
   defaultResultsFilters,
-  mapOutcomeFilterToApi,
+  mapResultsQuickFilterToApi,
   parseBetBuilderView,
   resultsNeedActivePolling,
   type BetBuilderPageView,
@@ -204,11 +204,12 @@ export function BetBuilderPage() {
     try {
       const dateFrom = clampResultsDate(rf.dateFrom, todayIsoRome())
       const dateTo = clampResultsDate(rf.dateTo, todayIsoRome())
-      const outcome = mapOutcomeFilterToApi(rf.outcome)
+      const quick = mapResultsQuickFilterToApi(rf.outcome)
       const payload = await fetchBetBuilderResults({
         date_from: dateFrom,
         date_to: dateTo,
-        outcome,
+        outcome: quick.outcome,
+        match_status: quick.match_status,
         market_key: rf.market !== 'all' ? rf.market : undefined,
         origin: rf.origin !== 'all' ? rf.origin : undefined,
         min_purchasability: rf.minPurchasability ?? undefined,
@@ -359,11 +360,7 @@ export function BetBuilderPage() {
       ? data.summary.fixtures_eligible_total
       : data?.summary.fixtures_considered
 
-  const resultsFixtures = useMemo(() => {
-    const list = resultsData?.fixtures ?? []
-    if (resultsFilters.outcome !== 'live') return list
-    return list.filter((f) => f.fixture.match_status === 'live')
-  }, [resultsData?.fixtures, resultsFilters.outcome])
+  const resultsFixtures = resultsData?.fixtures ?? []
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-3 overflow-x-hidden pb-24 sm:space-y-4 md:pb-20">

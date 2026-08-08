@@ -7,6 +7,7 @@ import {
   formatBookQuota,
   formatScoreLine,
   mapOutcomeFilterToApi,
+  mapResultsQuickFilterToApi,
   outcomeLabel,
   parseBetBuilderView,
 } from './betBuilderResultsUtils'
@@ -41,10 +42,20 @@ describe('betBuilderResultsUtils', () => {
     ).toMatch(/2\s*[–-]\s*1/)
   })
 
-  it('mapOutcomeFilterToApi', () => {
+  it('mapOutcomeFilterToApi — solo asse outcome (won/lost)', () => {
     expect(mapOutcomeFilterToApi('lost')).toBe('lost')
+    expect(mapOutcomeFilterToApi('won')).toBe('won')
     expect(mapOutcomeFilterToApi('all')).toBeUndefined()
     expect(mapOutcomeFilterToApi('live')).toBeUndefined()
+    expect(mapOutcomeFilterToApi('pending')).toBeUndefined()
+  })
+
+  it('BET-RESULTS-01.2 mapResultsQuickFilterToApi split axes', () => {
+    expect(mapResultsQuickFilterToApi('all')).toEqual({})
+    expect(mapResultsQuickFilterToApi('pending')).toEqual({ match_status: 'upcoming' })
+    expect(mapResultsQuickFilterToApi('live')).toEqual({ match_status: 'live' })
+    expect(mapResultsQuickFilterToApi('won')).toEqual({ outcome: 'won' })
+    expect(mapResultsQuickFilterToApi('lost')).toEqual({ outcome: 'lost' })
   })
 })
 
@@ -85,6 +96,19 @@ describe('BET-RESULTS-01.1 applyResultsFiltersPatch', () => {
       today,
     )
     expect(filters.outcome).toBe('won')
+    expect(filters.sort).toBe('recent')
+    expect(pendingSortAuto).toBe(false)
+  })
+
+  it('leaving pending to live restores recent when auto', () => {
+    const pending = { ...base, outcome: 'pending' as const, sort: 'kickoff_asc' as const }
+    const { filters, pendingSortAuto } = applyResultsFiltersPatch(
+      pending,
+      { outcome: 'live' },
+      true,
+      today,
+    )
+    expect(filters.outcome).toBe('live')
     expect(filters.sort).toBe('recent')
     expect(pendingSortAuto).toBe(false)
   })

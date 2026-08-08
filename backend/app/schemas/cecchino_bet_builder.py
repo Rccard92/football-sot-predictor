@@ -39,6 +39,7 @@ class BetBuilderResultsQuery(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     outcome: str | None = None
+    match_status: str | None = None
     market_key: str | None = None
     origin: str | None = None
     min_purchasability: float | None = None

@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-RESULTS-01.2 match state vs prediction outcome (2026-08-08)
+
+- Perché: la tab «In attesa» filtrava `outcome=pending`, quindi includeva anche partite LIVE con prediction ancora pending; Live filtrava solo client-side post-paginazione.
+- Cosa: query additiva `match_status` sul GET Results; «In attesa» → `match_status=upcoming`; «Live» → `match_status=live`; Vinte/Perse restano `outcome=won|lost`. LIVE + primary PENDING è uno stato valido (badge doppi). Sort 01.1 preservato su In attesa.
+- Impatto: solo filtering/list navigation Results; KPI / Analizza perse / Analizza perdita / drawer / Evidence Sort V2 / outcome engine / Pre-match / cart invariati; nessuna migration; nessun backfill.
+- Non fatto: loss analyzer post-match; redesign chip UI.
+
 ## Fix — Bet Builder BET-RESULTS-01.1 sort pending kickoff ASC (2026-08-08)
 
 - Perché: nel filtro «In attesa» l’ordine «Più recenti» (kickoff DESC) non aiuta a vedere la prossima partita.

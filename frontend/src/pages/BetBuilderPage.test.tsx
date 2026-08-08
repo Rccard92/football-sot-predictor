@@ -1903,9 +1903,17 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     fireEvent.click(screen.getByTestId('results-outcome-pending'))
     await waitFor(() =>
       expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'pending', sort: 'kickoff_asc' }),
+        expect.objectContaining({
+          match_status: 'upcoming',
+          sort: 'kickoff_asc',
+        }),
       ),
     )
+    const lastCall = apiMock.fetchBetBuilderResults.mock.calls.at(-1)?.[0] as Record<
+      string,
+      unknown
+    >
+    expect(lastCall.outcome).toBeUndefined()
     expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('kickoff_asc')
     expect(
       Array.from((screen.getByTestId('results-sort') as HTMLSelectElement).options).map(
@@ -1921,7 +1929,7 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     fireEvent.click(screen.getByTestId('results-outcome-pending'))
     await waitFor(() =>
       expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
-        expect.objectContaining({ sort: 'kickoff_asc' }),
+        expect.objectContaining({ match_status: 'upcoming', sort: 'kickoff_asc' }),
       ),
     )
 
@@ -1931,7 +1939,7 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     await waitFor(() =>
       expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
         expect.objectContaining({
-          outcome: 'pending',
+          match_status: 'upcoming',
           sort: 'purchasability_desc',
         }),
       ),
@@ -1957,5 +1965,69 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
       ),
     )
     expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('recent')
+  })
+
+  it('BET-RESULTS-01.2 Live uses match_status=live and restores recent', async () => {
+    const liveRes = baseResultsResponse()
+    liveRes.fixtures[0].fixture.match_status = 'live'
+    liveRes.fixtures[0].primary.prediction_outcome = 'pending'
+    liveRes.fixtures[0].primary.match_status = 'live'
+    apiMock.fetchBetBuilderResults.mockResolvedValue(liveRes)
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-outcome-pending')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('results-outcome-pending'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ match_status: 'upcoming', sort: 'kickoff_asc' }),
+      ),
+    )
+
+    fireEvent.click(screen.getByTestId('results-outcome-live'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ match_status: 'live', sort: 'recent' }),
+      ),
+    )
+    const liveCall = apiMock.fetchBetBuilderResults.mock.calls.at(-1)?.[0] as Record<
+      string,
+      unknown
+    >
+    expect(liveCall.outcome).toBeUndefined()
+    expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('recent')
+    await waitFor(() => expect(screen.getByTestId('result-live-badge')).toBeTruthy())
+    expect(screen.getByTestId('result-outcome-badge').textContent).toMatch(/In attesa/i)
+  })
+
+  it('BET-RESULTS-01.2 Vinte/Perse usano outcome; Analizza perse invariato', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-kpi-predictions')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('results-outcome-won'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'won' }),
+      ),
+    )
+    const wonCall = apiMock.fetchBetBuilderResults.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(wonCall.match_status).toBeUndefined()
+
+    fireEvent.click(screen.getByTestId('results-outcome-lost'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'lost' }),
+      ),
+    )
+    const lostCall = apiMock.fetchBetBuilderResults.mock.calls.at(-1)?.[0] as Record<
+      string,
+      unknown
+    >
+    expect(lostCall.match_status).toBeUndefined()
+
+    fireEvent.click(screen.getByTestId('results-analyze-lost'))
+    await waitFor(() =>
+      expect(screen.getByTestId('results-outcome-lost').className).toMatch(/slate-900|bg-slate/),
+    )
   })
 })
