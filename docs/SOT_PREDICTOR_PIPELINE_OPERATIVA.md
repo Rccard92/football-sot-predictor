@@ -1563,13 +1563,19 @@ flowchart TD
 ## Fase 20b — BOOK POLICY Betfair primary → Bet365 fallback (2026-08-08)
 
 - **Policy:** per ogni selection KPI, Betfair (id 3) se valida; altrimenti Bet365 (id 8); altrimenti N/D. Selection-by-selection, non fixture-by-fixture, non best-odds.
-- **Fetch:** `GET odds?fixture=` estrae id 3 e 8; recovery Betfair-specific se necessario; al massimo una call Bet365-specific se restano selection mancanti; zero call Bet365 se Betfair copre i target.
-- **Gate:** 1X2 canonico completo dopo fallback (es. HOME/DRAW Betfair + AWAY Bet365 → PASSED).
+- **Fetch:** `GET odds?fixture=` estrae id 3 e 8; se Betfair non copre tutte le selection canoniche (1X2, O/U, FH, DC) → al massimo **una** call Betfair-specific; resolve con Bet365 fixture-wide; se restano gap → al massimo **una** call Bet365-specific; zero specific se Betfair copre i target.
+- **Gate / snapshot:** 1X2 canonico completo dopo fallback. `bookmakers.Betfair` e `bookmakers.Bet365` contengono solo quote del rispettivo book; `bookmakers.Canonical` è l’unico blocco misto. Lettura: Canonical se presente, altrimenti Betfair legacy.
 - **Cache:** `book_policy_version` in `odds_meta` / snapshot; snapshot legacy senza version non bloccano il refetch Bet365; negative cache solo dopo fallimento canonico.
 - **KPI:** `cecchino_kpi_v2_canonical_book_v1` con provenance per riga; formule invariate.
 - **Offline:** recompute/rebuild usano raw 3+8 se presenti; non inventano Bet365; nessuna API.
-- **UI:** «Quote Book aggiornate»; debug `bookmaker_ids=3,8`; Bet Builder mostra `Betfair` o `Bet365 · fallback`.
+- **UI:** «Quote Book aggiornate»; badge availability su raw/snapshot reale (non Canonical); debug `bookmaker_ids=3,8`; Bet Builder mostra `Betfair` o `Bet365 · fallback`.
 - **Invariato:** classico `CECCHINO_BOOKMAKERS` 8/3/4, Signals/V3.1 formule, Results ROI su Book pre-match, nessun backfill.
+
+## Fix Fase 20b.1 — BET365-FALLBACK-01.1 recovery + provenance (2026-08-08)
+
+- Recovery Betfair non più limitata al solo 1X2 incompleto: gap su qualsiasi selection canonica triggera max 1 Betfair-specific prima di Bet365.
+- Rimossa sovrascrittura `bookmakers.Betfair = Canonical` che falsificava provenance.
+- `api_calls_used` refresh da `ScanRunMetrics.api_calls["odds"]` (conteggio reale HTTP), non dal numero di book non vuoti.
 
 ## Fase 20 — KPI Betfair-only (storico; superseduto da 20b per Today)
 

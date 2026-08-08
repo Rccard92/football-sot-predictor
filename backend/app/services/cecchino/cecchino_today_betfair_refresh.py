@@ -36,6 +36,7 @@ from app.services.cecchino.cecchino_today_odds_meta import (
     extract_1x2_from_snapshot,
     read_odds_meta,
 )
+from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 from app.services.cecchino.cecchino_today_service import sync_today_bookmaker_odds
 
 _MANUAL_COMPARISON = {
@@ -74,15 +75,15 @@ def _fetch_canonical_book_raw(
         record_events=True,
     )
     af_client.set_usage_context(usage_ctx.with_fixture(int(row.provider_fixture_id)))
+    metrics = ScanRunMetrics()
     odds_by_book, warnings, _strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
         af_client,
         int(row.provider_fixture_id),
         force_rescan=True,
-        metrics=None,
+        metrics=metrics,
     )
-    api_calls = sum(1 for v in odds_by_book.values() if v) # rough; real count via client
-    # Prefer counting via usage context if available; fallback to non-empty books
-    api_calls = max(api_calls, 1)
+    # Conteggio reale delle chiamate odds (fixture-wide + specific), non #book non vuoti.
+    api_calls = int(metrics.api_calls.get("odds") or 0)
     return odds_by_book, warnings, api_calls
 
 

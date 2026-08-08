@@ -194,6 +194,12 @@ def test_case_e_mixed_1x2_gate_passes():
     assert snap["selection_sources"][SEL_DRAW] == "Betfair"
     assert snap["selection_sources"][SEL_AWAY] == "Bet365"
     assert snap["bookmakers"]["Canonical"]["AWAY"] == 4.50
+    # Provenance: Betfair non deve contenere quote Bet365
+    bf_snap = snap["bookmakers"].get("Betfair") or {}
+    assert bf_snap.get("HOME") == 1.80
+    assert bf_snap.get("DRAW") == 3.20
+    assert bf_snap.get("AWAY") in (None,)
+    assert snap["bookmakers"]["Bet365"]["AWAY"] == 4.50
 
 
 # --- CASO F ---
@@ -210,6 +216,11 @@ def test_case_f_betfair_error_bet365_complete():
     assert reason is None
     assert snap["selection_sources"][SEL_HOME] == "Bet365"
     assert all(snap["selection_sources"][k] == "Bet365" for k in (SEL_HOME, SEL_DRAW, SEL_AWAY))
+    assert "Betfair" not in snap["bookmakers"]
+    assert "Bet365" in snap["bookmakers"]
+    assert snap["bookmakers"]["Canonical"]["HOME"] == 2.00
+    assert snap["bookmakers"]["Canonical"]["DRAW"] == 3.10
+    assert snap["bookmakers"]["Canonical"]["AWAY"] == 3.80
 
 
 # --- CASO G ---
@@ -341,6 +352,12 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
             ],
         },
     ]
+    # Betfair-specific non aggiunge O/U → serve Bet365-specific
+    betfair_specific = _book_raw(
+        bookmaker_id=_BETFAIR_ID,
+        bookmaker_name="Betfair",
+        match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
+    )
     bet365_specific = _book_raw(
         bookmaker_id=_BET365_ID,
         bookmaker_name="Bet365",
@@ -349,6 +366,8 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
     client.get_fixture_odds_by_fixture.return_value = fixture_wide
 
     def _get_odds(fid, bookmaker_id):
+        if bookmaker_id == _BETFAIR_ID:
+            return betfair_specific
         assert bookmaker_id == _BET365_ID
         return bet365_specific
 
@@ -364,7 +383,10 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
         force_rescan=True,
         metrics=metrics,
     )
-    assert client.get_fixture_odds.call_count == 1
+    # Betfair-specific prima, poi Bet365-specific
+    assert client.get_fixture_odds.call_count == 2
+    assert client.get_fixture_odds.call_args_list[0].args[1] == _BETFAIR_ID
+    assert client.get_fixture_odds.call_args_list[1].args[1] == _BET365_ID
     assert _BET365_ID in odds
     assert "bet365" in strategy
 
@@ -496,3 +518,294 @@ def test_extract_both_books_from_fixture_wide():
     ]
     extracted = _extract_odds_by_book_from_response(raw)
     assert set(extracted.keys()) == {_BETFAIR_ID, _BET365_ID}
+
+
+# --- BET365-FALLBACK-01.1 ---
+def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
+    """TEST 1: BF 1X2 completo ma O/U mancante → Betfair-specific prima di Bet365."""
+    settings = MagicMock()
+    settings.cecchino_odds_bookmaker_fallback = True
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.time.sleep",
+        lambda *_a, **_k: None,
+    )
+    client = MagicMock()
+    fixture_wide = [
+        {
+            "bookmakers": [
+                {
+                    "id": 3,
+                    "name": "Betfair",
+                    "bets": [
+                        {
+                            "id": 1,
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "1.8"},
+                                {"value": "Draw", "odd": "3.2"},
+                                {"value": "Away", "odd": "4.5"},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": 8,
+                    "name": "Bet365",
+                    "bets": [
+                        {
+                            "id": 5,
+                            "name": "Goals Over/Under",
+                            "values": [
+                                {"value": "Over 2.5", "odd": "1.90"},
+                                {"value": "Under 2.5", "odd": "1.95"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    betfair_specific = _book_raw(
+        bookmaker_id=_BETFAIR_ID,
+        bookmaker_name="Betfair",
+        match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
+        over_under={"Over 2.5": "1.80", "Under 2.5": "2.00"},
+    )
+    client.get_fixture_odds_by_fixture.return_value = fixture_wide
+    call_order: list[int] = []
+
+    def _get_odds(fid, bookmaker_id):
+        call_order.append(int(bookmaker_id))
+        if bookmaker_id == _BETFAIR_ID:
+            return betfair_specific
+        return _book_raw(
+            bookmaker_id=_BET365_ID,
+            bookmaker_name="Bet365",
+            over_under={"Over 2.5": "1.90", "Under 2.5": "1.95"},
+        )
+
+    client.get_fixture_odds.side_effect = _get_odds
+    odds, _, _, _ = fetch_fixture_odds_for_cecchino_bookmakers(
+        client, 77, force_rescan=True, metrics=ScanRunMetrics(),
+    )
+    assert call_order[0] == _BETFAIR_ID
+    payload = build_betfair_payload_from_raw(odds)
+    panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
+    row = _row_by_key(panel, SEL_OVER_2_5)
+    assert row["quota_book"] == 1.80
+    assert row["bookmaker_name"] == "Betfair"
+    assert row["book_fallback_used"] is False
+
+
+def test_01_1_true_fallback_after_betfair_specific_miss(monkeypatch):
+    """TEST 2: Betfair-specific senza O/U → fallback Bet365 1.90."""
+    settings = MagicMock()
+    settings.cecchino_odds_bookmaker_fallback = True
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.time.sleep",
+        lambda *_a, **_k: None,
+    )
+    client = MagicMock()
+    fixture_wide = [
+        {
+            "bookmakers": [
+                {
+                    "id": 3,
+                    "name": "Betfair",
+                    "bets": [
+                        {
+                            "id": 1,
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "1.8"},
+                                {"value": "Draw", "odd": "3.2"},
+                                {"value": "Away", "odd": "4.5"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    client.get_fixture_odds_by_fixture.return_value = fixture_wide
+
+    def _get_odds(fid, bookmaker_id):
+        if bookmaker_id == _BETFAIR_ID:
+            return _book_raw(
+                bookmaker_id=_BETFAIR_ID,
+                bookmaker_name="Betfair",
+                match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
+            )
+        return _book_raw(
+            bookmaker_id=_BET365_ID,
+            bookmaker_name="Bet365",
+            over_under={"Over 2.5": "1.90", "Under 2.5": "1.95"},
+        )
+
+    client.get_fixture_odds.side_effect = _get_odds
+    odds, _, _, _ = fetch_fixture_odds_for_cecchino_bookmakers(
+        client, 78, force_rescan=True, metrics=ScanRunMetrics(),
+    )
+    assert client.get_fixture_odds.call_args_list[0].args[1] == _BETFAIR_ID
+    assert client.get_fixture_odds.call_args_list[1].args[1] == _BET365_ID
+    payload = build_betfair_payload_from_raw(odds)
+    panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
+    row = _row_by_key(panel, SEL_OVER_2_5)
+    assert row["quota_book"] == 1.90
+    assert row["bookmaker_name"] == "Bet365"
+    assert row["book_fallback_used"] is True
+
+
+def test_01_1_no_useless_specific_calls_when_betfair_covers(monkeypatch):
+    """TEST 3: coverage Betfair completa → 0 specific BF/B365."""
+    settings = MagicMock()
+    settings.cecchino_odds_bookmaker_fallback = True
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+        lambda: settings,
+    )
+    bets_full = [
+        {
+            "id": 1,
+            "name": "Match Winner",
+            "values": [
+                {"value": "Home", "odd": "1.8"},
+                {"value": "Draw", "odd": "3.2"},
+                {"value": "Away", "odd": "4.5"},
+            ],
+        },
+        {
+            "id": 5,
+            "name": "Goals Over/Under",
+            "values": [
+                {"value": "Over 1.5", "odd": "1.25"},
+                {"value": "Under 1.5", "odd": "3.80"},
+                {"value": "Over 2.5", "odd": "1.80"},
+                {"value": "Under 2.5", "odd": "2.00"},
+                {"value": "Over 3.5", "odd": "2.50"},
+                {"value": "Under 3.5", "odd": "1.50"},
+            ],
+        },
+        {
+            "id": 13,
+            "name": "First Half Winner",
+            "values": [
+                {"value": "Home", "odd": "2.2"},
+                {"value": "Draw", "odd": "2.1"},
+                {"value": "Away", "odd": "4.0"},
+            ],
+        },
+        {
+            "name": "Goals Over/Under First Half",
+            "values": [
+                {"value": "Over 0.5", "odd": "1.40"},
+                {"value": "Under 0.5", "odd": "2.80"},
+                {"value": "Over 1.5", "odd": "2.60"},
+                {"value": "Under 1.5", "odd": "1.45"},
+            ],
+        },
+        {
+            "name": "Double Chance",
+            "values": [
+                {"value": "Home/Draw", "odd": "1.20"},
+                {"value": "Draw/Away", "odd": "1.90"},
+                {"value": "Home/Away", "odd": "1.35"},
+            ],
+        },
+    ]
+    client = MagicMock()
+    client.get_fixture_odds_by_fixture.return_value = [
+        {"bookmakers": [{"id": 3, "name": "Betfair", "bets": bets_full}]},
+    ]
+    metrics = ScanRunMetrics()
+    fetch_fixture_odds_for_cecchino_bookmakers(
+        client, 99, force_rescan=True, metrics=metrics,
+    )
+    client.get_fixture_odds.assert_not_called()
+    assert metrics.api_calls.get("odds") == 1
+
+
+def test_01_1_legacy_snapshot_betfair_only_readable():
+    """TEST 6: snapshot legacy solo Betfair senza Canonical resta leggibile."""
+    from app.services.cecchino.cecchino_today_odds_meta import extract_1x2_from_snapshot
+
+    legacy = {
+        "bookmakers": {"Betfair": {"HOME": 1.80, "DRAW": 3.20, "AWAY": 4.50}},
+    }
+    extracted = extract_1x2_from_snapshot(legacy)
+    assert extracted["HOME"] == 1.80
+    assert extracted["DRAW"] == 3.20
+    assert extracted["AWAY"] == 4.50
+    payload = build_betfair_payload_from_snapshot(legacy)
+    assert payload["status"] == "available"
+    markets = (payload["bookmakers"][0].get("markets") or {}).get(MARKET_1X2) or {}
+    assert markets.get(SEL_HOME) == 1.80
+    assert markets.get(SEL_DRAW) == 3.20
+    assert markets.get(SEL_AWAY) == 4.50
+
+
+def test_01_1_api_calls_used_counts_three(monkeypatch):
+    """TEST 7: fixture-wide + BF-specific + B365-specific → api_calls odds = 3."""
+    settings = MagicMock()
+    settings.cecchino_odds_bookmaker_fallback = True
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_today_odds_fetch.time.sleep",
+        lambda *_a, **_k: None,
+    )
+    client = MagicMock()
+    # Fixture-wide: solo Betfair 1X2 (gap canonici) senza Bet365
+    client.get_fixture_odds_by_fixture.return_value = [
+        {
+            "bookmakers": [
+                {
+                    "id": 3,
+                    "name": "Betfair",
+                    "bets": [
+                        {
+                            "id": 1,
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "1.8"},
+                                {"value": "Draw", "odd": "3.2"},
+                                {"value": "Away", "odd": "4.5"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    def _get_odds(fid, bookmaker_id):
+        if bookmaker_id == _BETFAIR_ID:
+            return _book_raw(
+                bookmaker_id=_BETFAIR_ID,
+                bookmaker_name="Betfair",
+                match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
+            )
+        return _book_raw(
+            bookmaker_id=_BET365_ID,
+            bookmaker_name="Bet365",
+            over_under={"Over 2.5": "1.90"},
+        )
+
+    client.get_fixture_odds.side_effect = _get_odds
+    metrics = ScanRunMetrics()
+    fetch_fixture_odds_for_cecchino_bookmakers(
+        client, 88, force_rescan=True, metrics=metrics,
+    )
+    assert client.get_fixture_odds_by_fixture.call_count == 1
+    assert client.get_fixture_odds.call_count == 2
+    assert metrics.api_calls.get("odds") == 3

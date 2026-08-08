@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — BET365-FALLBACK-01.1 harden primary recovery + provenance (2026-08-08)
+
+- **Perché:** recovery Betfair partiva solo se 1X2 incompleto (O/U/FH/DC potevano andare a Bet365 senza tentare Betfair-specific); lo snapshot scriveva quote canoniche sotto `bookmakers.Betfair` falsificando provenance; badge e `api_calls_used` erano approssimativi.
+- **Cosa:** dopo fixture-wide, max 1 Betfair-specific se manca qualsiasi selection canonica; poi resolve Bet365 fixture-wide; max 1 Bet365-specific; snapshot Betfair/Bet365 puri + `Canonical` misto; consumer Canonical→Betfair legacy; badge su raw reale; `api_calls_used` da metrics odds.
+- **Non cambia:** policy `betfair_primary_bet365_fallback_v1`, formule, Signals, V3.1, Evidence Sort, Results ROI, nessun backfill/migration.
+
 ## Feat — BOOK POLICY Betfair primary → Bet365 fallback (2026-08-08)
 
 - **Perché:** coverage Book incompleta quando Betfair manca su singole selection (es. O/U) mentre Bet365 è disponibile.

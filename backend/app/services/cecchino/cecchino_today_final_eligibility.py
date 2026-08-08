@@ -448,7 +448,7 @@ def build_kpi_debug(
 def _reason_message(status: str, blocking: list[str]) -> str:
     messages = {
         ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER: "Bookmaker obbligatorio mancante",
-        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Mercato 1X2 incompleto su Betfair",
+        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Mercato 1X2 incompleto sul Book canonico",
         ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS: "Statistiche o campioni insufficienti",
         ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED: "Leakage check non superato",
         ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO: "Picchetto Cecchino obbligatorio mancante o incompleto",

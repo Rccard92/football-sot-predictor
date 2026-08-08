@@ -194,7 +194,7 @@ function ExcludedRow({ fixture }: { fixture: CecchinoTodayExcludedFixture }) {
         )}
       </td>
       <td className="px-2 py-2 font-mono text-[10px]">
-        Book:{bm.Betfair ?? bm.Canonical ?? '—'}
+        Book:{bm.Canonical ?? bm.Betfair ?? '—'}
         {bm.Bet365 != null ? ` · Bet365:${bm.Bet365}` : ''}
       </td>
       <td className="px-2 py-2 font-mono text-[10px]">

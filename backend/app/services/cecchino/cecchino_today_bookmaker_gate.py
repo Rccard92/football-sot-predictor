@@ -137,15 +137,9 @@ def verify_complete_1x2_odds(
             blocking_reasons,
         )
 
-    # Compat UI/test: espone anche Betfair aggregato se tutto da primary,
-    # e sempre Canonical con le quote risolte.
+    # Canonical = 1X2 risolto (Betfair → Bet365). Betfair/Bet365 restano
+    # esclusivamente quote del rispettivo book (mai mescolate).
     book_snapshots["Canonical"] = {
-        "HOME": canonical[SEL_HOME],
-        "DRAW": canonical[SEL_DRAW],
-        "AWAY": canonical[SEL_AWAY],
-    }
-    # Alias legacy: chiave Betfair con quote canoniche (per extract_1x2_from_snapshot)
-    book_snapshots[_PRIMARY_NAME] = {
         "HOME": canonical[SEL_HOME],
         "DRAW": canonical[SEL_DRAW],
         "AWAY": canonical[SEL_AWAY],

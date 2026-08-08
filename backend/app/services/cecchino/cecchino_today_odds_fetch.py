@@ -66,17 +66,25 @@ def _canonical_1x2_complete(odds_by_book: dict[int, list[dict[str, Any]]]) -> bo
     return all(selection_odd_from_markets(markets, sk) is not None for sk in GATE_1X2_KEYS)
 
 
-def _betfair_covers_all_targets(odds_by_book: dict[int, list[dict[str, Any]]]) -> bool:
-    """True se Betfair da solo copre tutte le selection KPI target (nessun bisogno Bet365)."""
+def _missing_betfair_canonical_selections(
+    odds_by_book: dict[int, list[dict[str, Any]]],
+) -> list[str]:
+    """Selection canoniche mancanti sul solo raw Betfair (prima di Bet365)."""
     primary = build_single_bookmaker_payload(
         odds_by_book.get(_BETFAIR_ID) or [],
         CECCHINO_PRIMARY_BOOKMAKER,
     )
     markets = primary.get("markets") or {}
-    for sk in CANONICAL_BOOK_SELECTION_KEYS:
-        if selection_odd_from_markets(markets, sk) is None:
-            return False
-    return True
+    return [
+        sk
+        for sk in CANONICAL_BOOK_SELECTION_KEYS
+        if selection_odd_from_markets(markets, sk) is None
+    ]
+
+
+def _betfair_covers_all_targets(odds_by_book: dict[int, list[dict[str, Any]]]) -> bool:
+    """True se Betfair da solo copre tutte le selection KPI target (nessun bisogno Bet365)."""
+    return not _missing_betfair_canonical_selections(odds_by_book)
 
 
 def _missing_selections_after_resolve(
@@ -334,18 +342,16 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
 
     odds_by_book = _extract_odds_by_book_from_response(raw_items) if raw_items else {}
 
-    # Recovery Betfair-specific se Betfair assente/incompleto sul raw fixture-wide
-    primary_bm = build_single_bookmaker_payload(
-        odds_by_book.get(_BETFAIR_ID) or [],
-        CECCHINO_PRIMARY_BOOKMAKER,
-    )
-    primary_1x2_incomplete = any(
-        selection_odd_from_markets(primary_bm.get("markets"), sk) is None for sk in GATE_1X2_KEYS
-    )
+    # Recovery Betfair-specific se manca QUALSIASI selection canonica su Betfair
+    # (non solo 1X2): al massimo UNA call bookmaker-specific per fixture.
     did_betfair_recovery = False
     did_bet365_specific = False
 
-    if primary_1x2_incomplete and settings.cecchino_odds_bookmaker_fallback:
+    if (
+        settings.cecchino_odds_bookmaker_fallback
+        and _missing_betfair_canonical_selections(odds_by_book)
+        and not did_betfair_recovery
+    ):
         time.sleep(SLEEP_BETWEEN_CALLS_S)
         fb_odds, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(fb_warn)
@@ -354,25 +360,21 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
                 odds_by_book[bid] = payload
         did_betfair_recovery = True
 
-    # Bet365-specific solo se selection ancora mancanti e Bet365 non già risolutivo
-    need_bet365 = bool(_missing_selections_after_resolve(odds_by_book))
-    bet365_already = bool(odds_by_book.get(_BET365_ID))
-    if need_bet365 and settings.cecchino_odds_bookmaker_fallback:
-        # Se Betfair copre tutto, skip
-        if not _betfair_covers_all_targets(odds_by_book):
-            # Se Bet365 fixture-wide già presente ma ancora missing → serve call specifica
-            # Se Bet365 assente → call specifica
-            still_missing_after_existing = _missing_selections_after_resolve(odds_by_book)
-            if still_missing_after_existing:
-                # Se Bet365 già in payload e non risolutivo, riprova bookmaker-specific una volta
-                if not bet365_already or still_missing_after_existing:
-                    time.sleep(SLEEP_BETWEEN_CALLS_S)
-                    b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
-                    warnings.extend(b365_warn)
-                    for bid, payload in b365_odds.items():
-                        if payload:
-                            odds_by_book[bid] = payload
-                            did_bet365_specific = True
+    # Resolve in-memory con Bet365 già presente nel fixture-wide; solo dopo,
+    # se restano selection mancanti, al massimo UNA call Bet365-specific.
+    if (
+        settings.cecchino_odds_bookmaker_fallback
+        and not _betfair_covers_all_targets(odds_by_book)
+        and _missing_selections_after_resolve(odds_by_book)
+        and not did_bet365_specific
+    ):
+        time.sleep(SLEEP_BETWEEN_CALLS_S)
+        b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
+        warnings.extend(b365_warn)
+        for bid, payload in b365_odds.items():
+            if payload:
+                odds_by_book[bid] = payload
+                did_bet365_specific = True
 
     if _canonical_1x2_complete(odds_by_book):
         if db is not None and scan_date is not None:
@@ -413,17 +415,19 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
             _record_resolution_metrics(metrics, odds_by_book)
         return odds_by_book, warnings + ["odds_incomplete_single_call"], "odds_incomplete_single_call", False
 
-    # Ultimo tentativo: se non abbiamo ancora fatto recovery e response vuota
-    if not odds_by_book:
+    # Ultimo tentativo: response vuota e recovery non ancora eseguita
+    if not odds_by_book and not did_betfair_recovery:
         odds_by_book, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(fb_warn)
-        if _missing_selections_after_resolve(odds_by_book):
+        did_betfair_recovery = True
+        if _missing_selections_after_resolve(odds_by_book) and not did_bet365_specific:
             time.sleep(SLEEP_BETWEEN_CALLS_S)
             b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
             warnings.extend(b365_warn)
             for bid, payload in b365_odds.items():
                 if payload:
                     odds_by_book[bid] = payload
+                    did_bet365_specific = True
         strategy = "bookmaker_per_fixture"
         if metrics is not None:
             metrics.record_odds_strategy(strategy)

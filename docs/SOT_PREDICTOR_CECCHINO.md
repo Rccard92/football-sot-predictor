@@ -14,8 +14,17 @@ Policy canonica `quota_book` per Today / KPI / Signals / V3.1 / Bet Builder / Re
 | Formule | Cecchino / Signals / V3.1 / Evidence Sort / ICM / Balance / GI **invariate** |
 | Version | `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI `cecchino_kpi_v2_canonical_book_v1` |
 | Provenance | Per riga: `bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`, `book_source` |
+| Fetch | Fixture-wide → se Betfair non copre **tutte** le selection canoniche (1X2, O/U, FH, DC) max 1 Betfair-specific → resolve Bet365 fixture-wide → max 1 Bet365-specific |
+| Snapshot | `bookmakers.Betfair` / `Bet365` mai mescolati; solo `Canonical` aggrega book diversi; lettura Canonical → Betfair legacy |
 | Storia | Nessun backfill; snapshot pre-match immutati; rebuild offline usa solo raw presenti |
 | Profit/ROI | Continua a usare solo `price_value.quota_book` persistita pre-match |
+
+### Fix 01.1 — harden recovery + provenance (2026-08-08)
+
+- Betfair viene realmente tentato come primary anche per O/U, FH, DC (non solo 1X2) prima di Bet365.
+- Raw/snapshot Betfair e Bet365 non vengono mai mescolati sotto la stessa chiave.
+- Canonical è l’unico blocco che può contenere selection provenienti da bookmaker differenti.
+- Badge availability e `api_calls_used` usano dati/conteggi reali (non alias Canonical / #book non vuoti).
 
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto + mobile filters accordion (2026-08-08)
 

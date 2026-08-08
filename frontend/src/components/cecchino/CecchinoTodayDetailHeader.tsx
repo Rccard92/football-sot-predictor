@@ -20,12 +20,30 @@ type OddsSnap = {
   book_policy_version?: string
 }
 
+function _bookHasUsableOdds(entry: unknown): boolean {
+  if (entry == null) return false
+  if (Array.isArray(entry)) return entry.length > 0
+  if (typeof entry !== 'object') return false
+  const obj = entry as Record<string, unknown>
+  // Snapshot 1X2: almeno una quota numerica utilizzabile
+  for (const k of ['HOME', 'DRAW', 'AWAY']) {
+    const v = obj[k]
+    if (typeof v === 'number' && Number.isFinite(v) && v > 1) return true
+    if (typeof v === 'string' && v.trim() !== '' && Number(v) > 1) return true
+  }
+  // Raw payload non vuoto
+  return Object.keys(obj).length > 0
+}
+
 export function CecchinoTodayDetailHeader({ detail }: Props) {
   const odds = detail.odds_snapshot as OddsSnap | undefined
   const bmSnap = odds?.bookmakers || {}
   const rawMap = odds?.raw_by_bookmaker_id || {}
-  const betfairOk = 'Betfair' in bmSnap || Boolean(rawMap['3'])
-  const bet365Ok = 'Bet365' in bmSnap || Boolean(rawMap['8'])
+  // Availability reale del book: raw id oppure snapshot del book (mai Canonical)
+  const betfairOk =
+    _bookHasUsableOdds(rawMap['3']) || _bookHasUsableOdds(bmSnap.Betfair)
+  const bet365Ok =
+    _bookHasUsableOdds(rawMap['8']) || _bookHasUsableOdds(bmSnap.Bet365)
   const sources = odds?.selection_sources || {}
   const fallbackCount = Object.values(sources).filter((s) => s === 'Bet365').length
 

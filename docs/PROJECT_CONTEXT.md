@@ -8,7 +8,15 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
 - Non è best-odds / media / SportAPI7 / WH / Pinnacle; formule Cecchino invariate
 - `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI contract `cecchino_kpi_v2_canonical_book_v1`
 - Provenance per selection (`bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`)
+- Recovery: Betfair-specific su **tutte** le selection canoniche mancanti (O/U, FH, DC, non solo 1X2) prima di Bet365; max 1 call specific per book
+- Snapshot: `bookmakers.Betfair` / `Bet365` mai mescolati; solo `Canonical` può aggregare book diversi; lettura Canonical → Betfair legacy
 - Nessun backfill storico; Results/ROI resta su `quota_book` pre-match; offline rebuild senza API
+
+## Fix BOOK POLICY 01.1 — primary recovery + provenance (2026-08-08)
+
+- Betfair primary tentato realmente su O/U/FH/DC prima del fallback Bet365
+- Rimossa alias che scriveva quote canoniche sotto `bookmakers.Betfair`
+- Badge UI e `api_calls_used` basati su raw/conteggio reale, non su alias Canonical
 
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 

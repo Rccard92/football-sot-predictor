@@ -313,16 +313,27 @@ def build_canonical_book_payload_from_snapshot(
             away_team_name=away_team_name,
         )
 
-    # Fallback legacy: solo bookmakers.Betfair 1X2 nello snapshot
+    # Fallback senza raw: Canonical (nuovi snapshot) → Betfair legacy
     books = odds_snapshot.get("bookmakers") or {}
-    bf = books.get(CECCHINO_PRIMARY_BOOKMAKER["name"]) or books.get("Betfair")
-    if isinstance(bf, dict) and all(bf.get(k) is not None for k in ("HOME", "DRAW", "AWAY")):
+    canonical_bm = books.get("Canonical")
+    legacy_bf = books.get(CECCHINO_PRIMARY_BOOKMAKER["name"]) or books.get("Betfair")
+    use_canonical_block = (
+        isinstance(canonical_bm, dict)
+        and all(canonical_bm.get(k) is not None for k in ("HOME", "DRAW", "AWAY"))
+    )
+    use_legacy_bf = (
+        not use_canonical_block
+        and isinstance(legacy_bf, dict)
+        and all(legacy_bf.get(k) is not None for k in ("HOME", "DRAW", "AWAY"))
+    )
+    src_1x2 = canonical_bm if use_canonical_block else (legacy_bf if use_legacy_bf else None)
+    if src_1x2 is not None:
         # Ricostruisci un mini-raw sintetico via markets diretti
         primary_markets = {
             MARKET_1X2: {
-                SEL_HOME: float(bf["HOME"]),
-                SEL_DRAW: float(bf["DRAW"]),
-                SEL_AWAY: float(bf["AWAY"]),
+                SEL_HOME: float(src_1x2["HOME"]),
+                SEL_DRAW: float(src_1x2["DRAW"]),
+                SEL_AWAY: float(src_1x2["AWAY"]),
             },
         }
         derived = derive_double_chance_from_1x2(
@@ -331,11 +342,19 @@ def build_canonical_book_payload_from_snapshot(
             primary_markets[MARKET_1X2][SEL_AWAY],
         )
         primary_markets[MARKET_DC] = derived
-        slug = "betfair"
+        # Provenance: Canonical snapshot vs legacy Betfair-only (pre-policy)
+        if use_canonical_block:
+            slug = "canonical"
+            src_label = "snapshot_canonical_1x2"
+            warn = "snapshot_canonical_1x2_only_no_ou"
+        else:
+            slug = "betfair"
+            src_label = "snapshot_1x2"
+            warn = "snapshot_1x2_only_no_ou"
         primary_prov = {
-            SEL_HOME: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": "snapshot_1x2"},
-            SEL_DRAW: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": "snapshot_1x2"},
-            SEL_AWAY: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": "snapshot_1x2"},
+            SEL_HOME: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": src_label},
+            SEL_DRAW: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": src_label},
+            SEL_AWAY: {"source": provenance_source_for(slug, "match_winner"), "raw_market_name": src_label},
             SEL_ONE_X: {"source": provenance_source_for(slug, "derived_dc")},
             SEL_X_TWO: {"source": provenance_source_for(slug, "derived_dc")},
             SEL_ONE_TWO: {"source": provenance_source_for(slug, "derived_dc")},
@@ -360,7 +379,7 @@ def build_canonical_book_payload_from_snapshot(
                 },
             ],
             "status": "available",
-            "warnings": ["snapshot_1x2_only_no_ou"],
+            "warnings": [warn],
             "odds_source": source,
             "provenance_by_selection": provenance,
             "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,

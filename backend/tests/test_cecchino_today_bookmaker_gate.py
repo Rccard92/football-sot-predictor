@@ -128,3 +128,23 @@ def test_bet365_fills_missing_away():
     assert reason is None
     assert blocking == []
     assert snap["selection_sources"]["AWAY"] == "Bet365"
+    bf = snap["bookmakers"].get("Betfair") or {}
+    assert bf.get("HOME") == 1.8
+    assert bf.get("DRAW") == 3.2
+    assert bf.get("AWAY") is None
+    assert snap["bookmakers"]["Bet365"]["AWAY"] == 4.5
+    assert snap["bookmakers"]["Canonical"]["AWAY"] == 4.5
+
+
+def test_bet365_only_1x2_gate_passes_without_betfair_alias():
+    """TEST 5: solo Bet365 → gate PASS; Betfair assente; Canonical completo."""
+    fallback = int(CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"])
+    odds = {fallback: _mock_1x2(2.0, 3.1, 3.8)}
+    ok, snap, reason, blocking = verify_complete_1x2_odds(odds)
+    assert ok
+    assert reason is None
+    assert blocking == []
+    assert "Betfair" not in snap["bookmakers"]
+    assert "Bet365" in snap["bookmakers"]
+    assert snap["bookmakers"]["Canonical"] == {"HOME": 2.0, "DRAW": 3.1, "AWAY": 3.8}
+    assert all(v == "Bet365" for v in snap["selection_sources"].values())

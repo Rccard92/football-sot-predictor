@@ -233,7 +233,7 @@ def test_betfair_markets_json_force_fetches_api(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_raw",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_raw,
     ):
         mock_raw.return_value = (_new_odds_by_book(), [], 1)
@@ -311,6 +311,39 @@ def test_refresh_records_api_usage_context(db):
     client.set_usage_context.assert_called_once()
     ctx = client.set_usage_context.call_args[0][0]
     assert "refresh_single_fixture_book" in ctx.job_id
+    # metrics passato al fetch (conteggio reale api_calls)
+    assert mock_fetch.call_args.kwargs.get("metrics") is not None
+
+
+def test_fetch_canonical_book_raw_api_calls_from_metrics(db):
+    """TEST 7 (refresh path): api_calls_used dal contatore metrics, non dai book non vuoti."""
+    from app.services.cecchino.cecchino_today_betfair_refresh import _fetch_canonical_book_raw
+
+    row = _eligible_row()
+    client = MagicMock()
+    client.set_usage_db = MagicMock()
+    client.set_usage_context = MagicMock()
+
+    def _fake_fetch(af_client, fid, **kwargs):
+        metrics = kwargs.get("metrics")
+        assert metrics is not None
+        metrics.api_calls["odds"] = 3
+        metrics.sync_api_calls_total()
+        # Solo 2 book non vuoti: il vecchio heuristico avrebbe contato 2
+        return (
+            {_BETFAIR_ID: _new_odds_by_book()[_BETFAIR_ID], 8: [{"bookmakers": []}]},
+            [],
+            "fixture_single_call_with_bet365_fallback",
+            False,
+        )
+
+    with patch(
+        "app.services.cecchino.cecchino_today_betfair_refresh.fetch_fixture_odds_for_cecchino_bookmakers",
+        side_effect=_fake_fetch,
+    ):
+        _odds, _warn, api_calls = _fetch_canonical_book_raw(db, row, client=client)
+
+    assert api_calls == 3
 
 
 def test_refresh_betfair_odds_by_id_not_found(db):
