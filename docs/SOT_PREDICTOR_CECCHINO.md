@@ -2,6 +2,27 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-RESULTS-01.3 — ROI / Profitto + mobile filters accordion (2026-08-08)
+
+KPI aggiuntivi sul monitor Results (stessa coorte filtrata, **prima** della pagination):
+
+| Metrica | Regola |
+|---------|--------|
+| Flat stake | 1 unità teorica per primary settled con Book valido |
+| Quota | Solo `primary.price_value.quota_book` (> 1.0); mai Cecchino / secondarie |
+| Profit WON | `quota_book − 1` |
+| Profit LOST | `−1` |
+| `priced_settled` | Count primary WON/LOST con Book valido |
+| ROI | `profit_units / priced_settled * 100`; `null` se campione quotato = 0 → UI N/D |
+| Book N/D | Conta in Win Rate; **esclusa** da Profitto/ROI |
+
+UX:
+
+- 8 KPI in una riga desktop (`lg:grid-cols-8`); mobile 2 colonne.
+- Filtri Results: accordion «Filtri risultati» chiuso di default sotto `lg`; desktop sempre aperti.
+- Rimosso pulsante nero «Analizza perse» (ridondante vs tab/KPI Perse).
+- Invariati: «Analizza perdita», drawer, Evidence Sort V2, outcome engine, Pre-match, cart. Nessuna migration.
+
 ## Bet Builder BET-RESULTS-01.2 — Match state vs prediction outcome (2026-08-08)
 
 Quick filter Results separa due assi ortogonali:

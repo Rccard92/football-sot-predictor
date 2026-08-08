@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Bet Builder BET-RESULTS-01.3 ROI / Profitto + filtri mobile accordion (2026-08-08)
+
+- Perché: il monitor Results aveva Win Rate ma non Profitto/ROI; su mobile i filtri occupavano troppo spazio verticale; «Analizza perse» era ridondante rispetto a tab/KPI Perse.
+- Cosa: summary aggiunge `priced_settled`, `profit_units`, `roi_pct` (flat stake teorico 1u sulla primary con `quota_book` > 1; WON = Book−1, LOST = −1; Book N/D esclusa da Profit/ROI ma non da Win Rate); 8 KPI su una riga desktop (`lg:grid-cols-8`); filtri Results in accordion chiuso di default sotto `lg`; rimozione pulsante «Analizza perse».
+- Impatto: solo Results KPI/filtri UX; summary resta pre-pagination sulla coorte filtrata; «Analizza perdita» / drawer / Evidence Sort V2 / outcome engine / Pre-match / cart invariati; nessuna migration; nessun backfill; nessuno stake € reale.
+- Non fatto: stake configurabile / Kelly / loss analyzer causale; redesign chip.
+
 ## Fix — Bet Builder BET-RESULTS-01.2 match state vs prediction outcome (2026-08-08)
 
 - Perché: la tab «In attesa» filtrava `outcome=pending`, quindi includeva anche partite LIVE con prediction ancora pending; Live filtrava solo client-side post-paginazione.

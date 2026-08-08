@@ -133,6 +133,30 @@ export function formatWinRate(winRate: number | null | undefined): string {
   return `${(winRate * 100).toFixed(1)}%`
 }
 
+/** Flat stake profit display: +3.42u / -2.15u / 0.00u / N/D */
+export function formatProfitUnits(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return 'N/D'
+  if (n === 0) return '0.00u'
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${n.toFixed(2)}u`
+}
+
+/** ROI already in percent from API: +12.4% / -8.6% / 0.0% / N/D */
+export function formatRoiPct(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return 'N/D'
+  if (n === 0) return '0.0%'
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${n.toFixed(1)}%`
+}
+
+/** Sign coloring for Profit/ROI: >0 emerald, <=0 rose, N/D slate. */
+export function signedMetricTone(
+  n: number | null | undefined,
+): 'positive' | 'negative' | 'neutral' {
+  if (n == null || Number.isNaN(n)) return 'neutral'
+  return n > 0 ? 'positive' : 'negative'
+}
+
 export function formatBookQuota(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return 'N/D'
   return n.toFixed(2)

@@ -80,6 +80,7 @@ export function BetBuilderPage() {
   const [resultsFilters, setResultsFilters] = useState<BetBuilderResultsFilterState>(() =>
     defaultResultsFilters(today),
   )
+  const [resultsFiltersOpen, setResultsFiltersOpen] = useState(false)
   const [secondaryOpen, setSecondaryOpen] = useState(false)
   const [visibleLimit, setVisibleLimit] = useState(BET_BUILDER_PAGE_SIZE)
   const [viewMode, setViewMode] = useState<BetBuilderViewMode>('compact')
@@ -428,7 +429,8 @@ export function BetBuilderPage() {
           <BetBuilderResultsFilters
             filters={resultsFilters}
             onChange={onResultsFiltersChange}
-            onAnalyzeLost={filterLost}
+            filtersOpen={resultsFiltersOpen}
+            onFiltersOpenChange={setResultsFiltersOpen}
           />
           {resultsFixtures.length === 0 ? (
             <div

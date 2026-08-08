@@ -5,11 +5,14 @@ import {
   clampResultsDate,
   defaultResultsFilters,
   formatBookQuota,
+  formatProfitUnits,
+  formatRoiPct,
   formatScoreLine,
   mapOutcomeFilterToApi,
   mapResultsQuickFilterToApi,
   outcomeLabel,
   parseBetBuilderView,
+  signedMetricTone,
 } from './betBuilderResultsUtils'
 import { BET_BUILDER_RESULTS_START_DATE } from '../../lib/cecchinoBetBuilderApi'
 
@@ -28,6 +31,21 @@ describe('betBuilderResultsUtils', () => {
   it('formatBookQuota N/D', () => {
     expect(formatBookQuota(null)).toBe('N/D')
     expect(formatBookQuota(4.1)).toBe('4.10')
+  })
+
+  it('BET-RESULTS-01.3 formatProfitUnits / formatRoiPct / signedMetricTone', () => {
+    expect(formatProfitUnits(3.42)).toBe('+3.42u')
+    expect(formatProfitUnits(-2.15)).toBe('-2.15u')
+    expect(formatProfitUnits(0)).toBe('0.00u')
+    expect(formatProfitUnits(null)).toBe('N/D')
+    expect(formatRoiPct(12.4)).toBe('+12.4%')
+    expect(formatRoiPct(-8.6)).toBe('-8.6%')
+    expect(formatRoiPct(0)).toBe('0.0%')
+    expect(formatRoiPct(null)).toBe('N/D')
+    expect(signedMetricTone(1)).toBe('positive')
+    expect(signedMetricTone(0)).toBe('negative')
+    expect(signedMetricTone(-1)).toBe('negative')
+    expect(signedMetricTone(null)).toBe('neutral')
   })
 
   it('outcome labels', () => {

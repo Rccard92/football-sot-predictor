@@ -2,6 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
+
+- KPI Results: **Profitto** e **ROI** con flat stake teorico **1u** su primary concluse con `quota_book` Book (>1)
+- Formula: WON = Book−1; LOST = −1; ROI = profit / priced_settled × 100; Book N/D → N/D su Profit/ROI (Win Rate invariato)
+- Filtri mobile Results in accordion chiuso di default; desktop sempre aperti; rimosso «Analizza perse»
+- Nessuna migration / backfill / stake € reale; Pre-match e cart invariati
+
 ## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
 
 - Seconda modalità su `/bet-builder?view=results`: monitoraggio esito della **predizione madre** (Evidence Sort V2)

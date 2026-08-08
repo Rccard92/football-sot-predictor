@@ -1712,6 +1712,9 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
         not_evaluable: 0,
         live_or_pending: 0,
         win_rate: 0,
+        priced_settled: 1,
+        profit_units: -1,
+        roi_pct: -100,
       },
       fixtures: [
         {
@@ -1806,7 +1809,7 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
         expect.objectContaining({ outcome: 'lost' }),
       ),
     )
-    fireEvent.click(screen.getByTestId('results-analyze-lost'))
+    expect(screen.queryByTestId('results-analyze-lost')).toBeNull()
     await waitFor(() =>
       expect(screen.getByTestId('results-outcome-lost').className).toMatch(/slate-900|bg-slate/),
     )
@@ -1999,7 +2002,7 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     expect(screen.getByTestId('result-outcome-badge').textContent).toMatch(/In attesa/i)
   })
 
-  it('BET-RESULTS-01.2 Vinte/Perse usano outcome; Analizza perse invariato', async () => {
+  it('BET-RESULTS-01.2 Vinte/Perse usano outcome; Analizza perse rimosso', async () => {
     apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
     renderPage('/bet-builder?date=2026-08-08&view=results')
     await waitFor(() => expect(screen.getByTestId('results-kpi-predictions')).toBeTruthy())
@@ -2025,9 +2028,150 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     >
     expect(lostCall.match_status).toBeUndefined()
 
-    fireEvent.click(screen.getByTestId('results-analyze-lost'))
+    expect(screen.queryByTestId('results-analyze-lost')).toBeNull()
+    expect(screen.getByTestId('results-outcome-lost').className).toMatch(/slate-900|bg-slate/)
+  })
+
+  it('BET-RESULTS-01.3 Profitto/ROI KPI, colori, flat stake note, 8 KPI', async () => {
+    const positive = baseResultsResponse({
+      summary: {
+        primary_predictions: 3,
+        settled: 3,
+        won: 2,
+        lost: 1,
+        pending: 0,
+        not_evaluable: 0,
+        live_or_pending: 0,
+        win_rate: 0.6667,
+        priced_settled: 3,
+        profit_units: 0.5,
+        roi_pct: 16.6667,
+      },
+    })
+    apiMock.fetchBetBuilderResults.mockResolvedValue(positive)
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-kpi-profit')).toBeTruthy())
+
+    expect(screen.getByTestId('results-kpi-predictions')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-settled')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-won')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-lost')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-winrate')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-profit').textContent).toBe('+0.50u')
+    expect(screen.getByTestId('results-kpi-roi').textContent).toBe('+16.7%')
+    expect(screen.getByTestId('results-kpi-pending')).toBeTruthy()
+    expect(screen.getByTestId('results-kpi-profit').className).toMatch(/emerald/)
+    expect(screen.getByTestId('results-kpi-roi').className).toMatch(/emerald/)
+    expect(screen.getByTestId('results-kpi-flat-stake-note').textContent).toMatch(/flat stake/i)
+    expect(
+      screen.getByTestId('bet-builder-results-summary').querySelector('.grid')?.className,
+    ).toMatch(/lg:grid-cols-8/)
+
+    const negative = baseResultsResponse({
+      summary: {
+        ...positive.summary,
+        profit_units: -1.5,
+        roi_pct: -50,
+      },
+    })
+    apiMock.fetchBetBuilderResults.mockResolvedValue(negative)
+    fireEvent.click(screen.getByTestId('results-outcome-all'))
+    await waitFor(() => expect(screen.getByTestId('results-kpi-profit').textContent).toBe('-1.50u'))
+    expect(screen.getByTestId('results-kpi-roi').textContent).toBe('-50.0%')
+    expect(screen.getByTestId('results-kpi-profit').className).toMatch(/rose/)
+    expect(screen.getByTestId('results-kpi-roi').className).toMatch(/rose/)
+
+    const zeroNd = baseResultsResponse({
+      summary: {
+        ...positive.summary,
+        priced_settled: 0,
+        profit_units: null,
+        roi_pct: null,
+      },
+    })
+    apiMock.fetchBetBuilderResults.mockResolvedValue(zeroNd)
+    fireEvent.click(screen.getByTestId('results-outcome-won'))
+    await waitFor(() => expect(screen.getByTestId('results-kpi-profit').textContent).toBe('N/D'))
+    expect(screen.getByTestId('results-kpi-roi').textContent).toBe('N/D')
+    expect(screen.getByTestId('results-kpi-profit').className).toMatch(/slate/)
+    expect(screen.getByTestId('results-kpi-roi').className).toMatch(/slate/)
+
+    const zeroProfit = baseResultsResponse({
+      summary: {
+        ...positive.summary,
+        profit_units: 0,
+        roi_pct: 0,
+      },
+    })
+    apiMock.fetchBetBuilderResults.mockResolvedValue(zeroProfit)
+    fireEvent.click(screen.getByTestId('results-outcome-lost'))
+    await waitFor(() => expect(screen.getByTestId('results-kpi-profit').textContent).toBe('0.00u'))
+    expect(screen.getByTestId('results-kpi-roi').textContent).toBe('0.0%')
+    expect(screen.getByTestId('results-kpi-profit').className).toMatch(/rose/)
+    expect(screen.getByTestId('results-kpi-roi').className).toMatch(/rose/)
+  })
+
+  it('BET-RESULTS-01.3 Analizza perse rimosso; Perse KPI e Analizza perdita invariati', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-kpi-lost-btn')).toBeTruthy())
+    expect(screen.queryByTestId('results-analyze-lost')).toBeNull()
+    expect(screen.queryByText('Analizza perse')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('results-kpi-lost-btn'))
     await waitFor(() =>
-      expect(screen.getByTestId('results-outcome-lost').className).toMatch(/slate-900|bg-slate/),
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'lost' }),
+      ),
+    )
+
+    expect(screen.getByTestId('result-analyze-cta').textContent).toMatch(/Analizza perdita/i)
+    fireEvent.click(screen.getByTestId('result-analyze-cta'))
+    await waitFor(() => expect(screen.getByTestId('bet-builder-result-drawer')).toBeTruthy())
+  })
+
+  it('BET-RESULTS-01.3 mobile filters accordion chiuso di default', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-filters-accordion')).toBeTruthy())
+
+    let accordion = screen.getByTestId('results-filters-accordion')
+    expect(accordion.textContent).toMatch(/Filtri risultati/i)
+    expect(accordion.getAttribute('aria-expanded')).toBe('false')
+    let panel = screen.getByTestId('results-filters-panel')
+    const classesOf = (el: HTMLElement) => el.className.split(/\s+/).filter(Boolean)
+    expect(classesOf(panel)).toContain('hidden')
+    expect(classesOf(panel)).toContain('lg:block')
+    expect(classesOf(panel)).not.toContain('block')
+
+    fireEvent.click(accordion)
+    accordion = screen.getByTestId('results-filters-accordion')
+    panel = screen.getByTestId('results-filters-panel')
+    expect(accordion.getAttribute('aria-expanded')).toBe('true')
+    expect(classesOf(panel)).toContain('block')
+    expect(classesOf(panel)).not.toContain('hidden')
+
+    fireEvent.click(screen.getByTestId('results-outcome-won'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'won' }),
+      ),
+    )
+    await waitFor(() => expect(screen.getByTestId('results-filters-accordion')).toBeTruthy())
+    accordion = screen.getByTestId('results-filters-accordion')
+    panel = screen.getByTestId('results-filters-panel')
+    expect(accordion.getAttribute('aria-expanded')).toBe('true')
+    expect((screen.getByTestId('results-outcome-won') as HTMLButtonElement).className).toMatch(
+      /slate-900|bg-slate/,
+    )
+
+    fireEvent.click(accordion)
+    accordion = screen.getByTestId('results-filters-accordion')
+    panel = screen.getByTestId('results-filters-panel')
+    expect(accordion.getAttribute('aria-expanded')).toBe('false')
+    expect(classesOf(panel)).toContain('hidden')
+    expect((screen.getByTestId('results-outcome-won') as HTMLButtonElement).className).toMatch(
+      /slate-900|bg-slate/,
     )
   })
 })

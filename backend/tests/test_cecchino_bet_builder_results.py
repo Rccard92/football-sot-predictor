@@ -39,6 +39,7 @@ from app.services.cecchino.cecchino_bet_builder_results import (
     aggregate_bet_builder_results,
     clamp_results_date,
     evaluate_bet_builder_prediction_outcome,
+    _build_summary,
     _sort_fixture_results,
 )
 from app.services.cecchino.cecchino_selection_keys import (
@@ -991,3 +992,273 @@ class TestMatchStatusFilter:
         assert res.status_code == 200
         assert captured.get("match_status") == "upcoming"
         assert captured.get("outcome") == "won"
+
+
+# ---------------------------------------------------------------------------
+# BET-RESULTS-01.3 — Profit / ROI (flat stake 1u, Book-only)
+# ---------------------------------------------------------------------------
+
+
+def _summary_item(
+    *,
+    outcome: str,
+    book: float | None,
+    match_status: str = "finished",
+    market_key: str = SEL_DRAW,
+    origin: str = ORIGIN_PRICE_AND_SIGNALS,
+    fid: int = 1,
+) -> dict:
+    return {
+        "fixture": {
+            "today_fixture_id": fid,
+            "match_status": match_status,
+            "kickoff": "2026-08-08T18:00:00+00:00",
+        },
+        "primary": {
+            "prediction_outcome": outcome,
+            "origin": origin,
+            "market": {"market_key": market_key, "label": market_key},
+            "price_value": {
+                "present": book is not None,
+                "quota_book": book,
+                "quota_cecchino": 1.9,
+            },
+            "purchasability_v31": {"available": True, "score": 80},
+        },
+        "other_opportunities": [],
+    }
+
+
+class TestProfitRoiSummary:
+    def test_profit_positive_roi(self):
+        # WON@2.00 (+1), WON@1.50 (+0.50), LOST@3.00 (-1) → +0.50 / 3 = +16.666...%
+        summary = _build_summary(
+            [
+                _summary_item(outcome=OUTCOME_WON, book=2.00, fid=1),
+                _summary_item(outcome=OUTCOME_WON, book=1.50, fid=2),
+                _summary_item(outcome=OUTCOME_LOST, book=3.00, fid=3),
+            ]
+        )
+        assert summary["priced_settled"] == 3
+        assert summary["priced_won"] == 2
+        assert summary["priced_lost"] == 1
+        assert summary["profit_units"] == pytest.approx(0.5)
+        assert summary["roi_pct"] == pytest.approx(16.6667, abs=0.0001)
+        assert summary["settled"] == 3
+        assert summary["win_rate"] == pytest.approx(2 / 3, abs=0.0001)
+
+    def test_profit_negative_roi(self):
+        # WON@1.50 (+0.50), LOST, LOST → -1.50 / 3 = -50%
+        summary = _build_summary(
+            [
+                _summary_item(outcome=OUTCOME_WON, book=1.50, fid=1),
+                _summary_item(outcome=OUTCOME_LOST, book=2.00, fid=2),
+                _summary_item(outcome=OUTCOME_LOST, book=2.50, fid=3),
+            ]
+        )
+        assert summary["priced_settled"] == 3
+        assert summary["profit_units"] == pytest.approx(-1.5)
+        assert summary["roi_pct"] == pytest.approx(-50.0)
+
+    def test_signal_only_nd_excluded_from_profit_keeps_win_rate(self):
+        # WON Book N/D + LOST@2 → win_rate 50%; profit solo B
+        summary = _build_summary(
+            [
+                _summary_item(
+                    outcome=OUTCOME_WON,
+                    book=None,
+                    origin=ORIGIN_SIGNALS,
+                    fid=1,
+                ),
+                _summary_item(outcome=OUTCOME_LOST, book=2.00, fid=2),
+            ]
+        )
+        assert summary["won"] == 1
+        assert summary["lost"] == 1
+        assert summary["settled"] == 2
+        assert summary["win_rate"] == pytest.approx(0.5)
+        assert summary["priced_settled"] == 1
+        assert summary["profit_units"] == pytest.approx(-1.0)
+        assert summary["roi_pct"] == pytest.approx(-100.0)
+
+    def test_pending_with_book_excluded(self):
+        summary = _build_summary(
+            [
+                _summary_item(
+                    outcome=OUTCOME_PENDING,
+                    book=5.00,
+                    match_status="upcoming",
+                    fid=1,
+                ),
+                _summary_item(outcome=OUTCOME_WON, book=2.00, fid=2),
+            ]
+        )
+        assert summary["pending"] == 1
+        assert summary["priced_settled"] == 1
+        assert summary["profit_units"] == pytest.approx(1.0)
+        assert summary["roi_pct"] == pytest.approx(100.0)
+
+    def test_not_evaluable_excluded(self):
+        summary = _build_summary(
+            [
+                _summary_item(
+                    outcome=OUTCOME_NOT_EVALUABLE,
+                    book=3.00,
+                    match_status="postponed",
+                    fid=1,
+                ),
+                _summary_item(
+                    outcome=OUTCOME_NOT_EVALUABLE,
+                    book=4.00,
+                    match_status="cancelled",
+                    fid=2,
+                ),
+            ]
+        )
+        assert summary["not_evaluable"] == 2
+        assert summary["priced_settled"] == 0
+        assert summary["profit_units"] is None
+        assert summary["roi_pct"] is None
+        assert summary["win_rate"] is None
+
+    def test_invalid_book_excluded(self):
+        summary = _build_summary(
+            [
+                _summary_item(outcome=OUTCOME_WON, book=1.0, fid=1),  # <= 1.0
+                _summary_item(outcome=OUTCOME_LOST, book=0.5, fid=2),
+                _summary_item(outcome=OUTCOME_WON, book=2.0, fid=3),
+            ]
+        )
+        assert summary["settled"] == 3
+        assert summary["priced_settled"] == 1
+        assert summary["profit_units"] == pytest.approx(1.0)
+
+    def test_summary_uses_full_cohort_before_pagination(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results._load_gi_payloads_batch",
+            lambda db, rows: ({}, None),
+        )
+        # 3 finished fixtures: WON@2, WON@1.5, LOST@3 → profit +0.5 on full cohort
+        rows = [
+            _row(fid=1, ft_home=1, ft_away=1),  # DRAW won
+            _row(fid=2, ft_home=1, ft_away=1),
+            _row(fid=3, ft_home=2, ft_away=1),  # DRAW lost
+        ]
+        books = {1: 2.0, 2: 1.5, 3: 3.0}
+
+        def fake_build(db_rows, **kw):
+            return [
+                _opp_built(
+                    fid=r.id,
+                    market_key=SEL_DRAW,
+                    origin=ORIGIN_PRICE_AND_SIGNALS,
+                    book=books[r.id],
+                )
+                for r in db_rows
+            ], None
+
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results.build_opportunities_for_rows",
+            fake_build,
+        )
+        db = _mock_db(rows)
+        payload = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            limit=1,
+            offset=0,
+        )
+        assert payload["total"] == 3
+        assert len(payload["fixtures"]) == 1
+        summary = payload["summary"]
+        assert summary["priced_settled"] == 3
+        assert summary["profit_units"] == pytest.approx(0.5)
+        assert summary["roi_pct"] == pytest.approx(16.6667, abs=0.0001)
+        assert summary["won"] == 2
+        assert summary["lost"] == 1
+
+    def test_filters_change_profit_roi(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results._load_gi_payloads_batch",
+            lambda db, rows: ({}, None),
+        )
+        rows = [
+            _row(fid=1, ft_home=1, ft_away=1),  # DRAW won @2.0
+            _row(fid=2, ft_home=2, ft_away=1),  # HOME won @1.5
+            _row(fid=3, ft_home=0, ft_away=1),  # DRAW lost @3.0
+        ]
+
+        def fake_build(db_rows, **kw):
+            out = []
+            for r in db_rows:
+                if r.id == 1:
+                    out.append(
+                        _opp_built(
+                            fid=1,
+                            market_key=SEL_DRAW,
+                            origin=ORIGIN_PRICE_AND_SIGNALS,
+                            book=2.0,
+                        )
+                    )
+                elif r.id == 2:
+                    out.append(
+                        _opp_built(
+                            fid=2,
+                            market_key=SEL_HOME,
+                            origin=ORIGIN_PRICE,
+                            book=1.5,
+                        )
+                    )
+                else:
+                    out.append(
+                        _opp_built(
+                            fid=3,
+                            market_key=SEL_DRAW,
+                            origin=ORIGIN_SIGNALS,
+                            book=3.0,
+                        )
+                    )
+            return out, None
+
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results.build_opportunities_for_rows",
+            fake_build,
+        )
+        db = _mock_db(rows)
+
+        all_payload = aggregate_bet_builder_results(
+            db, date_from=date(2026, 8, 8), date_to=date(2026, 8, 8)
+        )
+        assert all_payload["summary"]["priced_settled"] == 3
+
+        lost_only = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            outcome="lost",
+        )
+        assert lost_only["summary"]["priced_settled"] == 1
+        assert lost_only["summary"]["profit_units"] == pytest.approx(-1.0)
+        assert lost_only["summary"]["roi_pct"] == pytest.approx(-100.0)
+
+        draw_only = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            market_key=SEL_DRAW,
+        )
+        # DRAW: WON@2 (+1) + LOST@3 (-1) = 0
+        assert draw_only["summary"]["priced_settled"] == 2
+        assert draw_only["summary"]["profit_units"] == pytest.approx(0.0)
+        assert draw_only["summary"]["roi_pct"] == pytest.approx(0.0)
+
+        price_origin = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            origin=ORIGIN_PRICE,
+        )
+        assert price_origin["summary"]["priced_settled"] == 1
+        assert price_origin["summary"]["profit_units"] == pytest.approx(0.5)
+        assert price_origin["summary"]["roi_pct"] == pytest.approx(50.0)

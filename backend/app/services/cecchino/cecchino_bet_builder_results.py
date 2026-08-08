@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -343,11 +344,34 @@ def _sort_fixture_results(
     return copy
 
 
+def _primary_quota_book(primary: dict[str, Any]) -> float | None:
+    """Quota Book della primary (price_value.quota_book). Nessun fallback Cecchino."""
+    pv = primary.get("price_value")
+    if not isinstance(pv, dict):
+        return None
+    raw = pv.get("quota_book")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / inf
+        return None
+    return value
+
+
 def _build_summary(fixtures: list[dict[str, Any]]) -> dict[str, Any]:
-    """KPI solo sulle primary."""
+    """KPI solo sulle primary.
+
+    Profitto/ROI: flat stake teorico 1u su primary WON/LOST con quota_book > 1.0.
+    Book N/D esclusa da Profit/ROI ma non da Win Rate.
+    """
     primary_predictions = len(fixtures)
     won = lost = pending = not_evaluable = result_missing = 0
     live_or_pending = 0
+    priced_settled = priced_won = priced_lost = 0
+    profit = Decimal("0")
 
     for item in fixtures:
         primary = item.get("primary") or {}
@@ -367,8 +391,26 @@ def _build_summary(fixtures: list[dict[str, Any]]) -> dict[str, Any]:
         if match_status == MATCH_LIVE or outcome == OUTCOME_PENDING:
             live_or_pending += 1
 
+        if outcome in (OUTCOME_WON, OUTCOME_LOST):
+            quota_book = _primary_quota_book(primary)
+            if quota_book is not None and quota_book > 1.0:
+                priced_settled += 1
+                if outcome == OUTCOME_WON:
+                    priced_won += 1
+                    profit += Decimal(str(quota_book)) - Decimal("1")
+                else:
+                    priced_lost += 1
+                    profit += Decimal("-1")
+
     settled = won + lost
     win_rate = round(won / settled, 4) if settled > 0 else None
+
+    if priced_settled > 0:
+        profit_units = float(round(profit, 4))
+        roi_pct = float(round(profit / Decimal(priced_settled) * Decimal("100"), 4))
+    else:
+        profit_units = None
+        roi_pct = None
 
     return {
         "primary_predictions": primary_predictions,
@@ -380,6 +422,11 @@ def _build_summary(fixtures: list[dict[str, Any]]) -> dict[str, Any]:
         "result_missing": result_missing,
         "live_or_pending": live_or_pending,
         "win_rate": win_rate,
+        "priced_settled": priced_settled,
+        "priced_won": priced_won,
+        "priced_lost": priced_lost,
+        "profit_units": profit_units,
+        "roi_pct": roi_pct,
     }
 
 

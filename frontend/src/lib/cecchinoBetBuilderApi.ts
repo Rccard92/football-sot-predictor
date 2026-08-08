@@ -321,6 +321,12 @@ export type BetBuilderResultsSummary = {
   result_missing?: number
   live_or_pending?: number
   win_rate: number | null
+  /** Primary WON/LOST con quota Book valida (>1). Flat stake 1u. */
+  priced_settled: number
+  /** Somma profitto in unità; null se priced_settled=0. */
+  profit_units: number | null
+  /** ROI % = profit_units / priced_settled * 100; null se priced_settled=0. */
+  roi_pct: number | null
 }
 
 export type BetBuilderResultsResponse = {

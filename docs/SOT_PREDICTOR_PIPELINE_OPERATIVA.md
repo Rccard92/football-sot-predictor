@@ -1,12 +1,19 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
+
+1. Summary Results calcola anche `priced_settled` / `profit_units` / `roi_pct` sulla coorte filtrata **prima** di offset/limit.
+2. Solo primary WON/LOST con `quota_book` Book > 1; flat stake 1u; Book N/D esclusa da Profit/ROI.
+3. UI: KPI Profitto/ROI (segno verde/rosso; N/D neutro); filtri mobile accordion; niente «Analizza perse».
+4. Invariati: update-results Today, Pre-match, cart, Evidence Sort V2, outcome engine.
+
 ## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
 
 1. Operatore apre `/bet-builder` → default **Pre-match** (invariato).
 2. Switch **Risultati** (`?view=results`) → `GET /api/cecchino/bet-builder/results` (date ≥ 08/08/2026).
 3. Backend ricostruisce opportunity (stesso builder pre-match, **senza** filtro operational); primary = Evidence Sort V2.
 4. Outcome: `evaluate_market_selection` + status match; cancelled/postponed → not_evaluable.
-5. KPI solo primary; secondary in accordion diagnostico; filtro «Analizza perse».
+5. KPI solo primary (Win Rate + Profitto/ROI 01.3); secondary in accordion diagnostico; filtro Perse via tab/KPI.
 6. Polling soft 45s se live/pending, più lento se settled; focus/visibility refresh.
 7. Aggiornamento score: riusa `POST /api/admin/cecchino/today/update-results` (Today) — nessun fetcher BB.
 8. Nessuna write Bet Builder, nessun freeze, nessun backfill, nessuna migration.
