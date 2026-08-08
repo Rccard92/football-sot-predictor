@@ -43,6 +43,17 @@ export function BetBuilderPriceBlock({ price, compact = false }: Props) {
           <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
             {fmtQuota(price.quota_book)}
           </p>
+          {price.quota_book != null ? (
+            <p className="mt-0.5 text-[10px] text-slate-500" data-testid="book-provenance">
+              {price.book_fallback_used
+                ? `${price.bookmaker_name ?? 'Bet365'} · fallback`
+                : price.bookmaker_name ?? 'Betfair'}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[10px] text-slate-400" data-testid="book-provenance">
+              N/D
+            </p>
+          )}
         </div>
         <div className={bbMetricCell}>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">

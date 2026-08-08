@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS, KPI_V2_VERSION
+from app.services.cecchino.cecchino_constants import CECCHINO_KPI_V2_ACCEPTED_VERSIONS
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -72,7 +73,7 @@ def build_bookmaker_odds_detail(kpi_panel: dict[str, Any] | None) -> dict[str, A
         if isinstance(row, dict) and row.get("market_key"):
             by_key[str(row["market_key"])] = row
 
-    if version != KPI_V2_VERSION:
+    if version not in CECCHINO_KPI_V2_ACCEPTED_VERSIONS and version != KPI_V2_VERSION:
         for market_key, label in KPI_V2_ROW_DEFS:
             src = by_key.get(market_key)
             if src and src.get("bookmakers"):

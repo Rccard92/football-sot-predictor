@@ -97,7 +97,7 @@ export function CecchinoTodayPageHeader({
                 disabled={refreshBetfairLoading || scanBusy}
                 className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {refreshBetfairLoading ? 'Aggiornamento…' : 'Aggiorna quote Betfair'}
+                {refreshBetfairLoading ? 'Aggiornamento…' : 'Aggiorna quote Book'}
               </button>
             )}
           </>

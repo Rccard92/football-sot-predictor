@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — BOOK POLICY Betfair primary → Bet365 fallback (2026-08-08)
+
+- **Perché:** coverage Book incompleta quando Betfair manca su singole selection (es. O/U) mentre Bet365 è disponibile.
+- **Cosa:** resolver canonico selection-by-selection (3→8→N/D); gate 1X2 canonico; fetch efficiente (fixture-wide + recovery Betfair + max 1 call Bet365); KPI/Signals/V3.1/Bet Builder consumano `quota_book` canonica con provenance; UI «Quote Book» / «Betfair primario · Bet365 fallback».
+- **Non cambia:** formule Cecchino, Signals, V3.1, Evidence Sort, Results ROI (sempre `price_value.quota_book` pre-match), classico multi-book 8/3/4, nessun backfill.
+- **Version:** `betfair_primary_bet365_fallback_v1` / KPI `cecchino_kpi_v2_canonical_book_v1`.
+
 ## Feat — Bet Builder BET-RESULTS-01.3 ROI / Profitto + filtri mobile accordion (2026-08-08)
 
 - Perché: il monitor Results aveva Win Rate ma non Profitto/ROI; su mobile i filtri occupavano troppo spazio verticale; «Analizza perse» era ridondante rispetto a tab/KPI Perse.

@@ -198,7 +198,7 @@ def test_missing_bookmaker_excluded():
     result = validate_cecchino_today_final_eligibility(**b)
     assert not result.is_eligible
     assert result.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER
-    assert any("missing_bookmaker:Betfair" in r for r in result.blocking_reasons)
+    assert any("missing_bookmaker:Book" in r or "missing_bookmaker:Betfair" in r for r in result.blocking_reasons)
 
 
 def test_missing_1x2_market_excluded():

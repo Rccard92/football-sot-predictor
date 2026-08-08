@@ -1560,7 +1560,18 @@ flowchart TD
 - **KPI righe:** `segno` + `label` su tutte le righe; normalize/rebuild in `get_today_fixture_detail`.
 - **Layout UI:** griglia 32%/68%; SEGNO 12%; nessuno scroll orizzontale desktop.
 
-## Fase 20 — KPI Betfair-only
+## Fase 20b — BOOK POLICY Betfair primary → Bet365 fallback (2026-08-08)
+
+- **Policy:** per ogni selection KPI, Betfair (id 3) se valida; altrimenti Bet365 (id 8); altrimenti N/D. Selection-by-selection, non fixture-by-fixture, non best-odds.
+- **Fetch:** `GET odds?fixture=` estrae id 3 e 8; recovery Betfair-specific se necessario; al massimo una call Bet365-specific se restano selection mancanti; zero call Bet365 se Betfair copre i target.
+- **Gate:** 1X2 canonico completo dopo fallback (es. HOME/DRAW Betfair + AWAY Bet365 → PASSED).
+- **Cache:** `book_policy_version` in `odds_meta` / snapshot; snapshot legacy senza version non bloccano il refetch Bet365; negative cache solo dopo fallimento canonico.
+- **KPI:** `cecchino_kpi_v2_canonical_book_v1` con provenance per riga; formule invariate.
+- **Offline:** recompute/rebuild usano raw 3+8 se presenti; non inventano Bet365; nessuna API.
+- **UI:** «Quote Book aggiornate»; debug `bookmaker_ids=3,8`; Bet Builder mostra `Betfair` o `Bet365 · fallback`.
+- **Invariato:** classico `CECCHINO_BOOKMAKERS` 8/3/4, Signals/V3.1 formule, Results ROI su Book pre-match, nessun backfill.
+
+## Fase 20 — KPI Betfair-only (storico; superseduto da 20b per Today)
 
 - **Bookmaker gate:** solo Betfair (id 3) con 1X2 HOME/DRAW/AWAY; `bookmaker_mode=betfair_only` nel job summary.
 - **Odds fetch:** `GET /odds?fixture=` + filtro id 3; fallback `bookmaker=3`; cache/negative cache solo su Betfair.

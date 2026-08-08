@@ -142,6 +142,9 @@ def build_price_value(kpi_row: dict[str, Any] | None) -> dict[str, Any]:
             "status": None,
             "book_source": None,
             "cecchino_source": None,
+            "bookmaker_name": None,
+            "provider_bookmaker_id": None,
+            "book_fallback_used": None,
         }
 
     quota_book = _finite_number(kpi_row.get("quota_book"))
@@ -165,6 +168,12 @@ def build_price_value(kpi_row: dict[str, Any] | None) -> dict[str, Any]:
     if r_label is None and rating_int is not None:
         r_label = rating_label(rating_int)
 
+    provider_bm_id = kpi_row.get("provider_bookmaker_id")
+    try:
+        provider_bm_id_int = int(provider_bm_id) if provider_bm_id is not None else None
+    except (TypeError, ValueError):
+        provider_bm_id_int = None
+
     return {
         "present": bool(present),
         "method": PRICE_VALUE_METHOD,
@@ -180,6 +189,9 @@ def build_price_value(kpi_row: dict[str, Any] | None) -> dict[str, Any]:
         "status": kpi_row.get("status"),
         "book_source": kpi_row.get("book_source"),
         "cecchino_source": kpi_row.get("cecchino_source"),
+        "bookmaker_name": kpi_row.get("bookmaker_name"),
+        "provider_bookmaker_id": provider_bm_id_int,
+        "book_fallback_used": kpi_row.get("book_fallback_used"),
     }
 
 

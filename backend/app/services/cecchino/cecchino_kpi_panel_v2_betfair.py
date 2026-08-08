@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.cecchino.cecchino_constants import (
+    CECCHINO_BOOK_POLICY_VERSION,
     CECCHINO_BOOKMAKER,
+    CECCHINO_FALLBACK_BOOKMAKER,
+    CECCHINO_KPI_V2_VERSION,
+    CECCHINO_PRIMARY_BOOKMAKER,
     PROVIDER_API_FOOTBALL,
     STATUS_INSUFFICIENT_DATA,
 )
@@ -37,7 +41,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_X_TWO,
 )
 
-KPI_V2_VERSION = "cecchino_kpi_v2_betfair_markets_v31_p1"
+KPI_V2_VERSION = CECCHINO_KPI_V2_VERSION
 KPI_V2_MAPPING_VERSION = "kpi_markets_v31_phase1"
 
 KPI_V2_COLUMNS = [
@@ -194,9 +198,18 @@ def _build_metrics_row(
     book_source: str,
     cecchino_source: str | None,
     cecchino_market_status: str | None = None,
+    bookmaker_name: str | None = None,
+    provider_bookmaker_id: int | None = None,
+    book_fallback_used: bool | None = None,
 ) -> dict[str, Any]:
     prob_book = _prob_from_odd(quota_book)
     prob_cecchino = _prob_from_odd(quota_cecchino)
+
+    extra_book = {
+        "bookmaker_name": bookmaker_name,
+        "provider_bookmaker_id": provider_bookmaker_id,
+        "book_fallback_used": book_fallback_used,
+    }
 
     if quota_book is not None and quota_cecchino is None:
         row_status = "book_only"
@@ -218,6 +231,7 @@ def _build_metrics_row(
             "status": row_status if quota_book is not None else "not_available",
             "book_source": book_source,
             "cecchino_source": cecchino_source,
+            **extra_book,
         }
 
     if quota_book is None or quota_cecchino is None:
@@ -237,6 +251,7 @@ def _build_metrics_row(
             "status": "not_available",
             "book_source": book_source,
             "cecchino_source": cecchino_source,
+            **extra_book,
         }
 
     vantaggio_prob = None
@@ -266,6 +281,7 @@ def _build_metrics_row(
         "status": "available",
         "book_source": book_source,
         "cecchino_source": cecchino_source,
+        **extra_book,
     }
 
 
@@ -301,12 +317,20 @@ def _book_source_for_row(
     prov = provenance.get(market_key) or {}
     src = prov.get("source")
     if src:
-        if odds_source == "cached_betfair_odds" and src.startswith("betfair_raw"):
+        if odds_source in ("cached_betfair_odds", "cached_book_odds") and (
+            str(src).endswith("_raw_match_winner")
+            or str(src).endswith("_raw_over_under")
+            or str(src).endswith("_raw_over_under_first_half")
+            or str(src).endswith("_raw_first_half_match_winner")
+            or str(src).endswith("_raw_double_chance")
+        ):
             return f"cached_{src}"
         return str(src)
 
     if market_key in _CECCHINO_DC_KEYS:
         for bm in betfair_payload.get("bookmakers") or []:
+            if bm.get("bookmaker_name") not in (None, "Canonical Book"):
+                continue
             dc_derived = (bm or {}).get("dc_derived") or {}
             if dc_derived.get(market_key):
                 return "derived_from_betfair_1x2"
@@ -318,18 +342,24 @@ def _book_source_for_row(
         return "betfair_raw_over_under_first_half"
     if market_key in _HT_1X2_KEYS:
         return "betfair_raw_first_half_match_winner"
-    if odds_source == "cached_betfair_odds":
-        return "cached_betfair_odds"
-    return "betfair"
+    if odds_source in ("cached_betfair_odds", "cached_book_odds"):
+        return "cached_book_odds"
+    return "book"
 
 
 def _extract_betfair_markets(betfair_payload: dict[str, Any]) -> dict[str, dict[str, float | None]]:
-    """Estrae mercati Betfair dal payload bookmaker."""
+    """Estrae mercati Book canonici dal payload (preferisce Canonical Book)."""
     out: dict[str, dict[str, float | None]] = {}
-    for bm in betfair_payload.get("bookmakers") or []:
+    bookmakers = list(betfair_payload.get("bookmakers") or [])
+    preferred = [
+        bm for bm in bookmakers
+        if isinstance(bm, dict) and bm.get("bookmaker_name") == "Canonical Book"
+    ]
+    ordered = preferred + [bm for bm in bookmakers if bm not in preferred]
+    for bm in ordered:
         if not isinstance(bm, dict):
             continue
-        if bm.get("status") != "available":
+        if bm.get("status") not in ("available", "partial"):
             continue
         markets = bm.get("markets") or {}
         for mkt, selections in markets.items():
@@ -337,7 +367,11 @@ def _extract_betfair_markets(betfair_payload: dict[str, Any]) -> dict[str, dict[
                 continue
             out.setdefault(mkt, {})
             for sk, val in selections.items():
+                if sk in out[mkt] and out[mkt][sk] is not None:
+                    continue
                 out[mkt][sk] = _num(val)
+        if preferred and bm in preferred:
+            break
     return out
 
 
@@ -372,8 +406,9 @@ def build_cecchino_kpi_panel_v2_betfair(
 ) -> dict[str, Any]:
     warnings: list[str] = list(betfair_payload.get("warnings") or [])
     bm_status = betfair_payload.get("status") or "not_available"
-    odds_source = str(betfair_payload.get("odds_source") or "betfair")
+    odds_source = str(betfair_payload.get("odds_source") or "book")
     markets = _extract_betfair_markets(betfair_payload)
+    resolution_stats = betfair_payload.get("book_resolution_stats") or {}
 
     cec_ok = final_odds.get("status") == "available"
     p1 = _num(final_odds.get("prob_1"))
@@ -387,6 +422,7 @@ def build_cecchino_kpi_panel_v2_betfair(
     }
 
     rows: list[dict[str, Any]] = []
+    fallback_row_count = 0
     for market_key, segno in KPI_V2_ROW_DEFS:
         mkt = _MARKET_FOR_KEY[market_key]
         provenance_map = betfair_payload.get("provenance_by_selection")
@@ -417,6 +453,16 @@ def build_cecchino_kpi_panel_v2_betfair(
             goal_markets=goal_markets,
         )
 
+        bookmaker_name = prov.get("bookmaker_name")
+        provider_bookmaker_id = prov.get("provider_bookmaker_id")
+        book_fallback_used = prov.get("book_fallback_used")
+        if quota_book is not None and book_fallback_used:
+            fallback_row_count += 1
+        if quota_book is not None and bookmaker_name is None:
+            bookmaker_name = str(CECCHINO_PRIMARY_BOOKMAKER["name"])
+            provider_bookmaker_id = int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"])
+            book_fallback_used = False
+
         rows.append(
             _build_metrics_row(
                 market_key=market_key,
@@ -426,19 +472,43 @@ def build_cecchino_kpi_panel_v2_betfair(
                 book_source=book_source,
                 cecchino_source=cecchino_source,
                 cecchino_market_status=cecchino_market_status,
+                bookmaker_name=bookmaker_name,
+                provider_bookmaker_id=int(provider_bookmaker_id)
+                if provider_bookmaker_id is not None
+                else None,
+                book_fallback_used=bool(book_fallback_used)
+                if book_fallback_used is not None
+                else None,
             ),
         )
 
     if bm_status == "not_available":
-        warnings.append("Quote Betfair non disponibili")
+        warnings.append("Quote Book non disponibili")
 
     return {
         "version": KPI_V2_VERSION,
         "mapping_version": KPI_V2_MAPPING_VERSION,
+        "book_policy_version": betfair_payload.get("book_policy_version")
+        or CECCHINO_BOOK_POLICY_VERSION,
         "bookmaker": {
-            "name": CECCHINO_BOOKMAKER["name"],
+            "name": "Book",
+            "policy_label": "Betfair primario · Bet365 fallback",
+            "primary_name": CECCHINO_PRIMARY_BOOKMAKER["name"],
+            "primary_provider_bookmaker_id": int(
+                CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"],
+            ),
+            "fallback_name": CECCHINO_FALLBACK_BOOKMAKER["name"],
+            "fallback_provider_bookmaker_id": int(
+                CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"],
+            ),
+            # Legacy fields: primary id for older UI
             "provider_bookmaker_id": int(CECCHINO_BOOKMAKER["provider_bookmaker_id"]),
             "provider_source": PROVIDER_API_FOOTBALL,
+        },
+        "book_resolution_stats": {
+            **resolution_stats,
+            "bet365_fallback_selection_count": fallback_row_count
+            or resolution_stats.get("bet365_fallback_selection_count", 0),
         },
         "columns": list(KPI_V2_COLUMNS),
         "bookmaker_status": bm_status,

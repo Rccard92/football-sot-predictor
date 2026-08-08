@@ -30,17 +30,13 @@ from app.services.bookmakers.market_normalize import (
 )
 from app.services.cecchino.cecchino_betfair_odds_mapping import (
     SEL_UNKNOWN,
-    _SOURCE_DOUBLE_CHANCE,
-    _SOURCE_FH_MATCH_WINNER,
-    _SOURCE_MATCH_WINNER,
-    _SOURCE_OVER_UNDER,
-    _SOURCE_OVER_UNDER_FH,
     is_strict_double_chance_market,
     is_strict_first_half_match_winner_market,
     is_strict_match_winner_market,
     normalize_double_chance_selection,
     normalize_first_half_match_winner_selection,
     normalize_match_winner_selection,
+    provenance_source_for,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
@@ -132,6 +128,8 @@ def parse_api_football_odds_response(
     *,
     requested_markets: list[str] | None = None,
     strict_betfair_kpi: bool = False,
+    strict_kpi: bool | None = None,
+    bookmaker_slug: str = "betfair",
     home_team_name: str | None = None,
     away_team_name: str | None = None,
     mapping_warnings: list[str] | None = None,
@@ -139,7 +137,18 @@ def parse_api_football_odds_response(
     """
     Estrae righe {normalized_market, selection_key, selection_label, odds_value, market_label}.
     Ritorna (rows, missing_markets).
+
+    strict_kpi (alias legacy: strict_betfair_kpi) abilita matching strict + provenance.
+    bookmaker_slug controlla i nomi provenance (betfair / bet365 / ...).
     """
+    use_strict = bool(strict_betfair_kpi) if strict_kpi is None else bool(strict_kpi)
+    slug = (bookmaker_slug or "betfair").strip().lower()
+    src_ou = provenance_source_for(slug, "over_under")
+    src_ou_fh = provenance_source_for(slug, "over_under_fh")
+    src_mw = provenance_source_for(slug, "match_winner")
+    src_fh_mw = provenance_source_for(slug, "fh_match_winner")
+    src_dc = provenance_source_for(slug, "double_chance")
+
     wanted = set(requested_markets or [MARKET_1X2, MARKET_1X2_FH, MARKET_DC, MARKET_OU, MARKET_OU_FH])
     rows: list[dict[str, Any]] = []
     found_markets: set[str] = set()
@@ -179,7 +188,7 @@ def parse_api_football_odds_response(
                         if sk is None:
                             continue
                         found_markets.add(norm_out)
-                        ou_source = _SOURCE_OVER_UNDER if is_ft_ou else _SOURCE_OVER_UNDER_FH
+                        ou_source = src_ou if is_ft_ou else src_ou_fh
                         row_data: dict[str, Any] = {
                             "normalized_market": norm_out,
                             "selection_key": sk,
@@ -195,7 +204,7 @@ def parse_api_football_odds_response(
                                 "normalized_selection": sk,
                             },
                         }
-                        if strict_betfair_kpi:
+                        if use_strict:
                             row_data["provenance"] = {
                                 "raw_market_name": bet_name,
                                 "bet_id": bet.get("id"),
@@ -206,7 +215,7 @@ def parse_api_football_odds_response(
                         rows.append(row_data)
                     continue
 
-                if strict_betfair_kpi:
+                if use_strict:
                     is_fh_1x2 = is_strict_first_half_match_winner_market(bet_name, bet_id)
                     is_1x2 = is_strict_match_winner_market(bet_name, bet_id)
                     is_dc = is_strict_double_chance_market(bet_name)
@@ -235,7 +244,7 @@ def parse_api_football_odds_response(
                                 warn.append(f"fh_1x2_selection_unknown:{label}")
                                 continue
                             norm_out = MARKET_1X2_FH
-                            src = _SOURCE_FH_MATCH_WINNER
+                            src = src_fh_mw
                             display_label = "X PT" if sk == SEL_DRAW_PT else label
                         elif is_1x2:
                             sk = normalize_match_winner_selection(
@@ -247,7 +256,7 @@ def parse_api_football_odds_response(
                                 warn.append(f"1x2_selection_unknown:{label}")
                                 continue
                             norm_out = MARKET_1X2
-                            src = _SOURCE_MATCH_WINNER
+                            src = src_mw
                             display_label = label
                         else:
                             sk = normalize_double_chance_selection(label)
@@ -255,7 +264,7 @@ def parse_api_football_odds_response(
                                 warn.append(f"dc_selection_unknown:{label}")
                                 continue
                             norm_out = MARKET_DC
-                            src = _SOURCE_DOUBLE_CHANCE
+                            src = src_dc
                             display_label = label
                         found_markets.add(norm_out)
                         rows.append(
@@ -301,7 +310,7 @@ def parse_api_football_odds_response(
                     odd = _parse_odd(val.get("odd"))
                     if odd is None:
                         continue
-                    sk: str | None = None
+                    sk = None
                     if norm == MARKET_MATCH_WINNER_1X2 or norm == MARKET_1X2:
                         sk = _map_1x2_value(label)
                         norm_out = MARKET_1X2

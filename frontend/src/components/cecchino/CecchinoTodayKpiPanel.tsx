@@ -662,11 +662,11 @@ export function CecchinoTodayKpiPanel({
           <div className="text-center sm:text-left">
             <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
             <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
-              Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
+              Book · {panel.bookmaker?.policy_label ?? 'Betfair primario · Bet365 fallback'}
             </p>
             {status === 'not_available' && (
               <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
-                Quote Betfair non disponibili
+                Quote Book non disponibili
               </p>
             )}
             {analysisError ? (
@@ -710,7 +710,7 @@ export function CecchinoTodayKpiPanel({
         {oddsMeta && (
           <div className="mt-2 rounded-md border border-slate-500/30 bg-slate-900/30 px-2 py-1.5 text-[10px] text-slate-300 sm:text-xs">
             <p>
-              Ultimo refresh Betfair:{' '}
+              Ultimo refresh Book:{' '}
               <span className="text-slate-100">
                 {fmtOddsTimestamp(oddsMeta.last_betfair_refresh_at ?? oddsMeta.odds_fetched_at)}
               </span>

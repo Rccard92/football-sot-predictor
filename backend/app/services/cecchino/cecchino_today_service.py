@@ -57,6 +57,8 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
 from app.services.cecchino.cecchino_bookmaker_odds_service import load_betfair_odds_payload
 from app.services.cecchino.cecchino_constants import (
     CECCHINO_BOOKMAKER,
+    CECCHINO_KPI_V2_ACCEPTED_VERSIONS,
+    CECCHINO_KPI_V2_VERSION_LEGACY_BETFAIR,
     CECCHINO_TODAY_BOOKMAKERS,
     KEY_AWAY_CONTEXT,
     KEY_AWAY_TOTAL,
@@ -2303,7 +2305,13 @@ def update_today_fixture_results(
 def _kpi_panel_needs_rebuild(kpi_panel: dict[str, Any] | None) -> bool:
     if not kpi_panel or not isinstance(kpi_panel, dict):
         return True
-    if kpi_panel.get("version") != KPI_V2_VERSION:
+    version = str(kpi_panel.get("version") or "")
+    if version not in CECCHINO_KPI_V2_ACCEPTED_VERSIONS and not version.startswith("cecchino_kpi_v2_"):
+        return True
+    # Force rebuild se policy Book vecchia (Betfair-only contract) su fixture operative
+    if version == CECCHINO_KPI_V2_VERSION_LEGACY_BETFAIR:
+        return True
+    if version != KPI_V2_VERSION:
         return True
     rows = kpi_panel.get("rows") or []
     if not rows:

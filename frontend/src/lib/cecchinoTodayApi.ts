@@ -348,6 +348,9 @@ export type CecchinoKpiV2Row = {
   status: string
   book_source?: string
   cecchino_source?: string | null
+  bookmaker_name?: string | null
+  provider_bookmaker_id?: number | null
+  book_fallback_used?: boolean | null
 }
 
 export type CecchinoOddsMeta = {
@@ -355,19 +358,34 @@ export type CecchinoOddsMeta = {
   odds_fetched_at?: string | null
   odds_cached_at?: string | null
   last_betfair_refresh_at?: string | null
+  last_book_refresh_at?: string | null
   is_cached?: boolean | null
   odds_updated_at?: string | null
+  book_policy_version?: string | null
+  policy_label?: string | null
 }
 
 export type CecchinoKpiV2Panel = {
   version: string
+  book_policy_version?: string
   columns?: string[]
   bookmaker?: {
     name: string
     provider_bookmaker_id: number
     provider_source: string
+    policy_label?: string
+    primary_name?: string
+    fallback_name?: string
+    primary_provider_bookmaker_id?: number
+    fallback_provider_bookmaker_id?: number
   }
   bookmaker_status?: string
+  book_resolution_stats?: {
+    betfair_primary_used?: boolean
+    bet365_fallback_used?: boolean
+    bet365_fallback_selection_count?: number
+    book_still_missing_after_fallback?: number
+  }
   odds_meta?: CecchinoOddsMeta
   rows: CecchinoKpiV2Row[]
   warnings?: string[]

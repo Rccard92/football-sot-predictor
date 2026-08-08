@@ -34,12 +34,51 @@ from app.services.cecchino.cecchino_selection_keys import (
 
 SEL_UNKNOWN = "UNKNOWN"
 
+# Provenance sources (primary Betfair — legacy names preserved)
 _SOURCE_MATCH_WINNER = "betfair_raw_match_winner"
 _SOURCE_FH_MATCH_WINNER = "betfair_raw_first_half_match_winner"
 _SOURCE_DOUBLE_CHANCE = "betfair_raw_double_chance"
 _SOURCE_OVER_UNDER = "betfair_raw_over_under"
 _SOURCE_OVER_UNDER_FH = "betfair_raw_over_under_first_half"
 _SOURCE_DERIVED_DC = "derived_from_betfair_1x2"
+
+
+def provenance_source_for(slug: str, kind: str) -> str:
+    """kind: match_winner | fh_match_winner | double_chance | over_under | over_under_fh | derived_dc."""
+    s = (slug or "betfair").strip().lower()
+    mapping = {
+        "match_winner": f"{s}_raw_match_winner",
+        "fh_match_winner": f"{s}_raw_first_half_match_winner",
+        "double_chance": f"{s}_raw_double_chance",
+        "over_under": f"{s}_raw_over_under",
+        "over_under_fh": f"{s}_raw_over_under_first_half",
+        "derived_dc": f"derived_from_{s}_1x2",
+    }
+    return mapping[kind]
+
+
+def is_raw_match_winner_source(src: str | None) -> bool:
+    return bool(src) and str(src).endswith("_raw_match_winner")
+
+
+def is_raw_fh_match_winner_source(src: str | None) -> bool:
+    return bool(src) and str(src).endswith("_raw_first_half_match_winner")
+
+
+def is_raw_double_chance_source(src: str | None) -> bool:
+    return bool(src) and str(src).endswith("_raw_double_chance")
+
+
+def is_raw_over_under_source(src: str | None) -> bool:
+    return bool(src) and str(src).endswith("_raw_over_under")
+
+
+def is_raw_over_under_fh_source(src: str | None) -> bool:
+    return bool(src) and str(src).endswith("_raw_over_under_first_half")
+
+
+def is_derived_dc_source(src: str | None) -> bool:
+    return bool(src) and str(src).startswith("derived_from_") and str(src).endswith("_1x2")
 
 _FH_1X2_ACCEPTED_NAMES = frozenset(
     {
@@ -169,14 +208,15 @@ def normalize_double_chance_selection(raw_value: str) -> str:
 
 
 def _source_priority(source: str) -> int:
-    priorities = {
-        _SOURCE_MATCH_WINNER: 10,
-        _SOURCE_FH_MATCH_WINNER: 10,
-        _SOURCE_DOUBLE_CHANCE: 10,
-        _SOURCE_OVER_UNDER: 10,
-        _SOURCE_OVER_UNDER_FH: 10,
-    }
-    return priorities.get(source, 0)
+    if (
+        is_raw_match_winner_source(source)
+        or is_raw_fh_match_winner_source(source)
+        or is_raw_double_chance_source(source)
+        or is_raw_over_under_source(source)
+        or is_raw_over_under_fh_source(source)
+    ):
+        return 10
+    return 0
 
 
 def merge_parsed_row(
@@ -227,7 +267,7 @@ def validate_betfair_kpi_odds_mapping(
             continue
         prov = provenance.get(sk) or {}
         src = prov.get("source")
-        if src != _SOURCE_MATCH_WINNER:
+        if not is_raw_match_winner_source(src):
             warnings.append(f"1x2_{sk}:source_non_tracciabile:{src}")
         raw_mkt = prov.get("raw_market_name") or ""
         if raw_mkt and not is_strict_match_winner_market(raw_mkt, prov.get("bet_id")):
@@ -241,7 +281,7 @@ def validate_betfair_kpi_odds_mapping(
             continue
         prov = provenance.get(sk) or {}
         src = prov.get("source")
-        if src != _SOURCE_DOUBLE_CHANCE:
+        if not is_raw_double_chance_source(src):
             warnings.append(f"dc_{sk}:source_non_tracciabile:{src}")
 
     for sk in (
@@ -254,8 +294,9 @@ def validate_betfair_kpi_odds_mapping(
     ):
         if sk in (markets.get(MARKET_OU) or {}):
             prov = provenance.get(sk) or {}
-            if prov.get("source") not in (_SOURCE_OVER_UNDER, None) and prov:
-                warnings.append(f"ou_{sk}:source_sospetta:{prov.get('source')}")
+            src = prov.get("source")
+            if src is not None and prov and not is_raw_over_under_source(src):
+                warnings.append(f"ou_{sk}:source_sospetta:{src}")
 
     for sk in (
         SEL_UNDER_PT_0_5,
@@ -265,15 +306,16 @@ def validate_betfair_kpi_odds_mapping(
     ):
         if sk in (markets.get(MARKET_OU_FH) or {}):
             prov = provenance.get(sk) or {}
-            if prov.get("source") not in (_SOURCE_OVER_UNDER_FH, None) and prov:
-                warnings.append(f"ou_fh_{sk}:source_sospetta:{prov.get('source')}")
+            src = prov.get("source")
+            if src is not None and prov and not is_raw_over_under_fh_source(src):
+                warnings.append(f"ou_fh_{sk}:source_sospetta:{src}")
 
     for sk in (SEL_HOME_PT, SEL_DRAW_PT, SEL_AWAY_PT):
         if sk not in (markets.get(MARKET_1X2_FH) or {}):
             continue
         prov = provenance.get(sk) or {}
         src = prov.get("source")
-        if src != _SOURCE_FH_MATCH_WINNER:
+        if not is_raw_fh_match_winner_source(src):
             warnings.append(f"fh_1x2_{sk}:source_non_tracciabile:{src}")
         raw_mkt = prov.get("raw_market_name") or ""
         if raw_mkt and not is_strict_first_half_match_winner_market(raw_mkt, prov.get("bet_id")):

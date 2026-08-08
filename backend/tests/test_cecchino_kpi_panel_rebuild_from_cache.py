@@ -192,7 +192,7 @@ def test_rebuild_signals_after_applies_sync(monkeypatch):
     )
     sync_calls: list[int] = []
 
-    def _fake_sync(_db, fixture_id):
+    def _fake_sync(_db, fixture_id, min_book_odds=None):
         sync_calls.append(fixture_id)
         return {"min_book_odd_skipped": 0, "value_passed": 0}
 

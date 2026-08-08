@@ -119,16 +119,16 @@ def test_refresh_calls_only_betfair_bookmaker_id(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         out = refresh_betfair_odds_for_fixture(db, row, force=True, rebuild_kpi=True, client=client)
 
     assert out["status"] == "ok"
     mock_fetch.assert_called_once()
     call_args = mock_fetch.call_args
-    assert call_args[0][1] == 1499461
+    assert call_args[0][1].provider_fixture_id == 1499461
 
 
 def test_refresh_does_not_call_other_bookmaker_ids(db):
@@ -138,10 +138,10 @@ def test_refresh_does_not_call_other_bookmaker_ids(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         refresh_betfair_odds_for_fixture(db, row, force=True, client=MagicMock())
 
     odds_by_book = mock_fetch.return_value[0]
@@ -157,13 +157,13 @@ def test_force_true_skips_load_cached_odds(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
         patch(
             "app.services.cecchino.cecchino_today_odds_fetch.load_cached_odds_for_fixture",
         ) as mock_cache,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         refresh_betfair_odds_for_fixture(db, row, force=True, client=MagicMock())
 
     mock_cache.assert_not_called()
@@ -176,10 +176,10 @@ def test_refresh_updates_kpi_panel_json(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         out = refresh_betfair_odds_for_fixture(db, row, force=True, rebuild_kpi=True, client=MagicMock())
 
     assert out["status"] == "ok"
@@ -196,10 +196,10 @@ def test_refresh_response_before_after_changed(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         out = refresh_betfair_odds_for_fixture(db, row, force=True, client=MagicMock())
 
     assert out["before"]["HOME"] == 2.63
@@ -221,8 +221,9 @@ def test_betfair_markets_json_from_snapshot_only_betfair(db):
 
     assert out["status"] == "ok"
     assert out["api_calls_used"] == 0
-    assert "Bet365" not in str(out)
+    assert "Pinnacle" not in str(out.get("markets"))
     assert out["raw_payload"]["filtered_to_betfair_only"] is True
+    assert out.get("book_policy_version") == "betfair_primary_bet365_fallback_v1"
 
 
 def test_betfair_markets_json_force_fetches_api(db):
@@ -278,10 +279,10 @@ def test_refresh_sets_odds_fetched_at(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_canonical_book_raw",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], 1)
         out = refresh_betfair_odds_for_fixture(db, row, force=True, client=MagicMock())
 
     assert out["bookmaker"]["odds_fetched_at"]
@@ -300,16 +301,16 @@ def test_refresh_records_api_usage_context(db):
             "app.services.cecchino.cecchino_today_betfair_refresh.check_api_budget_before_scan",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_betfair_refresh._fetch_betfair_only",
+            "app.services.cecchino.cecchino_today_betfair_refresh.fetch_fixture_odds_for_cecchino_bookmakers",
         ) as mock_fetch,
     ):
-        mock_fetch.return_value = (_new_odds_by_book(), [])
+        mock_fetch.return_value = (_new_odds_by_book(), [], "fixture_single_call", False)
         refresh_betfair_odds_for_fixture(db, row, force=True, client=client)
 
     client.set_usage_db.assert_called_once_with(db)
     client.set_usage_context.assert_called_once()
     ctx = client.set_usage_context.call_args[0][0]
-    assert "refresh_single_fixture_betfair" in ctx.job_id
+    assert "refresh_single_fixture_book" in ctx.job_id
 
 
 def test_refresh_betfair_odds_by_id_not_found(db):

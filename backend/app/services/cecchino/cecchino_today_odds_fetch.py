@@ -1,4 +1,4 @@
-"""Fetch e cache quote bookmaker Cecchino Today (Betfair-only)."""
+"""Fetch e cache quote Book canonico Cecchino Today (Betfair primary → Bet365 fallback)."""
 
 from __future__ import annotations
 
@@ -13,40 +13,86 @@ from app.core.config import get_settings
 from app.models import CecchinoTodayFixture
 from app.models.cecchino_today_fixture import PROVIDER_API_FOOTBALL
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
-from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
+from app.services.cecchino.cecchino_canonical_book_payload import build_single_bookmaker_payload
+from app.services.cecchino.cecchino_canonical_book_resolver import (
+    CANONICAL_BOOK_SELECTION_KEYS,
+    GATE_1X2_KEYS,
+    resolve_canonical_markets,
+    selection_odd_from_markets,
+)
 from app.services.cecchino.cecchino_bookmaker_sync_service import SLEEP_BETWEEN_CALLS_S
 from app.services.cecchino.cecchino_constants import (
-    CECCHINO_BOOKMAKER,
-    CECCHINO_REQUIRED_BOOKMAKER_IDS,
+    CECCHINO_BOOK_POLICY_VERSION,
+    CECCHINO_CANONICAL_BOOKMAKER_IDS,
+    CECCHINO_FALLBACK_BOOKMAKER,
+    CECCHINO_PRIMARY_BOOKMAKER,
 )
-from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, SEL_AWAY, SEL_DRAW, SEL_HOME
+from app.services.cecchino.cecchino_today_odds_meta import read_odds_meta
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
-_WANTED_BOOK_IDS = set(CECCHINO_REQUIRED_BOOKMAKER_IDS)
-_BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
-_BETFAIR_NAME = str(CECCHINO_BOOKMAKER["name"])
+_WANTED_BOOK_IDS = set(CECCHINO_CANONICAL_BOOKMAKER_IDS)
+_BETFAIR_ID = int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"])
+_BETFAIR_NAME = str(CECCHINO_PRIMARY_BOOKMAKER["name"])
+_BET365_ID = int(CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"])
+_BET365_NAME = str(CECCHINO_FALLBACK_BOOKMAKER["name"])
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _build_resolved(
+    odds_by_book: dict[int, list[dict[str, Any]]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any]]:
+    primary = build_single_bookmaker_payload(
+        odds_by_book.get(_BETFAIR_ID) or [],
+        CECCHINO_PRIMARY_BOOKMAKER,
+    )
+    fallback = build_single_bookmaker_payload(
+        odds_by_book.get(_BET365_ID) or [],
+        CECCHINO_FALLBACK_BOOKMAKER,
+    )
+    markets, provenance, stats = resolve_canonical_markets(
+        primary_markets=primary.get("markets"),
+        primary_provenance=primary.get("provenance_by_selection"),
+        fallback_markets=fallback.get("markets"),
+        fallback_provenance=fallback.get("provenance_by_selection"),
+    )
+    return markets, provenance, stats
+
+
+def _canonical_1x2_complete(odds_by_book: dict[int, list[dict[str, Any]]]) -> bool:
+    markets, _, _ = _build_resolved(odds_by_book)
+    return all(selection_odd_from_markets(markets, sk) is not None for sk in GATE_1X2_KEYS)
+
+
+def _betfair_covers_all_targets(odds_by_book: dict[int, list[dict[str, Any]]]) -> bool:
+    """True se Betfair da solo copre tutte le selection KPI target (nessun bisogno Bet365)."""
+    primary = build_single_bookmaker_payload(
+        odds_by_book.get(_BETFAIR_ID) or [],
+        CECCHINO_PRIMARY_BOOKMAKER,
+    )
+    markets = primary.get("markets") or {}
+    for sk in CANONICAL_BOOK_SELECTION_KEYS:
+        if selection_odd_from_markets(markets, sk) is None:
+            return False
+    return True
+
+
+def _missing_selections_after_resolve(
+    odds_by_book: dict[int, list[dict[str, Any]]],
+) -> list[str]:
+    markets, _, _ = _build_resolved(odds_by_book)
+    return [
+        sk
+        for sk in CANONICAL_BOOK_SELECTION_KEYS
+        if selection_odd_from_markets(markets, sk) is None
+    ]
+
+
 def _book_ids_complete(raw_by_book: dict[int, list[dict[str, Any]]]) -> bool:
-    raw = raw_by_book.get(_BETFAIR_ID)
-    if not raw:
-        return False
-    rows, _ = parse_api_football_odds_response(raw, requested_markets=[MARKET_1X2])
-    home = draw = away = None
-    for r in rows:
-        if r["normalized_market"] != MARKET_1X2:
-            continue
-        if r["selection_key"] == SEL_HOME:
-            home = r["odds_value"]
-        elif r["selection_key"] == SEL_DRAW:
-            draw = r["odds_value"]
-        elif r["selection_key"] == SEL_AWAY:
-            away = r["odds_value"]
-    return home is not None and draw is not None and away is not None
+    """Compat: completo se 1X2 canonico risolvibile (Betfair → Bet365)."""
+    return _canonical_1x2_complete(raw_by_book)
 
 
 def load_cached_odds_for_fixture(
@@ -55,7 +101,12 @@ def load_cached_odds_for_fixture(
     scan_date: date,
     provider_fixture_id: int,
 ) -> dict[int, list[dict[str, Any]]] | None:
-    """Riusa odds_snapshot_json.raw_by_bookmaker_id se Betfair 1X2 completo."""
+    """
+    Riusa odds_snapshot_json.raw_by_bookmaker_id solo se:
+    - book_policy_version corrente
+    - 1X2 canonico ricostruibile
+    Snapshot legacy Betfair-only senza policy version NON bloccano il refetch.
+    """
     row = db.scalar(
         select(CecchinoTodayFixture).where(
             CecchinoTodayFixture.scan_date == scan_date,
@@ -65,7 +116,13 @@ def load_cached_odds_for_fixture(
     )
     if row is None or not row.odds_snapshot_json:
         return None
-    raw_map = (row.odds_snapshot_json or {}).get("raw_by_bookmaker_id") or {}
+    snap = row.odds_snapshot_json or {}
+    meta = read_odds_meta(snap)
+    policy = snap.get("book_policy_version") or meta.get("book_policy_version")
+    if policy != CECCHINO_BOOK_POLICY_VERSION:
+        return None
+
+    raw_map = snap.get("raw_by_bookmaker_id") or {}
     if not raw_map:
         return None
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
@@ -73,7 +130,7 @@ def load_cached_odds_for_fixture(
         raw = raw_map.get(str(bid)) or raw_map.get(bid)
         if raw:
             odds_by_book[bid] = list(raw) if isinstance(raw, list) else []
-    if not _book_ids_complete(odds_by_book):
+    if not _canonical_1x2_complete(odds_by_book):
         return None
     return odds_by_book
 
@@ -141,7 +198,7 @@ def clear_negative_odds_cache(row: CecchinoTodayFixture | None) -> None:
 def _extract_odds_by_book_from_response(
     raw_items: list[dict[str, Any]],
 ) -> dict[int, list[dict[str, Any]]]:
-    """Estrae payload Betfair da response API odds?fixture=X."""
+    """Estrae payload Betfair + Bet365 da response API odds?fixture=X."""
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     for item in raw_items:
         for bm in item.get("bookmakers") or []:
@@ -157,23 +214,76 @@ def _extract_odds_by_book_from_response(
     return odds_by_book
 
 
-def _fetch_betfair_only(
+def _fetch_bookmaker_only(
     client: ApiFootballClient,
     api_fixture_id: int,
+    bookmaker_id: int,
+    bookmaker_name: str,
     *,
     metrics: ScanRunMetrics | None,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     warnings: list[str] = []
     try:
-        odds_by_book[_BETFAIR_ID] = client.get_fixture_odds(api_fixture_id, _BETFAIR_ID)
+        odds_by_book[bookmaker_id] = client.get_fixture_odds(api_fixture_id, bookmaker_id)
         if metrics is not None:
             metrics.api_calls["odds"] = metrics.api_calls.get("odds", 0) + 1
             metrics.sync_api_calls_total()
     except ApiFootballError as exc:
-        warnings.append(f"fixture {api_fixture_id} {_BETFAIR_NAME}: {exc}")
-        odds_by_book[_BETFAIR_ID] = []
+        warnings.append(f"fixture {api_fixture_id} {bookmaker_name}: {exc}")
+        odds_by_book[bookmaker_id] = []
     return odds_by_book, warnings
+
+
+def _fetch_betfair_only(
+    client: ApiFootballClient,
+    api_fixture_id: int,
+    *,
+    metrics: ScanRunMetrics | None,
+) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
+    """Legacy alias: fetch Betfair bookmaker-specific."""
+    return _fetch_bookmaker_only(
+        client,
+        api_fixture_id,
+        _BETFAIR_ID,
+        _BETFAIR_NAME,
+        metrics=metrics,
+    )
+
+
+def _fetch_bet365_only(
+    client: ApiFootballClient,
+    api_fixture_id: int,
+    *,
+    metrics: ScanRunMetrics | None,
+) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
+    return _fetch_bookmaker_only(
+        client,
+        api_fixture_id,
+        _BET365_ID,
+        _BET365_NAME,
+        metrics=metrics,
+    )
+
+
+def _record_resolution_metrics(
+    metrics: ScanRunMetrics | None,
+    odds_by_book: dict[int, list[dict[str, Any]]],
+) -> None:
+    if metrics is None:
+        return
+    _, _, stats = _build_resolved(odds_by_book)
+    if stats.get("betfair_primary_used"):
+        metrics.betfair_primary_used += 1
+    if stats.get("bet365_fallback_used"):
+        metrics.bet365_fallback_used += 1
+        metrics.bet365_fallback_fixture_count += 1
+        metrics.bet365_fallback_selection_count += int(
+            stats.get("bet365_fallback_selection_count") or 0,
+        )
+    missing = int(stats.get("book_still_missing_after_fallback") or 0)
+    if missing:
+        metrics.book_still_missing_after_fallback += missing
 
 
 def fetch_fixture_odds_for_cecchino_bookmakers(
@@ -186,7 +296,7 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
     metrics: ScanRunMetrics | None = None,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str], str, bool]:
     """
-    Fetch odds Betfair-only con cache e single-call API quando possibile.
+    Fetch odds Book canonico (Betfair + Bet365) con cache e single-call API.
     Ritorna (odds_by_book, warnings, strategy, negative_cache_hit).
     """
     settings = get_settings()
@@ -207,6 +317,7 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
         if cached is not None:
             if metrics is not None:
                 metrics.record_odds_strategy("cached")
+                _record_resolution_metrics(metrics, cached)
             if neg_row is not None:
                 clear_negative_odds_cache(neg_row)
             return cached, [], "cached", False
@@ -223,9 +334,47 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
 
     odds_by_book = _extract_odds_by_book_from_response(raw_items) if raw_items else {}
 
-    if _book_ids_complete(odds_by_book):
-        if metrics is not None:
-            metrics.record_odds_strategy("fixture_single_call")
+    # Recovery Betfair-specific se Betfair assente/incompleto sul raw fixture-wide
+    primary_bm = build_single_bookmaker_payload(
+        odds_by_book.get(_BETFAIR_ID) or [],
+        CECCHINO_PRIMARY_BOOKMAKER,
+    )
+    primary_1x2_incomplete = any(
+        selection_odd_from_markets(primary_bm.get("markets"), sk) is None for sk in GATE_1X2_KEYS
+    )
+    did_betfair_recovery = False
+    did_bet365_specific = False
+
+    if primary_1x2_incomplete and settings.cecchino_odds_bookmaker_fallback:
+        time.sleep(SLEEP_BETWEEN_CALLS_S)
+        fb_odds, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
+        warnings.extend(fb_warn)
+        for bid, payload in fb_odds.items():
+            if payload:
+                odds_by_book[bid] = payload
+        did_betfair_recovery = True
+
+    # Bet365-specific solo se selection ancora mancanti e Bet365 non già risolutivo
+    need_bet365 = bool(_missing_selections_after_resolve(odds_by_book))
+    bet365_already = bool(odds_by_book.get(_BET365_ID))
+    if need_bet365 and settings.cecchino_odds_bookmaker_fallback:
+        # Se Betfair copre tutto, skip
+        if not _betfair_covers_all_targets(odds_by_book):
+            # Se Bet365 fixture-wide già presente ma ancora missing → serve call specifica
+            # Se Bet365 assente → call specifica
+            still_missing_after_existing = _missing_selections_after_resolve(odds_by_book)
+            if still_missing_after_existing:
+                # Se Bet365 già in payload e non risolutivo, riprova bookmaker-specific una volta
+                if not bet365_already or still_missing_after_existing:
+                    time.sleep(SLEEP_BETWEEN_CALLS_S)
+                    b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
+                    warnings.extend(b365_warn)
+                    for bid, payload in b365_odds.items():
+                        if payload:
+                            odds_by_book[bid] = payload
+                            did_bet365_specific = True
+
+    if _canonical_1x2_complete(odds_by_book):
         if db is not None and scan_date is not None:
             _, neg_row, _ = check_negative_odds_cache(
                 db,
@@ -234,10 +383,22 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
                 force_rescan=True,
             )
             clear_negative_odds_cache(neg_row)
-        return odds_by_book, warnings, "fixture_single_call", False
 
-    incomplete = not _book_ids_complete(odds_by_book) if odds_by_book else True
+        if did_bet365_specific:
+            strategy = "fixture_single_call_with_bet365_fallback"
+        elif did_betfair_recovery:
+            strategy = "fixture_single_call_with_bookmaker_fallback"
+        elif raw_items:
+            strategy = "fixture_single_call"
+        else:
+            strategy = "bookmaker_per_fixture"
 
+        if metrics is not None:
+            metrics.record_odds_strategy(strategy)
+            _record_resolution_metrics(metrics, odds_by_book)
+        return odds_by_book, warnings, strategy, False
+
+    # Canonical 1X2 ancora incompleto
     if not settings.cecchino_odds_bookmaker_fallback:
         if db is not None and scan_date is not None:
             write_negative_odds_cache(
@@ -247,27 +408,34 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
                 provider_fixture_id=api_fixture_id,
                 odds_check_status="odds_incomplete_single_call",
             )
+        if metrics is not None:
+            metrics.record_odds_strategy("odds_incomplete_single_call")
+            _record_resolution_metrics(metrics, odds_by_book)
         return odds_by_book, warnings + ["odds_incomplete_single_call"], "odds_incomplete_single_call", False
 
-    if raw_items and incomplete:
-        time.sleep(SLEEP_BETWEEN_CALLS_S)
-        fb_odds, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
-        warnings.extend(fb_warn)
-        for bid, payload in fb_odds.items():
-            if payload:
-                odds_by_book[bid] = payload
-        strategy = "fixture_single_call_with_bookmaker_fallback"
-        if metrics is not None:
-            metrics.record_odds_strategy(strategy)
-        return odds_by_book, warnings, strategy, False
-
-    if not raw_items or not odds_by_book:
+    # Ultimo tentativo: se non abbiamo ancora fatto recovery e response vuota
+    if not odds_by_book:
         odds_by_book, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(fb_warn)
+        if _missing_selections_after_resolve(odds_by_book):
+            time.sleep(SLEEP_BETWEEN_CALLS_S)
+            b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
+            warnings.extend(b365_warn)
+            for bid, payload in b365_odds.items():
+                if payload:
+                    odds_by_book[bid] = payload
+        strategy = "bookmaker_per_fixture"
         if metrics is not None:
-            metrics.record_odds_strategy("bookmaker_per_fixture")
-        return odds_by_book, warnings, "bookmaker_per_fixture", False
+            metrics.record_odds_strategy(strategy)
+            _record_resolution_metrics(metrics, odds_by_book)
+        return odds_by_book, warnings, strategy, False
 
+    strategy = (
+        "fixture_single_call_with_bet365_fallback"
+        if did_bet365_specific
+        else "fixture_single_call_with_bookmaker_fallback"
+    )
     if metrics is not None:
-        metrics.record_odds_strategy("fixture_single_call_with_bookmaker_fallback")
-    return odds_by_book, warnings, "fixture_single_call_with_bookmaker_fallback", False
+        metrics.record_odds_strategy(strategy)
+        _record_resolution_metrics(metrics, odds_by_book)
+    return odds_by_book, warnings, strategy, False

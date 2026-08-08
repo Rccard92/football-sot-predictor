@@ -24,6 +24,11 @@ class ScanRunMetrics:
     negative_cache_hits: int = 0
     stats_checked: int = 0
     bookmaker_fallback_count: int = 0
+    betfair_primary_used: int = 0
+    bet365_fallback_used: int = 0
+    bet365_fallback_selection_count: int = 0
+    bet365_fallback_fixture_count: int = 0
+    book_still_missing_after_fallback: int = 0
     api_calls_total: int = 0
     api_calls: dict[str, int] = field(
         default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0},
@@ -32,6 +37,7 @@ class ScanRunMetrics:
         default_factory=lambda: {
             "fixture_single_call": 0,
             "fixture_single_call_with_bookmaker_fallback": 0,
+            "fixture_single_call_with_bet365_fallback": 0,
             "bookmaker_per_fixture": 0,
             "cached": 0,
             "negative_cache": 0,
@@ -98,6 +104,11 @@ class ScanRunMetrics:
             "negative_cache_hits": self.negative_cache_hits,
             "stats_checked": self.stats_checked,
             "bookmaker_fallback_count": self.bookmaker_fallback_count,
+            "betfair_primary_used": self.betfair_primary_used,
+            "bet365_fallback_used": self.bet365_fallback_used,
+            "bet365_fallback_selection_count": self.bet365_fallback_selection_count,
+            "bet365_fallback_fixture_count": self.bet365_fallback_fixture_count,
+            "book_still_missing_after_fallback": self.book_still_missing_after_fallback,
             "eligible_count": eligible_count,
             "excluded_count": excluded_count,
             "excluded_summary": dict(excluded_summary),
@@ -133,7 +144,8 @@ class ScanRunMetrics:
             "odds_strategy": dict(self.odds_strategy),
             "duration_seconds": round(duration_seconds, 2),
             "api_usage": api_usage or {},
-            "bookmaker_mode": "betfair_only",
+            "bookmaker_mode": "betfair_primary_bet365_fallback_v1",
+            "book_policy_version": "betfair_primary_bet365_fallback_v1",
             "eligibility_transitions": dict(self.eligibility_transitions),
             "protected_eligible_total": int(self.protected_eligible_total),
             "protected_snapshot_overwrite_blocked": int(

@@ -41,6 +41,7 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_LOW_SAMPLE,
     WARNING_ZERO_PROBABILITY,
 )
+from app.services.cecchino.cecchino_constants import CECCHINO_KPI_V2_ACCEPTED_VERSIONS
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_VERSION
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 from app.services.cecchino.cecchino_today_constants import (
@@ -52,11 +53,12 @@ from app.services.cecchino.cecchino_today_constants import (
     MIN_RECENT_TOTAL_6,
 )
 
-_KPI_V2_VERSION_PREFIX = "cecchino_kpi_v2_betfair"
+_KPI_V2_VERSION_PREFIX = "cecchino_kpi_v2_"
 _KPI_V2_FIELD_KEYS = ("quota_cecchino", "quota_book", "edge_pct")
 _KPI_LEGACY_FIELD_KEYS = ("cecchino", "book", "edge")
 
-_REQUIRED_BOOKMAKERS = ("Betfair",)
+_REQUIRED_BOOKMAKERS = ("Betfair",)  # legacy key; Canonical OR Betfair accepted below
+_CANONICAL_BOOK_KEYS = ("Canonical", "Betfair")
 _REQUIRED_SELECTIONS = ("HOME", "DRAW", "AWAY")
 _REQUIRED_PICCHETTI = (
     PICCHETTO_KEY_HOME_AWAY,
@@ -131,28 +133,34 @@ def _num(v: Any) -> float | None:
 def _check_bookmaker(odds_snapshot: dict[str, Any] | None) -> tuple[list[str], str | None]:
     blocking: list[str] = []
     if not odds_snapshot:
-        for name in _REQUIRED_BOOKMAKERS:
-            blocking.append(f"missing_bookmaker:{name}")
+        blocking.append("missing_bookmaker:Book")
         return blocking, ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER
 
     books = odds_snapshot.get("bookmakers") or {}
     missing_list = list(odds_snapshot.get("missing") or [])
     any_raw = bool(odds_snapshot.get("raw_by_bookmaker_id"))
 
-    for name in _REQUIRED_BOOKMAKERS:
-        if name not in books:
-            if name in missing_list or not any_raw:
-                blocking.append(f"missing_bookmaker:{name}")
-            else:
-                blocking.append(f"missing_bookmaker:{name}")
-            continue
-        vals = books[name]
-        if not isinstance(vals, dict):
-            blocking.append(f"missing_bookmaker:{name}")
-            continue
+    # Accetta snapshot canonico (Canonical) oppure legacy Betfair-only
+    vals = None
+    used_name = None
+    for name in _CANONICAL_BOOK_KEYS:
+        candidate = books.get(name)
+        if isinstance(candidate, dict):
+            vals = candidate
+            used_name = name
+            break
+
+    if vals is None:
+        if not any_raw:
+            blocking.append("missing_bookmaker:Book")
+        else:
+            blocking.append("missing_bookmaker:Book")
+        if used_name is None and "Betfair" in missing_list:
+            blocking.append("missing_bookmaker:Betfair")
+    else:
         for sel in _REQUIRED_SELECTIONS:
             if vals.get(sel) is None:
-                blocking.append(f"missing_selection:{name}:{sel}")
+                blocking.append(f"missing_selection:{used_name}:{sel}")
 
     if not blocking:
         return [], None

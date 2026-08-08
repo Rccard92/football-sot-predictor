@@ -150,12 +150,12 @@ export function CecchinoTodayPage() {
         handleKpiPanelUpdate(res.kpi_panel, res.bookmaker ?? res.kpi_panel.odds_meta)
       }
       setRefreshBetfairMsg({
-        text: res.changed ? 'Quote Betfair aggiornate' : 'Nessuna variazione quote',
+        text: res.changed ? 'Quote Book aggiornate' : 'Nessuna variazione quote',
         tone: res.changed ? 'ok' : 'warn',
       })
     } catch (e) {
       setRefreshBetfairMsg({
-        text: e instanceof Error ? e.message : 'Errore refresh quote Betfair',
+        text: e instanceof Error ? e.message : 'Errore refresh quote Book',
         tone: 'err',
       })
     } finally {

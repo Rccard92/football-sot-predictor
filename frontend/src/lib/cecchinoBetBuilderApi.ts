@@ -22,6 +22,9 @@ export type BetBuilderPriceValue = {
   status: string | null
   book_source?: string | null
   cecchino_source?: string | null
+  bookmaker_name?: string | null
+  provider_bookmaker_id?: number | null
+  book_fallback_used?: boolean | null
 }
 
 export type BetBuilderSignalsEvidence = {

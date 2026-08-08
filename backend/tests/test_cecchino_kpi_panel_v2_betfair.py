@@ -140,8 +140,10 @@ def test_kpi_v2_columns_and_version():
     panel = _build()
     assert panel["version"] == KPI_V2_VERSION
     assert panel.get("mapping_version") == "kpi_markets_v31_phase1"
-    assert panel["bookmaker"]["name"] == "Betfair"
+    assert panel["bookmaker"]["name"] == "Book"
+    assert panel["bookmaker"]["policy_label"] == "Betfair primario · Bet365 fallback"
     assert panel["bookmaker"]["provider_bookmaker_id"] == 3
+    assert panel["book_policy_version"] == "betfair_primary_bet365_fallback_v1"
     cols = panel["columns"]
     assert "quota_book" in cols
     assert "rating" in cols
@@ -311,11 +313,11 @@ def test_1x2_rows_have_rating():
         assert row["edge_pct"] is not None
 
 
-def test_wanted_book_ids_betfair_only():
-    assert _WANTED_BOOK_IDS == {3}
+def test_wanted_book_ids_canonical():
+    assert _WANTED_BOOK_IDS == {3, 8}
 
 
-def test_book_ids_complete_betfair_only():
+def test_book_ids_complete_canonical():
     bid = 3
     complete = {
         bid: [
@@ -338,7 +340,26 @@ def test_book_ids_complete_betfair_only():
         ],
     }
     assert _book_ids_complete(complete)
-    assert not _book_ids_complete({8: complete[bid]})
+    # Bet365-only completo: gate canonico passa (fallback)
+    assert _book_ids_complete({8: complete[bid]})
+    assert not _book_ids_complete({})
+    incomplete = {
+        bid: [
+            {
+                "bookmakers": [
+                    {
+                        "bets": [
+                            {
+                                "name": "Match Winner",
+                                "values": [{"value": "Home", "odd": "2"}],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+    assert not _book_ids_complete(incomplete)
 
 
 def _goal_markets() -> dict:

@@ -2,6 +2,21 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## BOOK POLICY — Betfair primary → Bet365 fallback (2026-08-08)
+
+Policy canonica `quota_book` per Today / KPI / Signals / V3.1 / Bet Builder / Results:
+
+| Regola | Dettaglio |
+|--------|-----------|
+| Provider | Solo API-Football (id Betfair=3, Bet365=8) |
+| Ordine | Selection-by-selection: Betfair → Bet365 → N/D |
+| Non è | best-odds, media bookmaker, SportAPI7, William Hill, Pinnacle fallback |
+| Formule | Cecchino / Signals / V3.1 / Evidence Sort / ICM / Balance / GI **invariate** |
+| Version | `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI `cecchino_kpi_v2_canonical_book_v1` |
+| Provenance | Per riga: `bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`, `book_source` |
+| Storia | Nessun backfill; snapshot pre-match immutati; rebuild offline usa solo raw presenti |
+| Profit/ROI | Continua a usare solo `price_value.quota_book` persistita pre-match |
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto + mobile filters accordion (2026-08-08)
 
 KPI aggiuntivi sul monitor Results (stessa coorte filtrata, **prima** della pagination):

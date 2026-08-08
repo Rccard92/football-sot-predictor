@@ -331,4 +331,5 @@ def test_scan_metrics_result_summary_funnel():
     assert summary["api_calls_total"] == 8
     assert summary["api_usage"]["estimated_remaining_daily_budget"] == 7492
     assert "excluded_funnel" in summary
-    assert summary["bookmaker_mode"] == "betfair_only"
+    assert summary["bookmaker_mode"] == "betfair_primary_bet365_fallback_v1"
+    assert summary["book_policy_version"] == "betfair_primary_bet365_fallback_v1"

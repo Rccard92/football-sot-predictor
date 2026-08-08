@@ -210,7 +210,7 @@ function GoalMarketSummaryCard({
           <dd>{s?.final_probability != null ? fmtPct(s.final_probability * 100) : '—'}</dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-500">Quota Betfair</dt>
+          <dt className="text-xs text-slate-500">Quota Book</dt>
           <dd>{fmtNum(kpi?.quota_book)}</dd>
         </div>
         <div>
@@ -437,7 +437,7 @@ function MissingFormulasTab({
         ))}
       </ul>
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        Questi mercati hanno Quota Book Betfair, ma non hanno ancora una Quota Cecchino perché manca la
+        Questi mercati hanno Quota Book, ma non hanno ancora una Quota Cecchino perché manca la
         formula matematica. Non vengono calcolati Edge, Score e Rating.
       </p>
     </div>

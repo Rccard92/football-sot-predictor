@@ -2,6 +2,14 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## BOOK POLICY — Betfair primary → Bet365 fallback (2026-08-08)
+
+- Cecchino Today Book canonico: **Betfair (3) primary → Bet365 (8) fallback → N/D**, selection-by-selection
+- Non è best-odds / media / SportAPI7 / WH / Pinnacle; formule Cecchino invariate
+- `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI contract `cecchino_kpi_v2_canonical_book_v1`
+- Provenance per selection (`bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`)
+- Nessun backfill storico; Results/ROI resta su `quota_book` pre-match; offline rebuild senza API
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 
 - KPI Results: **Profitto** e **ROI** con flat stake teorico **1u** su primary concluse con `quota_book` Book (>1)

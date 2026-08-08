@@ -13,12 +13,21 @@ type Props = {
   detail: CecchinoTodayDetailResponse
 }
 
-const BETFAIR_NAME = 'Betfair'
+type OddsSnap = {
+  bookmakers?: Record<string, unknown>
+  selection_sources?: Record<string, string>
+  raw_by_bookmaker_id?: Record<string, unknown>
+  book_policy_version?: string
+}
 
 export function CecchinoTodayDetailHeader({ detail }: Props) {
-  const odds = detail.odds_snapshot as { bookmakers?: Record<string, unknown> } | undefined
+  const odds = detail.odds_snapshot as OddsSnap | undefined
   const bmSnap = odds?.bookmakers || {}
-  const betfairOk = BETFAIR_NAME in bmSnap
+  const rawMap = odds?.raw_by_bookmaker_id || {}
+  const betfairOk = 'Betfair' in bmSnap || Boolean(rawMap['3'])
+  const bet365Ok = 'Bet365' in bmSnap || Boolean(rawMap['8'])
+  const sources = odds?.selection_sources || {}
+  const fallbackCount = Object.values(sources).filter((s) => s === 'Bet365').length
 
   return (
     <header className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -46,9 +55,24 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
 
       <CecchinoTodayTechnicalIds detail={detail} />
 
-      <div className="flex flex-wrap gap-2">
-        <span className={betfairOk ? todayBadgeOk : todayBadgeMuted}>{BETFAIR_NAME}</span>
-        <span className={todayBadgeOk}>Statistiche OK</span>
+      <div className="space-y-2">
+        <p className="text-xs text-slate-600">
+          Book · <span className="font-medium text-slate-800">Betfair primario · Bet365 fallback</span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <span className={betfairOk ? todayBadgeOk : todayBadgeMuted}>
+            Betfair {betfairOk ? 'OK' : 'N/D'}
+          </span>
+          <span className={bet365Ok ? todayBadgeOk : todayBadgeMuted}>
+            Bet365 {bet365Ok ? 'OK' : 'N/D'}
+          </span>
+          {fallbackCount > 0 ? (
+            <span className={todayBadgeMuted}>
+              Fallback su {fallbackCount} selection 1X2
+            </span>
+          ) : null}
+          <span className={todayBadgeOk}>Statistiche OK</span>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -62,7 +86,7 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
         )}
         {detail.provider_fixture_id != null ? (
           <Link
-            to={`/bookmakers?provider_fixture_id=${detail.provider_fixture_id}&bookmaker_ids=3`}
+            to={`/bookmakers?provider_fixture_id=${detail.provider_fixture_id}&bookmaker_ids=3,8`}
             className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800 shadow-sm transition hover:bg-indigo-100"
           >
             Debug quote bookmaker

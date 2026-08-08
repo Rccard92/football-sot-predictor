@@ -1,4 +1,4 @@
-"""Refresh quote Betfair singola fixture Cecchino Today."""
+"""Refresh quote Book canonico (Betfair primary → Bet365 fallback) Cecchino Today."""
 
 from __future__ import annotations
 
@@ -16,14 +16,18 @@ from app.services.cecchino.cecchino_betfair_markets_export import (
     parse_all_betfair_markets,
 )
 from app.services.cecchino.cecchino_betfair_odds_payload import build_betfair_payload_from_raw
-from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
+from app.services.cecchino.cecchino_constants import (
+    CECCHINO_BOOK_POLICY_VERSION,
+    CECCHINO_PRIMARY_BOOKMAKER,
+    PROVIDER_API_FOOTBALL,
+)
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_kpi_panel_v2_betfair
-from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 from app.services.cecchino.cecchino_today_bookmaker_gate import verify_complete_1x2_odds
 from app.services.cecchino.cecchino_today_odds_fetch import (
     _BETFAIR_ID,
-    _fetch_betfair_only,
+    fetch_fixture_odds_for_cecchino_bookmakers,
     clear_negative_odds_cache,
+    _fetch_betfair_only,  # re-export for tests that patch refresh module
 )
 from app.services.cecchino.cecchino_today_odds_meta import (
     attach_refresh_odds_meta,
@@ -55,31 +59,44 @@ def _compare_1x2(before: dict[str, Any], after: dict[str, Any]) -> tuple[bool, l
     return bool(changed_markets), changed_markets
 
 
+def _fetch_canonical_book_raw(
+    db: Session,
+    row: CecchinoTodayFixture,
+    *,
+    client: ApiFootballClient | None = None,
+) -> tuple[dict[int, list], list[str], int]:
+    """Fetch live Book canonico (Betfair + Bet365 se necessario) con API usage tracking."""
+    af_client = client or ApiFootballClient()
+    af_client.set_usage_db(db)
+    usage_ctx = ApiUsageContext(
+        job_id=f"refresh_single_fixture_book:{row.id}",
+        scan_date=row.scan_date,
+        record_events=True,
+    )
+    af_client.set_usage_context(usage_ctx.with_fixture(int(row.provider_fixture_id)))
+    odds_by_book, warnings, _strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
+        af_client,
+        int(row.provider_fixture_id),
+        force_rescan=True,
+        metrics=None,
+    )
+    api_calls = sum(1 for v in odds_by_book.values() if v) # rough; real count via client
+    # Prefer counting via usage context if available; fallback to non-empty books
+    api_calls = max(api_calls, 1)
+    return odds_by_book, warnings, api_calls
+
+
+# Legacy alias usato da test/import
 def _fetch_betfair_raw(
     db: Session,
     row: CecchinoTodayFixture,
     *,
     client: ApiFootballClient | None = None,
 ) -> tuple[dict[int, list], list[str], int]:
-    """Fetch live Betfair-only con API usage tracking."""
-    af_client = client or ApiFootballClient()
-    af_client.set_usage_db(db)
-    usage_ctx = ApiUsageContext(
-        job_id=f"refresh_single_fixture_betfair:{row.id}",
-        scan_date=row.scan_date,
-        record_events=True,
-    )
-    af_client.set_usage_context(usage_ctx.with_fixture(int(row.provider_fixture_id)))
-    odds_by_book, warnings = _fetch_betfair_only(
-        af_client,
-        int(row.provider_fixture_id),
-        metrics=None,
-    )
-    api_calls = 1 if odds_by_book.get(_BETFAIR_ID) else 0
-    return odds_by_book, warnings, api_calls
+    return _fetch_canonical_book_raw(db, row, client=client)
 
 
-def refresh_betfair_odds_for_fixture(
+def refresh_book_odds_for_fixture(
     db: Session,
     row: CecchinoTodayFixture,
     *,
@@ -87,6 +104,7 @@ def refresh_betfair_odds_for_fixture(
     rebuild_kpi: bool = True,
     client: ApiFootballClient | None = None,
 ) -> dict[str, Any]:
+    """Refresh quote Book canoniche (Betfair primary · Bet365 fallback)."""
     if row.eligibility_status != ELIGIBILITY_ELIGIBLE:
         return {
             "status": "error",
@@ -108,17 +126,20 @@ def refresh_betfair_odds_for_fixture(
     api_calls_used = 0
 
     if force:
-        odds_by_book, fetch_warnings, api_calls_used = _fetch_betfair_raw(db, row, client=client)
+        odds_by_book, fetch_warnings, api_calls_used = _fetch_canonical_book_raw(
+            db, row, client=client,
+        )
         warnings.extend(fetch_warnings)
         ok, new_snapshot, reason, blocking = verify_complete_1x2_odds(odds_by_book)
         if not ok:
             return {
                 "status": "error",
                 "code": reason or "odds_unavailable",
-                "message": "Quote Betfair 1X2 non disponibili dopo refresh",
+                "message": "Quote Book 1X2 non disponibili dopo refresh",
                 "blocking_reasons": blocking,
                 "warnings": warnings,
                 "before": before,
+                "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
             }
         new_snapshot = attach_refresh_odds_meta(new_snapshot)
         row.odds_snapshot_json = new_snapshot
@@ -137,7 +158,7 @@ def refresh_betfair_odds_for_fixture(
 
         if rebuild_kpi:
             output = row.cecchino_output_json or {}
-            betfair_payload = build_betfair_payload_from_raw(
+            book_payload = build_betfair_payload_from_raw(
                 odds_by_book,
                 source="api_live_refresh",
                 home_team_name=row.home_team_name,
@@ -145,7 +166,7 @@ def refresh_betfair_odds_for_fixture(
             )
             kpi_panel = build_cecchino_kpi_panel_v2_betfair(
                 final_odds=(output.get("final") or {}) if isinstance(output, dict) else {},
-                betfair_payload=betfair_payload,
+                betfair_payload=book_payload,
                 goal_markets=output.get("goal_markets") if isinstance(output, dict) else None,
             )
             meta = read_odds_meta(row.odds_snapshot_json)
@@ -165,11 +186,12 @@ def refresh_betfair_odds_for_fixture(
 
     if force and not changed:
         warnings.append(
-            "Il feed API-Football Betfair restituisce ancora quote identiche al valore precedente. "
-            "Confrontare con app Betfair: possibile ritardo feed o snapshot diverso.",
+            "Il feed API-Football Book restituisce ancora quote identiche al valore precedente. "
+            "Confrontare con app bookmaker: possibile ritardo feed o snapshot diverso.",
         )
 
     kpi_panel = row.kpi_panel_json if rebuild_kpi else None
+    selection_sources = (row.odds_snapshot_json or {}).get("selection_sources") or {}
 
     return {
         "status": "ok",
@@ -177,10 +199,13 @@ def refresh_betfair_odds_for_fixture(
         "provider_fixture_id": int(row.provider_fixture_id),
         "bookmaker": bookmaker_meta_block(
             meta,
-            provider_bookmaker_id=_BETFAIR_ID,
-            name=CECCHINO_BOOKMAKER["name"],
+            provider_bookmaker_id=int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"]),
+            name="Book",
             provider_source=PROVIDER_API_FOOTBALL,
         ),
+        "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
+        "policy_label": "Betfair primario · Bet365 fallback",
+        "selection_sources": selection_sources,
         "before": before,
         "after": after,
         "changed": changed,
@@ -190,6 +215,24 @@ def refresh_betfair_odds_for_fixture(
         "manual_comparison_note": _MANUAL_COMPARISON,
         "warnings": warnings,
     }
+
+
+# Legacy alias — route/client esistenti
+def refresh_betfair_odds_for_fixture(
+    db: Session,
+    row: CecchinoTodayFixture,
+    *,
+    force: bool = True,
+    rebuild_kpi: bool = True,
+    client: ApiFootballClient | None = None,
+) -> dict[str, Any]:
+    return refresh_book_odds_for_fixture(
+        db,
+        row,
+        force=force,
+        rebuild_kpi=rebuild_kpi,
+        client=client,
+    )
 
 
 def build_betfair_markets_json(
@@ -220,10 +263,12 @@ def build_betfair_markets_json(
                 "message": bg.message,
                 "details": bg.details,
             }
-        odds_by_book, fetch_warnings, api_calls_used = _fetch_betfair_raw(db, row, client=client)
+        odds_by_book, fetch_warnings, api_calls_used = _fetch_canonical_book_raw(
+            db, row, client=client,
+        )
         warnings.extend(fetch_warnings)
         raw_items = odds_by_book.get(_BETFAIR_ID) or []
-        if persist_snapshot and raw_items:
+        if persist_snapshot and odds_by_book:
             ok, new_snapshot, reason, blocking = verify_complete_1x2_odds(odds_by_book)
             if ok:
                 row.odds_snapshot_json = attach_refresh_odds_meta(new_snapshot)
@@ -261,11 +306,13 @@ def build_betfair_markets_json(
         "bookmaker": bookmaker_meta_block(
             meta,
             provider_bookmaker_id=_BETFAIR_ID,
-            name=CECCHINO_BOOKMAKER["name"],
+            name=str(CECCHINO_PRIMARY_BOOKMAKER["name"]),
         ),
         "odds_fetched_at": meta.get("odds_fetched_at"),
         "last_betfair_refresh_at": meta.get("last_betfair_refresh_at"),
+        "last_book_refresh_at": meta.get("last_book_refresh_at") or meta.get("last_betfair_refresh_at"),
         "is_cached": meta.get("is_cached"),
+        "book_policy_version": meta.get("book_policy_version") or CECCHINO_BOOK_POLICY_VERSION,
         "api_calls_used": api_calls_used,
         "markets": markets,
         "raw_payload": raw_payload,
@@ -284,7 +331,7 @@ def refresh_betfair_odds_by_id(
     row = db.get(CecchinoTodayFixture, today_fixture_id)
     if row is None:
         return None
-    return refresh_betfair_odds_for_fixture(
+    return refresh_book_odds_for_fixture(
         db,
         row,
         force=force,

@@ -9,22 +9,60 @@ CECCHINO_DELTA_STRONG_THRESHOLD = 31
 
 PROVIDER_API_FOOTBALL = "api_football"
 
-CECCHINO_BOOKMAKER: dict[str, str | int] = {
+# Book policy Today / KPI / Signals / V3.1 / Bet Builder (canonical Book)
+CECCHINO_BOOK_POLICY_VERSION = "betfair_primary_bet365_fallback_v1"
+
+CECCHINO_PRIMARY_BOOKMAKER: dict[str, str | int] = {
     "provider_source": PROVIDER_API_FOOTBALL,
     "provider_bookmaker_id": 3,
     "name": "Betfair",
+    "slug": "betfair",
 }
 
-CECCHINO_REQUIRED_BOOKMAKER_IDS: list[int] = [3]
+CECCHINO_FALLBACK_BOOKMAKER: dict[str, str | int] = {
+    "provider_source": PROVIDER_API_FOOTBALL,
+    "provider_bookmaker_id": 8,
+    "name": "Bet365",
+    "slug": "bet365",
+}
 
-CECCHINO_TODAY_BOOKMAKERS: list[dict[str, str | int]] = [CECCHINO_BOOKMAKER]
+CECCHINO_CANONICAL_BOOKMAKERS: list[dict[str, str | int]] = [
+    CECCHINO_PRIMARY_BOOKMAKER,
+    CECCHINO_FALLBACK_BOOKMAKER,
+]
 
-# Cecchino classico / sync competizione (3 bookmaker)
+CECCHINO_CANONICAL_BOOKMAKER_IDS: list[int] = [
+    int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"]),
+    int(CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"]),
+]
+
+# Alias legacy: primary Book (Betfair). NON significa "unico bookmaker".
+CECCHINO_BOOKMAKER: dict[str, str | int] = CECCHINO_PRIMARY_BOOKMAKER
+
+# Legacy: id primary usato storicamente come "required". Non implica che Bet365 sia obbligatorio.
+CECCHINO_REQUIRED_BOOKMAKER_IDS: list[int] = [
+    int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"]),
+]
+
+# Persistenza Today: primary + fallback (selection-by-selection resolution upstream)
+CECCHINO_TODAY_BOOKMAKERS: list[dict[str, str | int]] = list(CECCHINO_CANONICAL_BOOKMAKERS)
+
+# Cecchino classico / sync competizione (3 bookmaker) — invariato
 CECCHINO_BOOKMAKERS: list[dict[str, str | int]] = [
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "8", "name": "Bet365"},
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "3", "name": "Betfair"},
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "4", "name": "Pinnacle"},
 ]
+
+# KPI contract versions (nuova + legacy accettata in lettura)
+CECCHINO_KPI_V2_VERSION = "cecchino_kpi_v2_canonical_book_v1"
+CECCHINO_KPI_V2_VERSION_LEGACY_BETFAIR = "cecchino_kpi_v2_betfair_markets_v31_p1"
+CECCHINO_KPI_V2_ACCEPTED_VERSIONS: frozenset[str] = frozenset(
+    {
+        CECCHINO_KPI_V2_VERSION,
+        CECCHINO_KPI_V2_VERSION_LEGACY_BETFAIR,
+    },
+)
 
 # Solo tab debug globale /bookmakers
 BOOKMAKER_DEBUG_IDS: list[int] = [8, 3, 4]
