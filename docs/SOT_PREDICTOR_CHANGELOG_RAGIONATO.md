@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — CECCHINO-BOOK-MONITOR-01 live Book coverage metrics (2026-08-08)
+
+- **Perché:** durante/dopo la scan non era visibile quante selection Book venissero da Betfair, da Bet365 fallback, o restassero N/D.
+- **Cosa:** `ScanRunMetrics.betfair_primary_selection_count` + blocco `book_coverage` / `book_coverage_pct` in `result_summary`; accumulo da stats finali del resolver (una volta per fixture, inclusa cache); merge live in `result_summary_json` al progress; UI «Copertura quote Book» su ProgressCard e ScanSummary.
+- **Non cambia:** policy `betfair_primary_bet365_fallback_v1`, fetch ordering, gate, KPI/Signals/V3.1/ICM/Bet Builder/Results, nessuna migration/backfill.
+- **Semantica:** i counters selection non sono “partite”; `betfair_primary_used` resta fixture-count legacy.
+
 ## Fix — BET365-FALLBACK-01.1 harden primary recovery + provenance (2026-08-08)
 
 - **Perché:** recovery Betfair partiva solo se 1X2 incompleto (O/U/FH/DC potevano andare a Bet365 senza tentare Betfair-specific); lo snapshot scriveva quote canoniche sotto `bookmakers.Betfair` falsificando provenance; badge e `api_calls_used` erano approssimativi.

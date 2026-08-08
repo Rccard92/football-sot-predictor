@@ -738,6 +738,7 @@ def _emit_progress(
     provider_items_received: int | None = None,
     provider_out_of_scan_date_skipped: int | None = None,
     fixtures_in_scan_date: int | None = None,
+    result_summary: dict[str, Any] | None = None,
 ) -> None:
     if progress is None:
         return
@@ -788,6 +789,8 @@ def _emit_progress(
         payload["provider_out_of_scan_date_skipped"] = provider_out_of_scan_date_skipped
     if fixtures_in_scan_date is not None:
         payload["fixtures_in_scan_date"] = fixtures_in_scan_date
+    if result_summary is not None:
+        payload["result_summary_json"] = dict(result_summary)
     if payload:
         progress(**payload)
 
@@ -990,6 +993,8 @@ def run_scan(
             "excluded_summary": {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
             "warnings": warnings,
             "errors": errors,
+            # Patch live Book coverage (merge shallow in progress reporter).
+            "result_summary": run_metrics.book_coverage_fields(),
         }
 
     signal_sync_summary = {

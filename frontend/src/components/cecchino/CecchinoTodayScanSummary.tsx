@@ -1,7 +1,9 @@
 import type {
   CecchinoTodayEligibilityTransitions,
+  CecchinoTodayScanJobResultSummary,
   CecchinoTodayScanReport,
 } from '../../lib/cecchinoTodayApi'
+import { CecchinoTodayBookCoveragePanel } from './CecchinoTodayBookCoveragePanel'
 import { todayBadgeActive, todayBadgeMuted, todayBadgeOk, todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
@@ -32,19 +34,12 @@ const TRANSITION_BADGES: { key: keyof CecchinoTodayEligibilityTransitions; label
 ]
 
 export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
-  const rs = (report as CecchinoTodayScanReport & { result_summary?: Record<string, unknown> })
-    .result_summary
+  const rs = (
+    report as CecchinoTodayScanReport & { result_summary?: CecchinoTodayScanJobResultSummary }
+  ).result_summary
   const funnel = (rs?.excluded_funnel ?? {}) as Record<string, number>
   const transitions = (rs?.eligibility_transitions ?? {}) as CecchinoTodayEligibilityTransitions
-  const autoScan = (rs?.auto_scan ?? null) as
-    | {
-        execution_source?: string
-        execution_mode?: string
-        execution_slot?: string
-        target_date?: string
-        attempt?: number
-      }
-    | null
+  const autoScan = rs?.auto_scan ?? null
   const protectionActive =
     rs?.snapshot_eligible_protection_active === true ||
     typeof rs?.protected_eligible_total === 'number' ||
@@ -104,6 +99,12 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
           <li className="font-medium text-emerald-800">Eleggibili finali: {report.eligible}</li>
         </ul>
       </div>
+
+      <CecchinoTodayBookCoveragePanel
+        summary={rs}
+        showPolicyMeta
+        className="!mt-0 border-slate-200 bg-white/70"
+      />
 
       <div className="flex flex-wrap gap-2">
         {autoScan && autoScan.execution_source === 'auto_scan' ? (

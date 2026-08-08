@@ -5,6 +5,7 @@ import {
   scanJobTitle,
 } from './CecchinoTodayScanProgressCard'
 import type { CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
+import { formatBookCoveragePct, getScanJobBookCoverage } from '../../lib/cecchinoTodayApi'
 
 function job(overrides: Partial<CecchinoTodayScanJob> = {}): CecchinoTodayScanJob {
   return {
@@ -62,5 +63,27 @@ describe('CecchinoTodayScanProgressCard status labels', () => {
     const j = job()
     expect(j.result_summary?.scan_date).toBe('2026-08-08')
     expect(j.result_summary?.execution_date).toBe('2026-08-06')
+  })
+
+  it('helper book coverage: waiting se total 0', () => {
+    const cov = getScanJobBookCoverage(job().result_summary)
+    expect(cov.hasQuoteData).toBe(false)
+    expect(formatBookCoveragePct(cov.coveragePct)).toBeNull()
+  })
+
+  it('helper book coverage: numeri e format', () => {
+    const cov = getScanJobBookCoverage({
+      betfair_primary_selection_count: 428,
+      bet365_fallback_selection_count: 37,
+      book_still_missing_after_fallback: 12,
+      bet365_fallback_fixture_count: 18,
+      book_coverage_pct: 97.5,
+    })
+    expect(cov.hasQuoteData).toBe(true)
+    expect(cov.betfairPrimarySelectionCount).toBe(428)
+    expect(cov.bet365FallbackSelectionCount).toBe(37)
+    expect(cov.missingSelectionCount).toBe(12)
+    expect(cov.bet365FallbackFixtureCount).toBe(18)
+    expect(formatBookCoveragePct(cov.coveragePct)).toBe('97,5%')
   })
 })

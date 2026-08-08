@@ -1,10 +1,23 @@
-"""Metriche run scan Cecchino Today (API calls, odds strategy, timing, funnel)."""
+"""Metriche run scan Cecchino Today (API calls, odds strategy, timing, funnel).
+
+Book coverage counters (diagnostici, non alterano policy/selezione):
+
+- betfair_primary_used / bet365_fallback_used:
+  numero di *fixture* con almeno una selection canonica dalla fonte.
+- betfair_primary_selection_count / bet365_fallback_selection_count:
+  numero di *selection canoniche* risolte da Betfair primario / Bet365 fallback.
+- book_still_missing_after_fallback:
+  selection canoniche ancora N/D dopo il ciclo completo Betfair → Bet365.
+- bet365_fallback_fixture_count:
+  fixture con almeno una selection via Bet365 fallback.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.cecchino.cecchino_constants import CECCHINO_BOOK_POLICY_VERSION
 from app.services.cecchino.cecchino_today_eligible_guard import empty_eligibility_transitions
 
 
@@ -24,11 +37,12 @@ class ScanRunMetrics:
     negative_cache_hits: int = 0
     stats_checked: int = 0
     bookmaker_fallback_count: int = 0
-    betfair_primary_used: int = 0
-    bet365_fallback_used: int = 0
-    bet365_fallback_selection_count: int = 0
-    bet365_fallback_fixture_count: int = 0
-    book_still_missing_after_fallback: int = 0
+    betfair_primary_used: int = 0  # fixture-count (≥1 selection Betfair)
+    betfair_primary_selection_count: int = 0  # selection-count Betfair
+    bet365_fallback_used: int = 0  # fixture-count (≥1 selection Bet365)
+    bet365_fallback_selection_count: int = 0  # selection-count Bet365
+    bet365_fallback_fixture_count: int = 0  # alias semantico di bet365_fallback_used
+    book_still_missing_after_fallback: int = 0  # selection-count ancora N/D
     api_calls_total: int = 0
     api_calls: dict[str, int] = field(
         default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0},
@@ -73,6 +87,40 @@ class ScanRunMetrics:
     def sync_api_calls_total(self) -> None:
         self.api_calls_total = sum(int(v) for v in self.api_calls.values())
 
+    def book_coverage_fields(self) -> dict[str, Any]:
+        """Patch diagnostico Book coverage per result_summary (live + finale)."""
+        bf = int(self.betfair_primary_selection_count or 0)
+        b365 = int(self.bet365_fallback_selection_count or 0)
+        missing = int(self.book_still_missing_after_fallback or 0)
+        resolved = bf + b365
+        total = resolved + missing
+        coverage_pct: float | None
+        if total > 0:
+            coverage_pct = round(resolved / total * 100, 1)
+        else:
+            coverage_pct = None
+        return {
+            "betfair_primary_used": int(self.betfair_primary_used or 0),
+            "betfair_primary_selection_count": bf,
+            "bet365_fallback_used": int(self.bet365_fallback_used or 0),
+            "bet365_fallback_selection_count": b365,
+            "bet365_fallback_fixture_count": int(self.bet365_fallback_fixture_count or 0),
+            "book_still_missing_after_fallback": missing,
+            "book_coverage_pct": coverage_pct,
+            "bookmaker_mode": CECCHINO_BOOK_POLICY_VERSION,
+            "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
+            "book_coverage": {
+                "policy_version": CECCHINO_BOOK_POLICY_VERSION,
+                "betfair_primary_selection_count": bf,
+                "bet365_fallback_selection_count": b365,
+                "missing_selection_count": missing,
+                "bet365_fallback_fixture_count": int(self.bet365_fallback_fixture_count or 0),
+                "resolved_selection_count": resolved,
+                "total_selection_count": total,
+                "coverage_pct": coverage_pct,
+            },
+        }
+
     def to_result_summary(
         self,
         *,
@@ -104,11 +152,6 @@ class ScanRunMetrics:
             "negative_cache_hits": self.negative_cache_hits,
             "stats_checked": self.stats_checked,
             "bookmaker_fallback_count": self.bookmaker_fallback_count,
-            "betfair_primary_used": self.betfair_primary_used,
-            "bet365_fallback_used": self.bet365_fallback_used,
-            "bet365_fallback_selection_count": self.bet365_fallback_selection_count,
-            "bet365_fallback_fixture_count": self.bet365_fallback_fixture_count,
-            "book_still_missing_after_fallback": self.book_still_missing_after_fallback,
             "eligible_count": eligible_count,
             "excluded_count": excluded_count,
             "excluded_summary": dict(excluded_summary),
@@ -144,8 +187,6 @@ class ScanRunMetrics:
             "odds_strategy": dict(self.odds_strategy),
             "duration_seconds": round(duration_seconds, 2),
             "api_usage": api_usage or {},
-            "bookmaker_mode": "betfair_primary_bet365_fallback_v1",
-            "book_policy_version": "betfair_primary_bet365_fallback_v1",
             "eligibility_transitions": dict(self.eligibility_transitions),
             "protected_eligible_total": int(self.protected_eligible_total),
             "protected_snapshot_overwrite_blocked": int(
@@ -153,6 +194,7 @@ class ScanRunMetrics:
             ),
             "snapshot_eligible_protection_active": True,
         }
+        summary.update(self.book_coverage_fields())
         if provider_items_received is not None:
             summary["provider_items_received"] = provider_items_received
         if provider_out_of_scan_date_skipped is not None:

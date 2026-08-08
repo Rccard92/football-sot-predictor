@@ -271,6 +271,16 @@ def make_progress_reporter(
         if pct is not None:
             update_fields["progress_pct"] = pct
 
+        # Merge shallow: preserva auto_scan / execution_date / metadati esistenti.
+        if "result_summary_json" in update_fields:
+            incoming = update_fields.get("result_summary_json")
+            if isinstance(incoming, dict):
+                merged = dict(job.result_summary_json or {})
+                merged.update(incoming)
+                update_fields["result_summary_json"] = merged
+            elif incoming is None:
+                update_fields.pop("result_summary_json", None)
+
         update_scan_job(db, job_id, **update_fields)
         step = fields.get("current_step") or job.current_step
         logger.info(

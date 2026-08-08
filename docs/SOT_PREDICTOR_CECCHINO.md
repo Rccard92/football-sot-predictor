@@ -26,6 +26,21 @@ Policy canonica `quota_book` per Today / KPI / Signals / V3.1 / Bet Builder / Re
 - Canonical è l’unico blocco che può contenere selection provenienti da bookmaker differenti.
 - Badge availability e `api_calls_used` usano dati/conteggi reali (non alias Canonical / #book non vuoti).
 
+### Monitor 01 — live Book coverage metrics (2026-08-08)
+
+Metriche diagnostiche per scan (ProgressCard live + ScanSummary finale). **Non** modificano policy quote né logica di selezione/predizione.
+
+| Contatore | Semantica |
+|-----------|-----------|
+| `betfair_primary_selection_count` | Selection canoniche risolte da Betfair |
+| `bet365_fallback_selection_count` | Selection risolte da Bet365 dopo miss Betfair |
+| `book_still_missing_after_fallback` | Selection ancora N/D dopo ciclo completo |
+| `bet365_fallback_fixture_count` | Fixture con ≥1 selection via Bet365 |
+| `betfair_primary_used` (legacy) | Fixture con ≥1 selection Betfair |
+| `book_coverage_pct` | `resolved / total_considered * 100` (1 decimale); `null` se totale 0 |
+
+Propagazione live: patch `book_coverage_fields()` mergiato in `result_summary_json` ad ogni progress update fixture (preserva `auto_scan` / `execution_date`). Cache: provenance ricostruita dai raw snapshot.
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto + mobile filters accordion (2026-08-08)
 
 KPI aggiuntivi sul monitor Results (stessa coorte filtrata, **prima** della pagination):

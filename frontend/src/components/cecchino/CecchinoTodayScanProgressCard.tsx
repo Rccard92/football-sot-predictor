@@ -5,6 +5,7 @@ import {
   computeScanJobProgressPct,
   getScanJobApiMetrics,
 } from '../../lib/cecchinoTodayApi'
+import { CecchinoTodayBookCoveragePanel } from './CecchinoTodayBookCoveragePanel'
 import { todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
@@ -194,6 +195,8 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
           </p>
         ) : null}
       </div>
+
+      <CecchinoTodayBookCoveragePanel summary={job.result_summary} />
 
       {(job.warnings?.length ?? 0) > 0 && (isRunning || isCompleted || isQuotaStop) ? (
         <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-amber-800">

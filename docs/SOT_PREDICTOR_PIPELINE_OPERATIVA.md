@@ -1577,6 +1577,15 @@ flowchart TD
 - Rimossa sovrascrittura `bookmakers.Betfair = Canonical` che falsificava provenance.
 - `api_calls_used` refresh da `ScanRunMetrics.api_calls["odds"]` (conteggio reale HTTP), non dal numero di book non vuoti.
 
+## Fase 20b.2 — BOOK MONITOR live coverage metrics (2026-08-08)
+
+- **Obiettivo:** panoramica live + finale della coverage quote Book in scan UI (diagnostica).
+- **Counters (selection, non fixture):** `betfair_primary_selection_count`, `bet365_fallback_selection_count`, `book_still_missing_after_fallback`; fixture: `bet365_fallback_fixture_count`; legacy fixture flags `betfair_primary_used` / `bet365_fallback_used`.
+- **Coverage:** `resolved / (resolved + missing) * 100` (1 decimale UI); `null` se nessuna selection considerata.
+- **Live:** ad ogni progress fixture, merge shallow di `book_coverage_fields()` in `result_summary_json` (preserva `auto_scan`, date, ecc.).
+- **UI:** sezione «Copertura quote Book» su ProgressCard e ScanSummary; policy label + version nel riepilogo finale.
+- **Invariato:** policy Betfair→Bet365, gate, KPI, Signals, V3.1, Results; nessuna migration/backfill.
+
 ## Fase 20 — KPI Betfair-only (storico; superseduto da 20b per Today)
 
 - **Bookmaker gate:** solo Betfair (id 3) con 1X2 HOME/DRAW/AWAY; `bookmaker_mode=betfair_only` nel job summary.

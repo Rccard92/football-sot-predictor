@@ -104,6 +104,17 @@ export type CecchinoTodayAutoScanMeta = {
   max_runtime_minutes?: number
 }
 
+export type CecchinoTodayBookCoverageBlock = {
+  policy_version?: string
+  betfair_primary_selection_count?: number
+  bet365_fallback_selection_count?: number
+  missing_selection_count?: number
+  bet365_fallback_fixture_count?: number
+  resolved_selection_count?: number
+  total_selection_count?: number
+  coverage_pct?: number | null
+}
+
 export type CecchinoTodayScanJobResultSummary = {
   fixtures_found?: number
   fixtures_discovered?: number
@@ -122,6 +133,22 @@ export type CecchinoTodayScanJobResultSummary = {
   negative_cache_hits?: number
   stats_checked?: number
   bookmaker_fallback_count?: number
+  /** Fixture con ≥1 selection Betfair (legacy). */
+  betfair_primary_used?: number
+  /** Selection canoniche risolte da Betfair primario. */
+  betfair_primary_selection_count?: number
+  /** Fixture con ≥1 selection Bet365 fallback (legacy). */
+  bet365_fallback_used?: number
+  /** Selection canoniche risolte via Bet365 fallback. */
+  bet365_fallback_selection_count?: number
+  /** Fixture con almeno una selection Bet365 fallback. */
+  bet365_fallback_fixture_count?: number
+  /** Selection canoniche ancora N/D dopo Betfair + Bet365. */
+  book_still_missing_after_fallback?: number
+  book_coverage_pct?: number | null
+  book_coverage?: CecchinoTodayBookCoverageBlock
+  bookmaker_mode?: string
+  book_policy_version?: string
   api_calls?: Record<string, number>
   api_calls_total?: number
   api_calls_by_endpoint?: Record<string, number>
@@ -151,6 +178,89 @@ export type CecchinoTodayScanJobResultSummary = {
   snapshot_eligible_protection_active?: boolean
   auto_scan?: CecchinoTodayAutoScanMeta
   diagnostic_code?: string
+}
+
+export type CecchinoTodayBookCoverageView = {
+  betfairPrimarySelectionCount: number
+  bet365FallbackSelectionCount: number
+  missingSelectionCount: number
+  bet365FallbackFixtureCount: number
+  resolvedSelectionCount: number
+  totalSelectionCount: number
+  coveragePct: number | null
+  policyVersion: string | null
+  /** True se almeno un counter selection è presente (anche a zero dopo quote processate). */
+  hasBookFields: boolean
+  /** True se total_considered > 0 (si può mostrare coverage). */
+  hasQuoteData: boolean
+}
+
+export function getScanJobBookCoverage(
+  summary: CecchinoTodayScanJobResultSummary | null | undefined,
+): CecchinoTodayBookCoverageView {
+  const bc = summary?.book_coverage
+  const hasTop =
+    summary?.betfair_primary_selection_count != null ||
+    summary?.bet365_fallback_selection_count != null ||
+    summary?.book_still_missing_after_fallback != null ||
+    summary?.book_coverage_pct != null ||
+    summary?.bet365_fallback_fixture_count != null ||
+    bc != null
+  const bf = Number(
+    bc?.betfair_primary_selection_count ?? summary?.betfair_primary_selection_count ?? 0,
+  )
+  const b365 = Number(
+    bc?.bet365_fallback_selection_count ?? summary?.bet365_fallback_selection_count ?? 0,
+  )
+  const missing = Number(
+    bc?.missing_selection_count ?? summary?.book_still_missing_after_fallback ?? 0,
+  )
+  const fixtureFallback = Number(
+    bc?.bet365_fallback_fixture_count ?? summary?.bet365_fallback_fixture_count ?? 0,
+  )
+  const resolved =
+    bc?.resolved_selection_count != null
+      ? Number(bc.resolved_selection_count)
+      : bf + b365
+  const total =
+    bc?.total_selection_count != null
+      ? Number(bc.total_selection_count)
+      : resolved + missing
+  let coveragePct: number | null =
+    bc?.coverage_pct !== undefined
+      ? bc.coverage_pct
+      : summary?.book_coverage_pct !== undefined
+        ? summary.book_coverage_pct
+        : null
+  if (coveragePct == null && total > 0) {
+    coveragePct = Math.round((resolved / total) * 1000) / 10
+  }
+  if (total <= 0) {
+    coveragePct = null
+  }
+  const policyVersion =
+    bc?.policy_version ||
+    summary?.book_policy_version ||
+    summary?.bookmaker_mode ||
+    null
+  return {
+    betfairPrimarySelectionCount: bf,
+    bet365FallbackSelectionCount: b365,
+    missingSelectionCount: missing,
+    bet365FallbackFixtureCount: fixtureFallback,
+    resolvedSelectionCount: resolved,
+    totalSelectionCount: total,
+    coveragePct,
+    policyVersion,
+    hasBookFields: hasTop,
+    hasQuoteData: total > 0,
+  }
+}
+
+/** Formatta coverage % con 1 decimale in locale IT (es. 97,5%). */
+export function formatBookCoveragePct(pct: number | null | undefined): string | null {
+  if (pct == null || Number.isNaN(Number(pct))) return null
+  return `${Number(pct).toFixed(1).replace('.', ',')}%`
 }
 
 export type CecchinoTodayScanJob = {

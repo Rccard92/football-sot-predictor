@@ -18,6 +18,17 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
 - Rimossa alias che scriveva quote canoniche sotto `bookmakers.Betfair`
 - Badge UI e `api_calls_used` basati su raw/conteggio reale, non su alias Canonical
 
+## Feat BOOK MONITOR 01 — live Book coverage metrics (2026-08-08)
+
+- Ogni scan registra metriche **diagnostiche** (non cambiano policy/selezione/predizione):
+  - selection Betfair primary
+  - selection Bet365 fallback
+  - selection ancora N/D dopo entrambi
+  - fixture che hanno richiesto almeno un fallback Bet365
+  - coverage % = resolved / (resolved + missing) × 100 (null se totale 0)
+- Contatori live in `result_summary_json` durante lo scan (merge shallow) + stessi valori a fine job
+- UI «Copertura quote Book» su ProgressCard e ScanSummary (conteggio **selection**, non partite)
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 
 - KPI Results: **Profitto** e **ROI** con flat stake teorico **1u** su primary concluse con `quota_book` Book (>1)

@@ -278,20 +278,29 @@ def _record_resolution_metrics(
     metrics: ScanRunMetrics | None,
     odds_by_book: dict[int, list[dict[str, Any]]],
 ) -> None:
+    """Accumula il RISULTATO FINALE della risoluzione Book di una fixture.
+
+    Conta solo selection canoniche finali (non tentativi/recovery intermedi).
+    Chiamare una sola volta per path di return di fetch_fixture_odds_*.
+    """
     if metrics is None:
         return
     _, _, stats = _build_resolved(odds_by_book)
+    metrics.betfair_primary_selection_count += int(
+        stats.get("betfair_primary_selection_count") or 0,
+    )
+    metrics.bet365_fallback_selection_count += int(
+        stats.get("bet365_fallback_selection_count") or 0,
+    )
+    metrics.book_still_missing_after_fallback += int(
+        stats.get("book_still_missing_after_fallback") or 0,
+    )
     if stats.get("betfair_primary_used"):
         metrics.betfair_primary_used += 1
     if stats.get("bet365_fallback_used"):
         metrics.bet365_fallback_used += 1
         metrics.bet365_fallback_fixture_count += 1
-        metrics.bet365_fallback_selection_count += int(
-            stats.get("bet365_fallback_selection_count") or 0,
-        )
-    missing = int(stats.get("book_still_missing_after_fallback") or 0)
-    if missing:
-        metrics.book_still_missing_after_fallback += missing
+
 
 
 def fetch_fixture_odds_for_cecchino_bookmakers(
