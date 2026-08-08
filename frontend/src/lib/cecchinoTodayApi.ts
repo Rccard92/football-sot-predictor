@@ -114,6 +114,11 @@ export type CecchinoTodayBookCoverageBlock = {
   resolved_selection_count?: number
   total_selection_count?: number
   coverage_pct?: number | null
+  /** MONITOR-01.1 integrity */
+  selection_keys_count?: number
+  expected_selection_count?: number
+  actual_selection_count?: number
+  consistent?: boolean | null
 }
 
 export type CecchinoTodayScanJobResultSummary = {
@@ -152,6 +157,11 @@ export type CecchinoTodayScanJobResultSummary = {
   book_coverage?: CecchinoTodayBookCoverageBlock
   bookmaker_mode?: string
   book_policy_version?: string
+  /** MONITOR-01.1 integrity (len canonical keys). */
+  book_selection_keys_count?: number
+  book_coverage_expected_selection_count?: number
+  book_coverage_actual_selection_count?: number
+  book_coverage_consistent?: boolean | null
   api_calls?: Record<string, number>
   api_calls_total?: number
   api_calls_by_endpoint?: Record<string, number>
@@ -197,6 +207,13 @@ export type CecchinoTodayBookCoverageView = {
   hasBookFields: boolean
   /** True se total_considered > 0 (si può mostrare coverage). */
   hasQuoteData: boolean
+  /** MONITOR-01.1: null/undefined = job legacy senza integrity fields. */
+  selectionKeysCount: number | null
+  expectedSelectionCount: number | null
+  actualSelectionCount: number | null
+  consistent: boolean | null
+  /** True solo quando integrity presente e consistent === false. */
+  coverageInconsistent: boolean
 }
 
 export function getScanJobBookCoverage(
@@ -246,6 +263,40 @@ export function getScanJobBookCoverage(
   if (total <= 0) {
     coveragePct = null
   }
+
+  const consistentRaw =
+    bc?.consistent !== undefined
+      ? bc.consistent
+      : summary?.book_coverage_consistent !== undefined
+        ? summary.book_coverage_consistent
+        : undefined
+  const consistent: boolean | null =
+    consistentRaw === true || consistentRaw === false ? consistentRaw : null
+  const coverageInconsistent = consistent === false
+  // PERF-01 / MONITOR-01.1: non mostrare % apparentemente valida se counters incoerenti
+  if (coverageInconsistent) {
+    coveragePct = null
+  }
+
+  const selectionKeysCount =
+    bc?.selection_keys_count != null
+      ? Number(bc.selection_keys_count)
+      : summary?.book_selection_keys_count != null
+        ? Number(summary.book_selection_keys_count)
+        : null
+  const expectedSelectionCount =
+    bc?.expected_selection_count != null
+      ? Number(bc.expected_selection_count)
+      : summary?.book_coverage_expected_selection_count != null
+        ? Number(summary.book_coverage_expected_selection_count)
+        : null
+  const actualSelectionCount =
+    bc?.actual_selection_count != null
+      ? Number(bc.actual_selection_count)
+      : summary?.book_coverage_actual_selection_count != null
+        ? Number(summary.book_coverage_actual_selection_count)
+        : null
+
   const policyVersion =
     bc?.policy_version ||
     summary?.book_policy_version ||
@@ -263,6 +314,11 @@ export function getScanJobBookCoverage(
     policyVersion,
     hasBookFields: hasTop,
     hasQuoteData: total > 0,
+    selectionKeysCount,
+    expectedSelectionCount,
+    actualSelectionCount,
+    consistent,
+    coverageInconsistent,
   }
 }
 

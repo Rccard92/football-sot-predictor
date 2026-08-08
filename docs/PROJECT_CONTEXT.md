@@ -36,7 +36,15 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
   - fixture stats-qualified nel denominatore (`book_coverage_fixture_count`)
   - coverage % = resolved / (resolved + missing) × 100 (null se totale 0)
 - Contatori live in `result_summary_json` durante lo scan (merge shallow) + stessi valori a fine job
-- UI «Copertura selection Book — fixture arrivate alla fase KPI» su ProgressCard e ScanSummary (conteggio **selection**, non partite)
+- UI «Copertura quote Book» su ProgressCard e ScanSummary (conteggio **selection**, non partite)
+
+## Fix BOOK MONITOR 01.1 — coverage integrity + layout due card (2026-08-08)
+
+- Integrity diagnostica: `expected = book_coverage_fixture_count × len(CANONICAL_BOOK_SELECTION_KEYS)`; `actual = BF + B365 + missing`; `consistent = expected == actual`
+- Campi: `book_selection_keys_count` / `book_coverage_expected_selection_count` / `book_coverage_actual_selection_count` / `book_coverage_consistent` (+ nested in `book_coverage`)
+- Warning non-blocking `book_coverage_counter_mismatch` se inconsistent e fixture_count > 0; **non** clamp/corregge counters; **non** cambia policy Book né eligibility
+- UI: se `consistent === false` → Coverage **N/D** + avviso diagnostico subtle; legacy senza integrity resta compatibile
+- ProgressCard desktop: grid 2 colonne `Consumo API (job)` | `Copertura quote Book` (`lg:grid-cols-2`)
 
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 

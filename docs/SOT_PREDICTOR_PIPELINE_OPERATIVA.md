@@ -1583,8 +1583,15 @@ flowchart TD
 - **Counters (selection):** `betfair_primary_selection_count`, `bet365_fallback_selection_count`, `book_still_missing_after_fallback`; fixture: `bet365_fallback_fixture_count`, `book_coverage_fixture_count` (stats-qualified / Phase B); legacy fixture flags `betfair_primary_used` / `bet365_fallback_used`.
 - **Coverage:** `resolved / (resolved + missing) * 100` (1 decimale UI); `null` se nessuna selection considerata. Una sola registrazione per fixture (Phase B).
 - **Live:** ad ogni progress fixture, merge shallow di API metrics + `book_coverage_fields()` in `result_summary_json` (preserva `auto_scan`, date, ecc.).
-- **UI:** «Copertura selection Book — fixture arrivate alla fase KPI»; policy label + version nel riepilogo finale.
+- **UI:** «Copertura quote Book»; policy label + version nel riepilogo finale.
 - **Invariato:** policy Betfair→Bet365, gate, KPI, Signals, V3.1, Results; nessuna migration/backfill.
+
+## Fase 20b.2.1 — BOOK MONITOR integrity + layout due card (2026-08-08)
+
+- **Integrity:** `expected = book_coverage_fixture_count × len(CANONICAL_BOOK_SELECTION_KEYS)`; `actual = BF + B365 + missing`; `consistent = expected == actual`. Campi top-level + nested in `book_coverage`.
+- **Warning:** `book_coverage_counter_mismatch` (non-blocking) se inconsistent e fixture_count > 0; raw counters preservati (no clamp). Con fixture_count=0 nessun falso errore.
+- **UI:** se `consistent === false` → Coverage N/D + avviso diagnostico; legacy senza integrity resta compatibile. ProgressCard: grid `Consumo API (job)` | `Copertura quote Book` (`grid-cols-1 lg:grid-cols-2`).
+- **Invariato:** policy Book, PERF-01 Phase A/B, eligibility, formule, Signals, V3.1, Bet Builder, storico.
 
 ## Fase 20b.3 — BOOK PERF staged + stale + primary 23:00 (2026-08-08)
 

@@ -10,9 +10,15 @@
 ## Feat — CECCHINO-BOOK-MONITOR-01 live Book coverage metrics (2026-08-08)
 
 - **Perché:** durante/dopo la scan non era visibile quante selection Book venissero da Betfair, da Bet365 fallback, o restassero N/D.
-- **Cosa:** `ScanRunMetrics.betfair_primary_selection_count` + blocco `book_coverage` / `book_coverage_pct` in `result_summary`; accumulo da stats finali del resolver (una volta per fixture stats-qualified / Phase B); merge live in `result_summary_json` al progress; UI «Copertura selection Book — fixture arrivate alla fase KPI».
+- **Cosa:** `ScanRunMetrics.betfair_primary_selection_count` + blocco `book_coverage` / `book_coverage_pct` in `result_summary`; accumulo da stats finali del resolver (una volta per fixture stats-qualified / Phase B); merge live in `result_summary_json` al progress; UI «Copertura quote Book».
 - **Non cambia:** policy `betfair_primary_bet365_fallback_v1`, gate, KPI/Signals/V3.1/ICM/Bet Builder/Results, nessuna migration/backfill.
 - **Semantica:** i counters selection non sono “partite”; `betfair_primary_used` resta fixture-count legacy.
+
+## Fix — CECCHINO-BOOK-MONITOR-01.1 integrity guard + layout due card (2026-08-08)
+
+- **Perché:** rilevare double-counting / counters incoerenti (caso prod BF≪expected) senza mascherare i raw e senza toccare la policy Book.
+- **Cosa:** integrity fields (`selection_keys_count`, `expected`/`actual`/`consistent`) in `book_coverage_fields()`; warning non-blocking `book_coverage_counter_mismatch`; UI Coverage N/D se inconsistent; ProgressCard grid 2 colonne Consumo API | Copertura quote Book.
+- **Non cambia:** nessun clamp counters; nessun cambio fetch PERF-01 / Phase A/B / eligibility / formule / Signals / V3.1 / Bet Builder / storico.
 
 ## Fix — BET365-FALLBACK-01.1 harden primary recovery + provenance (2026-08-08)
 

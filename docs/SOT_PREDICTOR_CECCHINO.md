@@ -41,6 +41,22 @@ Metriche diagnostiche per scan (ProgressCard live + ScanSummary finale). **Non**
 
 Propagazione live: patch `book_coverage_fields()` mergiato in `result_summary_json` ad ogni progress update fixture (preserva `auto_scan` / `execution_date`). Cache: provenance ricostruita dai raw snapshot.
 
+### Monitor 01.1 — coverage integrity guard + layout due card (2026-08-08)
+
+Diagnostica anti-double-count sul monitor (policy Book **invariata**: Betfair primary → Bet365 fallback → N/D).
+
+| Campo | Semantica |
+|-------|-----------|
+| `book_selection_keys_count` | `len(CANONICAL_BOOK_SELECTION_KEYS)` (non hardcodato) |
+| `book_coverage_expected_selection_count` | `fixture_count × keys` |
+| `book_coverage_actual_selection_count` | `BF + B365 + missing` (raw, no clamp) |
+| `book_coverage_consistent` | `expected == actual` |
+
+- Warning finale non-blocking `book_coverage_counter_mismatch` se inconsistent e `fixture_count > 0`; con `fixture_count == 0` nessun falso errore.
+- UI: Coverage **N/D** + avviso «Conteggio coverage incoerente — verifica diagnostica» se `consistent === false`; job legacy senza integrity fields restano backward-compatible.
+- ProgressCard: due card affiancate desktop (`Consumo API (job)` | `Copertura quote Book`); mobile stack 1 colonna.
+- **Non** cambia fetch PERF-01, Phase A/B, eligibility, formule, Signals, V3.1, Bet Builder, storico.
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto + mobile filters accordion (2026-08-08)
 
 KPI aggiuntivi sul monitor Results (stessa coorte filtrata, **prima** della pagination):

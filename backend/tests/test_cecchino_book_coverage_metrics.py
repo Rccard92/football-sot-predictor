@@ -22,7 +22,13 @@ from app.services.cecchino.cecchino_today_odds_fetch import (
     fetch_fixture_odds_for_cecchino_bookmakers,
 )
 from app.services.cecchino.cecchino_today_scan_job_service import make_progress_reporter
-from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
+from app.services.cecchino.cecchino_today_scan_metrics import (
+    ScanRunMetrics,
+    book_coverage_integrity_warning,
+)
+from app.services.cecchino.cecchino_canonical_book_resolver import (
+    CANONICAL_BOOK_SELECTION_KEYS,
+)
 
 
 def _book_raw(
@@ -528,3 +534,90 @@ def test_legacy_summary_without_book_fields_is_safe():
     empty = ScanRunMetrics().book_coverage_fields()
     assert empty["book_coverage_pct"] is None
     assert empty["betfair_primary_selection_count"] == 0
+
+
+def test_integrity_consistent_120_fixtures_case_a():
+    """A) 120 fixture × 19 keys, BF+B365+missing = expected → consistent."""
+    metrics = ScanRunMetrics()
+    metrics.book_coverage_fixture_count = 120
+    metrics.betfair_primary_selection_count = 1850
+    metrics.bet365_fallback_selection_count = 170
+    metrics.book_still_missing_after_fallback = 260
+    fields = metrics.book_coverage_fields()
+    keys = len(CANONICAL_BOOK_SELECTION_KEYS)
+    assert keys == 19
+    assert fields["book_selection_keys_count"] == keys
+    assert fields["book_coverage_expected_selection_count"] == 2280
+    assert fields["book_coverage_actual_selection_count"] == 2280
+    assert fields["book_coverage_consistent"] is True
+    assert fields["book_coverage"]["selection_keys_count"] == keys
+    assert fields["book_coverage"]["expected_selection_count"] == 2280
+    assert fields["book_coverage"]["actual_selection_count"] == 2280
+    assert fields["book_coverage"]["consistent"] is True
+    assert book_coverage_integrity_warning(fields) is None
+
+
+def test_integrity_inconsistent_production_case_b():
+    """B) Replica caso produzione: actual >> expected → inconsistent + warning."""
+    metrics = ScanRunMetrics()
+    metrics.book_coverage_fixture_count = 120
+    metrics.betfair_primary_selection_count = 0
+    metrics.bet365_fallback_selection_count = 610
+    metrics.book_still_missing_after_fallback = 3561
+    fields = metrics.book_coverage_fields()
+    assert fields["book_coverage_expected_selection_count"] == 2280
+    assert fields["book_coverage_actual_selection_count"] == 4171
+    assert fields["book_coverage_consistent"] is False
+    assert fields["book_coverage"]["consistent"] is False
+    # Raw counters preservati (no clamp)
+    assert fields["betfair_primary_selection_count"] == 0
+    assert fields["bet365_fallback_selection_count"] == 610
+    assert fields["book_still_missing_after_fallback"] == 3561
+    warn = book_coverage_integrity_warning(fields)
+    assert warn is not None
+    assert warn.startswith("book_coverage_counter_mismatch")
+    assert "fixtures=120" in warn
+    assert "selection_keys_count=19" in warn
+    assert "expected=2280" in warn
+    assert "actual=4171" in warn
+    assert "BF=0" in warn
+    assert "B365=610" in warn
+    assert "missing=3561" in warn
+
+
+def test_integrity_fixture_count_zero_no_false_warning_case_c():
+    """C) fixture_count=0 → consistent (0==0), nessun warning."""
+    fields = ScanRunMetrics().book_coverage_fields()
+    assert fields["book_coverage_fixture_count"] == 0
+    assert fields["book_coverage_expected_selection_count"] == 0
+    assert fields["book_coverage_actual_selection_count"] == 0
+    assert fields["book_coverage_consistent"] is True
+    assert book_coverage_integrity_warning(fields) is None
+
+
+def test_integrity_does_not_mutate_counters_case_d():
+    """D) book_coverage_fields non altera i counters sullo ScanRunMetrics."""
+    metrics = ScanRunMetrics()
+    metrics.book_coverage_fixture_count = 120
+    metrics.betfair_primary_selection_count = 0
+    metrics.bet365_fallback_selection_count = 610
+    metrics.book_still_missing_after_fallback = 3561
+    before = (
+        metrics.betfair_primary_selection_count,
+        metrics.bet365_fallback_selection_count,
+        metrics.book_still_missing_after_fallback,
+        metrics.book_coverage_fixture_count,
+    )
+    fields = metrics.book_coverage_fields()
+    after = (
+        metrics.betfair_primary_selection_count,
+        metrics.bet365_fallback_selection_count,
+        metrics.book_still_missing_after_fallback,
+        metrics.book_coverage_fixture_count,
+    )
+    assert before == after
+    assert fields["betfair_primary_selection_count"] == 0
+    assert fields["bet365_fallback_selection_count"] == 610
+    assert fields["book_still_missing_after_fallback"] == 3561
+    # coverage_pct raw ancora derivato da resolved/total (non azzerato)
+    assert fields["book_coverage_pct"] == round(610 / 4171 * 100, 1)

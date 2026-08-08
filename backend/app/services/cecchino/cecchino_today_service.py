@@ -194,7 +194,10 @@ from app.services.cecchino.cecchino_today_eligible_guard import (
     preserve_eligible_snapshot,
     warning_code_for_incoming_status,
 )
-from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
+from app.services.cecchino.cecchino_today_scan_metrics import (
+    ScanRunMetrics,
+    book_coverage_integrity_warning,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1833,6 +1836,14 @@ def run_scan(
         result_summary["fixtures_processed"] = fixtures_processed
         result_summary["fixtures_remaining"] = fixtures_remaining
         result_summary["unprocessed_count"] = fixtures_remaining
+        integrity_warn = book_coverage_integrity_warning(result_summary)
+        if integrity_warn:
+            report_warnings = report.get("warnings")
+            if not isinstance(report_warnings, list):
+                report_warnings = []
+                report["warnings"] = report_warnings
+            if integrity_warn not in report_warnings:
+                report_warnings.append(integrity_warn)
 
     if provider_quota_stopped:
         report["status"] = "provider_quota_exhausted"

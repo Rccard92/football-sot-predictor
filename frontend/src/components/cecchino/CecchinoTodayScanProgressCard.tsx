@@ -180,23 +180,34 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-1 rounded-lg border border-white/60 bg-white/50 p-3 text-xs text-slate-700">
-        <p className="font-medium text-slate-800">Consumo API (job)</p>
-        <p>API usate: {apiMetrics.apiCallsTotal}</p>
-        <p>Odds API: {apiMetrics.oddsApi}</p>
-        <p>Odds cache: {apiMetrics.oddsCache}</p>
-        <p>Negative cache: {apiMetrics.negativeCache}</p>
-        <p>Teams: {apiMetrics.teams}</p>
-        <p>Fixtures: {apiMetrics.fixtures}</p>
-        {apiMetrics.budgetRemaining != null ? (
-          <p>
-            Residuo teorico piano (informativo):{' '}
-            {apiMetrics.budgetRemaining.toLocaleString('it-IT')}
-          </p>
-        ) : null}
-      </div>
+      <div
+        className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2"
+        data-testid="cecchino-scan-metrics-grid"
+      >
+        <div
+          className="grid gap-1 rounded-lg border border-white/60 bg-white/50 p-3 text-xs text-slate-700"
+          data-testid="cecchino-api-consumption-card"
+        >
+          <p className="font-medium text-slate-800">Consumo API (job)</p>
+          <p>API usate: {apiMetrics.apiCallsTotal}</p>
+          <p>Odds API: {apiMetrics.oddsApi}</p>
+          <p>Odds cache: {apiMetrics.oddsCache}</p>
+          <p>Negative cache: {apiMetrics.negativeCache}</p>
+          <p>Teams: {apiMetrics.teams}</p>
+          <p>Fixtures: {apiMetrics.fixtures}</p>
+          {apiMetrics.budgetRemaining != null ? (
+            <p>
+              Residuo teorico piano (informativo):{' '}
+              {apiMetrics.budgetRemaining.toLocaleString('it-IT')}
+            </p>
+          ) : null}
+        </div>
 
-      <CecchinoTodayBookCoveragePanel summary={job.result_summary} />
+        <CecchinoTodayBookCoveragePanel
+          summary={job.result_summary}
+          className="!mt-0"
+        />
+      </div>
 
       {(job.warnings?.length ?? 0) > 0 && (isRunning || isCompleted || isQuotaStop) ? (
         <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-amber-800">

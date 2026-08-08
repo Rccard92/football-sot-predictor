@@ -13,6 +13,9 @@ Book coverage counters (diagnostici, non alterano policy/selezione):
 - book_coverage_fixture_count:
   fixture stats-qualified che hanno contribuito UNA volta al monitor full Book
   (Phase B post-stats; non include gate intermedi).
+- Integrity (MONITOR-01.1): expected = fixture_count * len(CANONICAL_BOOK_SELECTION_KEYS);
+  actual = bf + b365 + missing; consistent = expected == actual.
+  Warning diagnostico non-blocking se mismatch con fixture_count > 0.
 """
 
 from __future__ import annotations
@@ -20,8 +23,40 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.cecchino.cecchino_canonical_book_resolver import (
+    CANONICAL_BOOK_SELECTION_KEYS,
+)
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOK_POLICY_VERSION
 from app.services.cecchino.cecchino_today_eligible_guard import empty_eligibility_transitions
+
+
+def book_coverage_integrity_warning(fields: dict[str, Any]) -> str | None:
+    """Warning diagnostico se i contatori coverage non quadrano (non-blocking).
+
+    Nessun warning se fixture_count == 0 (evita falsi errori su metrics vuote).
+    Non altera counters né eligibility.
+    """
+    fixture_count = int(fields.get("book_coverage_fixture_count") or 0)
+    if fixture_count <= 0:
+        return None
+    if fields.get("book_coverage_consistent") is True:
+        return None
+    keys = int(fields.get("book_selection_keys_count") or 0)
+    expected = int(fields.get("book_coverage_expected_selection_count") or 0)
+    actual = int(fields.get("book_coverage_actual_selection_count") or 0)
+    bf = int(fields.get("betfair_primary_selection_count") or 0)
+    b365 = int(fields.get("bet365_fallback_selection_count") or 0)
+    missing = int(fields.get("book_still_missing_after_fallback") or 0)
+    return (
+        "book_coverage_counter_mismatch "
+        f"fixtures={fixture_count} "
+        f"selection_keys_count={keys} "
+        f"expected={expected} "
+        f"actual={actual} "
+        f"BF={bf} "
+        f"B365={b365} "
+        f"missing={missing}"
+    )
 
 
 @dataclass
@@ -115,6 +150,10 @@ class ScanRunMetrics:
         else:
             coverage_pct = None
         fixture_count = int(self.book_coverage_fixture_count or 0)
+        selection_keys_count = len(CANONICAL_BOOK_SELECTION_KEYS)
+        expected_selection_count = fixture_count * selection_keys_count
+        actual_selection_count = bf + b365 + missing
+        consistent = expected_selection_count == actual_selection_count
         return {
             "betfair_primary_used": int(self.betfair_primary_used or 0),
             "betfair_primary_selection_count": bf,
@@ -124,6 +163,10 @@ class ScanRunMetrics:
             "book_still_missing_after_fallback": missing,
             "book_coverage_fixture_count": fixture_count,
             "book_coverage_pct": coverage_pct,
+            "book_selection_keys_count": selection_keys_count,
+            "book_coverage_expected_selection_count": expected_selection_count,
+            "book_coverage_actual_selection_count": actual_selection_count,
+            "book_coverage_consistent": consistent,
             "bookmaker_mode": CECCHINO_BOOK_POLICY_VERSION,
             "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
             "book_coverage": {
@@ -136,6 +179,10 @@ class ScanRunMetrics:
                 "resolved_selection_count": resolved,
                 "total_selection_count": total,
                 "coverage_pct": coverage_pct,
+                "selection_keys_count": selection_keys_count,
+                "expected_selection_count": expected_selection_count,
+                "actual_selection_count": actual_selection_count,
+                "consistent": consistent,
             },
         }
 
