@@ -1,10 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — CECCHINO-BOOK-PERF-01 staged odds + stale + primary 23:00 (2026-08-08)
+
+- **Perché:** recovery full-canonical pre-stats faceva fino a 2–3 odds call per fixture; scan ~30 min marcata `stale_job_timeout` nonostante heartbeat; UI Odds API=0 durante live; primary a 23:30.
+- **Cosa:** Phase A gate 1X2 = Betfair bookmaker-specific (no fixture-wide come primary Today); Bet365 solo se 1X2 BF incompleto. Phase B full enrichment solo post-stats, riuso raw, max +1 B365. Coverage monitor una volta + `book_coverage_fixture_count`. Live `api_calls`/`odds_*` in `result_summary`. RUNNING stale solo no-progress. Primary default **23:00** (recovery 23:50).
+- **Non cambia:** policy Betfair→Bet365 selection-by-selection, IDs 3/8, KPI/Signals/V3.1/Bet Builder/ROI, recovery slot, nessuna migration/backfill.
+- **Railway:** schedule/env production non versionati — impostare `CECCHINO_AUTO_SCAN_PRIMARY_MINUTE=0` a mano.
+
 ## Feat — CECCHINO-BOOK-MONITOR-01 live Book coverage metrics (2026-08-08)
 
 - **Perché:** durante/dopo la scan non era visibile quante selection Book venissero da Betfair, da Bet365 fallback, o restassero N/D.
-- **Cosa:** `ScanRunMetrics.betfair_primary_selection_count` + blocco `book_coverage` / `book_coverage_pct` in `result_summary`; accumulo da stats finali del resolver (una volta per fixture, inclusa cache); merge live in `result_summary_json` al progress; UI «Copertura quote Book» su ProgressCard e ScanSummary.
-- **Non cambia:** policy `betfair_primary_bet365_fallback_v1`, fetch ordering, gate, KPI/Signals/V3.1/ICM/Bet Builder/Results, nessuna migration/backfill.
+- **Cosa:** `ScanRunMetrics.betfair_primary_selection_count` + blocco `book_coverage` / `book_coverage_pct` in `result_summary`; accumulo da stats finali del resolver (una volta per fixture stats-qualified / Phase B); merge live in `result_summary_json` al progress; UI «Copertura selection Book — fixture arrivate alla fase KPI».
+- **Non cambia:** policy `betfair_primary_bet365_fallback_v1`, gate, KPI/Signals/V3.1/ICM/Bet Builder/Results, nessuna migration/backfill.
 - **Semantica:** i counters selection non sono “partite”; `betfair_primary_used` resta fixture-count legacy.
 
 ## Fix — BET365-FALLBACK-01.1 harden primary recovery + provenance (2026-08-08)
@@ -441,7 +448,7 @@ Indice parallelo alla v1.1: Fase 1 valore assoluto + Fase 2 qualità decisionale
 - Invariante: una fixture `eligible` per `(scan_date, provider_fixture_id)` non può essere retrocessa da scan/rescan.
 - Policy centralizzata in `cecchino_today_eligible_guard.py`; prefetch map in `run_scan`; census non demota; freeze post-kickoff; preserve su refresh fallito; no negative cache su protetti.
 - Report: `eligibility_transitions`, `protected_eligible_total`, `protected_snapshot_overwrite_blocked`; UI riepilogo scan con contatori + «Protezione snapshot eligible: attiva».
-- Nessun cron ancora; prerequisito per futura automazione 23:30. Formule/moduli predittivi invariati.
+- Nessun cron ancora; prerequisito per futura automazione 23:00. Formule/moduli predittivi invariati.
 
 ## Feat — Analisi interattiva Goal Intensity v5 (2026-07-26)
 
@@ -1505,7 +1512,7 @@ Archivio storico vittorie casalinghe (esito reale 1) derivato da `cecchino_today
 - Nuovi endpoint: `POST /scan-day/start`, `GET /scan-jobs/{job_id}`, `GET /scan-jobs/latest?date=`; `POST /scan-day` delega al job (param `sync=true` solo debug).
 - Progress step-by-step (`fetching_fixtures` → … → `completed`), contatori fixture/odds/eleggibili/escluse, `result_summary_json` con metriche API.
 - Ottimizzazione odds: singola chiamata `GET /odds?fixture=` con filtro Bet365/Betfair/Pinnacle; fallback selettivo o per-bookmaker; cache da `odds_snapshot_json` se `force_rescan=false`.
-- Prevenzione job duplicati (stesso `scan_date` running → job esistente) e stale job (>30 min → `failed`).
+- Prevenzione job duplicati (stesso `scan_date` running → job esistente) e stale job (RUNNING senza progresso → `failed`).
 - Frontend: polling ogni 2,5s, card progresso, badge «Scanning» in timeline; niente timeout browser 180s sullo start.
 - Nessuna modifica ai modelli SOT v2.0/v2.1 né alle formule Cecchino/eligibility gate.
 

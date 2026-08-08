@@ -97,7 +97,7 @@ def _run_scan_patches(*, upsert_side_effect=None):
         patch("app.services.cecchino.cecchino_today_service.check_api_budget_during_scan", create=True),
         patch("app.services.cecchino.cecchino_today_service.is_fixture_not_started", return_value=True),
         patch(
-            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
         ) as odds_fetch,
         patch(
             "app.services.cecchino.cecchino_today_service.ensure_competition_and_history",

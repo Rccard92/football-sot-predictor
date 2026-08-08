@@ -422,6 +422,69 @@ def test_progress_reporter_merges_book_coverage_live():
     assert merged["book_coverage"]["coverage_pct"] == 86.7
 
 
+def test_progress_reporter_merges_live_api_metrics():
+    """Live polling deve ricevere api_calls / odds_from_api in result_summary."""
+    db = MagicMock()
+    job = CecchinoTodayScanJob(
+        job_id="jid-api",
+        scan_date=date(2026, 8, 8),
+        timezone="Europe/Rome",
+        force_rescan=False,
+        status=JOB_STATUS_RUNNING,
+        progress_current=1,
+        progress_total=10,
+        progress_pct=Decimal("10.0"),
+        result_summary_json={
+            "auto_scan": {"execution_source": "auto_scan"},
+            "execution_date": "2026-08-08",
+        },
+    )
+    metrics = ScanRunMetrics()
+    metrics.api_calls = {"odds": 123, "fixtures": 2, "teams": 0}
+    metrics.sync_api_calls_total()
+    metrics.odds_from_api = 40
+    metrics.odds_from_cache = 5
+    metrics.odds_cache_hits = 5
+    metrics.negative_cache_hits = 1
+    metrics.odds_strategy["betfair_1x2"] = 30
+    live = {
+        "api_calls": dict(metrics.api_calls),
+        "api_calls_total": metrics.api_calls_total,
+        "odds_from_api": metrics.odds_from_api,
+        "odds_from_cache": metrics.odds_from_cache,
+        "odds_cache_hits": metrics.odds_cache_hits,
+        "negative_cache_hits": metrics.negative_cache_hits,
+        "odds_strategy": dict(metrics.odds_strategy),
+    }
+    live.update(metrics.book_coverage_fields())
+    captured: dict[str, Any] = {}
+
+    def _fake_update(_db, _jid, **kwargs):
+        captured.update(kwargs)
+        if "result_summary_json" in kwargs:
+            job.result_summary_json = kwargs["result_summary_json"]
+        return job
+
+    with patch(
+        "app.services.cecchino.cecchino_today_scan_job_service.get_scan_job",
+        return_value=job,
+    ):
+        with patch(
+            "app.services.cecchino.cecchino_today_scan_job_service.update_scan_job",
+            side_effect=_fake_update,
+        ):
+            reporter = make_progress_reporter(db, "jid-api")
+            reporter(progress_current=2, result_summary_json=live)
+
+    merged = captured["result_summary_json"]
+    assert merged["api_calls"]["odds"] == 123
+    assert merged["api_calls_total"] == 125
+    assert merged["odds_from_api"] == 40
+    assert merged["odds_cache_hits"] == 5
+    assert merged["auto_scan"]["execution_source"] == "auto_scan"
+    assert merged["execution_date"] == "2026-08-08"
+
+
 def test_completed_summary_includes_final_book_coverage():
     metrics = ScanRunMetrics()
     metrics.betfair_primary_selection_count = 10
@@ -430,6 +493,7 @@ def test_completed_summary_includes_final_book_coverage():
     metrics.bet365_fallback_fixture_count = 1
     metrics.betfair_primary_used = 1
     metrics.bet365_fallback_used = 1
+    metrics.book_coverage_fixture_count = 2
     summary = metrics.to_result_summary(
         fixtures_found=5,
         after_competition_filter=4,
@@ -443,8 +507,10 @@ def test_completed_summary_includes_final_book_coverage():
     assert summary["bet365_fallback_selection_count"] == 3
     assert summary["book_still_missing_after_fallback"] == 2
     assert summary["bet365_fallback_fixture_count"] == 1
+    assert summary["book_coverage_fixture_count"] == 2
     assert summary["book_coverage_pct"] == 86.7
     assert summary["book_coverage"]["policy_version"] == CECCHINO_BOOK_POLICY_VERSION
+    assert summary["book_coverage"]["book_coverage_fixture_count"] == 2
     assert summary["book_policy_version"] == CECCHINO_BOOK_POLICY_VERSION
 
 

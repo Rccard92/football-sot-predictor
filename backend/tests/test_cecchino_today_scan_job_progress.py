@@ -139,25 +139,32 @@ def test_run_scan_job_thread_completed_sets_progress_100():
 
     with patch("app.services.cecchino.cecchino_today_scan_job_service.SessionLocal", return_value=db):
         with patch(
-            "app.services.cecchino.cecchino_today_scan_job_service.get_scan_job",
-            return_value=job,
-        ):
+            "app.services.cecchino.cecchino_today_scan_job_service.acquire_cecchino_scan_lock",
+        ) as lock_cm:
+            lock_cm.return_value.__enter__ = MagicMock(
+                return_value={"acquired": True, "backend": "test", "lock_key": 1, "waited_seconds": 0},
+            )
+            lock_cm.return_value.__exit__ = MagicMock(return_value=False)
             with patch(
-                "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
-                return_value={
-                    "status": "ok",
-                    "eligible": 3,
-                    "excluded_total": 10,
-                    "fixtures_found": 433,
-                    "fixtures_processed": 433,
-                    "total_discovered": 433,
-                    "excluded_summary": {},
-                    "result_summary": {"duration_seconds": 120.0},
-                    "warnings": [],
-                    "errors": ["fixture 999: boom"],
-                },
+                "app.services.cecchino.cecchino_today_scan_job_service.get_scan_job",
+                return_value=job,
             ):
-                _run_scan_job_thread("ok-job")
+                with patch(
+                    "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
+                    return_value={
+                        "status": "ok",
+                        "eligible": 3,
+                        "excluded_total": 10,
+                        "fixtures_found": 433,
+                        "fixtures_processed": 433,
+                        "total_discovered": 433,
+                        "excluded_summary": {},
+                        "result_summary": {"duration_seconds": 120.0},
+                        "warnings": [],
+                        "errors": ["fixture 999: boom"],
+                    },
+                ):
+                    _run_scan_job_thread("ok-job")
 
     assert job.status == JOB_STATUS_COMPLETED
     assert job.progress_pct == Decimal("100.0")

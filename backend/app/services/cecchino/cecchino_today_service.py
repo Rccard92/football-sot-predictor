@@ -179,7 +179,8 @@ from app.services.cecchino.cecchino_today_final_eligibility import (
 )
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
 from app.services.cecchino.cecchino_today_odds_fetch import (
-    fetch_fixture_odds_for_cecchino_bookmakers,
+    enrich_fixture_odds_full_canonical,
+    fetch_fixture_odds_for_cecchino_1x2_gate,
     write_negative_odds_cache,
 )
 from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta, read_odds_meta
@@ -974,6 +975,17 @@ def run_scan(
     def _progress_metrics_payload() -> dict[str, Any]:
         run_metrics.sync_api_calls_total()
         excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
+        live_summary: dict[str, Any] = {
+            "api_calls": dict(run_metrics.api_calls),
+            "api_calls_total": run_metrics.api_calls_total,
+            "api_calls_by_endpoint": dict(run_metrics.api_calls),
+            "odds_from_api": run_metrics.odds_from_api,
+            "odds_from_cache": run_metrics.odds_from_cache,
+            "odds_cache_hits": run_metrics.odds_cache_hits,
+            "negative_cache_hits": run_metrics.negative_cache_hits,
+            "odds_strategy": dict(run_metrics.odds_strategy),
+        }
+        live_summary.update(run_metrics.book_coverage_fields())
         return {
             "fixtures_found": total,
             "provider_items_received": provider_items_received,
@@ -993,8 +1005,8 @@ def run_scan(
             "excluded_summary": {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
             "warnings": warnings,
             "errors": errors,
-            # Patch live Book coverage (merge shallow in progress reporter).
-            "result_summary": run_metrics.book_coverage_fields(),
+            # Live API + Book coverage (merge shallow in progress reporter).
+            "result_summary": live_summary,
         }
 
     signal_sync_summary = {
@@ -1097,7 +1109,7 @@ def run_scan(
                 run_metrics.fixtures_after_competition_gate = after_filter_count
 
                 _emit_progress(progress, current_step="fetching_odds")
-                odds_by_book, odds_warnings, odds_strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_bookmakers(
+                odds_by_book, odds_warnings, odds_strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_1x2_gate(
                     af_client,
                     api_fid,
                     db=db,
@@ -1314,6 +1326,22 @@ def run_scan(
                     continue
 
                 run_metrics.fixtures_after_stats_gate += 1
+
+                # Phase B: full Book enrichment solo su fixture stats-qualified.
+                odds_by_book, enrich_warnings, _did_b365 = enrich_fixture_odds_full_canonical(
+                    af_client,
+                    api_fid,
+                    odds_by_book,
+                    metrics=run_metrics,
+                )
+                row_warnings.extend(enrich_warnings)
+                if odds_snapshot and isinstance(odds_snapshot, dict):
+                    # Aggiorna raw nello snapshot operativo per cache successiva.
+                    raw_map = dict(odds_snapshot.get("raw_by_bookmaker_id") or {})
+                    for bid, payload in odds_by_book.items():
+                        if payload:
+                            raw_map[str(bid)] = list(payload)
+                    odds_snapshot = {**odds_snapshot, "raw_by_bookmaker_id": raw_map}
 
                 _emit_progress(progress, current_step="calculating_cecchino")
                 try:

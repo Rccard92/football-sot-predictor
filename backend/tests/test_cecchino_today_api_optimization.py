@@ -97,7 +97,7 @@ def test_competition_gate_excludes_without_odds_api():
                             create=True,
                         ):
                             with patch(
-                                "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+                                "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
                                 odds_fetch,
                             ):
                                 run_scan(db, scan_date=TARGET_DATE, client=client, force_rescan=True)
@@ -130,7 +130,7 @@ def test_bookmaker_gate_fail_skips_bootstrap():
                             create=True,
                         ):
                                 with patch(
-                                    "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+                                    "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
                                     return_value=({}, [], "fixture_single_call", False),
                                 ):
                                     with patch(

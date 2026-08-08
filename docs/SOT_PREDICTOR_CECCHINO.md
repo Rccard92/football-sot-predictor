@@ -14,7 +14,7 @@ Policy canonica `quota_book` per Today / KPI / Signals / V3.1 / Bet Builder / Re
 | Formule | Cecchino / Signals / V3.1 / Evidence Sort / ICM / Balance / GI **invariate** |
 | Version | `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI `cecchino_kpi_v2_canonical_book_v1` |
 | Provenance | Per riga: `bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`, `book_source` |
-| Fetch | Fixture-wide → se Betfair non copre **tutte** le selection canoniche (1X2, O/U, FH, DC) max 1 Betfair-specific → resolve Bet365 fixture-wide → max 1 Bet365-specific |
+| Fetch | **Phase A (Today):** Betfair `bookmaker=3` per gate 1X2; Bet365 solo se HOME/DRAW/AWAY BF incompleto. **Phase B (post-stats):** full enrichment riusando raw; max +1 B365 se manca selection. Fixture-wide non è strategia primaria Today |
 | Snapshot | `bookmakers.Betfair` / `Bet365` mai mescolati; solo `Canonical` aggrega book diversi; lettura Canonical → Betfair legacy |
 | Storia | Nessun backfill; snapshot pre-match immutati; rebuild offline usa solo raw presenti |
 | Profit/ROI | Continua a usare solo `price_value.quota_book` persistita pre-match |
@@ -481,7 +481,7 @@ Area **dati** isolata (non predittiva): import CSV football-data.co.uk, tabelle 
 | Comando | `python -m app.jobs.cecchino_auto_scan` |
 | Modalità | `--scheduled` / `--force-run` / `--dry-run` |
 | Target | domani `Europe/Rome` (una sola data per job) |
-| Slot | primary ≈23:30, recovery ≈23:50 (±`WINDOW_MINUTES`) |
+| Slot | primary ≈**23:00**, recovery ≈23:50 (±`WINDOW_MINUTES`) |
 | Lock | `cecchino_today_scan_lock.py` — advisory PG globale |
 | Lifecycle | `execute_scan_job_sync` (condiviso con scan manuale) |
 | force_rescan | sempre `true` sul cron (refresh serale) |
@@ -490,7 +490,7 @@ Area **dati** isolata (non predittiva): import CSV football-data.co.uk, tabelle 
 | Timeout | max runtime 120 min; HTTP client già 60s |
 | Exit | 0 / 1 / 2 / 3 / 4 |
 | UI | badge Origine Automatica / Slot / Target / Tentativo |
-| Railway | **non ancora attivo** — prossimo step servizio + cron UTC |
+| Railway | **non versionato nel repo** — impostare env `PRIMARY_HOUR=23` / `PRIMARY_MINUTE=0` e cron UTC a mano |
 | Invariato | formule, eligible guard, Procfile, package.json |
 
 ## Analisi interattiva Goal Intensity v5 (2026-07-26)
@@ -1688,7 +1688,7 @@ Campi protetti (non sovrascritti su preserve): eligibility, bookmaker/stats/cecc
 
 Campi aggiornabili post-kickoff: metadati provider, kickoff, display status, score, elapsed, raw_fixture_json.
 
-Policy: `backend/app/services/cecchino/cecchino_today_eligible_guard.py`. **Nessun cron** ancora — prerequisito per automazione 23:30.
+Policy: `backend/app/services/cecchino/cecchino_today_eligible_guard.py`. **Nessun cron** ancora — prerequisito per automazione 23:00.
 
 Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timeline ±30 giorni, scan per giornata selezionata, aggiornamento risultati post-kickoff, filtri client-side, card arricchite (stato, score, loghi).
 
@@ -1775,7 +1775,7 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 | Tabella | `cecchino_today_scan_jobs` — status, progress, step, contatori, JSON summary/warnings/errors |
 | Thread | `SessionLocal` dedicata; commit progress ogni batch (~10 fixture) |
 | Duplicati | Job `queued\|running` stesso `scan_date` → restituisce esistente; `force_rescan` + running → 409 |
-| Stale | Job running >30 min → `failed` (`stale job timeout`) |
+| Stale | RUNNING senza progresso >5 min → `failed` (`stale_job_timeout`); non per sola età totale |
 | Odds | `get_fixture_odds_by_fixture` + cache snapshot; strategie `cached`, `fixture_single_call`, fallback |
 | Timeline | `scan_job_status`, `scan_job_id`, `scan_state=scanning` su GET `/days` |
 
@@ -2366,7 +2366,7 @@ Versione `cecchino_today_v0_12_progress_fix`: barra avanzamento e chiusura job r
 | Frontend | `computeScanJobProgressPct` fallback se backend manda pct 0/null |
 | Loop fixture | `try/except/finally` per fixture; errore singola → excluded, job continua |
 | Completed | `progress_current=total`, `progress_pct=100`, `finished_at`, `result_summary_json` |
-| Stale | `updated_at` fermo >5 min **o** elapsed >30 min → `failed` (`stale_job_timeout`) |
+| Stale | RUNNING: `updated_at` fermo >5 min → `failed` (`stale_job_timeout`); QUEUED: età >30 min. **Non** stale per sola età `started_at`. Max runtime auto-scan 120 min → `failed_timeout` |
 | UI | Barra visibile con % reale; completed/failed con badge e retry |
 
 ## Cecchino Today — Fase 17 — Fix polling e selectedDay (v0.11)

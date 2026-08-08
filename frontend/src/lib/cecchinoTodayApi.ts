@@ -110,6 +110,7 @@ export type CecchinoTodayBookCoverageBlock = {
   bet365_fallback_selection_count?: number
   missing_selection_count?: number
   bet365_fallback_fixture_count?: number
+  book_coverage_fixture_count?: number
   resolved_selection_count?: number
   total_selection_count?: number
   coverage_pct?: number | null
@@ -143,6 +144,8 @@ export type CecchinoTodayScanJobResultSummary = {
   bet365_fallback_selection_count?: number
   /** Fixture con almeno una selection Bet365 fallback. */
   bet365_fallback_fixture_count?: number
+  /** Fixture stats-qualified nel denominatore full Book coverage. */
+  book_coverage_fixture_count?: number
   /** Selection canoniche ancora N/D dopo Betfair + Bet365. */
   book_still_missing_after_fallback?: number
   book_coverage_pct?: number | null
@@ -185,6 +188,7 @@ export type CecchinoTodayBookCoverageView = {
   bet365FallbackSelectionCount: number
   missingSelectionCount: number
   bet365FallbackFixtureCount: number
+  bookCoverageFixtureCount: number
   resolvedSelectionCount: number
   totalSelectionCount: number
   coveragePct: number | null
@@ -205,6 +209,7 @@ export function getScanJobBookCoverage(
     summary?.book_still_missing_after_fallback != null ||
     summary?.book_coverage_pct != null ||
     summary?.bet365_fallback_fixture_count != null ||
+    summary?.book_coverage_fixture_count != null ||
     bc != null
   const bf = Number(
     bc?.betfair_primary_selection_count ?? summary?.betfair_primary_selection_count ?? 0,
@@ -217,6 +222,9 @@ export function getScanJobBookCoverage(
   )
   const fixtureFallback = Number(
     bc?.bet365_fallback_fixture_count ?? summary?.bet365_fallback_fixture_count ?? 0,
+  )
+  const coverageFixtureCount = Number(
+    bc?.book_coverage_fixture_count ?? summary?.book_coverage_fixture_count ?? 0,
   )
   const resolved =
     bc?.resolved_selection_count != null
@@ -248,6 +256,7 @@ export function getScanJobBookCoverage(
     bet365FallbackSelectionCount: b365,
     missingSelectionCount: missing,
     bet365FallbackFixtureCount: fixtureFallback,
+    bookCoverageFixtureCount: coverageFixtureCount,
     resolvedSelectionCount: resolved,
     totalSelectionCount: total,
     coveragePct,

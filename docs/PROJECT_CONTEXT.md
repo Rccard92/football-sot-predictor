@@ -8,7 +8,7 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
 - Non è best-odds / media / SportAPI7 / WH / Pinnacle; formule Cecchino invariate
 - `book_policy_version=betfair_primary_bet365_fallback_v1`; KPI contract `cecchino_kpi_v2_canonical_book_v1`
 - Provenance per selection (`bookmaker_name`, `provider_bookmaker_id`, `book_fallback_used`)
-- Recovery: Betfair-specific su **tutte** le selection canoniche mancanti (O/U, FH, DC, non solo 1X2) prima di Bet365; max 1 call specific per book
+- **CECCHINO-BOOK-PERF-01 (staged):** Phase A gate 1X2 = UNA call Betfair bookmaker-specific (`bookmaker=3`); Bet365 solo se HOME/DRAW/AWAY BF incompleto. Phase B full enrichment **solo post stats gate**, riusa raw BF (e B365 se già caricato); max +1 B365 se manca selection canonica. Nessuna doppia call BF/B365 per fixture.
 - Snapshot: `bookmakers.Betfair` / `Bet365` mai mescolati; solo `Canonical` può aggregare book diversi; lettura Canonical → Betfair legacy
 - Nessun backfill storico; Results/ROI resta su `quota_book` pre-match; offline rebuild senza API
 
@@ -18,6 +18,14 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
 - Rimossa alias che scriveva quote canoniche sotto `bookmakers.Betfair`
 - Badge UI e `api_calls_used` basati su raw/conteggio reale, non su alias Canonical
 
+## Feat BOOK PERF 01 — staged odds + stale + primary 23:00 (2026-08-08)
+
+- Odds Today scan: non più fixture-wide come strategia primaria; gate 1X2 economico prima dello stats gate
+- Full Book enrichment differito alle sole fixture stats-qualified; coverage monitor conta **una volta** (Phase B) + `book_coverage_fixture_count`
+- Live `result_summary`: `api_calls` / `odds_from_api` / cache hits durante lo scan (non più Odds API: 0 falso)
+- RUNNING stale solo se `updated_at` senza progresso >5 min (non più età totale `started_at` >30)
+- Auto-scan primary default **23:00** (recovery 23:50 invariato); Railway cron/env non versionati — impostare a mano in production
+
 ## Feat BOOK MONITOR 01 — live Book coverage metrics (2026-08-08)
 
 - Ogni scan registra metriche **diagnostiche** (non cambiano policy/selezione/predizione):
@@ -25,9 +33,10 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
   - selection Bet365 fallback
   - selection ancora N/D dopo entrambi
   - fixture che hanno richiesto almeno un fallback Bet365
+  - fixture stats-qualified nel denominatore (`book_coverage_fixture_count`)
   - coverage % = resolved / (resolved + missing) × 100 (null se totale 0)
 - Contatori live in `result_summary_json` durante lo scan (merge shallow) + stessi valori a fine job
-- UI «Copertura quote Book» su ProgressCard e ScanSummary (conteggio **selection**, non partite)
+- UI «Copertura selection Book — fixture arrivate alla fase KPI» su ProgressCard e ScanSummary (conteggio **selection**, non partite)
 
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 
@@ -264,11 +273,11 @@ Nuova area isolata **Cecchino Lab** (`/cecchino-lab`): import CSV football-data.
 
 ## Feat — Comando sincrono auto scan Cecchino (2026-07-26)
 
-Comando cron-ready `python -m app.jobs.cecchino_auto_scan` (--scheduled / --force-run / --dry-run). Target = **domani Europe/Rome**. Slot primary 23:30 e recovery 23:50 (±10 min). Lock advisory PostgreSQL globale condiviso con scan manuali; lifecycle sincrono `execute_scan_job_sync` (nessun HTTP FastAPI, nessun thread nel cron). Idempotenza auto job, retry transitori max 2, timeout 120 min, SIGTERM/SIGINT. Badge UI Origine/Slot se `result_summary.auto_scan`. **Railway Cron non ancora attivo**; Procfile invariato. `CECCHINO_AUTO_SCAN_ENABLED=false` di default.
+Comando cron-ready `python -m app.jobs.cecchino_auto_scan` (--scheduled / --force-run / --dry-run). Target = **domani Europe/Rome**. Slot primary **23:00** e recovery 23:50 (±10 min). Lock advisory PostgreSQL globale condiviso con scan manuali; lifecycle sincrono `execute_scan_job_sync` (nessun HTTP FastAPI, nessun thread nel cron). Idempotenza auto job, retry transitori max 2, timeout 120 min, SIGTERM/SIGINT. Badge UI Origine/Slot se `result_summary.auto_scan`. **Railway Cron non versionato nel repo** — impostare a mano `CECCHINO_AUTO_SCAN_PRIMARY_HOUR=23` / `PRIMARY_MINUTE=0` (e schedule esterna se attiva). `CECCHINO_AUTO_SCAN_ENABLED=false` di default.
 
 ## Fix — Protezione eligible sulle riscansioni (2026-07-26)
 
-Monotonicità `eligible` per `(scan_date, provider_fixture_id)`: modulo `cecchino_today_eligible_guard.py`. Census non demota; refresh upcoming solo se di nuovo eligible, altrimenti preserve snapshot; live/finished → freeze solo match state; postponed/cancelled → preserve terminale. Contatori `eligibility_transitions` nel report + badge UI. **Nessun cron** (prerequisito automazione 23:30). Formule/moduli predittivi invariati.
+Monotonicità `eligible` per `(scan_date, provider_fixture_id)`: modulo `cecchino_today_eligible_guard.py`. Census non demota; refresh upcoming solo se di nuovo eligible, altrimenti preserve snapshot; live/finished → freeze solo match state; postponed/cancelled → preserve terminale. Contatori `eligibility_transitions` nel report + badge UI. **Nessun cron** (prerequisito automazione 23:00). Formule/moduli predittivi invariati.
 
 Competition filter Cecchino Today (2026-08-07): harden conservativo high-confidence (women/cup/friendly/youth; token/phrase + home/away). Caso Liga Femenina corretto; campionati regolari inferiori non esclusi per livello; **nessun backfill storico**.
 

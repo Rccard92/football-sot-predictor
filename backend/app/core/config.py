@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     cecchino_auto_scan_enabled: bool = False
     cecchino_auto_scan_timezone: str = "Europe/Rome"
     cecchino_auto_scan_primary_hour: int = 23
-    cecchino_auto_scan_primary_minute: int = 30
+    cecchino_auto_scan_primary_minute: int = 0
     cecchino_auto_scan_recovery_hour: int = 23
     cecchino_auto_scan_recovery_minute: int = 50
     cecchino_auto_scan_window_minutes: int = 10

@@ -76,8 +76,10 @@ describe('CecchinoTodayBookCoveragePanel', () => {
         }}
       />,
     )
-    expect(screen.getByText('Copertura quote Book')).toBeTruthy()
-    expect(screen.getByText('Conteggio selection canoniche Book')).toBeTruthy()
+    expect(screen.getByText('Copertura selection Book — fixture arrivate alla fase KPI')).toBeTruthy()
+    expect(
+      screen.getByText('Conteggio selection canoniche Book (una volta per fixture stats-qualified)'),
+    ).toBeTruthy()
     expect(screen.getByTestId('book-coverage-betfair').textContent).toBe('428')
     expect(screen.getByTestId('book-coverage-bet365').textContent).toBe('37')
     expect(screen.getByTestId('book-coverage-missing').textContent).toBe('12')

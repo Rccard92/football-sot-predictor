@@ -26,7 +26,7 @@ def test_run_scan_does_not_call_cleanup():
             "app.services.cecchino.cecchino_today_service.ApiFootballClient",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
             return_value=({}, []),
         ),
         patch(

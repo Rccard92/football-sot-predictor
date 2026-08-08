@@ -212,7 +212,7 @@ def test_run_scan_bookmaker_fail_does_not_raise_str_utc():
         "app.services.cecchino.cecchino_today_service.is_fixture_not_started",
         return_value=True,
     ), patch(
-        "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+        "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
         return_value=({}, [], "live", False),
     ), patch(
         "app.services.cecchino.cecchino_today_service.verify_complete_1x2_odds",

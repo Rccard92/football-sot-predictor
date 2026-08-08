@@ -10,6 +10,9 @@ Book coverage counters (diagnostici, non alterano policy/selezione):
   selection canoniche ancora N/D dopo il ciclo completo Betfair → Bet365.
 - bet365_fallback_fixture_count:
   fixture con almeno una selection via Bet365 fallback.
+- book_coverage_fixture_count:
+  fixture stats-qualified che hanno contribuito UNA volta al monitor full Book
+  (Phase B post-stats; non include gate intermedi).
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ class ScanRunMetrics:
     bet365_fallback_selection_count: int = 0  # selection-count Bet365
     bet365_fallback_fixture_count: int = 0  # alias semantico di bet365_fallback_used
     book_still_missing_after_fallback: int = 0  # selection-count ancora N/D
+    book_coverage_fixture_count: int = 0  # fixture stats-qualified con full Book coverage
     api_calls_total: int = 0
     api_calls: dict[str, int] = field(
         default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0},
@@ -53,6 +57,9 @@ class ScanRunMetrics:
             "fixture_single_call_with_bookmaker_fallback": 0,
             "fixture_single_call_with_bet365_fallback": 0,
             "bookmaker_per_fixture": 0,
+            "betfair_1x2": 0,
+            "betfair_1x2_with_bet365_fallback": 0,
+            "odds_incomplete_1x2_gate": 0,
             "cached": 0,
             "negative_cache": 0,
         },
@@ -76,13 +83,21 @@ class ScanRunMetrics:
         elif strategy == "negative_cache":
             self.negative_cache_hits += 1
             self.odds_strategy["negative_cache"] = self.odds_strategy.get("negative_cache", 0) + 1
+        elif strategy == "odds_incomplete_1x2_gate":
+            self.odds_strategy["odds_incomplete_1x2_gate"] = (
+                self.odds_strategy.get("odds_incomplete_1x2_gate", 0) + 1
+            )
+            self.odds_from_api += 1
         elif strategy in self.odds_strategy:
             self.odds_strategy[strategy] += 1
             self.odds_from_api += 1
             if "fallback" in strategy or strategy == "bookmaker_per_fixture":
                 self.bookmaker_fallback_count += 1
         else:
+            self.odds_strategy[strategy] = self.odds_strategy.get(strategy, 0) + 1
             self.odds_from_api += 1
+            if "fallback" in strategy:
+                self.bookmaker_fallback_count += 1
 
     def sync_api_calls_total(self) -> None:
         self.api_calls_total = sum(int(v) for v in self.api_calls.values())
@@ -99,6 +114,7 @@ class ScanRunMetrics:
             coverage_pct = round(resolved / total * 100, 1)
         else:
             coverage_pct = None
+        fixture_count = int(self.book_coverage_fixture_count or 0)
         return {
             "betfair_primary_used": int(self.betfair_primary_used or 0),
             "betfair_primary_selection_count": bf,
@@ -106,6 +122,7 @@ class ScanRunMetrics:
             "bet365_fallback_selection_count": b365,
             "bet365_fallback_fixture_count": int(self.bet365_fallback_fixture_count or 0),
             "book_still_missing_after_fallback": missing,
+            "book_coverage_fixture_count": fixture_count,
             "book_coverage_pct": coverage_pct,
             "bookmaker_mode": CECCHINO_BOOK_POLICY_VERSION,
             "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
@@ -115,6 +132,7 @@ class ScanRunMetrics:
                 "bet365_fallback_selection_count": b365,
                 "missing_selection_count": missing,
                 "bet365_fallback_fixture_count": int(self.bet365_fallback_fixture_count or 0),
+                "book_coverage_fixture_count": fixture_count,
                 "resolved_selection_count": resolved,
                 "total_selection_count": total,
                 "coverage_pct": coverage_pct,

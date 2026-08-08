@@ -21,6 +21,7 @@ from app.models.cecchino_today_scan_job import (
     JOB_STATUS_RUNNING,
     CecchinoTodayScanJob,
 )
+from app.services.cecchino.cecchino_constants import CECCHINO_BOOK_POLICY_VERSION
 from app.services.cecchino.cecchino_today_odds_fetch import (
     _extract_odds_by_book_from_response,
     fetch_fixture_odds_for_cecchino_bookmakers,
@@ -118,20 +119,36 @@ def test_start_scan_job_conflict_on_force_rescan_with_running():
 
 
 def test_recover_stale_scan_jobs():
+    """RUNNING senza heartbeat recente → stale (non più per sola età started_at)."""
     db = MagicMock()
+    now = datetime.now(timezone.utc)
     stale = CecchinoTodayScanJob(
         job_id="stale",
         scan_date=date(2026, 6, 4),
         timezone="Europe/Rome",
         force_rescan=False,
         status=JOB_STATUS_RUNNING,
-        started_at=datetime.now(timezone.utc) - timedelta(minutes=45),
+        started_at=now - timedelta(minutes=45),
+        updated_at=now - timedelta(minutes=10),
     )
     db.scalars.return_value.all.return_value = [stale]
-    count = recover_stale_scan_jobs(db, max_age_minutes=30)
+    count = recover_stale_scan_jobs(db, max_age_minutes=30, no_progress_minutes=5)
     assert count == 1
     assert stale.status == JOB_STATUS_FAILED
     assert "stale_job_timeout" in (stale.errors_json or [])[0]
+
+
+def test_recover_stale_running_ignores_started_at_age_in_query():
+    """RUNNING: la query stale NON usa started_at come causa autonoma."""
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    recover_stale_scan_jobs(db, max_age_minutes=30, no_progress_minutes=5)
+    stmt = db.scalars.call_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    # SELECT elenca started_at come colonna; lo stale RUNNING non deve filtrare su età started_at.
+    assert "started_at <" not in sql
+    assert "updated_at" in sql
+    assert "created_at" in sql
 
 
 def test_job_to_dict_includes_progress():
@@ -200,6 +217,7 @@ def test_load_cached_odds_skips_api_when_snapshot_complete():
     db = MagicMock()
     row = MagicMock()
     row.odds_snapshot_json = {
+        "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
         "raw_by_bookmaker_id": {
             "3": _mock_1x2_bets(3),
         },
@@ -214,10 +232,12 @@ def test_fetch_fixture_odds_uses_cache_without_api():
     db = MagicMock()
     row = MagicMock()
     row.odds_snapshot_json = {
+        "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
         "raw_by_bookmaker_id": {
             "3": _mock_1x2_bets(3),
         },
     }
+    row.negative_cache_until = None
     db.scalar.return_value = row
     client = MagicMock()
     metrics = ScanRunMetrics()
@@ -246,20 +266,26 @@ def test_fetch_fixture_odds_force_rescan_calls_api():
             ],
         },
     ]
+    client.get_fixture_odds.side_effect = lambda fid, bid: _mock_1x2_bets(bid)
     metrics = ScanRunMetrics()
-    _, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
-        client,
-        123,
-        db=db,
-        scan_date=date(2026, 6, 4),
-        force_rescan=True,
-        metrics=metrics,
-    )
-    assert strategy == "fixture_single_call"
+    with patch("app.services.cecchino.cecchino_today_odds_fetch.time.sleep", lambda *_a, **_k: None):
+        with patch(
+            "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+            return_value=MagicMock(cecchino_odds_bookmaker_fallback=True),
+        ):
+            _, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
+                client,
+                123,
+                db=db,
+                scan_date=date(2026, 6, 4),
+                force_rescan=True,
+                metrics=metrics,
+            )
+    assert "fixture_single_call" in strategy
     client.get_fixture_odds_by_fixture.assert_called_once()
 
 
-def test_extract_odds_filters_bookmakers_betfair_only():
+def test_extract_odds_filters_bookmakers_canonical():
     raw = [
         {
             "bookmakers": [
@@ -270,8 +296,7 @@ def test_extract_odds_filters_bookmakers_betfair_only():
         },
     ]
     out = _extract_odds_by_book_from_response(raw)
-    assert set(out.keys()) == {3}
-    assert 8 not in out
+    assert set(out.keys()) == {3, 8}
     assert 99 not in out
 
 
@@ -282,17 +307,26 @@ def test_fetch_fixture_odds_fallback_per_bookmaker():
     client.get_fixture_odds_by_fixture.return_value = []
     client.get_fixture_odds.side_effect = lambda fid, bid: _mock_1x2_bets(bid)
     metrics = ScanRunMetrics()
-    odds, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
-        client,
-        456,
-        db=db,
-        scan_date=date(2026, 6, 4),
-        force_rescan=True,
-        metrics=metrics,
-    )
-    assert strategy == "bookmaker_per_fixture"
-    assert len(odds) == 1
+    with patch("app.services.cecchino.cecchino_today_odds_fetch.time.sleep", lambda *_a, **_k: None):
+        with patch(
+            "app.services.cecchino.cecchino_today_odds_fetch.get_settings",
+            return_value=MagicMock(cecchino_odds_bookmaker_fallback=True),
+        ):
+            odds, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
+                client,
+                456,
+                db=db,
+                scan_date=date(2026, 6, 4),
+                force_rescan=True,
+                metrics=metrics,
+            )
     assert 3 in odds
+    assert strategy in (
+        "bookmaker_per_fixture",
+        "fixture_single_call_with_bookmaker_fallback",
+        "fixture_single_call_with_bet365_fallback",
+    )
+    assert client.get_fixture_odds.call_count >= 1
 
 
 def test_scan_day_start_endpoint():

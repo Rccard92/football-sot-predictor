@@ -118,13 +118,8 @@ def recover_stale_scan_jobs(
                     ),
                     and_(
                         CecchinoTodayScanJob.status == JOB_STATUS_RUNNING,
-                        or_(
-                            CecchinoTodayScanJob.updated_at < no_progress_cutoff,
-                            and_(
-                                CecchinoTodayScanJob.started_at.isnot(None),
-                                CecchinoTodayScanJob.started_at < overall_cutoff,
-                            ),
-                        ),
+                        # RUNNING: stale solo senza heartbeat/progress (non età totale).
+                        CecchinoTodayScanJob.updated_at < no_progress_cutoff,
                     ),
                 ),
             ),

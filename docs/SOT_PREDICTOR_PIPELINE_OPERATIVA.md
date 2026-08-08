@@ -1563,7 +1563,7 @@ flowchart TD
 ## Fase 20b — BOOK POLICY Betfair primary → Bet365 fallback (2026-08-08)
 
 - **Policy:** per ogni selection KPI, Betfair (id 3) se valida; altrimenti Bet365 (id 8); altrimenti N/D. Selection-by-selection, non fixture-by-fixture, non best-odds.
-- **Fetch:** `GET odds?fixture=` estrae id 3 e 8; se Betfair non copre tutte le selection canoniche (1X2, O/U, FH, DC) → al massimo **una** call Betfair-specific; resolve con Bet365 fixture-wide; se restano gap → al massimo **una** call Bet365-specific; zero specific se Betfair copre i target.
+- **Fetch Today (CECCHINO-BOOK-PERF-01):** Phase A gate 1X2 = `GET odds?fixture=&bookmaker=3`; Bet365 (`bookmaker=8`) solo se HOME/DRAW/AWAY BF incompleto. Phase B full enrichment **solo post stats gate**: riusa raw BF (+ B365 se già in Phase A); max +1 B365 se manca selection canonica su BF. Nessuna doppia call BF/B365; fixture-wide non è più la strategia primaria del Today scan.
 - **Gate / snapshot:** 1X2 canonico completo dopo fallback. `bookmakers.Betfair` e `bookmakers.Bet365` contengono solo quote del rispettivo book; `bookmakers.Canonical` è l’unico blocco misto. Lettura: Canonical se presente, altrimenti Betfair legacy.
 - **Cache:** `book_policy_version` in `odds_meta` / snapshot; snapshot legacy senza version non bloccano il refetch Bet365; negative cache solo dopo fallimento canonico.
 - **KPI:** `cecchino_kpi_v2_canonical_book_v1` con provenance per riga; formule invariate.
@@ -1573,18 +1573,24 @@ flowchart TD
 
 ## Fix Fase 20b.1 — BET365-FALLBACK-01.1 recovery + provenance (2026-08-08)
 
-- Recovery Betfair non più limitata al solo 1X2 incompleto: gap su qualsiasi selection canonica triggera max 1 Betfair-specific prima di Bet365.
+- (Storico) Recovery Betfair non più limitata al solo 1X2 incompleto: gap su qualsiasi selection canonica triggera max 1 Betfair-specific prima di Bet365 — **superseduto per Today scan da PERF-01 staged** (full canonical solo post-stats).
 - Rimossa sovrascrittura `bookmakers.Betfair = Canonical` che falsificava provenance.
 - `api_calls_used` refresh da `ScanRunMetrics.api_calls["odds"]` (conteggio reale HTTP), non dal numero di book non vuoti.
 
 ## Fase 20b.2 — BOOK MONITOR live coverage metrics (2026-08-08)
 
 - **Obiettivo:** panoramica live + finale della coverage quote Book in scan UI (diagnostica).
-- **Counters (selection, non fixture):** `betfair_primary_selection_count`, `bet365_fallback_selection_count`, `book_still_missing_after_fallback`; fixture: `bet365_fallback_fixture_count`; legacy fixture flags `betfair_primary_used` / `bet365_fallback_used`.
-- **Coverage:** `resolved / (resolved + missing) * 100` (1 decimale UI); `null` se nessuna selection considerata.
-- **Live:** ad ogni progress fixture, merge shallow di `book_coverage_fields()` in `result_summary_json` (preserva `auto_scan`, date, ecc.).
-- **UI:** sezione «Copertura quote Book» su ProgressCard e ScanSummary; policy label + version nel riepilogo finale.
+- **Counters (selection):** `betfair_primary_selection_count`, `bet365_fallback_selection_count`, `book_still_missing_after_fallback`; fixture: `bet365_fallback_fixture_count`, `book_coverage_fixture_count` (stats-qualified / Phase B); legacy fixture flags `betfair_primary_used` / `bet365_fallback_used`.
+- **Coverage:** `resolved / (resolved + missing) * 100` (1 decimale UI); `null` se nessuna selection considerata. Una sola registrazione per fixture (Phase B).
+- **Live:** ad ogni progress fixture, merge shallow di API metrics + `book_coverage_fields()` in `result_summary_json` (preserva `auto_scan`, date, ecc.).
+- **UI:** «Copertura selection Book — fixture arrivate alla fase KPI»; policy label + version nel riepilogo finale.
 - **Invariato:** policy Betfair→Bet365, gate, KPI, Signals, V3.1, Results; nessuna migration/backfill.
+
+## Fase 20b.3 — BOOK PERF staged + stale + primary 23:00 (2026-08-08)
+
+- Staged odds Phase A/B come sopra.
+- RUNNING stale solo se heartbeat/progress fermo > `STALE_NO_PROGRESS_MINUTES` (5); QUEUED resta su età `created_at`; max runtime auto-scan 120 min separato (`failed_timeout`).
+- Primary auto-scan default `CECCHINO_AUTO_SCAN_PRIMARY_MINUTE=0` (23:00); recovery 23:50. Railway non versionato.
 
 ## Fase 20 — KPI Betfair-only (storico; superseduto da 20b per Today)
 

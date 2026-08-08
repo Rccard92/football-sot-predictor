@@ -186,8 +186,18 @@ def test_run_scan_calls_attach_with_existing_preview_not_typeerror():
         ("is_cecchino_allowed_competition", {"return_value": (True, None)}),
         ("is_fixture_not_started", {"return_value": True}),
         (
-            "fetch_fixture_odds_for_cecchino_bookmakers",
+            "fetch_fixture_odds_for_cecchino_1x2_gate",
             {"return_value": ({"Betfair": {}}, [], "cached", False)},
+        ),
+        (
+            "enrich_fixture_odds_full_canonical",
+            {
+                "side_effect": lambda _c, _fid, odds_by_book, **_kw: (
+                    odds_by_book,
+                    [],
+                    False,
+                ),
+            },
         ),
         (
             "verify_complete_1x2_odds",

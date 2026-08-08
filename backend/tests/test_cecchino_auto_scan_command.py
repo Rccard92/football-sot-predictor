@@ -68,12 +68,12 @@ def test_dst_spring_forward_rome():
 
 
 def test_slot_primary():
-    now = _dt(2026, 7, 26, 23, 30)
+    now = _dt(2026, 7, 26, 23, 0)
     slot = resolve_auto_scan_slot(
         now,
         timezone_name=ROME,
         primary_hour=23,
-        primary_minute=30,
+        primary_minute=0,
         recovery_hour=23,
         recovery_minute=50,
         window_minutes=10,
@@ -87,7 +87,7 @@ def test_slot_recovery():
         now,
         timezone_name=ROME,
         primary_hour=23,
-        primary_minute=30,
+        primary_minute=0,
         recovery_hour=23,
         recovery_minute=50,
         window_minutes=10,
@@ -101,7 +101,7 @@ def test_outside_window():
         now,
         timezone_name=ROME,
         primary_hour=23,
-        primary_minute=30,
+        primary_minute=0,
         recovery_hour=23,
         recovery_minute=50,
         window_minutes=10,
@@ -114,13 +114,13 @@ def test_scheduled_disabled_exit_0():
     settings.cecchino_auto_scan_enabled = False
     settings.cecchino_auto_scan_timezone = ROME
     settings.cecchino_auto_scan_primary_hour = 23
-    settings.cecchino_auto_scan_primary_minute = 30
+    settings.cecchino_auto_scan_primary_minute = 0
     settings.cecchino_auto_scan_recovery_hour = 23
     settings.cecchino_auto_scan_recovery_minute = 50
     settings.cecchino_auto_scan_window_minutes = 10
     with patch("app.jobs.cecchino_auto_scan.get_settings", return_value=settings):
         with patch("app.jobs.cecchino_auto_scan.datetime") as mock_dt:
-            mock_dt.now.return_value = _dt(2026, 7, 26, 23, 30)
+            mock_dt.now.return_value = _dt(2026, 7, 26, 23, 0)
             mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
             code = main(["--scheduled"])
     assert code == EXIT_OK
@@ -131,7 +131,7 @@ def test_scheduled_outside_window_exit_0():
     settings.cecchino_auto_scan_enabled = True
     settings.cecchino_auto_scan_timezone = ROME
     settings.cecchino_auto_scan_primary_hour = 23
-    settings.cecchino_auto_scan_primary_minute = 30
+    settings.cecchino_auto_scan_primary_minute = 0
     settings.cecchino_auto_scan_recovery_hour = 23
     settings.cecchino_auto_scan_recovery_minute = 50
     settings.cecchino_auto_scan_window_minutes = 10
@@ -159,7 +159,7 @@ def test_force_run_calls_run_auto_scan():
     settings.cecchino_auto_scan_enabled = False
     settings.cecchino_auto_scan_timezone = ROME
     settings.cecchino_auto_scan_primary_hour = 23
-    settings.cecchino_auto_scan_primary_minute = 30
+    settings.cecchino_auto_scan_primary_minute = 0
     settings.cecchino_auto_scan_recovery_hour = 23
     settings.cecchino_auto_scan_recovery_minute = 50
     settings.cecchino_auto_scan_window_minutes = 10
@@ -184,7 +184,7 @@ def test_dry_run_no_writes():
     settings.cecchino_auto_scan_enabled = True
     settings.cecchino_auto_scan_timezone = ROME
     settings.cecchino_auto_scan_primary_hour = 23
-    settings.cecchino_auto_scan_primary_minute = 30
+    settings.cecchino_auto_scan_primary_minute = 0
     settings.cecchino_auto_scan_recovery_hour = 23
     settings.cecchino_auto_scan_recovery_minute = 50
     settings.cecchino_auto_scan_window_minutes = 10
@@ -205,7 +205,7 @@ def test_dry_run_no_writes():
                         with patch("app.jobs.cecchino_auto_scan.create_scan_job") as create:
                             with patch("app.jobs.cecchino_auto_scan.execute_scan_job_sync") as execute:
                                 with patch("app.jobs.cecchino_auto_scan.datetime") as mock_dt:
-                                    mock_dt.now.return_value = _dt(2026, 7, 26, 23, 30)
+                                    mock_dt.now.return_value = _dt(2026, 7, 26, 23, 0)
                                     mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
                                     code = main(["--scheduled", "--dry-run"])
     assert code == EXIT_OK
@@ -316,7 +316,7 @@ def test_force_run_skips_idempotency():
     settings.cecchino_auto_scan_enabled = False
     settings.cecchino_auto_scan_timezone = ROME
     settings.cecchino_auto_scan_primary_hour = 23
-    settings.cecchino_auto_scan_primary_minute = 30
+    settings.cecchino_auto_scan_primary_minute = 0
     settings.cecchino_auto_scan_recovery_hour = 23
     settings.cecchino_auto_scan_recovery_minute = 50
     settings.cecchino_auto_scan_window_minutes = 10

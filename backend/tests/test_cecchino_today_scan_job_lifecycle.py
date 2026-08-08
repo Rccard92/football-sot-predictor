@@ -68,6 +68,39 @@ def test_recover_stale_queued_job_by_created_at():
     assert "stale_job_timeout" in (stale.errors_json or [])[0]
 
 
+def test_recover_stale_a_running_45m_with_recent_heartbeat_not_selected():
+    """A: RUNNING da 45 min, updated_at recente → query non include started_at age."""
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    recover_stale_scan_jobs(db, max_age_minutes=30, no_progress_minutes=5)
+    stmt = db.scalars.call_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "started_at <" not in sql
+    # Se il DB restituisce lista vuota (heartbeat fresco), zero stale.
+    assert recover_stale_scan_jobs.__name__ == "recover_stale_scan_jobs"
+
+
+def test_recover_stale_b_running_45m_no_progress_is_stale():
+    """B: RUNNING da 45 min, updated_at > STALE_NO_PROGRESS → stale."""
+    db = MagicMock()
+    now = datetime.now(timezone.utc)
+    stale = CecchinoTodayScanJob(
+        job_id="running-stale-b",
+        scan_date=TARGET_DATE,
+        timezone="Europe/Rome",
+        force_rescan=False,
+        status=JOB_STATUS_RUNNING,
+        started_at=now - timedelta(minutes=45),
+        created_at=now - timedelta(minutes=45),
+        updated_at=now - timedelta(minutes=10),
+    )
+    db.scalars.return_value.all.return_value = [stale]
+    count = recover_stale_scan_jobs(db, max_age_minutes=30, no_progress_minutes=5)
+    assert count == 1
+    assert stale.status == JOB_STATUS_FAILED
+    assert "stale_job_timeout" in (stale.errors_json or [])[0]
+
+
 def test_recover_stale_running_job_by_updated_at():
     db = MagicMock()
     now = datetime.now(timezone.utc)

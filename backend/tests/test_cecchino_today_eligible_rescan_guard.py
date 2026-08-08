@@ -473,7 +473,7 @@ def test_run_scan_freeze_after_kickoff_skips_bookmaker():
             return_value=(True, None),
         ),
         patch(
-            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
             fetch_odds,
         ),
         patch(
@@ -529,7 +529,7 @@ def test_run_scan_finished_and_postponed_and_cancelled_preserve():
                 return_value=(True, None),
             ),
             patch(
-                "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers"
+                "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate"
             ) as fetch_odds,
             patch(
                 "app.services.cecchino.cecchino_today_service.sync_signals_for_scan_date",
@@ -616,7 +616,7 @@ def test_run_scan_upcoming_missing_bookmaker_preserves_no_neg_cache():
             return_value=True,
         ),
         patch(
-            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
             return_value=({}, [], "fixture_single_call", False),
         ),
         patch(
@@ -685,7 +685,7 @@ def test_run_scan_missing_1x2_preserves():
             return_value=True,
         ),
         patch(
-            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_bookmakers",
+            "app.services.cecchino.cecchino_today_service.fetch_fixture_odds_for_cecchino_1x2_gate",
             return_value=({1: []}, [], "fixture_single_call", False),
         ),
         patch(

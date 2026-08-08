@@ -28,8 +28,12 @@ export function CecchinoTodayBookCoveragePanel({
       className={`mt-3 grid gap-1 rounded-lg border border-white/60 bg-white/50 p-3 text-xs text-slate-700 ${className}`}
       data-testid="cecchino-book-coverage-panel"
     >
-      <p className="font-medium text-slate-800">Copertura quote Book</p>
-      <p className="text-[11px] text-slate-500">Conteggio selection canoniche Book</p>
+      <p className="font-medium text-slate-800">
+        Copertura selection Book — fixture arrivate alla fase KPI
+      </p>
+      <p className="text-[11px] text-slate-500">
+        Conteggio selection canoniche Book (una volta per fixture stats-qualified)
+      </p>
 
       {!cov.hasQuoteData ? (
         <p className="mt-1 text-slate-500" data-testid="book-coverage-waiting">
@@ -86,6 +90,17 @@ export function CecchinoTodayBookCoveragePanel({
               {cov.bet365FallbackFixtureCount}
             </dd>
           </div>
+          {cov.bookCoverageFixtureCount > 0 ? (
+            <div className="flex items-baseline justify-between gap-2 sm:col-span-2">
+              <dt className="text-slate-600">Fixture in coverage</dt>
+              <dd
+                className="font-medium tabular-nums text-slate-800"
+                data-testid="book-coverage-fixture-count"
+              >
+                {cov.bookCoverageFixtureCount}
+              </dd>
+            </div>
+          ) : null}
         </dl>
       )}
 

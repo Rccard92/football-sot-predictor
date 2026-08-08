@@ -331,9 +331,44 @@ def test_progress_reporter_raises_timeout():
     try:
         progress(progress_current=1)
         raised = False
-    except ScanJobTimeout:
+    except ScanJobTimeout as exc:
         raised = True
+        assert "auto_scan_max_runtime_exceeded" in str(exc)
     assert raised
+
+
+def test_e_auto_scan_deadline_is_failed_timeout_not_stale():
+    """E: deadline 120 min → ScanJobTimeout / auto_scan_max_runtime_exceeded, non stale."""
+    from app.services.cecchino.cecchino_today_scan_job_service import (
+        DIAG_MAX_RUNTIME,
+        make_progress_reporter,
+    )
+
+    db = MagicMock()
+    db.scalar.return_value = _job(JOB_STATUS_RUNNING)
+    progress = make_progress_reporter(
+        db,
+        "job-sync-1",
+        deadline_monotonic=time.monotonic() - 0.1,
+    )
+    try:
+        progress(progress_current=50, current_step="fetching_odds")
+        assert False, "expected ScanJobTimeout"
+    except ScanJobTimeout as exc:
+        assert str(exc) == DIAG_MAX_RUNTIME
+        assert "stale_job_timeout" not in str(exc)
+
+
+def test_d_auto_scan_over_30m_with_progress_not_stale_by_started_at():
+    """D: auto scan >30 min sotto max runtime + progress recente → query stale ignora started_at."""
+    from app.services.cecchino.cecchino_today_scan_job_service import recover_stale_scan_jobs
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    recover_stale_scan_jobs(db, max_age_minutes=30, no_progress_minutes=5)
+    stmt = db.scalars.call_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "started_at <" not in sql
 
 
 def test_progress_reporter_raises_interrupt():
