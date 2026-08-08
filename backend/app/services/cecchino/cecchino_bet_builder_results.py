@@ -72,9 +72,12 @@ VALID_OUTCOMES = frozenset(
 )
 
 SORT_RECENT = "recent"
+SORT_KICKOFF_ASC = "kickoff_asc"
 SORT_LOST_FIRST = "lost_first"
 SORT_PURCHASABILITY_DESC = "purchasability_desc"
-VALID_SORTS = frozenset({SORT_RECENT, SORT_LOST_FIRST, SORT_PURCHASABILITY_DESC})
+VALID_SORTS = frozenset(
+    {SORT_RECENT, SORT_KICKOFF_ASC, SORT_LOST_FIRST, SORT_PURCHASABILITY_DESC}
+)
 
 MATCH_STATUS_CANONICAL = frozenset(
     {
@@ -282,6 +285,17 @@ def _sort_fixture_results(
 
     def kickoff_key(item: dict[str, Any]) -> str:
         return str((item.get("fixture") or {}).get("kickoff") or "")
+
+    if sort == SORT_KICKOFF_ASC:
+        # Null / empty kickoff last; valid ISO ASC (earliest first).
+        def kickoff_asc_key(item: dict[str, Any]) -> tuple:
+            raw = (item.get("fixture") or {}).get("kickoff")
+            if raw is None or str(raw).strip() == "":
+                return (1, "")
+            return (0, str(raw))
+
+        copy.sort(key=kickoff_asc_key)
+        return copy
 
     if sort == SORT_LOST_FIRST:
 

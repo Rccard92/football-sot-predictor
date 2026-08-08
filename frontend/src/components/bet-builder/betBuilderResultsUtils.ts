@@ -20,7 +20,11 @@ export type BetBuilderResultsOutcomeFilter =
   | 'pending'
   | 'live'
 
-export type BetBuilderResultsSortKey = 'recent' | 'lost_first' | 'purchasability_desc'
+export type BetBuilderResultsSortKey =
+  | 'recent'
+  | 'kickoff_asc'
+  | 'lost_first'
+  | 'purchasability_desc'
 
 export type BetBuilderResultsFilterState = {
   dateFrom: string
@@ -150,4 +154,41 @@ export function mapOutcomeFilterToApi(
 ): BetBuilderPredictionOutcome | undefined {
   if (outcome === 'all' || outcome === 'live') return undefined
   return outcome
+}
+
+/** BET-RESULTS-01.1 — auto kickoff_asc su «In attesa», override manuale, exit → recent. */
+export function applyResultsFiltersPatch(
+  prev: BetBuilderResultsFilterState,
+  patch: Partial<BetBuilderResultsFilterState>,
+  pendingSortAuto: boolean,
+  todayIso: string,
+): { filters: BetBuilderResultsFilterState; pendingSortAuto: boolean } {
+  const next: BetBuilderResultsFilterState = { ...prev, ...patch }
+  if (patch.dateFrom) next.dateFrom = clampResultsDate(patch.dateFrom, todayIso)
+  if (patch.dateTo) next.dateTo = clampResultsDate(patch.dateTo, todayIso)
+
+  let nextAuto = pendingSortAuto
+  const enteringPending =
+    patch.outcome !== undefined && patch.outcome === 'pending' && prev.outcome !== 'pending'
+  const leavingPending =
+    patch.outcome !== undefined && prev.outcome === 'pending' && patch.outcome !== 'pending'
+  const sortPatched = patch.sort !== undefined
+
+  if (enteringPending) {
+    if (!sortPatched) {
+      next.sort = 'kickoff_asc'
+      nextAuto = true
+    } else {
+      nextAuto = false
+    }
+  } else if (leavingPending) {
+    if (nextAuto && next.sort === 'kickoff_asc' && !sortPatched) {
+      next.sort = 'recent'
+    }
+    nextAuto = false
+  } else if (sortPatched) {
+    nextAuto = false
+  }
+
+  return { filters: next, pendingSortAuto: nextAuto }
 }

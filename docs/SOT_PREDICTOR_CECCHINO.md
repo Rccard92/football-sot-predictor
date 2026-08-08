@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Bet Builder BET-RESULTS-01.1 — Sort pending kickoff ASC (2026-08-08)
+
+| Tema | Regola |
+|------|--------|
+| Trigger | Filtro «In attesa» → auto `sort=kickoff_asc` («Inizio più vicino») |
+| Ordine | `fixture.kickoff` ASC (datetime completo); null last |
+| Source of truth | Backend `_sort_fixture_results` **prima** di offset/limit |
+| Override | Sort manuale rispettato; polling non resetta |
+| Uscita pending | Se auto → ripristina `recent` |
+| Invariati | Analizza perse/perdita, drawer, outcome, Evidence Sort V2, KPI, Pre-match, cart |
+
 ## Bet Builder BET-RESULTS-01 — Outcome Monitor (2026-08-08)
 
 Vista **Risultati** sul Bet Builder: ricostruisce le opportunity post-kickoff dagli snapshot Today e valuta la predizione madre.

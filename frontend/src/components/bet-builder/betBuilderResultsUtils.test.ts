@@ -1,7 +1,9 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
 import {
+  applyResultsFiltersPatch,
   clampResultsDate,
+  defaultResultsFilters,
   formatBookQuota,
   formatScoreLine,
   mapOutcomeFilterToApi,
@@ -43,5 +45,63 @@ describe('betBuilderResultsUtils', () => {
     expect(mapOutcomeFilterToApi('lost')).toBe('lost')
     expect(mapOutcomeFilterToApi('all')).toBeUndefined()
     expect(mapOutcomeFilterToApi('live')).toBeUndefined()
+  })
+})
+
+describe('BET-RESULTS-01.1 applyResultsFiltersPatch', () => {
+  const today = '2026-08-08'
+  const base = defaultResultsFilters(today)
+
+  it('entering pending auto-selects kickoff_asc', () => {
+    const { filters, pendingSortAuto } = applyResultsFiltersPatch(
+      base,
+      { outcome: 'pending' },
+      false,
+      today,
+    )
+    expect(filters.outcome).toBe('pending')
+    expect(filters.sort).toBe('kickoff_asc')
+    expect(pendingSortAuto).toBe(true)
+  })
+
+  it('manual sort override clears auto flag', () => {
+    const pending = { ...base, outcome: 'pending' as const, sort: 'kickoff_asc' as const }
+    const { filters, pendingSortAuto } = applyResultsFiltersPatch(
+      pending,
+      { sort: 'purchasability_desc' },
+      true,
+      today,
+    )
+    expect(filters.sort).toBe('purchasability_desc')
+    expect(pendingSortAuto).toBe(false)
+  })
+
+  it('leaving pending restores recent when sort was auto', () => {
+    const pending = { ...base, outcome: 'pending' as const, sort: 'kickoff_asc' as const }
+    const { filters, pendingSortAuto } = applyResultsFiltersPatch(
+      pending,
+      { outcome: 'won' },
+      true,
+      today,
+    )
+    expect(filters.outcome).toBe('won')
+    expect(filters.sort).toBe('recent')
+    expect(pendingSortAuto).toBe(false)
+  })
+
+  it('leaving pending preserves manual sort', () => {
+    const pending = {
+      ...base,
+      outcome: 'pending' as const,
+      sort: 'purchasability_desc' as const,
+    }
+    const { filters, pendingSortAuto } = applyResultsFiltersPatch(
+      pending,
+      { outcome: 'all' },
+      false,
+      today,
+    )
+    expect(filters.sort).toBe('purchasability_desc')
+    expect(pendingSortAuto).toBe(false)
   })
 })

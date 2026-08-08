@@ -66,7 +66,7 @@ def get_bet_builder_results(
     ),
     sort: str = Query(
         SORT_RECENT,
-        description="recent | lost_first | purchasability_desc",
+        description="recent | kickoff_asc | lost_first | purchasability_desc",
     ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),

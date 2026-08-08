@@ -1893,4 +1893,69 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     )
     expect(screen.getByTestId('result-analyze-cta').textContent).toMatch(/Apri analisi/)
   })
+
+  it('BET-RESULTS-01.1 In attesa auto-sort kickoff_asc', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-sort')).toBeTruthy())
+    expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('recent')
+
+    fireEvent.click(screen.getByTestId('results-outcome-pending'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'pending', sort: 'kickoff_asc' }),
+      ),
+    )
+    expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('kickoff_asc')
+    expect(
+      Array.from((screen.getByTestId('results-sort') as HTMLSelectElement).options).map(
+        (o) => o.text,
+      ),
+    ).toContain('Inizio più vicino')
+  })
+
+  it('BET-RESULTS-01.1 manual sort override respected', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-outcome-pending')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('results-outcome-pending'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'kickoff_asc' }),
+      ),
+    )
+
+    fireEvent.change(screen.getByTestId('results-sort'), {
+      target: { value: 'purchasability_desc' },
+    })
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'pending',
+          sort: 'purchasability_desc',
+        }),
+      ),
+    )
+    expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe(
+      'purchasability_desc',
+    )
+  })
+
+  it('BET-RESULTS-01.1 exit pending restores recent when auto', async () => {
+    apiMock.fetchBetBuilderResults.mockResolvedValue(baseResultsResponse())
+    renderPage('/bet-builder?date=2026-08-08&view=results')
+    await waitFor(() => expect(screen.getByTestId('results-outcome-pending')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('results-outcome-pending'))
+    await waitFor(() =>
+      expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('kickoff_asc'),
+    )
+
+    fireEvent.click(screen.getByTestId('results-outcome-won'))
+    await waitFor(() =>
+      expect(apiMock.fetchBetBuilderResults).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'won', sort: 'recent' }),
+      ),
+    )
+    expect((screen.getByTestId('results-sort') as HTMLSelectElement).value).toBe('recent')
+  })
 })

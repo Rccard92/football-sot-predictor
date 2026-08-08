@@ -19,6 +19,7 @@ import {
 import {
   BET_BUILDER_RESULTS_POLL_ACTIVE_MS,
   BET_BUILDER_RESULTS_POLL_SETTLED_MS,
+  applyResultsFiltersPatch,
   clampResultsDate,
   defaultResultsFilters,
   mapOutcomeFilterToApi,
@@ -88,6 +89,7 @@ export function BetBuilderPage() {
   const dateRef = useRef(selectedDate)
   const viewRef = useRef(view)
   const resultsFiltersRef = useRef(resultsFilters)
+  const pendingSortAutoRef = useRef(false)
   const inFlightRef = useRef(false)
 
   useEffect(() => {
@@ -290,9 +292,13 @@ export function BetBuilderPage() {
 
   const onResultsFiltersChange = useCallback((patch: Partial<BetBuilderResultsFilterState>) => {
     setResultsFilters((prev) => {
-      const next = { ...prev, ...patch }
-      if (patch.dateFrom) next.dateFrom = clampResultsDate(patch.dateFrom, todayIsoRome())
-      if (patch.dateTo) next.dateTo = clampResultsDate(patch.dateTo, todayIsoRome())
+      const { filters: next, pendingSortAuto } = applyResultsFiltersPatch(
+        prev,
+        patch,
+        pendingSortAutoRef.current,
+        todayIsoRome(),
+      )
+      pendingSortAutoRef.current = pendingSortAuto
       return next
     })
   }, [])

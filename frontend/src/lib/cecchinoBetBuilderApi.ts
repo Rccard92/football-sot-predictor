@@ -345,7 +345,7 @@ export type FetchBetBuilderResultsParams = {
   market_key?: string
   origin?: BetBuilderOrigin
   min_purchasability?: number
-  sort?: 'recent' | 'lost_first' | 'purchasability_desc'
+  sort?: 'recent' | 'kickoff_asc' | 'lost_first' | 'purchasability_desc'
   limit?: number
   offset?: number
 }

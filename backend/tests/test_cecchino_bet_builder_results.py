@@ -35,9 +35,11 @@ from app.services.cecchino.cecchino_bet_builder_results import (
     OUTCOME_PENDING,
     OUTCOME_RESULT_MISSING,
     OUTCOME_WON,
+    SORT_KICKOFF_ASC,
     aggregate_bet_builder_results,
     clamp_results_date,
     evaluate_bet_builder_prediction_outcome,
+    _sort_fixture_results,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -553,3 +555,113 @@ class TestAggregateResults:
         assert body["primary_selection_version"] == BET_BUILDER_PRIMARY_SELECTION_VERSION
         assert "summary" in body
         assert "fixtures" in body
+
+
+# ---------------------------------------------------------------------------
+# BET-RESULTS-01.1 — kickoff_asc sorting
+# ---------------------------------------------------------------------------
+
+
+def _sort_item(fid: int, kickoff: str | None) -> dict:
+    return {
+        "fixture": {"today_fixture_id": fid, "kickoff": kickoff},
+        "primary": {
+            "prediction_outcome": OUTCOME_PENDING,
+            "purchasability_v31": {"score": 50},
+        },
+        "other_opportunities": [],
+    }
+
+
+class TestKickoffAscSort:
+    def test_pending_order_earliest_first(self):
+        items = [
+            _sort_item(1, "2026-08-08T15:00:00+00:00"),  # A
+            _sort_item(2, "2026-08-08T12:00:00+00:00"),  # B
+            _sort_item(3, "2026-08-08T21:00:00+00:00"),  # C
+            _sort_item(4, "2026-08-08T13:30:00+00:00"),  # D
+        ]
+        ordered = _sort_fixture_results(items, SORT_KICKOFF_ASC)
+        assert [x["fixture"]["today_fixture_id"] for x in ordered] == [2, 4, 1, 3]
+
+    def test_multi_day_datetime_asc(self):
+        items = [
+            _sort_item(1, "2026-08-08T22:00:00+00:00"),
+            _sort_item(2, "2026-08-09T09:00:00+00:00"),
+            _sort_item(3, "2026-08-08T18:00:00+00:00"),
+        ]
+        ordered = _sort_fixture_results(items, SORT_KICKOFF_ASC)
+        assert [x["fixture"]["today_fixture_id"] for x in ordered] == [3, 1, 2]
+
+    def test_null_kickoff_last(self):
+        items = [
+            _sort_item(1, "2026-08-08T12:00:00+00:00"),
+            _sort_item(2, None),
+            _sort_item(3, "2026-08-08T13:00:00+00:00"),
+            _sort_item(4, ""),
+        ]
+        ordered = _sort_fixture_results(items, SORT_KICKOFF_ASC)
+        assert [x["fixture"]["today_fixture_id"] for x in ordered] == [1, 3, 2, 4]
+
+    def test_sort_before_pagination_offset_limit(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results._load_gi_payloads_batch",
+            lambda db, rows: ({}, None),
+        )
+        rows = [
+            _row(
+                fid=1,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 18, 0, tzinfo=timezone.utc),
+            ),
+            _row(
+                fid=2,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc),
+            ),
+            _row(
+                fid=3,
+                match_status="upcoming",
+                ft_home=None,
+                ft_away=None,
+                kickoff=datetime(2026, 8, 8, 15, 0, tzinfo=timezone.utc),
+            ),
+        ]
+
+        def fake_build(db_rows, **kw):
+            return [
+                _opp_built(fid=r.id, market_key=SEL_DRAW, origin=ORIGIN_PRICE)
+                for r in db_rows
+            ], None
+
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results.build_opportunities_for_rows",
+            fake_build,
+        )
+        db = _mock_db(rows)
+        page1 = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            sort=SORT_KICKOFF_ASC,
+            limit=1,
+            offset=0,
+        )
+        assert page1["total"] == 3
+        assert page1["sort"] == SORT_KICKOFF_ASC
+        assert page1["fixtures"][0]["fixture"]["today_fixture_id"] == 2
+        assert page1["fixtures"][0]["fixture"]["kickoff"].startswith("2026-08-08T12:00:00")
+
+        page2 = aggregate_bet_builder_results(
+            db,
+            date_from=date(2026, 8, 8),
+            date_to=date(2026, 8, 8),
+            sort=SORT_KICKOFF_ASC,
+            limit=1,
+            offset=1,
+        )
+        assert page2["fixtures"][0]["fixture"]["today_fixture_id"] == 3

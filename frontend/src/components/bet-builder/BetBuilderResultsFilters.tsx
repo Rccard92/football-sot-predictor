@@ -58,6 +58,7 @@ export function BetBuilderResultsFilters({ filters, onChange, onAnalyzeLost }: P
               }
             >
               <option value="recent">Più recenti</option>
+              <option value="kickoff_asc">Inizio più vicino</option>
               <option value="lost_first">Perse prima</option>
               <option value="purchasability_desc">Acquistabilità DESC</option>
             </select>

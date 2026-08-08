@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Bet Builder BET-RESULTS-01.1 sort pending kickoff ASC (2026-08-08)
+
+- Perché: nel filtro «In attesa» l’ordine «Più recenti» (kickoff DESC) non aiuta a vedere la prossima partita.
+- Cosa: sort Results `kickoff_asc` (backend, prima della pagination); UI «Inizio più vicino»; auto-select al click «In attesa»; override manuale rispettato; uscita da pending ripristina «Più recenti» se lo sort era automatico; null kickoff in coda.
+- Impatto: solo ordinamento lista Results; Outcome Monitor / Analizza perse / Analizza perdita / drawer / primary Evidence Sort V2 / KPI / Pre-match / cart invariati; nessuna migration; nessun backfill.
+- Non fatto: loss analyzer post-match; redesign filtri.
+
 ## Feat — Bet Builder BET-RESULTS-01 Outcome Monitor (2026-08-08)
 
 - Perché: il Bet Builder pre-match esclude live/finished; serviva un monitor post-match della predizione madre senza freeze né backfill.
