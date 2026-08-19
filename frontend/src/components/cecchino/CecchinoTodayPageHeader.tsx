@@ -11,6 +11,8 @@ type Props = {
   dailyAuditExportError?: string | null
   dailyV35AuditExportLoading?: boolean
   dailyV35AuditExportError?: string | null
+  v35AnalysisExportLoading?: boolean
+  v35AnalysisExportError?: string | null
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
@@ -18,6 +20,7 @@ type Props = {
   onRefreshBetfairOdds?: () => void
   onDownloadDailyAudit?: () => void
   onDownloadDailyV35Audit?: () => void
+  onDownloadV35Analysis?: () => void
 }
 
 export function CecchinoTodayPageHeader({
@@ -33,6 +36,8 @@ export function CecchinoTodayPageHeader({
   dailyAuditExportError = null,
   dailyV35AuditExportLoading = false,
   dailyV35AuditExportError = null,
+  v35AnalysisExportLoading = false,
+  v35AnalysisExportError = null,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
@@ -40,6 +45,7 @@ export function CecchinoTodayPageHeader({
   onRefreshBetfairOdds,
   onDownloadDailyAudit,
   onDownloadDailyV35Audit,
+  onDownloadV35Analysis,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
 
@@ -129,6 +135,22 @@ export function CecchinoTodayPageHeader({
                 )}
               </button>
             )}
+            {onDownloadV35Analysis && (
+              <button
+                type="button"
+                data-testid="v35-analysis-export-btn"
+                onClick={() => onDownloadV35Analysis()}
+                disabled={v35AnalysisExportLoading || scanBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-5 py-2.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {v35AnalysisExportLoading ? 'Preparazione…' : (
+                  <>
+                    Scarica dataset V3.5 test 20–26/08
+                    <span className="text-[10px] font-bold uppercase tracking-wide opacity-80">ANALYSIS</span>
+                  </>
+                )}
+              </button>
+            )}
             {dailyAuditExportError ? (
               <p className="w-full text-sm text-red-700" data-testid="daily-purch-audit-export-error">
                 {dailyAuditExportError}
@@ -137,6 +159,11 @@ export function CecchinoTodayPageHeader({
             {dailyV35AuditExportError ? (
               <p className="w-full text-sm text-red-700" data-testid="daily-v35-purch-audit-export-error">
                 {dailyV35AuditExportError}
+              </p>
+            ) : null}
+            {v35AnalysisExportError ? (
+              <p className="w-full text-sm text-red-700" data-testid="v35-analysis-export-error">
+                {v35AnalysisExportError}
               </p>
             ) : null}
             {selectedFixtureId != null && onRefreshBetfairOdds && (

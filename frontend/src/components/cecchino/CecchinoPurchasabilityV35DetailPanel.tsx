@@ -100,7 +100,18 @@ export function CecchinoPurchasabilityV35DetailPanel({
       <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-100 p-2">
           <p className="text-[10px] uppercase text-slate-500">Execution quote</p>
-          <p className="font-semibold tabular-nums">{item.input?.execution_quote_real ?? 'N/D'}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold tabular-nums" data-testid="v35-execution-quote">
+              {item.input?.execution_quote != null
+                ? Number(item.input.execution_quote).toFixed(2)
+                : 'N/D'}
+            </p>
+            {item.input?.execution_quote_real === true ? (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">
+                REAL
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="rounded-lg border border-slate-100 p-2">
           <p className="text-[10px] uppercase text-slate-500">P Cecchino</p>

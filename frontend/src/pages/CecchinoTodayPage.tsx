@@ -23,6 +23,10 @@ import {
   triggerDailyPurchasabilityAuditDownload,
   downloadDailyPurchasabilityV35Audit,
   triggerDailyPurchasabilityV35AuditDownload,
+  downloadPurchasabilityV35AnalysisExport,
+  triggerPurchasabilityV35AnalysisDownload,
+  V35_LIVE_EXPERIMENT_V1_END_DATE,
+  V35_LIVE_EXPERIMENT_V1_START_DATE,
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayLatestScanJob,
@@ -113,6 +117,8 @@ export function CecchinoTodayPage() {
   const [dailyAuditExportError, setDailyAuditExportError] = useState<string | null>(null)
   const [dailyV35AuditExportLoading, setDailyV35AuditExportLoading] = useState(false)
   const [dailyV35AuditExportError, setDailyV35AuditExportError] = useState<string | null>(null)
+  const [v35AnalysisExportLoading, setV35AnalysisExportLoading] = useState(false)
+  const [v35AnalysisExportError, setV35AnalysisExportError] = useState<string | null>(null)
   const [refreshBetfairMsg, setRefreshBetfairMsg] = useState<{
     text: string
     tone: 'ok' | 'warn' | 'err'
@@ -636,6 +642,26 @@ export function CecchinoTodayPage() {
     }
   }
 
+  const handleDownloadV35Analysis = async () => {
+    setV35AnalysisExportError(null)
+    setV35AnalysisExportLoading(true)
+    try {
+      const blob = await downloadPurchasabilityV35AnalysisExport(
+        V35_LIVE_EXPERIMENT_V1_START_DATE,
+        V35_LIVE_EXPERIMENT_V1_END_DATE,
+      )
+      triggerPurchasabilityV35AnalysisDownload(
+        blob,
+        V35_LIVE_EXPERIMENT_V1_START_DATE,
+        V35_LIVE_EXPERIMENT_V1_END_DATE,
+      )
+    } catch {
+      setV35AnalysisExportError('Impossibile scaricare il dataset analysis V3.5 dell\'esperimento.')
+    } finally {
+      setV35AnalysisExportLoading(false)
+    }
+  }
+
   const RECOMPUTE_WARNING =
     'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
 
@@ -778,6 +804,8 @@ export function CecchinoTodayPage() {
         dailyAuditExportError={dailyAuditExportError}
         dailyV35AuditExportLoading={dailyV35AuditExportLoading}
         dailyV35AuditExportError={dailyV35AuditExportError}
+        v35AnalysisExportLoading={v35AnalysisExportLoading}
+        v35AnalysisExportError={v35AnalysisExportError}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
         onRevalidateDay={() => void handleRevalidateDay()}
@@ -785,6 +813,7 @@ export function CecchinoTodayPage() {
         onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
         onDownloadDailyAudit={isScanned ? () => void handleDownloadDailyAudit() : undefined}
         onDownloadDailyV35Audit={isScanned ? () => void handleDownloadDailyV35Audit() : undefined}
+        onDownloadV35Analysis={isScanned ? () => void handleDownloadV35Analysis() : undefined}
       />
 
       {refreshBetfairMsg && (

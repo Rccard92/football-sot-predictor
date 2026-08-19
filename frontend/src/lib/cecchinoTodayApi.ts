@@ -1078,7 +1078,8 @@ export type CecchinoPurchasabilityV35Gate = {
 }
 
 export type CecchinoPurchasabilityV35ItemInput = {
-  execution_quote_real?: number | null
+  execution_quote?: number | null
+  execution_quote_real?: boolean | null
   execution_quote_source?: string | null
   probability_cecchino?: number | null
   fair_book_probability?: number | null
@@ -2377,6 +2378,48 @@ export function triggerDailyPurchasabilityV35AuditDownload(blob: Blob, scanDate:
   const a = document.createElement('a')
   a.href = url
   a.download = `purchasability-v35-audits-${scanDate}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export const V35_LIVE_EXPERIMENT_V1_START_DATE = '2026-08-20'
+export const V35_LIVE_EXPERIMENT_V1_END_DATE = '2026-08-26'
+
+export async function downloadPurchasabilityV35AnalysisExport(
+  dateFrom: string,
+  dateTo: string,
+): Promise<Blob> {
+  const base = getCecchinoApiBase()
+  const url =
+    `${base}/api/cecchino/today/purchasability-v35-analysis-export` +
+    `?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    let msg = res.statusText
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const parsed = (await res.json()) as { message?: string; error?: string }
+        if (parsed.message) msg = parsed.message
+        else if (parsed.error) msg = parsed.error
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg)
+  }
+  return res.blob()
+}
+
+export function triggerPurchasabilityV35AnalysisDownload(
+  blob: Blob,
+  dateFrom: string,
+  dateTo: string,
+): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `purchasability-v35-analysis-${dateFrom}_${dateTo}.zip`
   a.click()
   URL.revokeObjectURL(url)
 }

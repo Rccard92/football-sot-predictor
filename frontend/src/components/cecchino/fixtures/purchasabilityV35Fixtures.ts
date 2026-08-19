@@ -70,7 +70,8 @@ export const HOME_V35_ITEM: CecchinoPurchasabilityV35Item = {
     rating: 60,
   },
   input: {
-    execution_quote_real: 2.2,
+    execution_quote: 2.2,
+    execution_quote_real: true,
     execution_quote_source: 'betfair_raw_match_winner',
     probability_cecchino: 0.55,
     fair_book_probability: 0.45,
@@ -124,7 +125,8 @@ export const OVER_25_V35_ITEM: CecchinoPurchasabilityV35Item = {
   gate_status: 'passed',
   gate: { gate_status: 'passed', gate_passed: true, rating: 62 },
   input: {
-    execution_quote_real: 1.95,
+    execution_quote: 1.95,
+    execution_quote_real: true,
     probability_cecchino: 0.52,
     fair_book_probability: 0.48,
     rating: 62,
