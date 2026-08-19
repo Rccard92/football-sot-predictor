@@ -77,7 +77,7 @@ def _local_fixture(**kwargs):
 @patch("app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail", return_value={})
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={})
 @patch(
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
 )
 @patch(
     "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
@@ -133,7 +133,7 @@ def test_detail_includes_identity_and_preview_ok(
 @patch("app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail", return_value={})
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={})
 @patch(
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
 )
 @patch(
     "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",

@@ -304,7 +304,7 @@ def test_11_get_without_db_write():
         patch("app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail", return_value={}),
         patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={}),
         patch(
-            "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+            "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
             return_value=_xg(KO_DAYS),
         ),
         patch("app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row", return_value={}),

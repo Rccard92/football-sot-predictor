@@ -86,7 +86,7 @@ _DETAIL_PATCHES = [
     "app.services.cecchino.cecchino_today_service.sync_cecchino_signal_activations",
     "app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail",
     "app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis",
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
     "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
     "app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row",
     "app.services.cecchino.cecchino_today_service.build_cecchino_picchetti_debug",
@@ -124,7 +124,7 @@ def _clear_hr_cache():
     return_value={"status": "unavailable"},
 )
 @patch(
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
     return_value={},
 )
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={})
@@ -171,7 +171,7 @@ def test_detail_persisted_v31_skips_hr_rebuild(
     return_value={"status": "unavailable"},
 )
 @patch(
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
     return_value={},
 )
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={})
@@ -218,7 +218,7 @@ def test_detail_missing_v31_uses_hr_fallback(
     return_value={"status": "unavailable"},
 )
 @patch(
-    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
     return_value={},
 )
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={})
@@ -399,7 +399,7 @@ def test_benchmark_detail_persisted_skips_hr_timing():
             with patches["app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis"] as m2:
                 m2.return_value = {}
                 with patches[
-                    "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row"
+                    "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row"
                 ] as m3:
                     m3.return_value = {}
                     with patches[

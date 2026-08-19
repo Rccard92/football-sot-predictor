@@ -5,9 +5,10 @@ import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalRel
 import { CecchinoTodayKpiPanel } from '../cecchino/CecchinoTodayKpiPanel'
 import { CecchinoBalanceV5Panel } from '../cecchino/CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from '../cecchino/CecchinoGoalIntensityV5Panel'
+import { CecchinoSignalsCard } from '../cecchino/CecchinoSignalsCard'
 import { bbSecondaryBtn } from './betBuilderStyles'
 
-export type TechnicalAnalysisTab = 'kpi' | 'balance' | 'gi'
+export type TechnicalAnalysisTab = 'kpi' | 'balance' | 'gi' | 'signals'
 
 type Props = {
   contextState: AnalysisContextState
@@ -18,6 +19,7 @@ const TAB_LABELS: { id: TechnicalAnalysisTab; label: string }[] = [
   { id: 'kpi', label: 'Pannello KPI' },
   { id: 'balance', label: 'Equilibrio vs Squilibrio' },
   { id: 'gi', label: 'Intensità Goal' },
+  { id: 'signals', label: 'Segnali Cecchino' },
 ]
 
 function TechnicalSkeleton() {
@@ -37,6 +39,24 @@ function tabButtonClass(active: boolean): string {
       ? 'border-slate-800 bg-slate-800 text-white'
       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
   ].join(' ')
+}
+
+function isModuleAvailable(
+  tab: TechnicalAnalysisTab,
+  context: BetBuilderResultAnalysisContext,
+): boolean {
+  switch (tab) {
+    case 'kpi':
+      return Boolean(context.kpi_panel)
+    case 'balance':
+      return Boolean(context.balance_v5)
+    case 'gi':
+      return Boolean(context.goal_intensity_v5)
+    case 'signals':
+      return Boolean(context.signals_matrix)
+    default:
+      return false
+  }
 }
 
 function TechnicalPanelContent({
@@ -91,12 +111,34 @@ function TechnicalPanelContent({
     )
   }
 
+  if (tab === 'gi') {
+    return (
+      <div data-testid="drawer-gi-panel">
+        <CecchinoGoalIntensityV5Panel
+          goalIntensity={context.goal_intensity_v5}
+          todayFixtureId={todayFixtureId}
+          providerFixtureId={providerFixtureId}
+        />
+      </div>
+    )
+  }
+
+  if (!context.signals_matrix) {
+    return (
+      <p className="text-sm text-slate-500" data-testid="drawer-signals-unavailable">
+        Segnali Cecchino non disponibili per questa partita.
+      </p>
+    )
+  }
+
   return (
-    <div data-testid="drawer-gi-panel">
-      <CecchinoGoalIntensityV5Panel
-        goalIntensity={context.goal_intensity_v5}
+    <div data-testid="drawer-signals-panel">
+      <CecchinoSignalsCard
+        matrix={context.signals_matrix}
+        scanDate={fixture.scan_date}
         todayFixtureId={todayFixtureId}
         providerFixtureId={providerFixtureId}
+        signalContract={context.signal_contract ?? null}
       />
     </div>
   )
@@ -117,19 +159,32 @@ export function BetBuilderResultTechnicalAnalysis({ contextState, onRetry }: Pro
         aria-label="Analisi tecnica"
         data-testid="technical-analysis-tabs"
       >
-        {TAB_LABELS.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            className={tabButtonClass(tab === id)}
-            data-testid={`technical-tab-${id}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
+        {TAB_LABELS.map(({ id, label }) => {
+          const available =
+            contextState.status === 'success' ? isModuleAvailable(id, contextState.data) : null
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              className={tabButtonClass(tab === id)}
+              data-testid={`technical-tab-${id}`}
+              onClick={() => setTab(id)}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {label}
+                {available === false ? (
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full bg-slate-300"
+                    aria-hidden
+                    data-testid={`technical-tab-${id}-unavailable`}
+                  />
+                ) : null}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="mt-4 min-w-0" role="tabpanel">

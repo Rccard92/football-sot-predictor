@@ -160,7 +160,7 @@ _DETAIL_PATCHES = [
         return_value={"status": "unavailable"},
     ),
     patch(
-        "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+        "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
         return_value={},
     ),
     patch(

@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION,
   fetchBetBuilderResultAnalysisContext,
   type BetBuilderResultAnalysisContext,
 } from '../lib/cecchinoBetBuilderApi'
 
-const sessionCache = new Map<number, BetBuilderResultAnalysisContext>()
-const inflight = new Map<number, Promise<BetBuilderResultAnalysisContext>>()
+function cacheKey(fixtureId: number): string {
+  return `${fixtureId}:${BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION}`
+}
+
+const sessionCache = new Map<string, BetBuilderResultAnalysisContext>()
+const inflight = new Map<string, Promise<BetBuilderResultAnalysisContext>>()
 
 export type AnalysisContextState =
   | { status: 'idle' }
@@ -22,22 +27,23 @@ export function useBetBuilderResultAnalysisContext(
 
   const load = useCallback(
     async (fixtureId: number, bypassCache = false) => {
-      if (!bypassCache && sessionCache.has(fixtureId)) {
-        setState({ status: 'success', data: sessionCache.get(fixtureId)! })
+      const key = cacheKey(fixtureId)
+      if (!bypassCache && sessionCache.has(key)) {
+        setState({ status: 'success', data: sessionCache.get(key)! })
         return
       }
 
       const requestId = ++requestIdRef.current
       setState({ status: 'loading' })
 
-      let promise = inflight.get(fixtureId)
+      let promise = inflight.get(key)
       if (!promise || bypassCache) {
         const controller = new AbortController()
         promise = fetchBetBuilderResultAnalysisContext(fixtureId, controller.signal)
-        inflight.set(fixtureId, promise)
+        inflight.set(key, promise)
         promise.finally(() => {
-          if (inflight.get(fixtureId) === promise) {
-            inflight.delete(fixtureId)
+          if (inflight.get(key) === promise) {
+            inflight.delete(key)
           }
         })
       }
@@ -45,7 +51,11 @@ export function useBetBuilderResultAnalysisContext(
       try {
         const data = await promise
         if (requestId !== requestIdRef.current) return
-        sessionCache.set(fixtureId, data)
+        if (data.contract_version !== BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION) {
+          setState({ status: 'error', message: 'Contratto analisi tecnica non supportato.' })
+          return
+        }
+        sessionCache.set(key, data)
         setState({ status: 'success', data })
       } catch (err) {
         if (requestId !== requestIdRef.current) return

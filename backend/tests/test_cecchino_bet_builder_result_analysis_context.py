@@ -1,4 +1,4 @@
-"""BET-RESULTS-02 — analysis context endpoint read-only."""
+"""BET-RESULTS-02 / 02.1 — analysis context endpoint read-only + parity Today."""
 
 from __future__ import annotations
 
@@ -15,8 +15,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
-from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, ELIGIBILITY_EXCLUDED_CUP
+from app.models.cecchino_today_fixture import (
+    ELIGIBILITY_ELIGIBLE,
+    ELIGIBILITY_EXCLUDED_CUP,
+    MATCH_FINISHED,
+    MATCH_UPCOMING,
+)
 from app.routes.cecchino_bet_builder import router
+from app.services.cecchino.cecchino_balance_v5_detail import META_BLOCKED, MODE_HISTORICAL
 from app.services.cecchino.cecchino_bet_builder_constants import (
     BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION,
 )
@@ -24,9 +30,13 @@ from app.services.cecchino.cecchino_bet_builder_result_analysis_context import (
     get_bet_builder_result_analysis_context,
 )
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW, SEL_HOME
+from app.services.cecchino.cecchino_today_service import get_today_fixture_detail
 
 KO = datetime(2026, 8, 19, 18, 0, tzinfo=timezone.utc)
+KO_BAD = datetime(2026, 8, 22, 20, 0, tzinfo=timezone.utc)
 SCAN_DATE = date(2026, 8, 19)
+SCAN_HISTORICAL = date(2026, 8, 18)
+SCAN_TODAY = date(2026, 8, 20)
 ROME_TODAY = date(2026, 8, 20)
 
 
@@ -53,8 +63,12 @@ def _output(**extra):
             "prob_2": 0.30,
         },
         "goal_markets": {},
-        "signals_matrix": {},
+        "signals_matrix": {"version": "cecchino_signals_v2", "rows": []},
+        "data_quality": {"leakage_check": {"target_kickoff": KO.isoformat()}},
     }
+    if "target" in extra:
+        target = extra.pop("target")
+        base["data_quality"] = {"leakage_check": {"target_kickoff": target.isoformat()}}
     base.update(extra)
     return base
 
@@ -77,7 +91,7 @@ def _row(**kwargs):
         goals_away=1,
         score_fulltime_home=2,
         score_fulltime_away=1,
-        scan_date=SCAN_DATE,
+        scan_date=SCAN_HISTORICAL,
         odds_snapshot_json={"bookmakers": {"Betfair": {"HOME": 2.2, "DRAW": 3.5, "AWAY": 3.7}}},
         stats_snapshot_json={},
         kpi_panel_json=_kpi_panel(),
@@ -88,14 +102,21 @@ def _row(**kwargs):
     return SimpleNamespace(**base)
 
 
-def _local_fixture():
-    return SimpleNamespace(
+def _local_fixture(**kwargs):
+    base = dict(
         id=100,
+        api_fixture_id=900042,
+        competition_id=10,
         home_team_id=1,
         away_team_id=2,
         kickoff_at=KO,
         status="FT",
+        status_long="Match Finished",
+        goals_home=2,
+        goals_away=1,
     )
+    base.update(kwargs)
+    return SimpleNamespace(**base)
 
 
 def _mock_db(row, local=None):
@@ -135,39 +156,63 @@ def _gi_stub():
 
 _CONTEXT_PATCHES = [
     patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
+        "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
         return_value={},
     ),
     patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context.build_balance_identity_for_detail",
+        "app.services.cecchino.cecchino_technical_analysis_context.build_balance_identity_for_detail",
         return_value={"status": "consistent"},
     ),
     patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context.evaluate_balance_v5_snapshot_meta",
+        "app.services.cecchino.cecchino_technical_analysis_context.evaluate_balance_v5_snapshot_meta",
         return_value={"mode": "historical_snapshot", "status": "verified"},
     ),
     patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context.build_cecchino_balance_v5",
+        "app.services.cecchino.cecchino_technical_analysis_context.build_cecchino_balance_v5",
         return_value=_balance_v5_stub(),
     ),
+    patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=ROME_TODAY),
     patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context.rome_today",
-        return_value=ROME_TODAY,
-    ),
-    patch(
-        "app.services.cecchino.cecchino_bet_builder_result_analysis_context._resolve_kpi_panel_for_detail",
+        "app.services.cecchino.cecchino_today_service._resolve_kpi_panel_for_detail",
         side_effect=lambda row, db, snapshot_only=False: row.kpi_panel_json,
     ),
 ]
 
 
-def _apply_patches(fn):
-    for p in reversed(_CONTEXT_PATCHES):
+_PARITY_PATCHES = [
+    patch("app.services.cecchino.cecchino_today_service.sync_cecchino_signal_activations"),
+    patch("app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail", return_value={}),
+    patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={}),
+    patch(
+        "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
+        return_value={},
+    ),
+    patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
+        return_value={"status": "unavailable", "error": "bundle_missing"},
+    ),
+    patch("app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row", return_value={}),
+    patch("app.services.cecchino.cecchino_today_service.build_cecchino_picchetti_debug", return_value={}),
+    patch("app.services.cecchino.cecchino_today_service.build_picchetti_debug_summary", return_value={}),
+    patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=ROME_TODAY),
+]
+
+
+def _apply_patches(fn, patches):
+    for p in reversed(patches):
         fn = p(fn)
     return fn
 
 
-@_apply_patches
+def _apply_context_patches(fn):
+    return _apply_patches(fn, _CONTEXT_PATCHES)
+
+
+def _apply_parity_patches(fn):
+    return _apply_patches(fn, _PARITY_PATCHES)
+
+
+@_apply_context_patches
 def test_fixture_existing_returns_200(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -178,11 +223,14 @@ def test_fixture_existing_returns_200(*_args):
         payload = get_bet_builder_result_analysis_context(db, 42)
     assert payload is not None
     assert payload["contract_version"] == BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION
+    assert payload["contract_version"] == "bet_builder_result_analysis_context_v2"
+    assert payload["source"]["kind"] == "cecchino_today_canonical_detail"
+    assert payload["source"]["today_fixture_id"] == 42
     assert payload["fixture"]["today_fixture_id"] == 42
     assert payload["fixture"]["home_team"] == "Home FC"
 
 
-@_apply_patches
+@_apply_context_patches
 def test_fixture_missing_returns_none(*_args):
     row = _row()
     db = _mock_db(row)
@@ -190,14 +238,14 @@ def test_fixture_missing_returns_none(*_args):
     assert get_bet_builder_result_analysis_context(db, 999) is None
 
 
-@_apply_patches
+@_apply_context_patches
 def test_fixture_not_eligible_returns_none(*_args):
     row = _row(eligibility_status=ELIGIBILITY_EXCLUDED_CUP)
     db = _mock_db(row)
     assert get_bet_builder_result_analysis_context(db, 42) is None
 
 
-@_apply_patches
+@_apply_context_patches
 def test_finished_fixture_prematch_kpi_from_snapshot(*_args):
     row = _row(
         match_display_status="finished",
@@ -213,8 +261,8 @@ def test_finished_fixture_prematch_kpi_from_snapshot(*_args):
     assert payload["kpi_panel"]["version"] == "cecchino_kpi_v2_betfair"
 
 
-@_apply_patches
-def test_kpi_balance_gi_present(*_args):
+@_apply_context_patches
+def test_kpi_balance_gi_signals_present(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
     with patch(
@@ -227,9 +275,11 @@ def test_kpi_balance_gi_present(*_args):
     assert payload["goal_intensity_v5"] is not None
     assert payload["fixture_identity_consistency"] is not None
     assert payload["balance_v5_snapshot_meta"] is not None
+    assert payload["signals_matrix"] is not None
+    assert payload["signal_contract"] is not None
 
 
-@_apply_patches
+@_apply_context_patches
 def test_unavailable_gi_adds_warning(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -238,11 +288,12 @@ def test_unavailable_gi_adds_warning(*_args):
         side_effect=RuntimeError("gi_failed"),
     ):
         payload = get_bet_builder_result_analysis_context(db, 42)
-    assert payload["goal_intensity_v5"] is None
+    assert payload["goal_intensity_v5"] is not None
+    assert payload["goal_intensity_v5"]["status"] == "error"
     assert any("goal_intensity" in w for w in payload["warnings"])
 
 
-@_apply_patches
+@_apply_context_patches
 def test_no_db_write(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -256,7 +307,7 @@ def test_no_db_write(*_args):
     db.flush.assert_not_called()
 
 
-@_apply_patches
+@_apply_context_patches
 def test_no_provider_api(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -270,7 +321,7 @@ def test_no_provider_api(*_args):
         load_betfair.assert_not_called()
 
 
-@_apply_patches
+@_apply_context_patches
 def test_no_signal_sync_write(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -284,7 +335,7 @@ def test_no_signal_sync_write(*_args):
         sync_signals.assert_not_called()
 
 
-@_apply_patches
+@_apply_context_patches
 def test_no_v31_v35_recompute(*_args):
     row = _row()
     db = _mock_db(row, _local_fixture())
@@ -301,7 +352,7 @@ def test_no_v31_v35_recompute(*_args):
         v35.assert_not_called()
 
 
-@_apply_patches
+@_apply_context_patches
 def test_ft_result_does_not_change_kpi_snapshot(*_args):
     kpi = _kpi_panel()
     row = _row(
@@ -319,8 +370,134 @@ def test_ft_result_does_not_change_kpi_snapshot(*_args):
     assert payload["kpi_panel"]["rows"][0]["quota_cecchino"] == 2.1
 
 
+def _bb_gi(detail: dict) -> dict | None:
+    return detail.get("goal_intensity_v5") or detail.get("goal_intensity_v5_preview")
+
+
+def _assert_technical_parity(today: dict, bb: dict) -> None:
+    assert bb["kpi_panel"] == today.get("kpi_panel_v2") or today.get("kpi_panel")
+    assert bb["balance_v5"] == today["balance_v5"]
+    assert bb["fixture_identity_consistency"] == today["fixture_identity_consistency"]
+    assert bb["balance_v5_snapshot_meta"] == today["balance_v5_snapshot_meta"]
+    assert bb["goal_intensity_v5"] == _bb_gi(today)
+    today_signals = today.get("signals_matrix")
+    if today_signals is None and isinstance(today.get("cecchino_output"), dict):
+        today_signals = today["cecchino_output"].get("signals_matrix")
+    assert bb["signals_matrix"] == today_signals
+    assert bb["signal_contract"] == today["signal_contract"]
+
+
+@_apply_parity_patches
+def test_parity_today_detail_vs_bb_context(*_args):
+    row = _row(
+        scan_date=SCAN_HISTORICAL,
+        fixture_status="NS",
+        match_display_status=MATCH_UPCOMING,
+        goals_home=None,
+        goals_away=None,
+        score_fulltime_home=None,
+        score_fulltime_away=None,
+    )
+    local = _local_fixture(status="FT", goals_home=2, goals_away=1)
+    db = _mock_db(row, local)
+    gi = _gi_stub()
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5.build_today_payload",
+        return_value=gi,
+    ):
+        today = get_today_fixture_detail(db, 42)
+        bb = get_bet_builder_result_analysis_context(db, 42)
+    assert today["status"] == "ok"
+    assert bb is not None
+    _assert_technical_parity(today, bb)
+
+
+@_apply_parity_patches
+def test_historical_finished_balance_not_blocked_by_score(*_args):
+    row = _row(
+        scan_date=SCAN_HISTORICAL,
+        fixture_status="FT",
+        match_display_status=MATCH_FINISHED,
+        goals_home=0,
+        goals_away=1,
+        score_fulltime_home=0,
+        score_fulltime_away=1,
+    )
+    local = _local_fixture(status="FT", goals_home=0, goals_away=1)
+    db = _mock_db(row, local)
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5.build_today_payload",
+        return_value=_gi_stub(),
+    ):
+        bb = get_bet_builder_result_analysis_context(db, 42)
+    meta = bb["balance_v5_snapshot_meta"]
+    assert meta["mode"] == MODE_HISTORICAL
+    assert meta["status"] in ("verified", "partial")
+    assert bb["balance_v5"]["status"] == "ok"
+    assert bb["fixture_identity_consistency"]["status"] == "consistent"
+
+
+@_apply_parity_patches
+def test_false_mismatch_post_match_historical_stays_valid(*_args):
+    row = _row(
+        scan_date=SCAN_HISTORICAL,
+        fixture_status="FT",
+        match_display_status=MATCH_FINISHED,
+        goals_home=0,
+        goals_away=1,
+        score_fulltime_home=0,
+        score_fulltime_away=1,
+    )
+    local = _local_fixture(status="NS", goals_home=None, goals_away=None)
+    db = _mock_db(row, local)
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5.build_today_payload",
+        return_value=_gi_stub(),
+    ):
+        bb = get_bet_builder_result_analysis_context(db, 42)
+    ident = bb["fixture_identity_consistency"]
+    meta = bb["balance_v5_snapshot_meta"]
+    assert meta["mode"] == MODE_HISTORICAL
+    assert meta["status"] in ("verified", "partial")
+    assert bb["balance_v5"]["status"] == "ok"
+    assert ident["status"] == "consistent"
+    assert ident["status_match"] is False
+    assert ident["score_match"] is False
+
+
+@_apply_parity_patches
+def test_true_mismatch_provider_still_blocked(*_args):
+    row = _row(scan_date=SCAN_HISTORICAL)
+    local = _local_fixture(api_fixture_id=999999)
+    db = _mock_db(row, local)
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5.build_today_payload",
+        return_value=_gi_stub(),
+    ):
+        bb = get_bet_builder_result_analysis_context(db, 42)
+    meta = bb["balance_v5_snapshot_meta"]
+    assert meta["status"] == META_BLOCKED
+    assert bb["balance_v5"]["status"] == "unavailable"
+    assert "provider_fixture_id_mismatch" in (meta["warnings"] or [])
+
+
+@_apply_parity_patches
+def test_true_mismatch_kickoff_still_blocked(*_args):
+    row = _row(scan_date=SCAN_HISTORICAL)
+    local = _local_fixture(kickoff_at=KO_BAD)
+    db = _mock_db(row, local)
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5.build_today_payload",
+        return_value=_gi_stub(),
+    ):
+        bb = get_bet_builder_result_analysis_context(db, 42)
+    meta = bb["balance_v5_snapshot_meta"]
+    assert meta["status"] == META_BLOCKED
+    assert bb["balance_v5"]["status"] == "unavailable"
+
+
 class TestAnalysisContextRoute:
-    @_apply_patches
+    @_apply_context_patches
     def test_api_200(self, *_args):
         row = _row()
         db = _mock_db(row, _local_fixture())
@@ -340,6 +517,9 @@ class TestAnalysisContextRoute:
         assert res.status_code == 200
         body = res.json()
         assert body["contract_version"] == BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION
+        assert body["source"]["kind"] == "cecchino_today_canonical_detail"
+        assert "signals_matrix" in body
+        assert "signal_contract" in body
 
     def test_api_404(self):
         db = MagicMock()

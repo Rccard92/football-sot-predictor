@@ -282,7 +282,7 @@ def test_detail_payload_includes_icm_analysis():
             "app.services.cecchino.cecchino_today_service.sync_cecchino_signal_activations",
         ),
         patch(
-            "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+            "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
             return_value={},
         ),
         patch(

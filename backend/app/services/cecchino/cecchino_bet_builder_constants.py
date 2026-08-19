@@ -18,7 +18,7 @@ BET_BUILDER_PRIMARY_SELECTION_VERSION = "bet_builder_evidence_sort_v2"
 BET_BUILDER_RESULTS_CONTRACT_VERSION = "cecchino_bet_builder_results_contract_v1"
 # BET-RESULTS-02 — lazy analysis context per drawer Risultati
 BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION = (
-    "bet_builder_result_analysis_context_v1"
+    "bet_builder_result_analysis_context_v2"
 )
 
 PURCHASABILITY_POLICY = "v31_only"

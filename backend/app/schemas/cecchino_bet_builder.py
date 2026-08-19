@@ -66,13 +66,16 @@ class BetBuilderResultsResponse(BaseModel):
 
 
 class BetBuilderResultAnalysisContextResponse(BaseModel):
-    """Contratto indicativo analysis context (BET-RESULTS-02)."""
+    """Contratto analysis context drawer Risultati (BET-RESULTS-02.1)."""
 
     contract_version: str
+    source: dict[str, Any] | None = None
     fixture: dict[str, Any]
     kpi_panel: dict[str, Any] | None = None
     balance_v5: dict[str, Any] | None = None
     fixture_identity_consistency: dict[str, Any] | None = None
     balance_v5_snapshot_meta: dict[str, Any] | None = None
     goal_intensity_v5: dict[str, Any] | None = None
+    signals_matrix: dict[str, Any] | None = None
+    signal_contract: dict[str, Any] | None = None
     warnings: list[str] = Field(default_factory=list)

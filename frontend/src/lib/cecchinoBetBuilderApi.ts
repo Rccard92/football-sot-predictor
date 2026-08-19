@@ -11,6 +11,7 @@ import type {
   CecchinoKpiV2Panel,
   CecchinoTodayDetailResponse,
 } from './cecchinoTodayApi'
+import type { CecchinoSignalContract, CecchinoSignalsMatrix } from './cecchinoApi'
 
 export type BetBuilderOrigin = 'price' | 'signals' | 'price_and_signals'
 
@@ -405,16 +406,27 @@ export type BetBuilderResultAnalysisContextFixture = {
   away_team: string | null
 }
 
+export type BetBuilderResultAnalysisContextSource = {
+  kind: 'cecchino_today_canonical_detail'
+  today_fixture_id: number
+}
+
 export type BetBuilderResultAnalysisContext = {
-  contract_version: 'bet_builder_result_analysis_context_v1'
+  contract_version: 'bet_builder_result_analysis_context_v2'
+  source: BetBuilderResultAnalysisContextSource
   fixture: BetBuilderResultAnalysisContextFixture
   kpi_panel: CecchinoKpiV2Panel | null
   balance_v5: CecchinoBalanceV5 | null
   fixture_identity_consistency: CecchinoFixtureIdentityConsistency | null
   balance_v5_snapshot_meta: CecchinoBalanceV5SnapshotMeta | null
   goal_intensity_v5: BetBuilderResultAnalysisContextGoalIntensity | null
+  signals_matrix: CecchinoSignalsMatrix | null
+  signal_contract: CecchinoSignalContract | null
   warnings: string[]
 }
+
+export const BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION =
+  'bet_builder_result_analysis_context_v2' as const
 
 export async function fetchBetBuilderResultAnalysisContext(
   todayFixtureId: number,

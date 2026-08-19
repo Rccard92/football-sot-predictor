@@ -148,7 +148,7 @@ _DETAIL_PATCHES = [
     patch("app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail", return_value={}),
     patch("app.services.cecchino.cecchino_today_service.build_cecchino_icm_analysis", return_value={}),
     patch(
-        "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+        "app.services.cecchino.cecchino_technical_analysis_context.build_expected_goal_engine_diagnostics_for_today_row",
         return_value={},
     ),
     patch(
@@ -292,7 +292,7 @@ def test_case_i_output_absent_blocked_no_recompute(*_args):
     row = _row(cecchino_output_json={})
     local = _local()
     with patch(
-        "app.services.cecchino.cecchino_today_service.build_cecchino_balance_v5"
+        "app.services.cecchino.cecchino_technical_analysis_context.build_cecchino_balance_v5"
     ) as mock_bal:
         # ancora chiamata ma identity forced inconsistent → unavailable
         from app.services.cecchino.cecchino_balance_v5 import build_cecchino_balance_v5 as real_bal

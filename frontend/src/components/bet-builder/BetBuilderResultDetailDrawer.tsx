@@ -2,7 +2,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { BetBuilderResultsFixture } from '../../lib/cecchinoBetBuilderApi'
 import { useBetBuilderResultAnalysisContext } from '../../hooks/useBetBuilderResultAnalysisContext'
-import { BetBuilderContextBlock } from './BetBuilderContextBlock'
 import { BetBuilderResultTechnicalAnalysis } from './BetBuilderResultTechnicalAnalysis'
 import { bbSecondaryBtn } from './betBuilderStyles'
 import {
@@ -243,16 +242,6 @@ export function BetBuilderResultDetailDrawer({ open, item, onClose }: Props) {
                   </p>
                 </OverviewSection>
               </div>
-
-              {primary.context_support.available || primary.context_support.reason ? (
-                <OverviewSection title="Contesto">
-                  <BetBuilderContextBlock
-                    context={primary.context_support}
-                    marketLabel={primary.market.label}
-                    compact
-                  />
-                </OverviewSection>
-              ) : null}
 
               <BetBuilderResultTechnicalAnalysis contextState={contextState} onRetry={retry} />
 

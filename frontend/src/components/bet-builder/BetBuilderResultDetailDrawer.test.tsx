@@ -47,6 +47,62 @@ vi.mock('../cecchino/CecchinoGoalIntensityV5Panel', () => ({
   ),
 }))
 
+vi.mock('../cecchino/CecchinoSignalsCard', () => ({
+  CecchinoSignalsCard: ({
+    todayFixtureId,
+    providerFixtureId,
+    scanDate,
+    signalContract,
+  }: {
+    todayFixtureId?: number | null
+    providerFixtureId?: number | null
+    scanDate?: string | null
+    signalContract?: { formula_version?: string } | null
+  }) => (
+    <div
+      data-testid="mock-signals-card"
+      data-fixture-id={todayFixtureId}
+      data-provider-id={providerFixtureId}
+      data-scan-date={scanDate}
+      data-contract-version={signalContract?.formula_version ?? ''}
+    />
+  ),
+}))
+
+function mockAnalysisContext(
+  overrides: Partial<NonNullable<Extract<AnalysisContextState, { status: 'success' }>['data']>> = {},
+): Extract<AnalysisContextState, { status: 'success' }>['data'] {
+  return {
+    contract_version: 'bet_builder_result_analysis_context_v2',
+    source: { kind: 'cecchino_today_canonical_detail', today_fixture_id: 42 },
+    fixture: {
+      today_fixture_id: 42,
+      provider_fixture_id: 900,
+      competition_id: 10,
+      scan_date: '2026-08-19',
+      kickoff: '2026-08-19T18:00:00Z',
+      country: 'Iceland',
+      league: '2. Deild',
+      home_team: 'Home FC',
+      away_team: 'Away FC',
+    },
+    kpi_panel: { version: 'cecchino_kpi_v2_betfair', rows: [] },
+    balance_v5: {
+      status: 'available',
+      version: 'v5',
+      pillars: [],
+      market_deviation: { status: 'available', pairs: [], reading: '—' },
+    },
+    fixture_identity_consistency: { status: 'consistent' },
+    balance_v5_snapshot_meta: {},
+    goal_intensity_v5: { status: 'available' },
+    signals_matrix: { status: 'available', formula_version: 'cecchino_signals_v2', rows: [] },
+    signal_contract: { formula_version: 'cecchino_signal_consensus_v1' },
+    warnings: [],
+    ...overrides,
+  }
+}
+
 function baseItem(): BetBuilderResultsFixture {
   return {
     fixture: {
@@ -147,6 +203,18 @@ describe('BetBuilderResultDetailDrawer', () => {
     expect(screen.getByTestId('drawer-book')).toBeTruthy()
   })
 
+  it('does not render CONTENSTO section or BetBuilderContextBlock', () => {
+    render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
+    expect(screen.queryByText('Contesto')).toBeNull()
+    expect(screen.queryByTestId('context-unavailable')).toBeNull()
+  })
+
+  it('keeps acquistabilità / segnali summary', () => {
+    render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
+    expect(screen.getByText('Acquistabilità / Segnali')).toBeTruthy()
+    expect(screen.getByText(/2\/4 SI/)).toBeTruthy()
+  })
+
   it('uses wide drawer classes on desktop breakpoint', () => {
     render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
     const drawer = screen.getByTestId('bet-builder-result-drawer')
@@ -173,73 +241,39 @@ describe('BetBuilderResultDetailDrawer', () => {
     expect(hookMock.retry).toHaveBeenCalled()
   })
 
-  it('renders KPI panel by default on success', () => {
-    hookMock.state = {
-      status: 'success',
-      data: {
-        contract_version: 'bet_builder_result_analysis_context_v1',
-        fixture: {
-          today_fixture_id: 42,
-          provider_fixture_id: 900,
-          competition_id: 10,
-          scan_date: '2026-08-19',
-          kickoff: '2026-08-19T18:00:00Z',
-          country: 'Iceland',
-          league: '2. Deild',
-          home_team: 'Home FC',
-          away_team: 'Away FC',
-        },
-        kpi_panel: { version: 'cecchino_kpi_v2_betfair', rows: [] },
-        balance_v5: {
-          status: 'available',
-          version: 'v5',
-          pillars: [],
-          market_deviation: { status: 'available', pairs: [], reading: '—' },
-        },
-        fixture_identity_consistency: { status: 'consistent' },
-        balance_v5_snapshot_meta: {},
-        goal_intensity_v5: { status: 'available' },
-        warnings: [],
-      },
-    }
+  it('renders four technical tabs with KPI default', () => {
+    hookMock.state = { status: 'success', data: mockAnalysisContext() }
     render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
+    expect(screen.getByTestId('technical-tab-kpi')).toBeTruthy()
+    expect(screen.getByTestId('technical-tab-balance')).toBeTruthy()
+    expect(screen.getByTestId('technical-tab-gi')).toBeTruthy()
+    expect(screen.getByTestId('technical-tab-signals')).toBeTruthy()
     expect(screen.getByTestId('mock-kpi-panel').getAttribute('data-fixture-id')).toBe('42')
   })
 
-  it('switches to balance and GI tabs without refetch hook', () => {
-    hookMock.state = {
-      status: 'success',
-      data: {
-        contract_version: 'bet_builder_result_analysis_context_v1',
-        fixture: {
-          today_fixture_id: 42,
-          provider_fixture_id: 900,
-          competition_id: 10,
-          scan_date: '2026-08-19',
-          kickoff: null,
-          country: null,
-          league: null,
-          home_team: null,
-          away_team: null,
-        },
-        kpi_panel: { version: 'cecchino_kpi_v2_betfair', rows: [] },
-        balance_v5: {
-          status: 'available',
-          version: 'v5',
-          pillars: [],
-          market_deviation: { status: 'available', pairs: [], reading: '—' },
-        },
-        fixture_identity_consistency: { status: 'consistent' },
-        balance_v5_snapshot_meta: {},
-        goal_intensity_v5: { status: 'available' },
-        warnings: [],
-      },
-    }
+  it('switches to balance, GI and signals tabs without refetch hook', () => {
+    hookMock.state = { status: 'success', data: mockAnalysisContext() }
     render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
     fireEvent.click(screen.getByTestId('technical-tab-balance'))
     expect(screen.getByTestId('mock-balance-panel')).toBeTruthy()
     fireEvent.click(screen.getByTestId('technical-tab-gi'))
     expect(screen.getByTestId('mock-gi-panel')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('technical-tab-signals'))
+    const signals = screen.getByTestId('mock-signals-card')
+    expect(signals.getAttribute('data-fixture-id')).toBe('42')
+    expect(signals.getAttribute('data-provider-id')).toBe('900')
+    expect(signals.getAttribute('data-scan-date')).toBe('2026-08-19')
+    expect(signals.getAttribute('data-contract-version')).toBe('cecchino_signal_consensus_v1')
+  })
+
+  it('shows signals unavailable message when matrix missing', () => {
+    hookMock.state = {
+      status: 'success',
+      data: mockAnalysisContext({ signals_matrix: null }),
+    }
+    render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
+    fireEvent.click(screen.getByTestId('technical-tab-signals'))
+    expect(screen.getByTestId('drawer-signals-unavailable')).toBeTruthy()
   })
 
   it('closes on overlay click and ESC', async () => {

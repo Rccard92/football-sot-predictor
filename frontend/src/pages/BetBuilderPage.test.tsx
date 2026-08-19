@@ -180,7 +180,8 @@ describe('BetBuilderPage', () => {
     apiMock.fetchBetBuilderResults.mockReset()
     apiMock.fetchBetBuilderResultAnalysisContext.mockReset()
     apiMock.fetchBetBuilderResultAnalysisContext.mockResolvedValue({
-      contract_version: 'bet_builder_result_analysis_context_v1',
+      contract_version: 'bet_builder_result_analysis_context_v2',
+      source: { kind: 'cecchino_today_canonical_detail', today_fixture_id: 16511 },
       fixture: {
         today_fixture_id: 16511,
         provider_fixture_id: 1,
@@ -197,6 +198,8 @@ describe('BetBuilderPage', () => {
       fixture_identity_consistency: {},
       balance_v5_snapshot_meta: {},
       goal_intensity_v5: { status: 'available' },
+      signals_matrix: { status: 'available', formula_version: 'cecchino_signals_v2', rows: [] },
+      signal_contract: { formula_version: 'cecchino_signal_consensus_v1' },
       warnings: [],
     })
     apiMock.fetchBetBuilderResults.mockResolvedValue({
@@ -1774,7 +1777,8 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     apiMock.fetchBetBuilderResultAnalysisContext.mockReset()
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     apiMock.fetchBetBuilderResultAnalysisContext.mockResolvedValue({
-      contract_version: 'bet_builder_result_analysis_context_v1',
+      contract_version: 'bet_builder_result_analysis_context_v2',
+      source: { kind: 'cecchino_today_canonical_detail', today_fixture_id: 16511 },
       fixture: {
         today_fixture_id: 16511,
         provider_fixture_id: 1,
@@ -1791,6 +1795,8 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
       fixture_identity_consistency: {},
       balance_v5_snapshot_meta: {},
       goal_intensity_v5: { status: 'available' },
+      signals_matrix: { status: 'available', formula_version: 'cecchino_signals_v2', rows: [] },
+      signal_contract: { formula_version: 'cecchino_signal_consensus_v1' },
       warnings: [],
     })
     apiMock.todayIsoRome.mockReturnValue('2026-08-08')
