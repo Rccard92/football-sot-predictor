@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -19,12 +20,13 @@ from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     attach_purchasability_preview_v35_to_output,
     build_candidate_and_compact_snapshot_v35,
     build_purchasability_preview_v35_snapshot,
+    classify_existing_v35_snapshot,
     engine_payload_sha256_v35,
     input_fingerprint_v35,
     resolve_valid_persisted_purchasability_v35,
     validate_purchasability_preview_v35_snapshot,
 )
-from app.services.cecchino.cecchino_selection_keys import SEL_HOME
+from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 
 SNAP_AT = "2026-08-19T10:00:00+00:00"
 KICKOFF = "2026-08-19T15:00:00+00:00"
@@ -95,6 +97,10 @@ def _attach(
         existing_preview_v35=existing_preview_v35,
     )
     return output
+
+
+def _valid_snapshot() -> dict:
+    return _attach(kpi_panel=_kpi_panel())["purchasability_preview_v35"]
 
 
 def test_valid_pre_match_snapshot_persisted():
@@ -297,7 +303,143 @@ def test_no_db_or_api_calls_from_attach(monkeypatch):
 
 def test_malformed_existing_logs_conflict_not_valid():
     bad = {"snapshot_version": "wrong_version", "items": []}
+    classified = classify_existing_v35_snapshot(bad)
+    assert classified.status == "invalid"
     assert resolve_valid_persisted_purchasability_v35(bad) is None
+
+
+def test_invalid_existing_preserved_no_recalc_on_rescan():
+    invalid = {
+        "snapshot_version": "wrong_version",
+        "_custom_marker": "keep_me",
+        "items": [],
+    }
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_snapshot.calculate_purchasability_v35_batch",
+        side_effect=AssertionError("must not recalc over invalid existing"),
+    ) as spy:
+        out = _attach(kpi_panel=_kpi_panel(), existing_preview_v35=invalid)
+    spy.assert_not_called()
+    assert out["purchasability_preview_v35"] == invalid
+    assert out["purchasability_preview_v35"]["_custom_marker"] == "keep_me"
+
+
+def test_invalid_existing_in_output_preserved_no_recalc():
+    invalid = {
+        "snapshot_version": "wrong_version",
+        "_custom_marker": "keep_me_in_output",
+        "items": [],
+    }
+    output: dict = {"purchasability_preview_v35": invalid}
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_snapshot.calculate_purchasability_v35_batch",
+        side_effect=AssertionError("must not recalc over invalid in output"),
+    ) as spy:
+        attach_purchasability_preview_v35_to_output(
+            cecchino_output=output,
+            kpi_panel=_kpi_panel(),
+            fixture_meta=_fixture_meta(),
+            snapshot_info=_snapshot_info(),
+        )
+    spy.assert_not_called()
+    assert output["purchasability_preview_v35"] == invalid
+
+
+def test_validate_fresh_snapshot_passes():
+    snap = _valid_snapshot()
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check == {"ok": True, "reason": None}
+
+
+def test_validate_engine_hash_mismatch_on_score_tamper():
+    snap = copy.deepcopy(_valid_snapshot())
+    home = next(it for it in snap["items"] if it["market_key"] == SEL_HOME)
+    home["candidates"]["A"]["score"] = 999
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "engine_payload_sha256_mismatch"
+
+
+def test_validate_engine_hash_mismatch_on_frozen_config():
+    snap = copy.deepcopy(_valid_snapshot())
+    snap["frozen_config"] = dict(snap["frozen_config"], tampered=True)
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "engine_payload_sha256_mismatch"
+
+
+def test_validate_engine_hash_mismatch_on_relation_registry():
+    snap = copy.deepcopy(_valid_snapshot())
+    snap["relation_registry"] = list(snap["relation_registry"]) + [{"tampered": True}]
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "engine_payload_sha256_mismatch"
+
+
+def test_validate_generated_at_only_does_not_break_hash():
+    snap = copy.deepcopy(_valid_snapshot())
+    snap["generated_at"] = "2099-01-01T00:00:00+00:00"
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check == {"ok": True, "reason": None}
+
+
+def test_validate_19_markets_pass():
+    snap = _valid_snapshot()
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is True
+
+
+def test_validate_18_markets_fail():
+    snap = copy.deepcopy(_valid_snapshot())
+    snap["items"] = snap["items"][:18]
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "items_count_mismatch"
+
+
+def test_validate_20_markets_duplicate_fail():
+    snap = copy.deepcopy(_valid_snapshot())
+    dup = copy.deepcopy(snap["items"][0])
+    snap["items"] = snap["items"] + [dup]
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "items_count_mismatch"
+
+
+def test_validate_unknown_market_fail():
+    snap = copy.deepcopy(_valid_snapshot())
+    snap["items"][0]["market_key"] = "UNKNOWN_MARKET"
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "invalid_market_key"
+
+
+def test_validate_duplicate_home_missing_other_fail():
+    snap = copy.deepcopy(_valid_snapshot())
+    home = next(it for it in snap["items"] if it["market_key"] == SEL_HOME)
+    away_idx = next(i for i, it in enumerate(snap["items"]) if it["market_key"] == SEL_AWAY)
+    snap["items"][away_idx] = copy.deepcopy(home)
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == "duplicate_market_key"
+
+
+@pytest.mark.parametrize(
+    "field,expected_reason",
+    [
+        ("input_fingerprint_sha256", "missing_input_fingerprint_sha256"),
+        ("frozen_config", "missing_frozen_config"),
+        ("candidate_registry", "missing_candidate_registry"),
+        ("relation_registry", "missing_relation_registry"),
+        ("summary", "missing_summary"),
+    ],
+)
+def test_validate_missing_required_fields(field, expected_reason):
+    snap = copy.deepcopy(_valid_snapshot())
+    del snap[field]
+    check = validate_purchasability_preview_v35_snapshot(snap)
+    assert check["ok"] is False
+    assert check["reason"] == expected_reason
 
 
 def test_source_snapshot_at_not_generated_at():

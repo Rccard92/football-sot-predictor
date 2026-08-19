@@ -8,8 +8,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from app.schemas.cecchino_purchasability_v35 import (
     PURCHASABILITY_V35_CANDIDATE_REGISTRY_VERSION,
@@ -21,6 +23,7 @@ from app.schemas.cecchino_purchasability_v35 import (
     PURCHASABILITY_V35_SNAPSHOT_REGISTRY_STATUS,
     PURCHASABILITY_V35_SNAPSHOT_VERSION,
 )
+from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_purchasability_v35_candidate import (
     calculate_purchasability_v35_batch,
@@ -50,6 +53,53 @@ _SCORE_BANDS = (
 )
 
 _CANDIDATE_KEYS = ("A", "B", "C", "D")
+_SHA256_HEX_RE = re.compile(r"^[a-f0-9]{64}$")
+_PANEL_MARKET_KEY_SET = frozenset(PANEL_MARKET_KEYS)
+
+V35ExistingSnapshotStatus = Literal["absent", "valid", "invalid"]
+
+
+@dataclass(frozen=True)
+class ClassifiedExistingV35Snapshot:
+    status: V35ExistingSnapshotStatus
+    snapshot: Any | None
+    validation: dict[str, Any] | None
+
+
+def _is_valid_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and bool(_SHA256_HEX_RE.match(value))
+
+
+def _log_v35_snapshot_conflict(existing: Any, reason: Any) -> None:
+    if isinstance(existing, dict) and existing.get("snapshot_version"):
+        logger.warning(
+            "purchasability_v35_snapshot_conflict reason=%s",
+            reason,
+        )
+
+
+def _validate_v35_items_integrity(items: list[Any]) -> dict[str, Any] | None:
+    expected_count = len(PANEL_MARKET_KEYS)
+    if len(items) != expected_count:
+        return {"ok": False, "reason": "items_count_mismatch"}
+
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            return {"ok": False, "reason": "invalid_market_item"}
+        mk = item.get("market_key")
+        if not isinstance(mk, str) or not mk:
+            return {"ok": False, "reason": "missing_market_key"}
+        if mk not in _PANEL_MARKET_KEY_SET:
+            return {"ok": False, "reason": "invalid_market_key"}
+        if mk in seen:
+            return {"ok": False, "reason": "duplicate_market_key"}
+        seen.add(mk)
+
+    if seen != _PANEL_MARKET_KEY_SET:
+        return {"ok": False, "reason": "market_set_mismatch"}
+
+    return None
 
 
 def _parse_dt(dt: Any) -> datetime | None:
@@ -349,26 +399,79 @@ def validate_purchasability_preview_v35_snapshot(snapshot: Any) -> dict[str, Any
     if not isinstance(items, list):
         return {"ok": False, "reason": "items_not_list"}
 
+    fingerprint = snapshot.get("input_fingerprint_sha256")
+    if not fingerprint:
+        return {"ok": False, "reason": "missing_input_fingerprint_sha256"}
+    if not _is_valid_sha256_hex(fingerprint):
+        return {"ok": False, "reason": "invalid_input_fingerprint_sha256"}
+
+    frozen_config = snapshot.get("frozen_config")
+    if frozen_config is None:
+        return {"ok": False, "reason": "missing_frozen_config"}
+    if not isinstance(frozen_config, dict):
+        return {"ok": False, "reason": "invalid_frozen_config"}
+
+    if snapshot.get("candidate_registry") is None:
+        return {"ok": False, "reason": "missing_candidate_registry"}
+
+    relation_registry = snapshot.get("relation_registry")
+    if relation_registry is None:
+        return {"ok": False, "reason": "missing_relation_registry"}
+    if not isinstance(relation_registry, list):
+        return {"ok": False, "reason": "invalid_relation_registry"}
+
+    summary = snapshot.get("summary")
+    if summary is None:
+        return {"ok": False, "reason": "missing_summary"}
+    if not isinstance(summary, dict):
+        return {"ok": False, "reason": "invalid_summary"}
+
+    items_error = _validate_v35_items_integrity(items)
+    if items_error is not None:
+        return items_error
+
+    persisted_hash = snapshot.get("engine_payload_sha256")
+    if not persisted_hash:
+        return {"ok": False, "reason": "missing_engine_payload_sha256"}
+    if not _is_valid_sha256_hex(persisted_hash):
+        return {"ok": False, "reason": "invalid_engine_payload_sha256"}
+
+    expected_hash = engine_payload_sha256_v35(snapshot)
+    if expected_hash != persisted_hash:
+        return {"ok": False, "reason": "engine_payload_sha256_mismatch"}
+
     return {"ok": True, "reason": None}
+
+
+def classify_existing_v35_snapshot(existing: Any) -> ClassifiedExistingV35Snapshot:
+    """Classifica snapshot esistente: absent, valid, invalid."""
+    if existing is None:
+        return ClassifiedExistingV35Snapshot("absent", None, None)
+    check = validate_purchasability_preview_v35_snapshot(existing)
+    if check.get("ok"):
+        return ClassifiedExistingV35Snapshot("valid", existing, check)
+    return ClassifiedExistingV35Snapshot("invalid", existing, check)
+
+
+def _resolve_existing_v35_from_sources(
+    existing_preview_v35: Any,
+    cecchino_output: dict[str, Any],
+) -> ClassifiedExistingV35Snapshot:
+    if existing_preview_v35 is not None:
+        return classify_existing_v35_snapshot(existing_preview_v35)
+    if "purchasability_preview_v35" in cecchino_output:
+        return classify_existing_v35_snapshot(cecchino_output["purchasability_preview_v35"])
+    return classify_existing_v35_snapshot(None)
 
 
 def resolve_valid_persisted_purchasability_v35(existing: Any) -> dict[str, Any] | None:
     """Restituisce snapshot V3.5 persistito se valido per l'esperimento."""
-    if existing is None:
-        return None
-    check = validate_purchasability_preview_v35_snapshot(existing)
-    if check.get("ok") and isinstance(existing, dict):
-        return existing
-    if isinstance(existing, dict) and existing.get("snapshot_version"):
-        logger.warning(
-            "purchasability_v35_snapshot_conflict reason=%s",
-            check.get("reason"),
-        )
+    classified = classify_existing_v35_snapshot(existing)
+    if classified.status == "valid" and isinstance(classified.snapshot, dict):
+        return classified.snapshot
+    if classified.status == "invalid":
+        _log_v35_snapshot_conflict(existing, classified.validation.get("reason") if classified.validation else None)
     return None
-
-
-def _existing_valid_preview_v35(existing: Any) -> dict[str, Any] | None:
-    return resolve_valid_persisted_purchasability_v35(existing)
 
 
 def build_candidate_and_compact_snapshot_v35(
@@ -411,15 +514,20 @@ def attach_purchasability_preview_v35_to_output(
     if not isinstance(cecchino_output, dict):
         return cecchino_output
 
-    preserved = _existing_valid_preview_v35(existing_preview_v35)
-    if preserved is None:
-        preserved = _existing_valid_preview_v35(
-            cecchino_output.get("purchasability_preview_v35")
-        )
+    existing = _resolve_existing_v35_from_sources(existing_preview_v35, cecchino_output)
 
     # CASO B/D: snapshot valido esistente → preserva esattamente, no recalc
-    if preserved is not None:
-        cecchino_output["purchasability_preview_v35"] = preserved
+    if existing.status == "valid":
+        cecchino_output["purchasability_preview_v35"] = existing.snapshot
+        return cecchino_output
+
+    # CASO C: snapshot presente ma invalido → preserva esattamente, no recalc/riparazione
+    if existing.status == "invalid":
+        _log_v35_snapshot_conflict(
+            existing.snapshot,
+            existing.validation.get("reason") if existing.validation else None,
+        )
+        cecchino_output["purchasability_preview_v35"] = existing.snapshot
         return cecchino_output
 
     snap = snapshot_info or {}
@@ -507,9 +615,11 @@ def fixture_has_v35_score(snapshot: dict[str, Any] | None) -> bool:
 
 
 __all__ = [
+    "ClassifiedExistingV35Snapshot",
     "attach_purchasability_preview_v35_to_output",
     "build_candidate_and_compact_snapshot_v35",
     "build_purchasability_preview_v35_snapshot",
+    "classify_existing_v35_snapshot",
     "engine_payload_sha256_v35",
     "fixture_has_v35_score",
     "index_purchasability_v35_snapshot_by_market",

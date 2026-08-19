@@ -365,3 +365,45 @@ def test_audit_no_recomputation_v35_batch():
     ):
         payload, _ = get_purchasability_v35_audit_export(db, 7)
     assert payload is not None
+
+
+def _tampered_snapshot() -> dict:
+    snap = _build_v35_snapshot()
+    home = next(it for it in snap["items"] if it["market_key"] == SEL_HOME)
+    home["candidates"]["A"]["score"] = 999
+    return snap
+
+
+def test_tampered_valid_snapshot_fails_single_audit_409():
+    snap = _tampered_snapshot()
+    row = _fixture_row(v35_snapshot=snap)
+    row.cecchino_output_json = {"purchasability_preview_v35": snap}
+    db = MagicMock()
+    db.get.return_value = row
+    with pytest.raises(V35SnapshotInvalidError):
+        get_purchasability_v35_audit_export(db, 7)
+
+    client = _client_with_db(row)
+    resp = client.get("/api/cecchino/today/7/purchasability-v35-audit-export")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "v35_snapshot_invalid"
+
+
+def test_tampered_valid_snapshot_daily_audit_excluded():
+    snap = _tampered_snapshot()
+    row = _fixture_row(v35_snapshot=snap)
+    row.cecchino_output_json = {"purchasability_preview_v35": snap}
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [row]
+
+    zip_bytes, _ = build_daily_purchasability_v35_audit_zip(
+        db, scan_date=date(2026, 8, 19)
+    )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        names = zf.namelist()
+
+    assert manifest["summary"]["snapshot_invalid"] == 1
+    assert manifest["summary"]["included"] == 0
+    assert manifest["fixtures"][0]["audit_status"] == "snapshot_invalid"
+    assert not any(n.endswith(".json") and n != "manifest.json" for n in names)
