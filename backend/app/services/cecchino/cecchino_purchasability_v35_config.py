@@ -205,3 +205,39 @@ def dependency_meta() -> dict[str, Any]:
         "deterministic_complements_excluded": True,
         "pre_match_only": True,
     }
+
+
+def candidate_registry_v35() -> dict[str, dict[str, Any]]:
+    """Registry candidate A/B/C/D congelato — serializzazione JSON-safe."""
+    return {
+        key: {
+            "id": CANDIDATE_IDS[key],
+            "name": CANDIDATE_NAMES[key],
+            "weights": {comp: CANDIDATE_WEIGHTS[key][comp] for comp in _COMPONENT_KEYS},
+        }
+        for key in ("A", "B", "C", "D")
+    }
+
+
+def frozen_config_v35() -> dict[str, Any]:
+    """Config congelata V3.5 — una sola volta nello snapshot, riproducibile."""
+    return {
+        "rating_min_gate": RATING_MIN_GATE,
+        "scales": {
+            "V": V_EXECUTABLE_VALUE_SCALE,
+            "D": D_MARKET_DISAGREEMENT_SCALE,
+            "S": S_STRUCTURAL_SUPPORT_SCALE,
+        },
+        "Q": {
+            "overround_base": Q_OVERROUND_BASE,
+            "overround_range": Q_OVERROUND_RANGE,
+            "overround_max_penalty": Q_OVERROUND_MAX_PENALTY,
+            "book_fallback_penalty": Q_BOOK_FALLBACK_PENALTY,
+            "derived_fair_penalty": Q_DERIVED_FAIR_PENALTY,
+            "extreme_divergence_start": Q_EXTREME_DIVERGENCE_START,
+            "extreme_divergence_range": Q_EXTREME_DIVERGENCE_RANGE,
+            "extreme_divergence_max_penalty": Q_EXTREME_DIVERGENCE_MAX_PENALTY,
+        },
+        "class_thresholds": list(CLASS_THRESHOLDS),
+        "candidates": candidate_registry_v35(),
+    }

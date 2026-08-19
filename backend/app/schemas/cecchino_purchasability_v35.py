@@ -1,6 +1,6 @@
 """Contratto Acquistabilità V3.5 — motore strutturale shadow (V/D/S/Q + A/B/C/D).
 
-Isolato da V3.1. Nessuna persistenza Today in questa fase.
+Isolato da V3.1. Snapshot live experiment via purchasability_preview_v35.
 """
 
 from __future__ import annotations
@@ -19,6 +19,17 @@ PURCHASABILITY_V35_CANDIDATE_REGISTRY_VERSION = (
     "cecchino_purchasability_v35_candidates_v1"
 )
 PURCHASABILITY_V35_REGISTRY_STATUS = "shadow_engine"
+PURCHASABILITY_V35_SNAPSHOT_VERSION = "cecchino_purchasability_v35_snapshot_v1"
+PURCHASABILITY_V35_EXPERIMENT_VERSION = (
+    "cecchino_purchasability_v35_live_experiment_v1"
+)
+PURCHASABILITY_V35_SNAPSHOT_REGISTRY_STATUS = "shadow_live_experiment"
+PURCHASABILITY_V35_AUDIT_EXPORT_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_audit_export_v1"
+)
+PURCHASABILITY_V35_DAILY_AUDIT_MANIFEST_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_daily_audit_manifest_v1"
+)
 
 PurchasabilityV35Status = Literal[
     "score",
