@@ -165,11 +165,11 @@ def test_cleanup_dry_run_counts_without_delete():
     db.scalar.return_value = 3
 
     with patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=date(2026, 6, 4)):
-        result = cleanup_cecchino_today_snapshots(db, retention_days=7, dry_run=True)
+        result = cleanup_cecchino_today_snapshots(db, retention_days=14, dry_run=True)
 
     assert result["deleted"] == 0
     assert result["would_delete"] == 3
-    assert result["cutoff_date"] == "2026-05-28"
+    assert result["cutoff_date"] == "2026-05-21"
     db.execute.assert_not_called()
 
 

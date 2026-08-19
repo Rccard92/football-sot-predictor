@@ -33,6 +33,27 @@ Audit export dedicato:
 
 L'esperimento inizia con il primo snapshot V3.5 valido persistito dopo deploy; nessun backfill retroattivo.
 
+## V3.5 LIVE EXPERIMENT V1 — RESULT-AWARE ANALYSIS EXPORT (2026-08-19)
+
+Periodo esperimento congelato: **2026-08-20 → 2026-08-26**.
+
+Architettura export analysis (separata dall'audit pre-match):
+
+| Layer | Fonte | Note |
+|-------|--------|------|
+| PRE_MATCH_FROZEN | `row.cecchino_output_json["purchasability_preview_v35"]` | solo snapshot validato; nessun ricalcolo V3.5 |
+| POST_MATCH_OBSERVED | campi risultato `CecchinoTodayFixture` | HT/FT + match_status canonico |
+| EVALUATION | calcolata al momento dell'export | `evaluate_market_selection` + profit flat 1u |
+
+Endpoint range read-only:
+- `GET /api/cecchino/today/purchasability-v35-analysis-export?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
+- ZIP: `manifest.json` + `analysis_rows.csv` + `days/{scan_date}/purchasability-v35-analysis-{provider_fixture_id}.json`
+- Contract: `cecchino_purchasability_v35_analysis_export_v1` / manifest `cecchino_purchasability_v35_analysis_manifest_v1`
+
+**Isolamento audit:** gli endpoint audit V3.5 restano PRE-MATCH ONLY e rifiutano outcome/settlement. L'analysis export contiene intenzionalmente risultati ma non modifica snapshot, hash, formula o pesi V3.5.
+
+Retention Cecchino Today: `DEFAULT_RETENTION_DAYS = 14` (cutoff `scan_date < rome_today − 14`) per consentire download post-esperimento senza perdere il 20/08.
+
 ## V3.1 empirical_v2 — storico non bloccante (2026-08-06)
 
 **Root cause:** con `empirical_v1`, sample &lt; `MIN_SAMPLE=30` → `non_calculable` / `historical_sample_insufficient` anche con gate passato e input completi (Richmond: 16 casi). Inoltre `historical_factor = HR/100` rendeva HR=50 → ×0,50.

@@ -30,6 +30,12 @@ PURCHASABILITY_V35_AUDIT_EXPORT_CONTRACT_VERSION = (
 PURCHASABILITY_V35_DAILY_AUDIT_MANIFEST_CONTRACT_VERSION = (
     "cecchino_purchasability_v35_daily_audit_manifest_v1"
 )
+PURCHASABILITY_V35_ANALYSIS_EXPORT_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_analysis_export_v1"
+)
+PURCHASABILITY_V35_ANALYSIS_MANIFEST_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_analysis_manifest_v1"
+)
 
 PurchasabilityV35Status = Literal[
     "score",
