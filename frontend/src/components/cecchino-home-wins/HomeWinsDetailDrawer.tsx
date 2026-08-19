@@ -2,10 +2,7 @@ import { CecchinoTodayKpiPanel } from '../cecchino/CecchinoTodayKpiPanel'
 import type {
   CecchinoKpiV2Panel,
   CecchinoPurchasabilityPreviewItem,
-  CecchinoPurchasabilityV3Item,
-  CecchinoPurchasabilityV3Snapshot,
 } from '../../lib/cecchinoTodayApi'
-import { indexPurchasabilityV3ByMarketKey } from '../../lib/cecchinoTodayApi'
 import type { HomeWinsDetailResponse } from '../../lib/cecchinoHomeWinsApi'
 import { HomeWinsBalanceSnapshotPanel } from './HomeWinsBalanceSnapshotPanel'
 import { HomeWinsGoalIntensitySnapshotPanel } from './HomeWinsGoalIntensitySnapshotPanel'
@@ -49,19 +46,10 @@ export function HomeWinsDetailDrawer({ detail, loading, onClose }: Props) {
   const pre = detail?.pre_match_snapshot as
     | (NonNullable<HomeWinsDetailResponse['pre_match_snapshot']> & {
         purchasability_preview_v2?: Record<string, unknown>
-        purchasability_preview_v3?: CecchinoPurchasabilityV3Snapshot | Record<string, unknown>
       })
     | undefined
   const kpi = asKpiPanel(pre?.kpi_panel)
   const purch = purchMap(pre?.purchasability_preview)
-  const purchV3Snap = pre?.purchasability_preview_v3 as
-    | CecchinoPurchasabilityV3Snapshot
-    | null
-    | undefined
-  const purchV3: Record<string, CecchinoPurchasabilityV3Item> | undefined =
-    purchV3Snap != null ? indexPurchasabilityV3ByMarketKey(purchV3Snap) : undefined
-  const purchV3Available =
-    purchV3Snap != null && String(purchV3Snap.status ?? '') !== 'unavailable'
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
@@ -133,11 +121,7 @@ export function HomeWinsDetailDrawer({ detail, loading, onClose }: Props) {
               </section>
 
               {kpi ? (
-                <CecchinoTodayKpiPanel
-                  panel={kpi}
-                  purchasabilityV3ByMarketKey={purchV3}
-                  purchasabilityV3SnapshotAvailable={purchV3Available}
-                />
+                <CecchinoTodayKpiPanel panel={kpi} />
               ) : (
                 <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h3 className="text-base font-semibold text-slate-900">Pannello KPI</h3>

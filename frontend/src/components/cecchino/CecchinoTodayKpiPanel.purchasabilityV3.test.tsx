@@ -26,6 +26,7 @@ const panel: CecchinoKpiV2Panel = {
       vantaggio_prob: 0.07,
       score_acquisto: 0.4,
       rating: 60,
+      rating_label: null,
       status: 'ok',
     },
   ],

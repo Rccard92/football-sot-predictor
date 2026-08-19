@@ -14,7 +14,7 @@ export type CecchinoPurchasabilityPanelProps = {
   version: string
   itemsByMarket: Record<string, CecchinoPurchasabilityV31Item>
   snapshotAvailable: boolean
-  todayFixtureId: number
+  todayFixtureId?: number
   providerFixtureId?: number | null
 }
 
@@ -54,6 +54,7 @@ export function CecchinoPurchasabilityPanel({
   const selectedItem = effectiveSelected ? itemsByMarket[effectiveSelected] : undefined
 
   const handleDownloadAudit = useCallback(async () => {
+    if (todayFixtureId == null) return
     setAuditLoading(true)
     setAuditError(null)
     try {
@@ -89,15 +90,17 @@ export function CecchinoPurchasabilityPanel({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-sm font-bold tracking-wide text-slate-800">Acquistabilità</h3>
-        <button
-          type="button"
-          className={bbSecondaryBtn}
-          disabled={auditLoading}
-          onClick={() => void handleDownloadAudit()}
-          data-testid="purch-audit-download-btn"
-        >
-          {auditLoading ? 'Generazione…' : 'Scarica audit Acquistabilità'}
-        </button>
+        {todayFixtureId != null ? (
+          <button
+            type="button"
+            className={bbSecondaryBtn}
+            disabled={auditLoading}
+            onClick={() => void handleDownloadAudit()}
+            data-testid="purch-audit-download-btn"
+          >
+            {auditLoading ? 'Generazione…' : 'Scarica audit Acquistabilità'}
+          </button>
+        ) : null}
       </div>
       {auditError ? (
         <p className="text-sm text-red-700" role="alert">

@@ -142,8 +142,6 @@ async function activateAnalysis() {
     <CecchinoTodayKpiPanel
       panel={panel}
       todayFixtureId={42}
-      purchasabilityV3ByMarketKey={{}}
-      purchasabilityV3SnapshotAvailable={false}
     />,
   )
   fireEvent.click(screen.getByRole('button', { name: /Analisi formule/i }))

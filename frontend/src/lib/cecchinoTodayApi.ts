@@ -775,16 +775,9 @@ export type CecchinoPurchasabilityV3Item = {
   formula_steps?: string[]
   reading_short?: string | null
   reading_detailed?: string | null
-  reason_codes?: string[]
-  gate_reason_codes?: string[]
   historical_reason_codes?: string[]
-  gate?: Record<string, unknown> | null
   fair_book_audit?: Record<string, unknown> | null
   theoretical?: Record<string, unknown> | null
-  formula_steps?: string[]
-  dependency_meta?: unknown
-  value_score?: number | null
-  quality_score?: number | null
   strengths?: string[]
   risks?: string[]
   reason_codes?: string[]
@@ -938,6 +931,7 @@ export type CecchinoPurchasabilityV31Explanation = {
 export type CecchinoPurchasabilityV31Item = {
   market_key: string
   market_label?: string | null
+  label?: string | null
   market_family?: string | null
   period?: string | null
   line?: number | null
