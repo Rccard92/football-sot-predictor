@@ -614,6 +614,41 @@ def fixture_has_v35_score(snapshot: dict[str, Any] | None) -> bool:
     return False
 
 
+def resolve_purchasability_preview_v35_for_detail(*, row: Any) -> dict[str, Any]:
+    """Detail read-only: espone snapshot V3.5 frozen persistito senza derivazione."""
+    output = getattr(row, "cecchino_output_json", None)
+    persisted = None
+    if isinstance(output, dict):
+        persisted = output.get("purchasability_preview_v35")
+
+    classified = classify_existing_v35_snapshot(persisted)
+
+    if classified.status == "absent":
+        return {
+            "purchasability_preview_v35": None,
+            "purchasability_v35_snapshot_status": "unavailable",
+            "purchasability_v35_snapshot_reason": "snapshot_unavailable",
+        }
+
+    if classified.status == "valid" and isinstance(classified.snapshot, dict):
+        return {
+            "purchasability_preview_v35": make_json_safe(dict(classified.snapshot)),
+            "purchasability_v35_snapshot_status": "valid",
+            "purchasability_v35_snapshot_reason": None,
+        }
+
+    reason: str | None = None
+    if classified.validation and isinstance(classified.validation, dict):
+        raw_reason = classified.validation.get("reason")
+        if isinstance(raw_reason, str):
+            reason = raw_reason
+    return {
+        "purchasability_preview_v35": None,
+        "purchasability_v35_snapshot_status": "invalid",
+        "purchasability_v35_snapshot_reason": reason or "invalid_snapshot",
+    }
+
+
 __all__ = [
     "ClassifiedExistingV35Snapshot",
     "attach_purchasability_preview_v35_to_output",
@@ -624,6 +659,7 @@ __all__ = [
     "fixture_has_v35_score",
     "index_purchasability_v35_snapshot_by_market",
     "input_fingerprint_v35",
+    "resolve_purchasability_preview_v35_for_detail",
     "resolve_valid_persisted_purchasability_v35",
     "validate_purchasability_preview_v35_snapshot",
 ]

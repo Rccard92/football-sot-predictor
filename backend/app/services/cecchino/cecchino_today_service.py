@@ -134,6 +134,7 @@ from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
 )
 from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     attach_purchasability_preview_v35_to_output,
+    resolve_purchasability_preview_v35_for_detail,
 )
 from app.services.cecchino.cecchino_purchasability_v31_hr import (
     build_hr_history_context,
@@ -2641,6 +2642,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
             kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
             historical_by_market=hr_by_market_detail,
         )
+    v35_detail = resolve_purchasability_preview_v35_for_detail(row=row)
     try:
         from app.services.cecchino.cecchino_purchasability_observational import (
             build_observational_maps_for_previews,
@@ -2700,6 +2702,13 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "purchasability_preview_v2": purch_v2,
         "purchasability_preview_v3": purch_v3,
         "purchasability_preview_v31": purch_v31,
+        "purchasability_preview_v35": v35_detail["purchasability_preview_v35"],
+        "purchasability_v35_snapshot_status": v35_detail[
+            "purchasability_v35_snapshot_status"
+        ],
+        "purchasability_v35_snapshot_reason": v35_detail[
+            "purchasability_v35_snapshot_reason"
+        ],
         "purchasability_observational_v1_1": obs_v1,
         "purchasability_observational_v2": obs_v2,
         "purchasability_comparison": build_purchasability_comparison(
