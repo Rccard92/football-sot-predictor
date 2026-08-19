@@ -9,6 +9,30 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 - Export fixture audit v1: tutti i 19 `PANEL_MARKET_KEYS`, `market_context` BOOK+CECCHINO, relazioni mercato, V3.1 completa, baseline V3 se presente — **no post-match**
 - Formule V3/V3.1 **non modificate**; export destinato alla ricerca/progettazione V3.5
 
+## PURCHASABILITY V3.5 — LIVE SHADOW EXPERIMENT V1 (2026-08-19)
+
+Esperimento live pre-match con snapshot immutabile (`purchasability_preview_v35`), separato da V3.1.
+
+| Vincolo | Stato |
+|---------|--------|
+| Formula | `cecchino_purchasability_v35_structural_v1` congelata |
+| Feature | `cecchino_purchasability_v35_features_v1` |
+| Candidate A/B/C/D | pesi congelati (A 40/25/20/15, B 55/20/15/10, C 35/20/30/15, D 35/20/15/30) |
+| Gate Rating | ≥ 50 (solo gate, non in score) |
+| First valid pre-match write wins | rescan non sovrascrive snapshot valido |
+| Backfill storico | **no** — fixture senza snapshot resta unavailable |
+| Read-time derivation | **no** — GET detail/audit usa solo persisted |
+| Historical Reliability | **no** — motore V3.5 non integra HR |
+| Outcome/settlement nello snapshot | **no** — validation phase futura (V35-07) |
+
+Persistenza: attach nel scan Today pre-kickoff (`cecchino_today_service.run_scan`), chiave `cecchino_output_json["purchasability_preview_v35"]`.
+
+Audit export dedicato:
+- Singolo: `GET /api/cecchino/today/{id}/purchasability-v35-audit-export`
+- Daily ZIP: `GET /api/cecchino/today/purchasability-v35-audit-export/daily?scan_date=YYYY-MM-DD`
+
+L'esperimento inizia con il primo snapshot V3.5 valido persistito dopo deploy; nessun backfill retroattivo.
+
 ## V3.1 empirical_v2 — storico non bloccante (2026-08-06)
 
 **Root cause:** con `empirical_v1`, sample &lt; `MIN_SAMPLE=30` → `non_calculable` / `historical_sample_insufficient` anche con gate passato e input completi (Richmond: 16 casi). Inoltre `historical_factor = HR/100` rendeva HR=50 → ×0,50.

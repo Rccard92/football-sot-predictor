@@ -41,6 +41,14 @@ from app.services.cecchino.cecchino_purchasability_audit_export import (
 from app.services.cecchino.cecchino_purchasability_daily_audit_export import (
     build_daily_purchasability_audit_zip,
 )
+from app.services.cecchino.cecchino_purchasability_v35_audit_export import (
+    V35SnapshotInvalidError,
+    V35SnapshotUnavailableError,
+    get_purchasability_v35_audit_export,
+)
+from app.services.cecchino.cecchino_purchasability_v35_daily_audit_export import (
+    build_daily_purchasability_v35_audit_zip,
+)
 from app.services.cecchino.cecchino_picchetti_debug import get_picchetti_debug_json
 from app.services.cecchino.cecchino_signal_explanations import get_signal_explanations
 from app.services.cecchino.cecchino_today_service import (
@@ -96,6 +104,22 @@ def cecchino_today_daily_purchasability_audit_export(
 ):
     """Export ZIP audit Acquistabilità per tutta la giornata eleggibile."""
     zip_bytes, filename = build_daily_purchasability_audit_zip(db, scan_date=scan_date)
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/purchasability-v35-audit-export/daily")
+def cecchino_today_daily_purchasability_v35_audit_export(
+    scan_date: date = Query(..., alias="scan_date"),
+    db: Session = Depends(get_db),
+):
+    """Export ZIP audit Acquistabilità V3.5 frozen per giornata eleggibile."""
+    zip_bytes, filename = build_daily_purchasability_v35_audit_zip(
+        db, scan_date=scan_date
+    )
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",
@@ -181,6 +205,33 @@ def cecchino_today_purchasability_audit_export(
     if payload is None:
         return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.get("/{today_fixture_id}/purchasability-v35-audit-export")
+def cecchino_today_purchasability_v35_audit_export(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Export audit V3.5 frozen — solo snapshot persistito, no ricalcolo."""
+    try:
+        payload, filename = get_purchasability_v35_audit_export(db, today_fixture_id)
+    except V35SnapshotUnavailableError:
+        return JSONResponse(
+            status_code=409,
+            content={"status": "error", "error": "v35_snapshot_unavailable"},
+        )
+    except V35SnapshotInvalidError:
+        return JSONResponse(
+            status_code=409,
+            content={"status": "error", "error": "v35_snapshot_invalid"},
+        )
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    return JSONResponse(
+        status_code=200,
+        content=jsonable_encoder(payload),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{today_fixture_id}/signal-explanations")
