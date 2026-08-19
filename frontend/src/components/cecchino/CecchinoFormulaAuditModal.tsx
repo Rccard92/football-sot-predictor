@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react'
 import type { CecchinoKpiExplanation } from '../../lib/cecchinoTodayApi'
 import { CecchinoPurchasabilityV3AuditView } from './CecchinoPurchasabilityV3AuditView'
 import { CecchinoPurchasabilityV31AuditView } from './CecchinoPurchasabilityV31AuditView'
+import { CecchinoOverlayPortal } from './CecchinoOverlayPortal'
 
 type Props = {
   explanation: CecchinoKpiExplanation
@@ -41,11 +42,12 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
   const consistency = explanation.consistency?.status ?? '—'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
-      role="presentation"
-      onClick={onClose}
-    >
+    <CecchinoOverlayPortal>
+      <div
+        className="flex h-full w-full items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
+        role="presentation"
+        onClick={onClose}
+      >
       <div
         role="dialog"
         aria-modal="true"
@@ -415,6 +417,7 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </CecchinoOverlayPortal>
   )
 }

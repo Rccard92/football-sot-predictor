@@ -92,6 +92,25 @@ export function formatKickoffShort(kickoff: string | null | undefined): string {
   })
 }
 
+/** Data + ora kickoff in formato italiano (Bet Builder Risultati). */
+export function formatKickoffDateTime(kickoff: string | null | undefined): string {
+  if (!kickoff) return '—'
+  const d = new Date(kickoff)
+  if (Number.isNaN(d.getTime())) return '—'
+  const datePart = d.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'Europe/Rome',
+  })
+  const timePart = d.toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Rome',
+  })
+  return `${datePart} · ${timePart}`
+}
+
 export function formatUpdatedAt(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)

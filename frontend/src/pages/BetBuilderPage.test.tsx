@@ -12,6 +12,7 @@ import { BetBuilderPage } from './BetBuilderPage'
 const apiMock = vi.hoisted(() => ({
   fetchBetBuilderOpportunities: vi.fn(),
   fetchBetBuilderResults: vi.fn(),
+  fetchBetBuilderResultAnalysisContext: vi.fn(),
   todayIsoRome: vi.fn(() => '2026-08-08'),
 }))
 
@@ -28,6 +29,7 @@ vi.mock('../lib/cecchinoBetBuilderApi', async () => {
     ...actual,
     fetchBetBuilderOpportunities: apiMock.fetchBetBuilderOpportunities,
     fetchBetBuilderResults: apiMock.fetchBetBuilderResults,
+    fetchBetBuilderResultAnalysisContext: apiMock.fetchBetBuilderResultAnalysisContext,
   }
 })
 
@@ -176,6 +178,27 @@ describe('BetBuilderPage', () => {
     vi.useRealTimers()
     apiMock.fetchBetBuilderOpportunities.mockReset()
     apiMock.fetchBetBuilderResults.mockReset()
+    apiMock.fetchBetBuilderResultAnalysisContext.mockReset()
+    apiMock.fetchBetBuilderResultAnalysisContext.mockResolvedValue({
+      contract_version: 'bet_builder_result_analysis_context_v1',
+      fixture: {
+        today_fixture_id: 16511,
+        provider_fixture_id: 1,
+        competition_id: 10,
+        scan_date: '2026-08-08',
+        kickoff: '2026-08-08T11:00:00Z',
+        country: 'Sweden',
+        league: 'Division 2',
+        home_team: 'Onsala',
+        away_team: 'Boljan',
+      },
+      kpi_panel: { version: 'cecchino_kpi_v2_betfair', rows: [] },
+      balance_v5: { status: 'available' },
+      fixture_identity_consistency: {},
+      balance_v5_snapshot_meta: {},
+      goal_intensity_v5: { status: 'available' },
+      warnings: [],
+    })
     apiMock.fetchBetBuilderResults.mockResolvedValue({
       contract_version: 'cecchino_bet_builder_results_contract_v1',
       available_from: '2026-08-08',
@@ -1748,7 +1771,28 @@ describe('BetBuilderPage Results BET-RESULTS-01', () => {
     vi.useRealTimers()
     apiMock.fetchBetBuilderOpportunities.mockReset()
     apiMock.fetchBetBuilderResults.mockReset()
+    apiMock.fetchBetBuilderResultAnalysisContext.mockReset()
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
+    apiMock.fetchBetBuilderResultAnalysisContext.mockResolvedValue({
+      contract_version: 'bet_builder_result_analysis_context_v1',
+      fixture: {
+        today_fixture_id: 16511,
+        provider_fixture_id: 1,
+        competition_id: 10,
+        scan_date: '2026-08-08',
+        kickoff: '2026-08-08T11:00:00Z',
+        country: 'Sweden',
+        league: 'Division 2',
+        home_team: 'Onsala',
+        away_team: 'Boljan',
+      },
+      kpi_panel: { version: 'cecchino_kpi_v2_betfair', rows: [] },
+      balance_v5: { status: 'available' },
+      fixture_identity_consistency: {},
+      balance_v5_snapshot_meta: {},
+      goal_intensity_v5: { status: 'available' },
+      warnings: [],
+    })
     apiMock.todayIsoRome.mockReturnValue('2026-08-08')
     toastMock.success.mockReset()
     window.localStorage.clear()

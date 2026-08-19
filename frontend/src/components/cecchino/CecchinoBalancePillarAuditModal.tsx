@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import type { CecchinoBalancePillarExplanation } from '../../lib/cecchinoTodayApi'
+import { CecchinoOverlayPortal } from './CecchinoOverlayPortal'
 
 type Props = {
   explanation: CecchinoBalancePillarExplanation
@@ -66,11 +67,12 @@ export function CecchinoBalancePillarAuditModal({ explanation, sourceMode, onClo
   }, [onClose])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
-      role="presentation"
-      onClick={onClose}
-    >
+    <CecchinoOverlayPortal>
+      <div
+        className="flex h-full w-full items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4"
+        role="presentation"
+        onClick={onClose}
+      >
       <div
         role="dialog"
         aria-modal="true"
@@ -328,6 +330,7 @@ export function CecchinoBalancePillarAuditModal({ explanation, sourceMode, onClo
           ) : null}
         </div>
       </div>
-    </div>
+      </div>
+    </CecchinoOverlayPortal>
   )
 }

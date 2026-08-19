@@ -4,6 +4,13 @@
  */
 
 import { requestJson } from './api'
+import type {
+  CecchinoBalanceV5,
+  CecchinoBalanceV5SnapshotMeta,
+  CecchinoFixtureIdentityConsistency,
+  CecchinoKpiV2Panel,
+  CecchinoTodayDetailResponse,
+} from './cecchinoTodayApi'
 
 export type BetBuilderOrigin = 'price' | 'signals' | 'price_and_signals'
 
@@ -379,5 +386,42 @@ export async function fetchBetBuilderResults(
   const q = qs.toString()
   return requestJson<BetBuilderResultsResponse>(
     `/api/cecchino/bet-builder/results${q ? `?${q}` : ''}`,
+  )
+}
+
+export type BetBuilderResultAnalysisContextGoalIntensity = NonNullable<
+  CecchinoTodayDetailResponse['goal_intensity_v5']
+>
+
+export type BetBuilderResultAnalysisContextFixture = {
+  today_fixture_id: number
+  provider_fixture_id: number
+  competition_id: number | null
+  scan_date: string
+  kickoff: string | null
+  country: string | null
+  league: string | null
+  home_team: string | null
+  away_team: string | null
+}
+
+export type BetBuilderResultAnalysisContext = {
+  contract_version: 'bet_builder_result_analysis_context_v1'
+  fixture: BetBuilderResultAnalysisContextFixture
+  kpi_panel: CecchinoKpiV2Panel | null
+  balance_v5: CecchinoBalanceV5 | null
+  fixture_identity_consistency: CecchinoFixtureIdentityConsistency | null
+  balance_v5_snapshot_meta: CecchinoBalanceV5SnapshotMeta | null
+  goal_intensity_v5: BetBuilderResultAnalysisContextGoalIntensity | null
+  warnings: string[]
+}
+
+export async function fetchBetBuilderResultAnalysisContext(
+  todayFixtureId: number,
+  signal?: AbortSignal,
+): Promise<BetBuilderResultAnalysisContext> {
+  return requestJson<BetBuilderResultAnalysisContext>(
+    `/api/cecchino/bet-builder/results/${todayFixtureId}/analysis-context`,
+    { signal },
   )
 }

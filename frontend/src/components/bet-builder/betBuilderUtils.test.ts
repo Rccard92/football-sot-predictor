@@ -12,6 +12,7 @@ import {
   filterAndSortOpportunities,
   filterOpportunities,
   fixtureOpportunityCounts,
+  formatKickoffDateTime,
   formatPurchasabilityTab,
   getPrimaryOpportunity,
   groupOpportunitiesByFixture,
@@ -889,5 +890,15 @@ describe('betBuilderUtils', () => {
     // evidence order: Q+S, signals, price → N/D is middle
     expect(selectorData[1].score).toBe('N/D')
     expect(selectorData[2].label).toBe('1X')
+  })
+})
+
+describe('formatKickoffDateTime', () => {
+  it('formats ISO kickoff in Europe/Rome', () => {
+    expect(formatKickoffDateTime('2026-08-19T18:00:00Z')).toBe('19/08/2026 · 20:00')
+  })
+
+  it('returns em dash for null kickoff', () => {
+    expect(formatKickoffDateTime(null)).toBe('—')
   })
 })

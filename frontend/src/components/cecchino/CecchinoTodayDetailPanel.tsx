@@ -1,9 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
-import {
-  type HistoricalReliabilityItem,
-} from '../../lib/cecchinoKpiSignalsApi'
-import { fetchHistoricalReliabilityCached } from '../../lib/historicalReliabilityCache'
+import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalReliabilityForFixture'
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
@@ -45,76 +42,23 @@ export function CecchinoTodayDetailSkeleton() {
   )
 }
 
-function mapHistoricalReliabilityForFixture(
-  items: Record<string, HistoricalReliabilityItem>,
-  todayFixtureId: number | null | undefined,
-): Record<string, HistoricalReliabilityItem> {
-  const byMarket: Record<string, HistoricalReliabilityItem> = {}
-  for (const [key, item] of Object.entries(items)) {
-    if (
-      todayFixtureId != null &&
-      item.today_fixture_id != null &&
-      Number(item.today_fixture_id) !== Number(todayFixtureId)
-    ) {
-      continue
-    }
-    const marketKey = item.market_key || item.selection
-    if (marketKey) byMarket[marketKey] = item
-    // Chiave API: today_fixture_id:market_key
-    const colon = key.indexOf(':')
-    if (colon > 0) {
-      const mk = key.slice(colon + 1)
-      if (mk) byMarket[mk] = item
-    }
-  }
-  return byMarket
-}
-
 export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
-  const [hrItemsFull, setHrItemsFull] = useState<Record<string, HistoricalReliabilityItem>>({})
-  const [hrLoading, setHrLoading] = useState(false)
-  const [hrError, setHrError] = useState<string | null>(null)
-
   const scanDate = detail.scan_date
   const competitionId = detail.competition_id
   const todayFixtureId = detail.today_fixture_id ?? detail.id
   const hasKpi = Boolean(detail.kpi_panel_v2 ?? detail.kpi_panel)
   const canFetch = hasKpi && Boolean(scanDate) && detail.status === 'ok'
 
-  useEffect(() => {
-    if (!canFetch || !scanDate) return
-    let cancelled = false
-    void (async () => {
-      setHrLoading(true)
-      setHrError(null)
-      try {
-        const res = await fetchHistoricalReliabilityCached({
-          date_from: scanDate,
-          date_to: scanDate,
-          competition_id: competitionId ?? null,
-        })
-        if (cancelled) return
-        setHrItemsFull(res.items || {})
-      } catch {
-        if (cancelled) return
-        setHrItemsFull({})
-        setHrError('Affidabilità non disponibile')
-      } finally {
-        if (!cancelled) setHrLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [canFetch, scanDate, competitionId])
-
-  const hrMemo = useMemo(
-    () =>
-      canFetch
-        ? mapHistoricalReliabilityForFixture(hrItemsFull, todayFixtureId)
-        : {},
-    [canFetch, hrItemsFull, todayFixtureId],
-  )
+  const {
+    byMarketKey: hrMemo,
+    loading: hrLoading,
+    error: hrError,
+  } = useHistoricalReliabilityForFixture({
+    scanDate,
+    competitionId,
+    todayFixtureId,
+    enabled: canFetch,
+  })
 
   const purchasabilityV31ByMarketKey = useMemo(
     () => indexPurchasabilityV31ByMarketKey(detail.purchasability_preview_v31),

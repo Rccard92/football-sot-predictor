@@ -8,6 +8,7 @@ import type {
 } from '../../lib/cecchinoTodayApi'
 import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
 import { CecchinoFormulaAuditModal } from './CecchinoFormulaAuditModal'
+import { CecchinoOverlayPortal } from './CecchinoOverlayPortal'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -213,11 +214,12 @@ function HistoricalReliabilityPopover({
   onClose: () => void
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="presentation"
-      onClick={onClose}
-    >
+    <CecchinoOverlayPortal>
+      <div
+        className="flex h-full w-full items-center justify-center bg-black/40 p-4"
+        role="presentation"
+        onClick={onClose}
+      >
       <div
         role="dialog"
         aria-modal="true"
@@ -293,7 +295,8 @@ function HistoricalReliabilityPopover({
           o uno stake consigliato.
         </p>
       </div>
-    </div>
+      </div>
+    </CecchinoOverlayPortal>
   )
 }
 

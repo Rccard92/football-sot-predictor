@@ -8,7 +8,7 @@ import {
   outcomeBadgeClass,
   outcomeLabel,
 } from './betBuilderResultsUtils'
-import { formatKickoffShort, originBadgeLabel } from './betBuilderUtils'
+import { formatKickoffDateTime, originBadgeLabel } from './betBuilderUtils'
 
 type Props = {
   item: BetBuilderResultsFixture
@@ -65,7 +65,7 @@ export function BetBuilderResultFixtureCard({ item, onOpenDetail }: Props) {
           <p className="truncate text-xs font-medium text-slate-500">
             {[fixture.country, fixture.league].filter(Boolean).join(' · ') || '—'}
           </p>
-          <p className="text-xs text-slate-500">{formatKickoffShort(fixture.kickoff)}</p>
+          <p className="text-xs text-slate-500">{formatKickoffDateTime(fixture.kickoff)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {matchStatus === 'live' ? (
