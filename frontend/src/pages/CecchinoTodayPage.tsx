@@ -21,6 +21,8 @@ import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../comp
 import {
   downloadDailyPurchasabilityAuditExport,
   triggerDailyPurchasabilityAuditDownload,
+  downloadDailyPurchasabilityV35Audit,
+  triggerDailyPurchasabilityV35AuditDownload,
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayLatestScanJob,
@@ -109,6 +111,8 @@ export function CecchinoTodayPage() {
   const [refreshBetfairLoading, setRefreshBetfairLoading] = useState(false)
   const [dailyAuditExportLoading, setDailyAuditExportLoading] = useState(false)
   const [dailyAuditExportError, setDailyAuditExportError] = useState<string | null>(null)
+  const [dailyV35AuditExportLoading, setDailyV35AuditExportLoading] = useState(false)
+  const [dailyV35AuditExportError, setDailyV35AuditExportError] = useState<string | null>(null)
   const [refreshBetfairMsg, setRefreshBetfairMsg] = useState<{
     text: string
     tone: 'ok' | 'warn' | 'err'
@@ -619,6 +623,19 @@ export function CecchinoTodayPage() {
     }
   }
 
+  const handleDownloadDailyV35Audit = async () => {
+    setDailyV35AuditExportError(null)
+    setDailyV35AuditExportLoading(true)
+    try {
+      const blob = await downloadDailyPurchasabilityV35Audit(selectedDay)
+      triggerDailyPurchasabilityV35AuditDownload(blob, selectedDay)
+    } catch {
+      setDailyV35AuditExportError('Impossibile scaricare gli audit V3.5 della giornata.')
+    } finally {
+      setDailyV35AuditExportLoading(false)
+    }
+  }
+
   const RECOMPUTE_WARNING =
     'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
 
@@ -759,12 +776,15 @@ export function CecchinoTodayPage() {
         refreshBetfairLoading={refreshBetfairLoading}
         dailyAuditExportLoading={dailyAuditExportLoading}
         dailyAuditExportError={dailyAuditExportError}
+        dailyV35AuditExportLoading={dailyV35AuditExportLoading}
+        dailyV35AuditExportError={dailyV35AuditExportError}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
         onRevalidateDay={() => void handleRevalidateDay()}
         onRecomputeCecchino={isScanned ? () => void handleRecomputeCecchino() : undefined}
         onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
         onDownloadDailyAudit={isScanned ? () => void handleDownloadDailyAudit() : undefined}
+        onDownloadDailyV35Audit={isScanned ? () => void handleDownloadDailyV35Audit() : undefined}
       />
 
       {refreshBetfairMsg && (

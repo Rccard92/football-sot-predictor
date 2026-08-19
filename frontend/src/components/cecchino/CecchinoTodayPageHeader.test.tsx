@@ -79,3 +79,72 @@ describe('CecchinoTodayPageHeader daily audit export', () => {
     expect(screen.queryByTestId('daily-purch-audit-download-btn')).toBeNull()
   })
 })
+
+describe('CecchinoTodayPageHeader daily V3.5 audit export', () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  const baseProps = {
+    isScanned: true,
+    scanDayLoading: false,
+    updateResultsLoading: false,
+    onScanDay: vi.fn(),
+    onUpdateResults: vi.fn(),
+  }
+
+  it('mostra pulsante Scarica audit V3.5 giornata', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        onDownloadDailyV35Audit={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('daily-v35-purch-audit-download-btn').textContent).toContain(
+      'Scarica audit V3.5 giornata',
+    )
+  })
+
+  it('loading V3.5 indipendente da V3.1', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        dailyV35AuditExportLoading
+        onDownloadDailyAudit={vi.fn()}
+        onDownloadDailyV35Audit={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('daily-purch-audit-download-btn').textContent).toBe(
+      'Scarica audit giornata',
+    )
+    expect(screen.getByTestId('daily-v35-purch-audit-download-btn').textContent).toBe(
+      'Preparazione…',
+    )
+  })
+
+  it('errore V3.5 separato', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        dailyV35AuditExportError="Impossibile scaricare gli audit V3.5 della giornata."
+        onDownloadDailyV35Audit={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('daily-v35-purch-audit-export-error').textContent).toContain(
+      'Impossibile scaricare gli audit V3.5 della giornata.',
+    )
+  })
+
+  it('click invoca handler V3.5', () => {
+    const onDownloadV35 = vi.fn()
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        onDownloadDailyV35Audit={onDownloadV35}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('daily-v35-purch-audit-download-btn'))
+    expect(onDownloadV35).toHaveBeenCalledTimes(1)
+  })
+})

@@ -1016,6 +1016,161 @@ export function indexPurchasabilityV31ByMarketKey(
   return map
 }
 
+// ============================================================================
+// Acquistabilità V3.5 (live shadow experiment — structural V/D/S/Q + A/B/C/D)
+// ============================================================================
+
+export type CecchinoPurchasabilityV35SnapshotStatus = 'valid' | 'unavailable' | 'invalid'
+
+export type CecchinoPurchasabilityV35CandidateKey = 'A' | 'B' | 'C' | 'D'
+
+export type CecchinoPurchasabilityV35ItemStatus = 'score' | 'gate_failed' | 'not_calculable'
+
+export type CecchinoPurchasabilityV35ComponentBlock = {
+  component?: string
+  score?: number | null
+  status?: string | null
+  expected_value?: number | null
+  delta_logit?: number | null
+  raw_score?: number | null
+  structural_confidence?: number | null
+  coverage?: number | null
+  configured_relation_count?: number | null
+  available_relation_count?: number | null
+  structural_status?: string | null
+  overround_penalty?: number | null
+  fallback_penalty?: number | null
+  derived_fair_penalty?: number | null
+  extreme_divergence_penalty?: number | null
+  relations?: CecchinoPurchasabilityV35StructuralRelation[]
+}
+
+export type CecchinoPurchasabilityV35StructuralRelation = {
+  related_market?: string | null
+  support_score?: number | null
+  related_delta_logit?: number | null
+  relation_weight?: number | null
+  relation_type?: string | null
+  used_in_score?: boolean | null
+  data_available?: boolean | null
+}
+
+export type CecchinoPurchasabilityV35Candidate = {
+  candidate_id?: string | null
+  candidate_name?: string | null
+  raw_score?: number | null
+  score?: number | null
+  class?: string | null
+  effective_weights?: Record<string, number | null>
+  configured_weights?: Record<string, number | null>
+  missing_components?: string[]
+}
+
+export type CecchinoPurchasabilityV35Gate = {
+  gate_status?: string | null
+  gate_passed?: boolean | null
+  reason?: string | null
+  reason_codes?: string[]
+  expected_value?: number | null
+  probability_cecchino?: number | null
+  fair_book_probability?: number | null
+  rating?: number | null
+}
+
+export type CecchinoPurchasabilityV35ItemInput = {
+  execution_quote_real?: number | null
+  execution_quote_source?: string | null
+  probability_cecchino?: number | null
+  fair_book_probability?: number | null
+  rating?: number | null
+  overround?: number | null
+  book_fallback_used?: boolean | null
+  fair_probability_may_be_derived?: boolean | null
+}
+
+export type CecchinoPurchasabilityV35Item = {
+  market_key: string
+  label?: string | null
+  status: CecchinoPurchasabilityV35ItemStatus | string
+  gate_status?: string | null
+  gate?: CecchinoPurchasabilityV35Gate | null
+  input?: CecchinoPurchasabilityV35ItemInput | null
+  components?: {
+    executable_value?: CecchinoPurchasabilityV35ComponentBlock | null
+    market_disagreement?: CecchinoPurchasabilityV35ComponentBlock | null
+    structural_coherence?: CecchinoPurchasabilityV35ComponentBlock | null
+    information_quality?: CecchinoPurchasabilityV35ComponentBlock | null
+  } | null
+  candidates?: Partial<Record<CecchinoPurchasabilityV35CandidateKey, CecchinoPurchasabilityV35Candidate>>
+  diagnostics?: Record<string, unknown> | null
+  dependency_meta?: Record<string, unknown> | null
+}
+
+export type CecchinoPurchasabilityV35CandidateRegistryEntry = {
+  id?: string | null
+  name?: string | null
+  weights?: Record<string, number | null>
+}
+
+export type CecchinoPurchasabilityV35Snapshot = {
+  snapshot_version?: string | null
+  contract_version?: string | null
+  feature_version?: string | null
+  formula_version?: string | null
+  relation_registry_version?: string | null
+  candidate_registry_version?: string | null
+  registry_status?: string | null
+  experiment_version?: string | null
+  generated_at?: string | null
+  source_snapshot_at?: string | null
+  source_snapshot_verified?: boolean | null
+  source_snapshot_before_kickoff?: boolean | null
+  pre_match_verified?: boolean | null
+  kickoff?: string | null
+  source_mode?: string | null
+  input_fingerprint_sha256?: string | null
+  engine_payload_sha256?: string | null
+  frozen_config?: {
+    candidates?: Partial<
+      Record<CecchinoPurchasabilityV35CandidateKey, CecchinoPurchasabilityV35CandidateRegistryEntry>
+    >
+    rating_min_gate?: number | null
+    class_thresholds?: number[]
+  } | null
+  candidate_registry?: Partial<
+    Record<CecchinoPurchasabilityV35CandidateKey, CecchinoPurchasabilityV35CandidateRegistryEntry>
+  >
+  relation_registry?: unknown[]
+  items: CecchinoPurchasabilityV35Item[]
+  summary?: Partial<
+    Record<
+      CecchinoPurchasabilityV35CandidateKey,
+      {
+        top_market_key?: string | null
+        top_score?: number | null
+        score_band_counts?: Record<string, number>
+      }
+    >
+  >
+  pre_match_only?: boolean
+  historical_reliability_integrated?: boolean
+  shadow_candidate?: boolean
+  warnings?: string[]
+}
+
+/** Indexer V3.5 per market_key. */
+export function indexPurchasabilityV35ByMarketKey(
+  snapshot: CecchinoPurchasabilityV35Snapshot | null | undefined,
+): Record<string, CecchinoPurchasabilityV35Item> {
+  const items = snapshot?.items
+  if (!items?.length) return {}
+  const map: Record<string, CecchinoPurchasabilityV35Item> = {}
+  for (const it of items) {
+    if (it?.market_key) map[it.market_key] = it
+  }
+  return map
+}
+
 /** Indexer V3 per market_key — analogo ai resolver V1.1/V2 del DetailPanel. */
 export function indexPurchasabilityV3ByMarketKey(
   snapshot: CecchinoPurchasabilityV3Snapshot | null | undefined,
@@ -1844,6 +1999,9 @@ export type CecchinoTodayDetailResponse = {
   purchasability_preview_v2?: CecchinoPurchasabilityPreviewSnapshot | null
   purchasability_preview_v3?: CecchinoPurchasabilityV3Snapshot | null
   purchasability_preview_v31?: CecchinoPurchasabilityV31Snapshot | null
+  purchasability_preview_v35?: CecchinoPurchasabilityV35Snapshot | null
+  purchasability_v35_snapshot_status?: CecchinoPurchasabilityV35SnapshotStatus | null
+  purchasability_v35_snapshot_reason?: string | null
   purchasability_observational_v1_1?: Record<
     string,
     CecchinoPurchasabilityObservationalItem
@@ -2170,6 +2328,55 @@ export function triggerDailyPurchasabilityAuditDownload(blob: Blob, scanDate: st
   const a = document.createElement('a')
   a.href = url
   a.download = `purchasability-audits-${scanDate}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export type CecchinoPurchasabilityV35AuditExport = {
+  contract_version: string
+  generated_at: string
+  fixture: Record<string, unknown>
+  snapshot_identity: Record<string, unknown>
+  frozen_config: Record<string, unknown>
+  candidate_registry: Record<string, unknown>
+  relation_registry: unknown[]
+  market_order: string[]
+  markets: Record<string, unknown>
+}
+
+export async function getPurchasabilityV35AuditExport(
+  todayFixtureId: number,
+): Promise<CecchinoPurchasabilityV35AuditExport> {
+  return requestJson<CecchinoPurchasabilityV35AuditExport>(
+    `/api/cecchino/today/${todayFixtureId}/purchasability-v35-audit-export`,
+  )
+}
+
+export async function downloadDailyPurchasabilityV35Audit(scanDate: string): Promise<Blob> {
+  const base = getCecchinoApiBase()
+  const url = `${base}/api/cecchino/today/purchasability-v35-audit-export/daily?scan_date=${encodeURIComponent(scanDate)}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    let msg = res.statusText
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const parsed = (await res.json()) as { message?: string }
+        if (parsed.message) msg = parsed.message
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg)
+  }
+  return res.blob()
+}
+
+export function triggerDailyPurchasabilityV35AuditDownload(blob: Blob, scanDate: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `purchasability-v35-audits-${scanDate}.zip`
   a.click()
   URL.revokeObjectURL(url)
 }

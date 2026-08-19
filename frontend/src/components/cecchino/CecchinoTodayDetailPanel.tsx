@@ -7,11 +7,12 @@ import { fetchHistoricalReliabilityCached } from '../../lib/historicalReliabilit
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
-import { indexPurchasabilityV31ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
+import { indexPurchasabilityV31ByMarketKey, indexPurchasabilityV35ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoPurchasabilityPanel } from './CecchinoPurchasabilityPanel'
+import { CecchinoPurchasabilityV35Panel } from './CecchinoPurchasabilityV35Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
@@ -123,6 +124,11 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     detail.purchasability_preview_v31 != null &&
     detail.purchasability_preview_v31.status !== 'unavailable'
 
+  const purchasabilityV35ByMarketKey = useMemo(
+    () => indexPurchasabilityV35ByMarketKey(detail.purchasability_preview_v35),
+    [detail.purchasability_preview_v35],
+  )
+
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
   }
@@ -152,6 +158,16 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         candidateVersion={detail.purchasability_preview_v31?.candidate_version}
         itemsByMarket={purchasabilityV31ByMarketKey}
         snapshotAvailable={purchasabilityV31SnapshotAvailable}
+        todayFixtureId={todayFixtureId}
+        providerFixtureId={detail.provider_fixture_id}
+      />
+
+      <CecchinoPurchasabilityV35Panel
+        key={`v35-${todayFixtureId}`}
+        snapshot={detail.purchasability_preview_v35}
+        snapshotStatus={detail.purchasability_v35_snapshot_status ?? 'unavailable'}
+        snapshotReason={detail.purchasability_v35_snapshot_reason}
+        itemsByMarket={purchasabilityV35ByMarketKey}
         todayFixtureId={todayFixtureId}
         providerFixtureId={detail.provider_fixture_id}
       />
