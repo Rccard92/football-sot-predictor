@@ -144,7 +144,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       <CecchinoPurchasabilityPanel
         key={todayFixtureId}
-        version={detail.purchasability_preview_v31?.formula_version ?? 'v3.1'}
+        formulaVersion={detail.purchasability_preview_v31?.formula_version}
+        candidateName={detail.purchasability_preview_v31?.candidate_name}
+        candidateVersion={detail.purchasability_preview_v31?.candidate_version}
         itemsByMarket={purchasabilityV31ByMarketKey}
         snapshotAvailable={purchasabilityV31SnapshotAvailable}
         todayFixtureId={todayFixtureId}

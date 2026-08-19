@@ -7,11 +7,15 @@ import { CecchinoPurchasabilityDetailPanel } from './CecchinoPurchasabilityDetai
 import { CecchinoPurchasabilitySelector } from './CecchinoPurchasabilitySelector'
 import {
   defaultSelectedMarketKey,
+  getPurchasabilityFormulaShortLabel,
+  getPurchasabilityFriendlyVersionLabel,
   listActivePurchasabilityMarkets,
 } from './cecchinoPurchasabilityUiUtils'
 
 export type CecchinoPurchasabilityPanelProps = {
-  version: string
+  formulaVersion?: string | null
+  candidateName?: string | null
+  candidateVersion?: string | null
   itemsByMarket: Record<string, CecchinoPurchasabilityV31Item>
   snapshotAvailable: boolean
   todayFixtureId?: number
@@ -29,8 +33,49 @@ function downloadAuditBlob(data: unknown, fixtureId: number) {
   URL.revokeObjectURL(url)
 }
 
+function PurchasabilityPanelTitle({
+  formulaVersion,
+  candidateName,
+  candidateVersion,
+}: {
+  formulaVersion?: string | null
+  candidateName?: string | null
+  candidateVersion?: string | null
+}) {
+  const friendlyLabel = getPurchasabilityFriendlyVersionLabel({
+    candidateName,
+    candidateVersion,
+    formulaVersion,
+  })
+  const shortLabel = getPurchasabilityFormulaShortLabel(formulaVersion)
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-bold tracking-wide text-slate-800">Acquistabilità</h3>
+        <span
+          data-testid="purch-version-badge"
+          className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800 ring-1 ring-indigo-200"
+        >
+          {friendlyLabel}
+        </span>
+      </div>
+      {shortLabel ? (
+        <p
+          data-testid="purch-formula-short-label"
+          className="mt-0.5 text-xs text-slate-500"
+        >
+          {shortLabel}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export function CecchinoPurchasabilityPanel({
-  version,
+  formulaVersion,
+  candidateName,
+  candidateVersion,
   itemsByMarket,
   snapshotAvailable,
   todayFixtureId,
@@ -73,8 +118,13 @@ export function CecchinoPurchasabilityPanel({
         className={`${todayCard} ${todayCardPadding}`}
         data-testid="cecchino-purchasability-panel"
         data-empty="true"
+        data-version={formulaVersion ?? undefined}
       >
-        <h3 className="text-sm font-bold tracking-wide text-slate-800">Acquistabilità</h3>
+        <PurchasabilityPanelTitle
+          formulaVersion={formulaVersion}
+          candidateName={candidateName}
+          candidateVersion={candidateVersion}
+        />
         <p className="mt-2 text-sm text-slate-600">
           Nessuna opportunità attiva per questa partita.
         </p>
@@ -86,10 +136,14 @@ export function CecchinoPurchasabilityPanel({
     <section
       className={`${todayCard} ${todayCardPadding} space-y-4`}
       data-testid="cecchino-purchasability-panel"
-      data-version={version}
+      data-version={formulaVersion ?? undefined}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-sm font-bold tracking-wide text-slate-800">Acquistabilità</h3>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <PurchasabilityPanelTitle
+          formulaVersion={formulaVersion}
+          candidateName={candidateName}
+          candidateVersion={candidateVersion}
+        />
         {todayFixtureId != null ? (
           <button
             type="button"

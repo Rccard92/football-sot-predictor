@@ -21,6 +21,8 @@ vi.mock('../../lib/cecchinoTodayApi', async () => {
 
 import { getPurchasabilityAuditExport } from '../../lib/cecchinoTodayApi'
 
+const PRODUCTION_FORMULA = 'cecchino_purchasability_v31_fixed_discount_empirical_v2'
+
 const DRAW_ITEM: CecchinoPurchasabilityV31Item = {
   market_key: 'DRAW',
   market_label: 'X',
@@ -59,10 +61,41 @@ afterEach(() => {
 })
 
 describe('CecchinoPurchasabilityPanel', () => {
+  it('mostra badge V3.1 SHADOW e short label empirical_v2 con metadata produzione', () => {
+    render(
+      <CecchinoPurchasabilityPanel
+        formulaVersion={PRODUCTION_FORMULA}
+        candidateName="v31_shadow"
+        candidateVersion="cecchino_purchasability_v31_candidate_2"
+        itemsByMarket={itemsMap(DRAW_ITEM, X2_ITEM, AWAY_V31_ITEM)}
+        snapshotAvailable
+        todayFixtureId={7}
+      />,
+    )
+    expect(screen.getByTestId('purch-version-badge').textContent).toBe('V3.1 SHADOW')
+    expect(screen.getByTestId('purch-formula-short-label').textContent).toBe('empirical_v2')
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
+    const x2 = screen.getByTestId('purch-selector-X_TWO')
+    expect(x2.getAttribute('data-selected')).toBe('true')
+  })
+
+  it('mostra V3.1 SHADOW senza short label se formula_version assente', () => {
+    render(
+      <CecchinoPurchasabilityPanel
+        candidateName="v31_shadow"
+        itemsByMarket={itemsMap(X2_ITEM)}
+        snapshotAvailable
+        todayFixtureId={7}
+      />,
+    )
+    expect(screen.getByTestId('purch-version-badge').textContent).toBe('V3.1 SHADOW')
+    expect(screen.queryByTestId('purch-formula-short-label')).toBeNull()
+  })
+
   it('mostra solo mercati attivi con score', () => {
     render(
       <CecchinoPurchasabilityPanel
-        version="v3.1"
+        formulaVersion={PRODUCTION_FORMULA}
         itemsByMarket={itemsMap(DRAW_ITEM, X2_ITEM, AWAY_V31_ITEM, GATE_FAILED_RATING_V31_ITEM, NON_CALCULABLE_MISSING_QUOTE_V31_ITEM)}
         snapshotAvailable
         todayFixtureId={7}
@@ -77,7 +110,7 @@ describe('CecchinoPurchasabilityPanel', () => {
   it('default selection = score più alto', () => {
     render(
       <CecchinoPurchasabilityPanel
-        version="v3.1"
+        formulaVersion={PRODUCTION_FORMULA}
         itemsByMarket={itemsMap(DRAW_ITEM, X2_ITEM, AWAY_V31_ITEM)}
         snapshotAvailable
         todayFixtureId={7}
@@ -93,7 +126,7 @@ describe('CecchinoPurchasabilityPanel', () => {
   it('click selector cambia dettaglio', () => {
     render(
       <CecchinoPurchasabilityPanel
-        version="v3.1"
+        formulaVersion={PRODUCTION_FORMULA}
         itemsByMarket={itemsMap(DRAW_ITEM, X2_ITEM, AWAY_V31_ITEM)}
         snapshotAvailable
         todayFixtureId={7}
@@ -108,7 +141,8 @@ describe('CecchinoPurchasabilityPanel', () => {
   it('empty state se nessun mercato attivo', () => {
     render(
       <CecchinoPurchasabilityPanel
-        version="v3.1"
+        formulaVersion={PRODUCTION_FORMULA}
+        candidateName="v31_shadow"
         itemsByMarket={itemsMap(GATE_FAILED_RATING_V31_ITEM, NON_CALCULABLE_MISSING_QUOTE_V31_ITEM)}
         snapshotAvailable
         todayFixtureId={7}
@@ -116,6 +150,7 @@ describe('CecchinoPurchasabilityPanel', () => {
     )
     expect(screen.getByTestId('cecchino-purchasability-panel').getAttribute('data-empty')).toBe('true')
     expect(screen.getByText(/Nessuna opportunità attiva/)).toBeTruthy()
+    expect(screen.getByTestId('purch-version-badge').textContent).toBe('V3.1 SHADOW')
   })
 
   it('audit download chiama endpoint', async () => {
@@ -131,7 +166,7 @@ describe('CecchinoPurchasabilityPanel', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     render(
       <CecchinoPurchasabilityPanel
-        version="v3.1"
+        formulaVersion={PRODUCTION_FORMULA}
         itemsByMarket={itemsMap(X2_ITEM)}
         snapshotAvailable
         todayFixtureId={7}

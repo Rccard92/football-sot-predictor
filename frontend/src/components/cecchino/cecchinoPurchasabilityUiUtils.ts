@@ -57,6 +57,37 @@ export function getMarketDisplayLabel(item: CecchinoPurchasabilityV31Item): stri
   return item.market_label ?? item.label ?? item.market_key
 }
 
+export type PurchasabilityVersionMeta = {
+  candidateName?: string | null
+  candidateVersion?: string | null
+  formulaVersion?: string | null
+}
+
+const CANDIDATE_NAME_LABELS: Record<string, string> = {
+  v31_shadow: 'V3.1 SHADOW',
+}
+
+/** Label friendly per il pannello Today (es. "V3.1 SHADOW"). */
+export function getPurchasabilityFriendlyVersionLabel(meta: PurchasabilityVersionMeta): string {
+  const name = meta.candidateName?.trim()
+  if (name && CANDIDATE_NAME_LABELS[name]) return CANDIDATE_NAME_LABELS[name]
+  if (meta.formulaVersion?.includes('purchasability_v31')) return 'V3.1 SHADOW'
+  return 'V3.1 SHADOW'
+}
+
+/** Suffisso breve formula (es. "empirical_v2") da formula_version snapshot. */
+export function getPurchasabilityFormulaShortLabel(
+  formulaVersion?: string | null,
+): string | null {
+  const v = formulaVersion?.trim()
+  if (!v) return null
+  const empirical = v.match(/empirical_v\d+$/)
+  if (empirical) return empirical[0]
+  const shadow = v.match(/shadow_v\d+$/)
+  if (shadow) return shadow[0]
+  return null
+}
+
 export function isActivePurchasabilityMarket(item: CecchinoPurchasabilityV31Item): boolean {
   return (
     (item.status === 'score' || item.status === 'score_provisional') &&
