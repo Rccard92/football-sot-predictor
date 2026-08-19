@@ -415,18 +415,19 @@ def build_range_purchasability_v35_analysis_manifest_and_files(
             if not isinstance(item, dict):
                 continue
             csv_rows.append(_csv_row_from_analysis(analysis, market_key=mk, item=item))
-            if str(item.get("status") or "") == "score":
+            is_scored = str(item.get("status") or "") == "score"
+            if is_scored:
                 summary["scored_market_rows"] += 1
             ev = item.get("evaluation") if isinstance(item.get("evaluation"), dict) else {}
             outcome = ev.get("outcome")
             profit = ev.get("profit_1u")
-            if profit is not None:
+            if is_scored and profit is not None:
                 summary["settled_scored_rows"] += 1
-            if outcome == EVAL_WON:
+            if is_scored and outcome == EVAL_WON:
                 summary["won_scored_rows"] += 1
-            elif outcome == EVAL_LOST:
+            elif is_scored and outcome == EVAL_LOST:
                 summary["lost_scored_rows"] += 1
-            elif outcome == EVAL_RESULT_MISSING:
+            elif is_scored and outcome == EVAL_RESULT_MISSING:
                 summary["result_missing_scored_rows"] += 1
 
     manifest = make_json_safe(
