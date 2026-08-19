@@ -153,6 +153,43 @@ def compute_hours_to_kickoff(
     return delta.total_seconds() / 3600.0
 
 
+def verify_pre_match_snapshot(fixture_meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Verifica reale snapshot_at < kickoff — nessun outcome coinvolto."""
+    if not isinstance(fixture_meta, dict):
+        return {
+            "verified": False,
+            "reason_code": GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT,
+            "kickoff": None,
+            "snapshot_at": None,
+        }
+
+    kickoff = parse_iso(fixture_meta.get("kickoff"))
+    snapshot_at = parse_iso(fixture_meta.get("snapshot_at"))
+
+    if kickoff is None or snapshot_at is None:
+        return {
+            "verified": False,
+            "reason_code": GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT,
+            "kickoff": fixture_meta.get("kickoff"),
+            "snapshot_at": fixture_meta.get("snapshot_at"),
+        }
+
+    if snapshot_at >= kickoff:
+        return {
+            "verified": False,
+            "reason_code": GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT,
+            "kickoff": kickoff.isoformat(),
+            "snapshot_at": snapshot_at.isoformat(),
+        }
+
+    return {
+        "verified": True,
+        "reason_code": None,
+        "kickoff": kickoff.isoformat(),
+        "snapshot_at": snapshot_at.isoformat(),
+    }
+
+
 def evaluate_v35_gate(
     *,
     row: dict[str, Any],
@@ -164,6 +201,15 @@ def evaluate_v35_gate(
 ) -> dict[str, Any]:
     """Gate V3.5 — machine-readable reason codes."""
     reason_codes: list[str] = []
+
+    pre_match = verify_pre_match_snapshot(fixture_meta)
+    if not pre_match["verified"]:
+        reason_codes.append(str(pre_match["reason_code"]))
+        return _gate_result(
+            gate_status="unavailable_inputs",
+            item_status="not_calculable",
+            reason_codes=reason_codes,
+        )
 
     # Execution quote
     if not exec_info.get("execution_quote_real"):

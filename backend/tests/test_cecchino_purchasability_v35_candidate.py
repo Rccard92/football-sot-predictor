@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import math
+from pathlib import Path
 
 import pytest
 
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
-from app.services.cecchino.cecchino_purchasability_candidate import clamp
 from app.services.cecchino.cecchino_purchasability_v35_candidate import (
     SUPPORTED_V35_MARKETS,
     calculate_purchasability_v35_batch,
@@ -26,6 +27,7 @@ from app.services.cecchino.cecchino_purchasability_v35_config import (
     CANDIDATE_WEIGHTS,
     D_MARKET_DISAGREEMENT_SCALE,
     GATE_REASON_EXECUTION_QUOTE_NOT_REAL,
+    GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT,
     GATE_REASON_MISSING_EXECUTION_QUOTE,
     GATE_REASON_MODEL_NOT_ABOVE_FAIR,
     GATE_REASON_NON_POSITIVE_EV,
@@ -39,11 +41,13 @@ from app.services.cecchino.cecchino_purchasability_v35_features import (
     evaluate_v35_gate,
     resolve_execution_quote_v35,
     sanitize_kpi_row,
+    verify_pre_match_snapshot,
 )
 from app.services.cecchino.cecchino_purchasability_v35_relations import (
     RELATION_REGISTRY,
     scoreable_relations_for_market,
 )
+from app.services.cecchino.cecchino_purchasability_v35_utils import clamp_v35
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -52,11 +56,31 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_3_5,
     SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
     SEL_X_TWO,
 )
+
+_V35_BACKEND = Path(__file__).resolve().parents[1] / "app" / "services" / "cecchino"
+_LEGACY_IMPORT_PREFIXES = (
+    "cecchino_purchasability_candidate",
+    "cecchino_purchasability_v31",
+    "cecchino_purchasability_v3_candidate",
+)
+
+
+def _fixture_meta(
+    *,
+    snapshot_at: str = "2026-08-19T10:00:00+00:00",
+    kickoff: str = "2026-08-19T15:00:00+00:00",
+) -> dict:
+    return {
+        "today_fixture_id": 1,
+        "snapshot_at": snapshot_at,
+        "kickoff": kickoff,
+    }
 
 
 def _row(
@@ -138,7 +162,7 @@ def _gate_pass_row(
 def test_v_component_formula(ev, expected):
     result = compute_executable_value(ev)
     assert result["executable_value_score"] == pytest.approx(expected, rel=1e-9)
-    assert result["score"] == pytest.approx(clamp(expected), rel=1e-9)
+    assert result["score"] == pytest.approx(clamp_v35(expected), rel=1e-9)
     assert 0 <= result["score"] <= 100
 
 
@@ -201,7 +225,11 @@ def _structural_fixture(*, related_delta: float) -> tuple[str, dict, dict, dict]
         SEL_HOME: _fair(0.45),
         SEL_ONE_X: _fair(p_fair_related),
     }
-    return SEL_HOME, by_mk, fair_by, {"HOME": None}
+    model_probs = {
+        SEL_HOME: by_mk[SEL_HOME]["prob_cecchino"],
+        SEL_ONE_X: by_mk[SEL_ONE_X]["prob_cecchino"],
+    }
+    return SEL_HOME, by_mk, fair_by, model_probs
 
 
 def test_s_component_positive_support():
@@ -209,8 +237,10 @@ def test_s_component_positive_support():
     s = compute_structural_coherence(
         SEL_HOME, by_mk=by_mk, fair_by=fair_by, model_probs=model_probs
     )
+    assert s["raw_score"] is not None
+    assert s["raw_score"] > 50
     assert s["score"] is not None
-    assert s["score"] > 50
+    assert s["score"] < s["raw_score"]  # side_cover weight attenuates
 
 
 def test_s_component_neutral_support():
@@ -218,7 +248,7 @@ def test_s_component_neutral_support():
     s = compute_structural_coherence(
         SEL_HOME, by_mk=by_mk, fair_by=fair_by, model_probs=model_probs
     )
-    assert s["score"] is not None
+    assert s["raw_score"] == pytest.approx(50.0, abs=0.5)
     assert s["score"] == pytest.approx(50.0, abs=0.5)
 
 
@@ -227,8 +257,46 @@ def test_s_component_negative_support():
     s = compute_structural_coherence(
         SEL_HOME, by_mk=by_mk, fair_by=fair_by, model_probs=model_probs
     )
+    assert s["raw_score"] is not None
+    assert s["raw_score"] < 50
     assert s["score"] is not None
-    assert s["score"] < 50
+    assert s["score"] > s["raw_score"]  # attenuation pulls toward 50 from below
+
+
+def test_s_side_cover_weight_attenuates():
+    """weight=0.60 must not cancel: S_effective < S_raw when S_raw > 50."""
+    _, by_mk, fair_by, model_probs = _structural_fixture(related_delta=0.8)
+    s = compute_structural_coherence(
+        SEL_HOME, by_mk=by_mk, fair_by=fair_by, model_probs=model_probs
+    )
+    assert s["relation_strength"] == pytest.approx(0.60, abs=1e-9)
+    assert s["coverage"] == pytest.approx(1.0, abs=1e-9)
+    assert s["structural_confidence"] == pytest.approx(0.60, abs=1e-9)
+    assert s["raw_score"] > 50
+    assert s["score"] == pytest.approx(50 + (s["raw_score"] - 50) * 0.60, abs=0.01)
+
+
+def test_s_over_25_partial_coverage():
+    """OVER_2_5 has 2 adjacent relations; only one with data → coverage=0.5."""
+    p_fair = 0.50
+    p_related = 0.65
+    by_mk = {
+        SEL_OVER_2_5: _row(SEL_OVER_2_5, rating=70, prob=0.60, quota_book=2.0),
+        SEL_OVER_1_5: _row(SEL_OVER_1_5, rating=70, prob=p_related, quota_book=1.4),
+    }
+    fair_by = {
+        SEL_OVER_2_5: _fair(0.48),
+        SEL_OVER_1_5: _fair(p_fair),
+    }
+    model_probs = {k: v["prob_cecchino"] for k, v in by_mk.items()}
+    s = compute_structural_coherence(
+        SEL_OVER_2_5, by_mk=by_mk, fair_by=fair_by, model_probs=model_probs
+    )
+    assert s["configured_relation_count"] == 2
+    assert s["available_relation_count"] == 1
+    assert s["coverage"] == pytest.approx(0.5, abs=1e-9)
+    assert s["relation_strength"] == pytest.approx(1.0, abs=1e-9)
+    assert s["structural_confidence"] == pytest.approx(0.5, abs=1e-9)
 
 
 def test_s_component_unavailable_no_relations():
@@ -336,7 +404,7 @@ def test_q_combined_penalties():
         hours_to_kickoff=12.0,
     )
     assert q["snapshot_age_used_in_score"] is False
-    expected = clamp(100 - 12.5 - 10 - 10 - 20)
+    expected = clamp_v35(100 - 12.5 - 10 - 10 - 20)
     assert q["score"] == pytest.approx(expected, abs=0.1)
 
 
@@ -353,6 +421,7 @@ def test_gate_rating_49_fails():
         exec_info=exec_info,
         probability_cecchino=0.55,
         fair_book_probability=0.45,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["item_status"] == "gate_failed"
     assert GATE_REASON_RATING_BELOW_50 in gate["gate_reason_codes"]
@@ -366,6 +435,7 @@ def test_gate_rating_50_can_pass():
         exec_info=exec_info,
         probability_cecchino=0.55,
         fair_book_probability=0.45,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["gate_status"] == "passed"
 
@@ -379,6 +449,7 @@ def test_gate_ev_non_positive():
         exec_info=exec_info,
         probability_cecchino=0.40,
         fair_book_probability=0.35,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["item_status"] == "gate_failed"
     assert GATE_REASON_NON_POSITIVE_EV in gate["gate_reason_codes"]
@@ -392,6 +463,7 @@ def test_gate_model_not_above_fair():
         exec_info=exec_info,
         probability_cecchino=0.50,
         fair_book_probability=0.50,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["item_status"] == "gate_failed"
     assert GATE_REASON_MODEL_NOT_ABOVE_FAIR in gate["gate_reason_codes"]
@@ -406,6 +478,7 @@ def test_gate_missing_quote():
         exec_info=exec_info,
         probability_cecchino=0.55,
         fair_book_probability=0.45,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["item_status"] == "not_calculable"
     assert GATE_REASON_MISSING_EXECUTION_QUOTE in gate["gate_reason_codes"]
@@ -421,9 +494,70 @@ def test_gate_derived_quote_not_executable():
         exec_info=exec_info,
         probability_cecchino=0.55,
         fair_book_probability=0.45,
+        fixture_meta=_fixture_meta(),
     )
     assert gate["item_status"] == "not_calculable"
     assert GATE_REASON_EXECUTION_QUOTE_NOT_REAL in gate["gate_reason_codes"]
+
+
+# ---------------------------------------------------------------------------
+# Pre-match invariant
+# ---------------------------------------------------------------------------
+
+
+def test_prematch_snapshot_before_kickoff_passes():
+    assert verify_pre_match_snapshot(_fixture_meta())["verified"] is True
+
+
+def test_prematch_snapshot_equal_kickoff_fails():
+    meta = _fixture_meta(
+        snapshot_at="2026-08-19T15:00:00+00:00",
+        kickoff="2026-08-19T15:00:00+00:00",
+    )
+    check = verify_pre_match_snapshot(meta)
+    assert check["verified"] is False
+    row, fair, exec_info = _gate_pass_row()
+    gate = evaluate_v35_gate(
+        row=row,
+        fair_info=fair,
+        exec_info=exec_info,
+        probability_cecchino=0.55,
+        fair_book_probability=0.45,
+        fixture_meta=meta,
+    )
+    assert gate["item_status"] == "not_calculable"
+    assert GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT in gate["gate_reason_codes"]
+
+
+def test_prematch_snapshot_after_kickoff_fails():
+    meta = _fixture_meta(
+        snapshot_at="2026-08-19T16:00:00+00:00",
+        kickoff="2026-08-19T15:00:00+00:00",
+    )
+    gate = evaluate_v35_gate(
+        row=_gate_pass_row()[0],
+        fair_info=_gate_pass_row()[1],
+        exec_info=_gate_pass_row()[2],
+        probability_cecchino=0.55,
+        fair_book_probability=0.45,
+        fixture_meta=meta,
+    )
+    assert gate["item_status"] == "not_calculable"
+    assert GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT in gate["gate_reason_codes"]
+
+
+def test_prematch_invalid_timestamp_fails():
+    meta = {"snapshot_at": "not-a-date", "kickoff": "2026-08-19T15:00:00+00:00"}
+    assert verify_pre_match_snapshot(meta)["verified"] is False
+    gate = evaluate_v35_gate(
+        row=_gate_pass_row()[0],
+        fair_info=_gate_pass_row()[1],
+        exec_info=_gate_pass_row()[2],
+        probability_cecchino=0.55,
+        fair_book_probability=0.45,
+        fixture_meta=meta,
+    )
+    assert GATE_REASON_INVALID_PRE_MATCH_SNAPSHOT in gate["gate_reason_codes"]
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +611,8 @@ def test_sanity_under_35_pre_match():
     by_mk = {mk: row}
 
     item = calculate_purchasability_v35_item(
-        mk, row, by_mk, fair_by=fair_by, model_probs={mk: p_cec}
+        mk, row, by_mk, fair_by=fair_by, model_probs={mk: p_cec},
+        fixture_meta=_fixture_meta(),
     )
 
     ev = p_cec * quota - 1
@@ -536,7 +671,8 @@ def test_invariants_no_nan_inf():
     by_mk = {r["market_key"]: r for r in rows}
     for mk, row in by_mk.items():
         item = calculate_purchasability_v35_item(
-            mk, row, by_mk, fair_by=fair_by, model_probs={mk: row["prob_cecchino"]}
+            mk, row, by_mk, fair_by=fair_by, model_probs={mk: row["prob_cecchino"]},
+            fixture_meta=_fixture_meta(),
         )
         for comp_name, comp in item["components"].items():
             if comp is None:
@@ -583,10 +719,12 @@ def test_v35_independent_of_v31_fields():
     by_mk_b = {mk: row_b}
 
     out_a = calculate_purchasability_v35_item(
-        mk, row_a, by_mk_a, fair_by=fair_by, model_probs={mk: 0.55}
+        mk, row_a, by_mk_a, fair_by=fair_by, model_probs={mk: 0.55},
+        fixture_meta=_fixture_meta(),
     )
     out_b = calculate_purchasability_v35_item(
-        mk, row_b, by_mk_b, fair_by=fair_by, model_probs={mk: 0.55}
+        mk, row_b, by_mk_b, fair_by=fair_by, model_probs={mk: 0.55},
+        fixture_meta=_fixture_meta(),
     )
 
     assert out_a["candidates"] == out_b["candidates"]
@@ -612,17 +750,48 @@ def test_forbidden_keys_stripped_from_sanitize():
 
 def test_batch_covers_19_markets():
     rows = [_row(mk, rating=60, prob=0.55, quota_book=2.2) for mk in PANEL_MARKET_KEYS]
-    # Adjust fair probs so gate can pass for some
-    batch = calculate_purchasability_v35_batch(kpi_panel={"rows": rows})
+    batch = calculate_purchasability_v35_batch(
+        kpi_panel={"rows": rows}, fixture_meta=_fixture_meta(),
+    )
     assert batch["summary"]["supported_markets"] == 19
     assert len(batch["items"]) == 19
     assert set(SUPPORTED_V35_MARKETS) == set(PANEL_MARKET_KEYS)
     assert batch["pre_match_only"] is True
+    assert batch["pre_match_verified"] is True
     assert batch["contains_post_match_fields"] is False
 
 
+def test_batch_relation_registry_once():
+    rows = [_row(SEL_HOME, rating=60, prob=0.55, quota_book=2.2)]
+    batch = calculate_purchasability_v35_batch(
+        kpi_panel={"rows": rows}, fixture_meta=_fixture_meta(),
+    )
+    assert "relation_registry" in batch
+    assert batch["relation_registry_version"]
+    assert len(batch["relation_registry"]) > 0
+    for item in batch["items"]:
+        assert "relation_registry" not in item.get("diagnostics", {})
+
+
+def test_item_has_market_relations_only():
+    p_related = 0.65
+    rows = [
+        _row(SEL_HOME, rating=60, prob=0.55, quota_book=2.2),
+        _row(SEL_ONE_X, rating=70, prob=p_related, quota_book=1.4),
+    ]
+    batch = calculate_purchasability_v35_batch(
+        kpi_panel={"rows": rows}, fixture_meta=_fixture_meta(),
+    )
+    home = next(it for it in batch["items"] if it["market_key"] == SEL_HOME)
+    s_block = home["components"]["structural_coherence"]
+    if s_block and s_block.get("relations"):
+        assert all("related_market" in r for r in s_block["relations"])
+
+
 def test_batch_dependency_meta():
-    batch = calculate_purchasability_v35_batch(kpi_panel={"rows": []})
+    batch = calculate_purchasability_v35_batch(
+        kpi_panel={"rows": []}, fixture_meta=_fixture_meta(),
+    )
     dm = batch["dependency_meta"]
     assert dm["rating_used_as_gate"] is True
     assert dm["rating_used_in_score"] is False
@@ -667,7 +836,8 @@ def _audit_item(
 
     model_probs = {k: v.get("prob_cecchino") for k, v in by_mk.items()}
     item = calculate_purchasability_v35_item(
-        mk, row, by_mk, fair_by=fair_by, model_probs=model_probs
+        mk, row, by_mk, fair_by=fair_by, model_probs=model_probs,
+        fixture_meta=_fixture_meta(),
     )
 
     ev = None
@@ -678,6 +848,7 @@ def _audit_item(
         dl = delta_logit(prob, fair_prob)
 
     comps = item["components"] or {}
+    s_block = comps.get("structural_coherence") or {}
     return {
         "scenario": scenario,
         "market": mk,
@@ -689,7 +860,9 @@ def _audit_item(
         "delta_logit": dl,
         "V": (comps.get("executable_value") or {}).get("score"),
         "D": (comps.get("market_disagreement") or {}).get("score"),
-        "S": (comps.get("structural_coherence") or {}).get("score"),
+        "S_raw": s_block.get("raw_score"),
+        "structural_confidence": s_block.get("structural_confidence"),
+        "S_effective": s_block.get("score"),
         "Q": (comps.get("information_quality") or {}).get("score"),
         "score_A": item["candidates"]["A"]["score"],
         "score_B": item["candidates"]["B"]["score"],
@@ -749,7 +922,7 @@ def test_audit_eight_scenarios(capsys):
 
     header = (
         "scenario\tmarket\trating\tquota\tp_model\tp_book_fair\tEV\tdelta_logit\t"
-        "V\tD\tS\tQ\tscore_A\tscore_B\tscore_C\tscore_D\tgate_status"
+        "V\tD\tS_raw\tconfidence\tS_effective\tQ\tscore_A\tscore_B\tscore_C\tscore_D\tgate_status"
     )
     print("\n=== V3.5 AUDIT TABLE ===")
     print(header)
@@ -767,7 +940,9 @@ def test_audit_eight_scenarios(capsys):
                 "delta_logit",
                 "V",
                 "D",
-                "S",
+                "S_raw",
+                "structural_confidence",
+                "S_effective",
                 "Q",
                 "score_A",
                 "score_B",
@@ -778,10 +953,137 @@ def test_audit_eight_scenarios(capsys):
         )
         print(line)
 
-    assert scenarios[6]["S"] is None
+    assert scenarios[6]["S_effective"] is None
     assert scenarios[7]["gate_status"] == "gate_failed"
     assert scenarios[7]["status"] == "gate_failed"
-    assert scenarios[4]["S"] is not None
-    assert scenarios[4]["S"] > 50
-    assert scenarios[5]["S"] is not None
-    assert scenarios[5]["S"] < 50
+    assert scenarios[4]["S_effective"] is not None
+    assert scenarios[4]["S_raw"] is not None
+    assert scenarios[4]["S_effective"] < scenarios[4]["S_raw"]
+    assert scenarios[5]["S_effective"] is not None
+    assert scenarios[5]["S_effective"] > scenarios[5]["S_raw"]
+
+
+def test_v35_no_legacy_scoring_imports():
+    """V3.5 must not import legacy purchasability scoring modules."""
+    v35_files = sorted(_V35_BACKEND.glob("cecchino_purchasability_v35*.py"))
+    assert v35_files, "expected v35 modules"
+    offenders: list[str] = []
+    for path in v35_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    mod = alias.name
+                    if any(mod.startswith(p) for p in _LEGACY_IMPORT_PREFIXES):
+                        offenders.append(f"{path.name}: import {mod}")
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                mod = node.module
+                if any(
+                    mod == p or mod.startswith(p + ".")
+                    for p in _LEGACY_IMPORT_PREFIXES
+                ):
+                    offenders.append(f"{path.name}: from {mod}")
+    assert offenders == []
+
+
+def test_audit_structural_before_after(capsys):
+    """BEFORE/AFTER table for structural confidence fix."""
+    p_fair_related = 0.50
+    related_pos = _row(SEL_ONE_X, rating=70, prob=0.65, quota_book=1.4)
+    related_neg = _row(SEL_ONE_X, rating=70, prob=0.35, quota_book=2.8)
+    related_fair = {SEL_ONE_X: _fair(p_fair_related)}
+
+    over_both = [
+        _row(SEL_OVER_2_5, rating=70, prob=0.60, quota_book=2.0),
+        _row(SEL_OVER_1_5, rating=70, prob=0.65, quota_book=1.4),
+        _row(SEL_OVER_3_5, rating=70, prob=0.55, quota_book=2.2),
+    ]
+    over_one = [
+        _row(SEL_OVER_2_5, rating=70, prob=0.60, quota_book=2.0),
+        _row(SEL_OVER_1_5, rating=70, prob=0.65, quota_book=1.4),
+    ]
+    fair_over = {
+        SEL_OVER_2_5: _fair(0.48),
+        SEL_OVER_1_5: _fair(0.50),
+        SEL_OVER_3_5: _fair(0.45),
+    }
+
+    cases = [
+        _audit_item(
+            "HOME_side_cover_positive",
+            SEL_HOME,
+            rating=60,
+            prob=0.55,
+            fair_prob=0.45,
+            quota=2.20,
+            related_rows={SEL_ONE_X: related_pos},
+            related_fair=related_fair,
+        ),
+        _audit_item(
+            "HOME_side_cover_contrary",
+            SEL_HOME,
+            rating=60,
+            prob=0.55,
+            fair_prob=0.45,
+            quota=2.20,
+            related_rows={SEL_ONE_X: related_neg},
+            related_fair=related_fair,
+        ),
+        _audit_item(
+            "OVER_2_5_both_relations",
+            SEL_OVER_2_5,
+            rating=70,
+            prob=0.60,
+            fair_prob=0.48,
+            quota=2.00,
+            related_rows={r["market_key"]: r for r in over_both if r["market_key"] != SEL_OVER_2_5},
+            related_fair=fair_over,
+        ),
+        _audit_item(
+            "OVER_2_5_one_relation",
+            SEL_OVER_2_5,
+            rating=70,
+            prob=0.60,
+            fair_prob=0.48,
+            quota=2.00,
+            related_rows={r["market_key"]: r for r in over_one if r["market_key"] != SEL_OVER_2_5},
+            related_fair={k: v for k, v in fair_over.items() if k != SEL_OVER_3_5},
+        ),
+        _audit_item(
+            "S_unavailable",
+            SEL_DRAW,
+            rating=60,
+            prob=0.35,
+            fair_prob=0.30,
+            quota=3.20,
+        ),
+    ]
+
+    print("\n=== STRUCTURAL BEFORE/AFTER (S_effective vs old S_raw-only) ===")
+    print(
+        "scenario\tS_raw\tconfidence\tS_effective\tA\tB\tC\tD\t"
+        "note_before=S_raw_used_as_score"
+    )
+    for c in cases:
+        s_raw = c["S_raw"]
+        conf = c["structural_confidence"]
+        s_eff = c["S_effective"]
+        before_a = c["score_A"]
+        note = "unchanged" if s_raw is None else f"before_A≈used_S_raw={s_raw}"
+        print(
+            f"{c['scenario']}\t{s_raw}\t{conf}\t{s_eff}\t"
+            f"{c['score_A']}\t{c['score_B']}\t{c['score_C']}\t{c['score_D']}\t{note}"
+        )
+
+    home_pos = cases[0]
+    assert home_pos["S_raw"] > 50
+    assert home_pos["structural_confidence"] == pytest.approx(0.60, abs=0.01)
+    assert home_pos["S_effective"] == pytest.approx(
+        50 + (home_pos["S_raw"] - 50) * 0.60, abs=0.5
+    )
+    assert home_pos["S_effective"] < home_pos["S_raw"]
+
+    over_one = cases[3]
+    assert over_one["structural_confidence"] == pytest.approx(0.5, abs=0.01)
+
+    assert cases[4]["S_effective"] is None

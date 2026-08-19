@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from app.services.cecchino.cecchino_purchasability_candidate import clamp
 from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
     clip_prob,
 )
@@ -30,6 +29,7 @@ from app.services.cecchino.cecchino_purchasability_v35_features import (
 from app.services.cecchino.cecchino_purchasability_v35_relations import (
     scoreable_relations_for_market,
 )
+from app.services.cecchino.cecchino_purchasability_v35_utils import clamp_v35
 
 
 def logit(p: float, *, epsilon: float = PROB_EPSILON) -> float:
@@ -47,7 +47,7 @@ def compute_executable_value(expected_value: float) -> dict[str, Any]:
         score = 0.0
     else:
         score = 100.0 * (1.0 - math.exp(-expected_value / V_EXECUTABLE_VALUE_SCALE))
-    score = clamp(score, 0.0, 100.0)
+    score = clamp_v35(score, 0.0, 100.0)
     return {
         "component": "executable_value",
         "expected_value": expected_value,
@@ -69,7 +69,7 @@ def compute_market_disagreement(
         d_score = 0.0
     else:
         d_score = 100.0 * (1.0 - math.exp(-dl / D_MARKET_DISAGREEMENT_SCALE))
-    d_score = clamp(d_score, 0.0, 100.0)
+    d_score = clamp_v35(d_score, 0.0, 100.0)
     return {
         "component": "market_disagreement",
         "delta_logit": dl,
@@ -82,7 +82,7 @@ def compute_market_disagreement(
 
 
 def _related_support_score(related_delta: float) -> float:
-    return clamp(
+    return clamp_v35(
         50.0 + 50.0 * math.tanh(related_delta / S_STRUCTURAL_SUPPORT_SCALE),
         0.0,
         100.0,
@@ -96,13 +96,15 @@ def compute_structural_coherence(
     fair_by: dict[str, dict[str, Any]],
     model_probs: dict[str, float | None] | None,
 ) -> dict[str, Any]:
-    """S = weighted mean of related market support scores."""
-    relations = scoreable_relations_for_market(market_key)
+    """S_raw weighted mean + structural_confidence attenuation → S_effective."""
+    configured_relations = scoreable_relations_for_market(market_key)
+    configured_relation_count = len(configured_relations)
     relation_details: list[dict[str, Any]] = []
     weighted_sum = 0.0
     weight_sum = 0.0
+    available_weights: list[float] = []
 
-    for rel in relations:
+    for rel in configured_relations:
         related_mk = rel.related_market
         related_row = by_mk.get(related_mk) or {}
         related_fair = fair_by.get(related_mk)
@@ -140,31 +142,56 @@ def compute_structural_coherence(
             detail["data_available"] = True
             weighted_sum += support * rel.relation_weight
             weight_sum += rel.relation_weight
+            available_weights.append(rel.relation_weight)
 
         relation_details.append(detail)
 
-    if weight_sum <= 0:
+    if configured_relation_count == 0 or weight_sum <= 0:
         return {
             "component": "structural_coherence",
             "score": None,
+            "raw_score": None,
+            "structural_confidence": None,
+            "relation_strength": None,
+            "coverage": None,
+            "configured_relation_count": configured_relation_count,
+            "available_relation_count": 0,
             "structural_status": "unavailable",
             "status": "unavailable",
             "scale": S_STRUCTURAL_SUPPORT_SCALE,
-            "formula": "sum(support_i * weight) / sum(weight)",
+            "formula": "S_effective = 50 + (S_raw - 50) * structural_confidence",
             "relations": relation_details,
         }
 
-    s_score = clamp(weighted_sum / weight_sum, 0.0, 100.0)
+    available_relation_count = len(available_weights)
+    s_raw = clamp_v35(weighted_sum / weight_sum, 0.0, 100.0)
+    relation_strength = clamp_v35(
+        sum(available_weights) / available_relation_count,
+        0.0,
+        1.0,
+    )
+    coverage = available_relation_count / configured_relation_count
+    structural_confidence = clamp_v35(relation_strength * coverage, 0.0, 1.0)
+    s_effective = clamp_v35(
+        50.0 + (s_raw - 50.0) * structural_confidence,
+        0.0,
+        100.0,
+    )
+
     return {
         "component": "structural_coherence",
-        "score": s_score,
+        "score": s_effective,
+        "raw_score": s_raw,
+        "structural_confidence": structural_confidence,
+        "relation_strength": relation_strength,
+        "coverage": coverage,
+        "configured_relation_count": configured_relation_count,
+        "available_relation_count": available_relation_count,
         "structural_status": "available",
         "status": "available",
         "scale": S_STRUCTURAL_SUPPORT_SCALE,
-        "formula": "sum(support_i * weight) / sum(weight)",
+        "formula": "S_effective = 50 + (S_raw - 50) * structural_confidence",
         "relations": relation_details,
-        "relation_count_used": sum(1 for d in relation_details if d["data_available"]),
-        "weight_sum": weight_sum,
     }
 
 
@@ -172,12 +199,12 @@ def _overround_penalty(overround: float | None) -> float:
     if overround is None:
         return 0.0
     ratio = (overround - Q_OVERROUND_BASE) / Q_OVERROUND_RANGE
-    return Q_OVERROUND_MAX_PENALTY * clamp(ratio, 0.0, 1.0)
+    return Q_OVERROUND_MAX_PENALTY * clamp_v35(ratio, 0.0, 1.0)
 
 
 def _extreme_divergence_penalty(abs_delta_logit: float) -> float:
     ratio = (abs_delta_logit - Q_EXTREME_DIVERGENCE_START) / Q_EXTREME_DIVERGENCE_RANGE
-    return Q_EXTREME_DIVERGENCE_MAX_PENALTY * clamp(ratio, 0.0, 1.0)
+    return Q_EXTREME_DIVERGENCE_MAX_PENALTY * clamp_v35(ratio, 0.0, 1.0)
 
 
 def compute_information_quality(
@@ -195,7 +222,7 @@ def compute_information_quality(
     ex_pen = _extreme_divergence_penalty(abs(delta_logit_value))
 
     q_raw = 100.0 - ov_pen - fb_pen - df_pen - ex_pen
-    q_score = clamp(q_raw, 0.0, 100.0)
+    q_score = clamp_v35(q_raw, 0.0, 100.0)
 
     return {
         "component": "information_quality",

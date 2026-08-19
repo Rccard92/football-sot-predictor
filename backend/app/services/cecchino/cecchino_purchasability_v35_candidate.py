@@ -11,10 +11,6 @@ from app.schemas.cecchino_purchasability_v35 import (
 )
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
-from app.services.cecchino.cecchino_purchasability_candidate import (
-    map_score_to_class,
-    round_purchasability_score_half_up,
-)
 from app.services.cecchino.cecchino_purchasability_fair_book import (
     resolve_fair_book_for_panel_rows,
 )
@@ -32,6 +28,7 @@ from app.services.cecchino.cecchino_purchasability_v35_config import (
     CANDIDATE_IDS,
     CANDIDATE_NAMES,
     CANDIDATE_WEIGHTS,
+    RELATION_REGISTRY_VERSION,
     dependency_meta,
     market_label_for,
     version_meta,
@@ -40,9 +37,14 @@ from app.services.cecchino.cecchino_purchasability_v35_features import (
     build_market_input_context,
     evaluate_v35_gate,
     resolve_fair_book_probability,
+    verify_pre_match_snapshot,
 )
 from app.services.cecchino.cecchino_purchasability_v35_relations import (
     relation_registry_audit,
+)
+from app.services.cecchino.cecchino_purchasability_v35_utils import (
+    classify_score_v35,
+    round_score_v35,
 )
 
 SUPPORTED_V35_MARKETS = frozenset(PANEL_MARKET_KEYS)
@@ -141,14 +143,14 @@ def score_candidate(
         raw = sum(weights[k] * available[k] for k in available) / denom
 
     effective = {k: _round4(weights[k] / denom) for k in available}
-    score_int = round_purchasability_score_half_up(raw) if raw is not None else None
+    score_int = round_score_v35(raw) if raw is not None else None
 
     return {
         "candidate_id": CANDIDATE_IDS[candidate_key],
         "candidate_name": CANDIDATE_NAMES[candidate_key],
         "raw_score": _round2(raw) if raw is not None else None,
         "score": score_int,
-        "class": map_score_to_class(score_int),
+        "class": classify_score_v35(score_int),
         "effective_weights": effective,
         "missing_components": missing,
         "configured_weights": weights,
@@ -216,7 +218,6 @@ def calculate_purchasability_v35_item(
             "vantaggio_prob": ctx["vantaggio_prob_diagnostic"],
             "hours_to_kickoff": ctx["hours_to_kickoff"],
             "snapshot_age_used_in_score": False,
-            "relation_registry": relation_registry_audit(),
         },
         "dependency_meta": dependency_meta(),
     }
@@ -283,6 +284,7 @@ def calculate_purchasability_v35_batch(
     rows = _panel_rows(kpi_panel)
     by_mk = _index_rows(rows)
     meta = dict(fixture_meta or {})
+    pre_match_check = verify_pre_match_snapshot(meta)
 
     fair_by = resolve_fair_book_for_panel_rows(
         rows,
@@ -310,6 +312,8 @@ def calculate_purchasability_v35_batch(
             **vmeta,
             "registry_status": PURCHASABILITY_V35_REGISTRY_STATUS,
             "status": "ok" if items else "unavailable",
+            "relation_registry_version": RELATION_REGISTRY_VERSION,
+            "relation_registry": relation_registry_audit(),
             "items": items,
             "fixture_meta": {
                 "today_fixture_id": meta.get("today_fixture_id"),
@@ -328,6 +332,7 @@ def calculate_purchasability_v35_batch(
                 "supported_markets": len(SUPPORTED_V35_MARKETS),
             },
             "pre_match_only": True,
+            "pre_match_verified": pre_match_check["verified"],
             "contains_post_match_fields": False,
             "dependency_meta": dependency_meta(),
         }
