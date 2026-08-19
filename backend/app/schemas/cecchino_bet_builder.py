@@ -63,3 +63,16 @@ class BetBuilderResultsResponse(BaseModel):
     total: int
     summary: dict[str, Any]
     fixtures: list[dict[str, Any]]
+
+
+class BetBuilderResultAnalysisContextResponse(BaseModel):
+    """Contratto indicativo analysis context (BET-RESULTS-02)."""
+
+    contract_version: str
+    fixture: dict[str, Any]
+    kpi_panel: dict[str, Any] | None = None
+    balance_v5: dict[str, Any] | None = None
+    fixture_identity_consistency: dict[str, Any] | None = None
+    balance_v5_snapshot_meta: dict[str, Any] | None = None
+    goal_intensity_v5: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)

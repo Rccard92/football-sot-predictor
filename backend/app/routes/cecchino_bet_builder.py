@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date as date_type
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.cecchino.cecchino_bet_builder_opportunity_aggregator import (
     aggregate_bet_builder_opportunities,
+)
+from app.services.cecchino.cecchino_bet_builder_result_analysis_context import (
+    get_bet_builder_result_analysis_context,
 )
 from app.services.cecchino.cecchino_bet_builder_results import (
     SORT_RECENT,
@@ -90,4 +93,16 @@ def get_bet_builder_results(
         limit=limit,
         offset=offset,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/results/{today_fixture_id}/analysis-context")
+def get_bet_builder_result_analysis_context_route(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Contesto analitico pre-match (KPI, Balance v5, GI) — read-only, lazy per drawer."""
+    payload = get_bet_builder_result_analysis_context(db, today_fixture_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Fixture non trovata o non eleggibile")
     return JSONResponse(content=jsonable_encoder(payload))
