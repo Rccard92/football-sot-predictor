@@ -176,11 +176,16 @@ def validate_purchasability_preview_v31_snapshot(snapshot: Any) -> dict[str, Any
     return {"ok": True, "reason": None}
 
 
-def _existing_valid_preview_v31(existing: Any) -> dict[str, Any] | None:
+def resolve_valid_persisted_purchasability_v31(existing: Any) -> dict[str, Any] | None:
+    """Restituisce lo snapshot V3.1 persistito se valido, altrimenti None."""
     check = validate_purchasability_preview_v31_snapshot(existing)
     if check.get("ok") and isinstance(existing, dict):
         return existing
     return None
+
+
+def _existing_valid_preview_v31(existing: Any) -> dict[str, Any] | None:
+    return resolve_valid_persisted_purchasability_v31(existing)
 
 
 def build_unavailable_purchasability_preview_v31(

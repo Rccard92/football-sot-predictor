@@ -16,6 +16,7 @@ import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPag
 import { CecchinoTodayScanProgressCard } from '../components/cecchino/CecchinoTodayScanProgressCard'
 import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
 import { CecchinoDayTimeline } from '../components/cecchino/CecchinoDayTimeline'
+import { invalidateHistoricalReliabilityCache } from '../lib/historicalReliabilityCache'
 import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../components/cecchino/cecchinoTodayStyles'
 import {
   getCecchinoTodayDays,
@@ -431,6 +432,7 @@ export function CecchinoTodayPage() {
     setListHidden(false)
     setFixtureDrawerOpen(false)
     setDetail(null)
+    invalidateHistoricalReliabilityCache()
     void loadList(selectedDay)
     void resumeActiveJobForDay(selectedDay)
   }, [selectedDay, loadList, resumeActiveJobForDay, stopPolling])

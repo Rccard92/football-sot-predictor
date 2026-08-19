@@ -30,6 +30,9 @@ from app.services.cecchino.cecchino_kpi_signals_aggregation import (
 from app.services.cecchino.cecchino_historical_reliability import (
     build_historical_reliability_for_panel,
 )
+from app.services.cecchino.cecchino_hr_history_cache import (
+    get_or_build_hr_history_context,
+)
 from app.services.cecchino.cecchino_purchasability_candidate import (
     build_purchasability_candidate_for_fixture,
 )
@@ -198,11 +201,15 @@ def kpi_signals_historical_reliability(
     db: Session = Depends(get_db),
 ):
     """Affidabilità storica v1.1 — read-only, batch per Pannello KPI."""
+    hr_ctx = get_or_build_hr_history_context(db, date_to=date_to)
     payload = build_historical_reliability_for_panel(
         db,
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
+        history_rows=hr_ctx.get("history_rows"),
+        local_index=hr_ctx.get("local_index"),
+        global_index=hr_ctx.get("global_index"),
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -218,11 +225,15 @@ def kpi_signals_purchasability_empirical(
 
     Preferire GET /api/cecchino/kpi-signals/historical-reliability.
     """
+    hr_ctx = get_or_build_hr_history_context(db, date_to=date_to)
     payload = build_historical_reliability_for_panel(
         db,
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
+        history_rows=hr_ctx.get("history_rows"),
+        local_index=hr_ctx.get("local_index"),
+        global_index=hr_ctx.get("global_index"),
     )
     payload = {
         **payload,

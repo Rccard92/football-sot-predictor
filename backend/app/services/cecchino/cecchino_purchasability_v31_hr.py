@@ -82,8 +82,12 @@ def resolve_hr_by_market_for_fixture(
         return {}
 
     history_rows = None
+    local_index = None
+    global_index = None
     if isinstance(history_context, dict):
         history_rows = history_context.get("history_rows")
+        local_index = history_context.get("local_index")
+        global_index = history_context.get("global_index")
 
     if db is None and history_rows is None:
         return {}
@@ -97,6 +101,8 @@ def resolve_hr_by_market_for_fixture(
             current_rows=current_rows,
             fixtures=fixtures,
             history_rows=history_rows,
+            local_index=local_index,
+            global_index=global_index,
         )
     except Exception:
         return {}

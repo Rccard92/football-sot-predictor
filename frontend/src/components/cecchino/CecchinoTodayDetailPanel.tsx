@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import {
-  getHistoricalReliability,
   type HistoricalReliabilityItem,
 } from '../../lib/cecchinoKpiSignalsApi'
+import { fetchHistoricalReliabilityCached } from '../../lib/historicalReliabilityCache'
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
@@ -70,7 +70,7 @@ function mapHistoricalReliabilityForFixture(
 }
 
 export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
-  const [hrByMarket, setHrByMarket] = useState<Record<string, HistoricalReliabilityItem>>({})
+  const [hrItemsFull, setHrItemsFull] = useState<Record<string, HistoricalReliabilityItem>>({})
   const [hrLoading, setHrLoading] = useState(false)
   const [hrError, setHrError] = useState<string | null>(null)
 
@@ -87,16 +87,16 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       setHrLoading(true)
       setHrError(null)
       try {
-        const res = await getHistoricalReliability({
+        const res = await fetchHistoricalReliabilityCached({
           date_from: scanDate,
           date_to: scanDate,
           competition_id: competitionId ?? null,
         })
         if (cancelled) return
-        setHrByMarket(mapHistoricalReliabilityForFixture(res.items || {}, todayFixtureId))
+        setHrItemsFull(res.items || {})
       } catch {
         if (cancelled) return
-        setHrByMarket({})
+        setHrItemsFull({})
         setHrError('Affidabilità non disponibile')
       } finally {
         if (!cancelled) setHrLoading(false)
@@ -105,11 +105,14 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     return () => {
       cancelled = true
     }
-  }, [canFetch, scanDate, competitionId, todayFixtureId])
+  }, [canFetch, scanDate, competitionId])
 
   const hrMemo = useMemo(
-    () => (canFetch ? hrByMarket : {}),
-    [canFetch, hrByMarket],
+    () =>
+      canFetch
+        ? mapHistoricalReliabilityForFixture(hrItemsFull, todayFixtureId)
+        : {},
+    [canFetch, hrItemsFull, todayFixtureId],
   )
 
   const purchasabilityV31ByMarketKey = useMemo(

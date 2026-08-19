@@ -130,10 +130,14 @@ from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
 from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
     attach_purchasability_preview_v31_to_output,
     resolve_purchasability_preview_v31_for_detail,
+    resolve_valid_persisted_purchasability_v31,
 )
 from app.services.cecchino.cecchino_purchasability_v31_hr import (
     build_hr_history_context,
     resolve_hr_by_market_for_fixture,
+)
+from app.services.cecchino.cecchino_hr_history_cache import (
+    get_or_build_hr_history_context,
 )
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     attach_balance_v5_monitoring_to_output,
@@ -2562,17 +2566,33 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         row=row,
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
     )
-    try:
-        hr_by_market_detail = resolve_hr_by_market_for_fixture(
-            db, row, kpi_panel if isinstance(kpi_panel, dict) else None
-        )
-    except Exception:
-        hr_by_market_detail = {}
-    purch_v31 = resolve_purchasability_preview_v31_for_detail(
-        row=row,
-        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
-        historical_by_market=hr_by_market_detail,
+    output_for_v31 = output if isinstance(output, dict) else {}
+    persisted_v31 = resolve_valid_persisted_purchasability_v31(
+        output_for_v31.get("purchasability_preview_v31")
     )
+    if persisted_v31 is not None:
+        hr_by_market_detail: dict[str, dict[str, Any]] = {}
+        purch_v31 = resolve_purchasability_preview_v31_for_detail(
+            row=row,
+            kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+            historical_by_market=None,
+        )
+    else:
+        try:
+            hr_ctx = get_or_build_hr_history_context(db, date_to=row.scan_date)
+            hr_by_market_detail = resolve_hr_by_market_for_fixture(
+                db,
+                row,
+                kpi_panel if isinstance(kpi_panel, dict) else None,
+                history_context=hr_ctx,
+            )
+        except Exception:
+            hr_by_market_detail = {}
+        purch_v31 = resolve_purchasability_preview_v31_for_detail(
+            row=row,
+            kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+            historical_by_market=hr_by_market_detail,
+        )
     try:
         from app.services.cecchino.cecchino_purchasability_observational import (
             build_observational_maps_for_previews,

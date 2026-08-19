@@ -730,24 +730,38 @@ def build_historical_reliability_for_panel(
     history_rows: list[dict[str, Any]] | None = None,
     current_rows: list[dict[str, Any]] | None = None,
     fixtures: list[CecchinoTodayFixture] | None = None,
+    local_index: dict[str, Any] | None = None,
+    global_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Calcola Affidabilità storica v1.1 per le righe visibili del Pannello KPI."""
     started = time.perf_counter()
+    timing: dict[str, float] = {}
 
+    t0 = time.perf_counter()
     if fixtures is None and current_rows is None:
         fixtures = _load_fixtures(
             db, date_from=date_from, date_to=date_to, competition_id=competition_id
         )
+    timing["load_current_fixtures_ms"] = round((time.perf_counter() - t0) * 1000, 2)
 
     if current_rows is None:
         current_rows = iter_current_kpi_panel_rows(fixtures or [])
 
     # History ampia (tutte le competizioni) per abilitare fallback globale.
+    t0 = time.perf_counter()
     if history_rows is None:
         history_rows = build_purchasability_rows(db, date_to=date_to)
+    timing["build_purchasability_rows_ms"] = round((time.perf_counter() - t0) * 1000, 2)
 
-    local_index = build_historical_reliability_index(history_rows)
-    global_index = build_historical_reliability_global_index(history_rows)
+    t0 = time.perf_counter()
+    if local_index is None:
+        local_index = build_historical_reliability_index(history_rows)
+    timing["build_local_index_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+
+    t0 = time.perf_counter()
+    if global_index is None:
+        global_index = build_historical_reliability_global_index(history_rows)
+    timing["build_global_index_ms"] = round((time.perf_counter() - t0) * 1000, 2)
 
     items: dict[str, Any] = {}
     scored_local = 0
@@ -758,6 +772,7 @@ def build_historical_reliability_for_panel(
     unavailable = 0
     market_dist: Counter[str] = Counter()
 
+    t0 = time.perf_counter()
     for row in current_rows:
         market_key = _selection(row)
         if not market_key:
@@ -783,6 +798,10 @@ def build_historical_reliability_for_panel(
             unsupported += 1
         else:
             unavailable += 1
+    timing["evaluate_current_rows_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+
+    total_ms = round((time.perf_counter() - started) * 1000, 2)
+    timing["total_ms"] = total_ms
 
     payload = {
         "metric_kind": METRIC_KIND,
@@ -803,7 +822,8 @@ def build_historical_reliability_for_panel(
             "unsupported": unsupported,
             "history_unavailable": unavailable,
             "market_distribution": dict(sorted(market_dist.items())),
-            "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            "elapsed_ms": total_ms,
+            "timing_ms": timing,
             "no_db_writes": True,
         },
         "filters": {
