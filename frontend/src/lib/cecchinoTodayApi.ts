@@ -775,6 +775,16 @@ export type CecchinoPurchasabilityV3Item = {
   formula_steps?: string[]
   reading_short?: string | null
   reading_detailed?: string | null
+  reason_codes?: string[]
+  gate_reason_codes?: string[]
+  historical_reason_codes?: string[]
+  gate?: Record<string, unknown> | null
+  fair_book_audit?: Record<string, unknown> | null
+  theoretical?: Record<string, unknown> | null
+  formula_steps?: string[]
+  dependency_meta?: unknown
+  value_score?: number | null
+  quality_score?: number | null
   strengths?: string[]
   risks?: string[]
   reason_codes?: string[]
@@ -933,8 +943,11 @@ export type CecchinoPurchasabilityV31Item = {
   line?: number | null
   status: CecchinoPurchasabilityV31ItemStatus
   score: number | null
+  score_v31?: number | null
   raw_score?: number | null
+  raw_score_v31?: number | null
   class?: string | null
+  class_v31?: string | null
   reason?: string | null
   reason_code?: string | null
   gate_status?: string | null
@@ -963,6 +976,18 @@ export type CecchinoPurchasabilityV31Item = {
   derived_quote?: boolean | null
   total_penalty?: number | null
   warnings?: string[]
+  reading_short?: string | null
+  reading_detailed?: string | null
+  reason_codes?: string[]
+  gate_reason_codes?: string[]
+  historical_reason_codes?: string[]
+  gate?: Record<string, unknown> | null
+  fair_book_audit?: Record<string, unknown> | null
+  theoretical?: Record<string, unknown> | null
+  formula_steps?: string[]
+  dependency_meta?: unknown
+  value_score?: number | null
+  quality_score?: number | null
   [key: string]: unknown
 }
 
@@ -2102,6 +2127,27 @@ export async function getKpiExplanations(
 ): Promise<CecchinoKpiExplanationsResponse> {
   return requestJson<CecchinoKpiExplanationsResponse>(
     `/api/cecchino/today/${todayFixtureId}/kpi-explanations`,
+  )
+}
+
+export type CecchinoPurchasabilityAuditExport = {
+  contract_version: string
+  generated_at: string
+  fixture: Record<string, unknown>
+  source_versions: Record<string, string | null>
+  market_order: string[]
+  market_context: {
+    BOOK: Record<string, unknown>
+    CECCHINO: Record<string, unknown>
+  }
+  markets: Record<string, unknown>
+}
+
+export async function getPurchasabilityAuditExport(
+  todayFixtureId: number,
+): Promise<CecchinoPurchasabilityAuditExport> {
+  return requestJson<CecchinoPurchasabilityAuditExport>(
+    `/api/cecchino/today/${todayFixtureId}/purchasability-audit-export`,
   )
 }
 

@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## PURCHASABILITY V3.5 PHASE 00 — Today UI decouple (2026-08-19)
+
+| Componente | Comportamento |
+|------------|---------------|
+| `CecchinoPurchasabilityPanel` | Sezione sopra KPI; mini-card selector (Bet Builder style); detail con reading V3.1 + motivazioni da reason codes |
+| Mercati visibili | Solo `score` / `score_provisional` con `score_v31`; gate_failed / non_calculable nascosti |
+| KPI panel | 10 colonne KPI; analisi formule KPI invariata (no click Acquistabilità) |
+| Audit export | `GET /api/cecchino/today/{today_fixture_id}/purchasability-audit-export` |
+| Contract | `cecchino_purchasability_audit_export_v1` |
+| Backend motori | V3 + V3.1 snapshot attach invariati |
+
 ## BOOK POLICY — Betfair primary → Bet365 fallback (2026-08-08)
 
 Policy canonica `quota_book` per Today / KPI / Signals / V3.1 / Bet Builder / Results:

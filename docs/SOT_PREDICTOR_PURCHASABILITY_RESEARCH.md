@@ -2,6 +2,13 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
+## PURCHASABILITY V3.5 PHASE 00 — UI + audit (2026-08-19)
+
+- Today Detail: sezione **Acquistabilità** autonoma sopra KPI; solo mercati V3.1 attivi (score / score_provisional)
+- Pannello KPI: decoupling completo (nessuna colonna Acquistabilità)
+- Export fixture audit v1: tutti i 19 `PANEL_MARKET_KEYS`, `market_context` BOOK+CECCHINO, relazioni mercato, V3.1 completa, baseline V3 se presente — **no post-match**
+- Formule V3/V3.1 **non modificate**; export destinato alla ricerca/progettazione V3.5
+
 ## V3.1 empirical_v2 — storico non bloccante (2026-08-06)
 
 **Root cause:** con `empirical_v1`, sample &lt; `MIN_SAMPLE=30` → `non_calculable` / `historical_sample_insufficient` anche con gate passato e input completi (Richmond: 16 casi). Inoltre `historical_factor = HR/100` rendeva HR=50 → ×0,50.

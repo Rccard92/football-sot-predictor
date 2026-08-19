@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — PURCHASABILITY V3.5 PHASE 00 decouple Acquistabilità UI + audit export (2026-08-19)
+
+- **Perché:** separare la presentazione Acquistabilità dal Pannello KPI e preparare audit fixture per progettazione V3.5 senza toccare le formule operative.
+- **Cosa:** `CecchinoPurchasabilityPanel` (selector stile Bet Builder + detail); cleanup colonna Acquistabilità in `CecchinoTodayKpiPanel`; export `cecchino_purchasability_audit_export_v1`.
+- **Non modificato:** V3, V3.1, gate, KPI, Signals, Bet Builder, quote pipeline, Results.
+
 ## Fix — CECCHINO-BOOK-PERF-01 staged odds + stale + primary 23:00 (2026-08-08)
 
 - **Perché:** recovery full-canonical pre-stats faceva fino a 2–3 odds call per fixture; scan ~30 min marcata `stale_job_timeout` nonostante heartbeat; UI Odds API=0 durante live; primary a 23:30.

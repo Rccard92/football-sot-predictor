@@ -1,5 +1,15 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## PURCHASABILITY V3.5 PHASE 00 — decouple UI (2026-08-19)
+
+| Area | Comportamento |
+|------|---------------|
+| Scan / persist | Invariato: `purchasability_preview_v3` + `purchasability_preview_v31` in `cecchino_output_json` |
+| Today detail GET | Invariato; nuova sezione frontend legge `purchasability_preview_v31` già nel payload |
+| KPI panel | Solo metriche KPI; Acquistabilità rimossa dalla griglia |
+| Audit export | `GET /api/cecchino/today/{id}/purchasability-audit-export` — snapshot-only; nessuna API esterna / DB write / recompute |
+| V3.5 futura | UI generic (`version`, `itemsByMarket`); export v1 per audit fixture |
+
 ## Bet Builder BET-RESULTS-01.3 — ROI / Profitto (2026-08-08)
 
 1. Summary Results calcola anche `priced_settled` / `profit_units` / `roi_pct` sulla coorte filtrata **prima** di offset/limit.

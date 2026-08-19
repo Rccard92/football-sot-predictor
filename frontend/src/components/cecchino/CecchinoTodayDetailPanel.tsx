@@ -7,10 +7,11 @@ import {
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
-import { indexPurchasabilityV3ByMarketKey, indexPurchasabilityV31ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
+import { indexPurchasabilityV31ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
+import { CecchinoPurchasabilityPanel } from './CecchinoPurchasabilityPanel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
@@ -111,14 +112,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     [canFetch, hrByMarket],
   )
 
-  const purchasabilityV3ByMarketKey = useMemo(
-    () => indexPurchasabilityV3ByMarketKey(detail.purchasability_preview_v3),
-    [detail.purchasability_preview_v3],
-  )
-  const purchasabilityV3SnapshotAvailable =
-    detail.purchasability_preview_v3 != null &&
-    detail.purchasability_preview_v3.status !== 'unavailable'
-
   const purchasabilityV31ByMarketKey = useMemo(
     () => indexPurchasabilityV31ByMarketKey(detail.purchasability_preview_v31),
     [detail.purchasability_preview_v31],
@@ -149,6 +142,15 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     <div className="space-y-5">
       <CecchinoTodayDetailHeader detail={detail} />
 
+      <CecchinoPurchasabilityPanel
+        key={todayFixtureId}
+        version={detail.purchasability_preview_v31?.formula_version ?? 'v3.1'}
+        itemsByMarket={purchasabilityV31ByMarketKey}
+        snapshotAvailable={purchasabilityV31SnapshotAvailable}
+        todayFixtureId={todayFixtureId}
+        providerFixtureId={detail.provider_fixture_id}
+      />
+
       {(detail.kpi_panel_v2 ?? detail.kpi_panel) && (
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
@@ -156,10 +158,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           historicalReliabilityByMarketKey={hrMemo}
           historicalReliabilityLoading={hrLoading}
           historicalReliabilityError={hrError}
-          purchasabilityV3ByMarketKey={purchasabilityV3ByMarketKey}
-          purchasabilityV3SnapshotAvailable={purchasabilityV3SnapshotAvailable}
-          purchasabilityV31ByMarketKey={purchasabilityV31ByMarketKey}
-          purchasabilityV31SnapshotAvailable={purchasabilityV31SnapshotAvailable}
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
         />

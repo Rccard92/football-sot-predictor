@@ -2,6 +2,15 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## PURCHASABILITY V3.5 PHASE 00 — UI separata + audit export (2026-08-19)
+
+- Cecchino Today Detail: **Acquistabilità** è un modulo UI autonomo **sopra** il Pannello KPI (`CecchinoPurchasabilityPanel`)
+- UI mostra solo mercati V3.1 con `status` score / score_provisional e `score_v31` presente; empty state se nessuno attivo
+- Pannello KPI: **nessuna** colonna/selettore Acquistabilità; restano KPI, probabilità, quote, edge, rating, affidabilità
+- Backend V3/V3.1 **invariato** (formule, gate, registry, scan attach); baseline V3.1 per futura V3.5
+- Export audit read-only: `GET /api/cecchino/today/{id}/purchasability-audit-export` — contract `cecchino_purchasability_audit_export_v1`, 19 mercati + `market_context` BOOK/CECCHINO, no post-match leakage
+- Nessuna migrazione; nessun backfill
+
 ## BOOK POLICY — Betfair primary → Bet365 fallback (2026-08-08)
 
 - Cecchino Today Book canonico: **Betfair (3) primary → Bet365 (8) fallback → N/D**, selection-by-selection
