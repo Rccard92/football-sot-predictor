@@ -7,11 +7,14 @@ type Props = {
   recomputeLoading?: boolean
   selectedFixtureId?: number | null
   refreshBetfairLoading?: boolean
+  dailyAuditExportLoading?: boolean
+  dailyAuditExportError?: string | null
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
   onRecomputeCecchino?: () => void
   onRefreshBetfairOdds?: () => void
+  onDownloadDailyAudit?: () => void
 }
 
 export function CecchinoTodayPageHeader({
@@ -23,11 +26,14 @@ export function CecchinoTodayPageHeader({
   recomputeLoading = false,
   selectedFixtureId = null,
   refreshBetfairLoading = false,
+  dailyAuditExportLoading = false,
+  dailyAuditExportError = null,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
   onRecomputeCecchino,
   onRefreshBetfairOdds,
+  onDownloadDailyAudit,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
 
@@ -90,6 +96,22 @@ export function CecchinoTodayPageHeader({
                 {recomputeLoading ? 'Ricalcolo…' : 'Ricalcola Cecchino con nuovi pesi'}
               </button>
             )}
+            {onDownloadDailyAudit && (
+              <button
+                type="button"
+                data-testid="daily-purch-audit-download-btn"
+                onClick={() => onDownloadDailyAudit()}
+                disabled={dailyAuditExportLoading || scanBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {dailyAuditExportLoading ? 'Preparazione…' : 'Scarica audit giornata'}
+              </button>
+            )}
+            {dailyAuditExportError ? (
+              <p className="w-full text-sm text-red-700" data-testid="daily-purch-audit-export-error">
+                {dailyAuditExportError}
+              </p>
+            ) : null}
             {selectedFixtureId != null && onRefreshBetfairOdds && (
               <button
                 type="button"

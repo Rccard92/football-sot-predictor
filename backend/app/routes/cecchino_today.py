@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -37,6 +37,9 @@ from app.services.cecchino.cecchino_kpi_debug_json import get_kpi_debug_json
 from app.services.cecchino.cecchino_kpi_explanations import get_kpi_explanations
 from app.services.cecchino.cecchino_purchasability_audit_export import (
     get_purchasability_audit_export,
+)
+from app.services.cecchino.cecchino_purchasability_daily_audit_export import (
+    build_daily_purchasability_audit_zip,
 )
 from app.services.cecchino.cecchino_picchetti_debug import get_picchetti_debug_json
 from app.services.cecchino.cecchino_signal_explanations import get_signal_explanations
@@ -84,6 +87,20 @@ def cecchino_today_list(
         timezone=timezone,
     )
     return jsonable_encoder(payload)
+
+
+@router.get("/purchasability-audit-export/daily")
+def cecchino_today_daily_purchasability_audit_export(
+    scan_date: date = Query(..., alias="scan_date"),
+    db: Session = Depends(get_db),
+):
+    """Export ZIP audit Acquistabilità per tutta la giornata eleggibile."""
+    zip_bytes, filename = build_daily_purchasability_audit_zip(db, scan_date=scan_date)
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{today_fixture_id}/refresh-betfair-odds")

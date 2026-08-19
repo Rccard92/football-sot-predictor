@@ -2145,6 +2145,35 @@ export async function getPurchasabilityAuditExport(
   )
 }
 
+export async function downloadDailyPurchasabilityAuditExport(scanDate: string): Promise<Blob> {
+  const base = getCecchinoApiBase()
+  const url = `${base}/api/cecchino/today/purchasability-audit-export/daily?scan_date=${encodeURIComponent(scanDate)}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    let msg = res.statusText
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const parsed = (await res.json()) as { message?: string }
+        if (parsed.message) msg = parsed.message
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg)
+  }
+  return res.blob()
+}
+
+export function triggerDailyPurchasabilityAuditDownload(blob: Blob, scanDate: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `purchasability-audits-${scanDate}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export type CecchinoSignalConditionLeaf = {
   condition_key: string
   label: string
