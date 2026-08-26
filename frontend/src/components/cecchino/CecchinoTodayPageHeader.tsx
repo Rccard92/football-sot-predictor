@@ -9,12 +9,15 @@ type Props = {
   refreshBetfairLoading?: boolean
   dailyAuditExportLoading?: boolean
   dailyAuditExportError?: string | null
+  v36EvaluationBundleLoading?: boolean
+  v36EvaluationBundleError?: string | null
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
   onRecomputeCecchino?: () => void
   onRefreshBetfairOdds?: () => void
   onDownloadDailyAudit?: () => void
+  onDownloadV36EvaluationBundle?: () => void
 }
 
 export function CecchinoTodayPageHeader({
@@ -28,12 +31,15 @@ export function CecchinoTodayPageHeader({
   refreshBetfairLoading = false,
   dailyAuditExportLoading = false,
   dailyAuditExportError = null,
+  v36EvaluationBundleLoading = false,
+  v36EvaluationBundleError = null,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
   onRecomputeCecchino,
   onRefreshBetfairOdds,
   onDownloadDailyAudit,
+  onDownloadV36EvaluationBundle,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
 
@@ -119,11 +125,27 @@ export function CecchinoTodayPageHeader({
                 disabled={refreshBetfairLoading || scanBusy}
                 className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {refreshBetfairLoading ? 'Aggiornamento…' : 'Aggiorna quote Book'}
+                {refreshBetfairLoading ? 'Aggiornamento quote…' : 'Aggiorna quote Betfair'}
               </button>
             )}
           </>
         )}
+        {onDownloadV36EvaluationBundle && (
+          <button
+            type="button"
+            data-testid="v36-evaluation-bundle-download-btn"
+            onClick={() => onDownloadV36EvaluationBundle()}
+            disabled={v36EvaluationBundleLoading || scanBusy}
+            className="inline-flex items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-5 py-2.5 text-sm font-semibold text-teal-900 shadow-sm transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {v36EvaluationBundleLoading ? 'Preparazione analisi…' : 'Scarica analisi V3.6'}
+          </button>
+        )}
+        {v36EvaluationBundleError ? (
+          <p className="w-full text-sm text-red-700" data-testid="v36-evaluation-bundle-export-error">
+            {v36EvaluationBundleError}
+          </p>
+        ) : null}
       </div>
     </header>
   )

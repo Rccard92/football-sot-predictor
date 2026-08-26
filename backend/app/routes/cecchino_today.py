@@ -65,6 +65,10 @@ from app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export 
     V35V2AnalysisRangeError,
     build_range_purchasability_v35_v2_analysis_zip,
 )
+from app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle import (
+    V36EvaluationBundleRangeError,
+    build_v36_evaluation_bundle_zip,
+)
 from app.services.cecchino.cecchino_picchetti_debug import get_picchetti_debug_json
 from app.services.cecchino.cecchino_signal_explanations import get_signal_explanations
 from app.services.cecchino.cecchino_today_service import (
@@ -194,6 +198,29 @@ def cecchino_today_purchasability_v35_v2_analysis_export(
             db, date_from=date_from, date_to=date_to
         )
     except V35V2AnalysisRangeError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"status": "error", "error": str(exc)},
+        )
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/purchasability-v36-evaluation-bundle")
+def cecchino_today_purchasability_v36_evaluation_bundle(
+    date_from: date = Query(..., alias="date_from"),
+    date_to: date = Query(..., alias="date_to"),
+    db: Session = Depends(get_db),
+):
+    """Export ZIP bulk V3.6 evaluation bundle — persisted-only, read-only."""
+    try:
+        zip_bytes, filename = build_v36_evaluation_bundle_zip(
+            db, date_from=date_from, date_to=date_to
+        )
+    except V36EvaluationBundleRangeError as exc:
         return JSONResponse(
             status_code=422,
             content={"status": "error", "error": str(exc)},

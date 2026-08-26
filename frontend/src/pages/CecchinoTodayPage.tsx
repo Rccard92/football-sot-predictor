@@ -21,6 +21,10 @@ import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../comp
 import {
   downloadDailyPurchasabilityAuditExport,
   triggerDailyPurchasabilityAuditDownload,
+  downloadV36EvaluationBundle,
+  triggerV36EvaluationBundleDownload,
+  V36_EVALUATION_BUNDLE_DATE_FROM,
+  V36_EVALUATION_BUNDLE_DATE_TO,
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayLatestScanJob,
@@ -109,6 +113,8 @@ export function CecchinoTodayPage() {
   const [refreshBetfairLoading, setRefreshBetfairLoading] = useState(false)
   const [dailyAuditExportLoading, setDailyAuditExportLoading] = useState(false)
   const [dailyAuditExportError, setDailyAuditExportError] = useState<string | null>(null)
+  const [v36EvaluationBundleLoading, setV36EvaluationBundleLoading] = useState(false)
+  const [v36EvaluationBundleError, setV36EvaluationBundleError] = useState<string | null>(null)
   const [refreshBetfairMsg, setRefreshBetfairMsg] = useState<{
     text: string
     tone: 'ok' | 'warn' | 'err'
@@ -619,6 +625,26 @@ export function CecchinoTodayPage() {
     }
   }
 
+  const handleDownloadV36EvaluationBundle = async () => {
+    setV36EvaluationBundleError(null)
+    setV36EvaluationBundleLoading(true)
+    try {
+      const blob = await downloadV36EvaluationBundle(
+        V36_EVALUATION_BUNDLE_DATE_FROM,
+        V36_EVALUATION_BUNDLE_DATE_TO,
+      )
+      triggerV36EvaluationBundleDownload(
+        blob,
+        V36_EVALUATION_BUNDLE_DATE_FROM,
+        V36_EVALUATION_BUNDLE_DATE_TO,
+      )
+    } catch {
+      setV36EvaluationBundleError('Impossibile generare il bundle analisi V3.6.')
+    } finally {
+      setV36EvaluationBundleLoading(false)
+    }
+  }
+
   const RECOMPUTE_WARNING =
     'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
 
@@ -759,12 +785,15 @@ export function CecchinoTodayPage() {
         refreshBetfairLoading={refreshBetfairLoading}
         dailyAuditExportLoading={dailyAuditExportLoading}
         dailyAuditExportError={dailyAuditExportError}
+        v36EvaluationBundleLoading={v36EvaluationBundleLoading}
+        v36EvaluationBundleError={v36EvaluationBundleError}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
         onRevalidateDay={() => void handleRevalidateDay()}
         onRecomputeCecchino={isScanned ? () => void handleRecomputeCecchino() : undefined}
         onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
         onDownloadDailyAudit={isScanned ? () => void handleDownloadDailyAudit() : undefined}
+        onDownloadV36EvaluationBundle={() => void handleDownloadV36EvaluationBundle()}
       />
 
       {refreshBetfairMsg && (

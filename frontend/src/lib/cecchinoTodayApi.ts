@@ -2515,6 +2515,49 @@ export function triggerDailyPurchasabilityAuditDownload(blob: Blob, scanDate: st
   URL.revokeObjectURL(url)
 }
 
+/** C1.3 — blocco fisso analisi V3.6 (non usare selectedDay). */
+export const V36_EVALUATION_BUNDLE_DATE_FROM = '2026-08-26'
+export const V36_EVALUATION_BUNDLE_DATE_TO = '2026-08-30'
+
+export async function downloadV36EvaluationBundle(
+  dateFrom: string,
+  dateTo: string,
+): Promise<Blob> {
+  const base = getCecchinoApiBase()
+  const url =
+    `${base}/api/cecchino/today/purchasability-v36-evaluation-bundle` +
+    `?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    let msg = res.statusText
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const parsed = (await res.json()) as { message?: string; error?: string }
+        if (parsed.message) msg = parsed.message
+        else if (parsed.error) msg = parsed.error
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg)
+  }
+  return res.blob()
+}
+
+export function triggerV36EvaluationBundleDownload(
+  blob: Blob,
+  dateFrom: string,
+  dateTo: string,
+): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cecchino-v36-analysis-${dateFrom}_${dateTo}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export type CecchinoPurchasabilityV35AuditExport = {
   contract_version: string
   generated_at: string

@@ -92,6 +92,85 @@ describe('CecchinoTodayPageHeader daily audit export', () => {
   })
 })
 
+describe('CecchinoTodayPageHeader V3.6 evaluation bundle', () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  const baseProps = {
+    isScanned: true,
+    scanDayLoading: false,
+    updateResultsLoading: false,
+    onScanDay: vi.fn(),
+    onUpdateResults: vi.fn(),
+  }
+
+  it('mostra pulsante Scarica analisi V3.6', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        onDownloadV36EvaluationBundle={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('v36-evaluation-bundle-download-btn').textContent).toBe(
+      'Scarica analisi V3.6',
+    )
+  })
+
+  it('visibile anche se giornata non scansionata', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        isScanned={false}
+        onDownloadV36EvaluationBundle={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('v36-evaluation-bundle-download-btn')).toBeTruthy()
+  })
+
+  it('stato preparazione analisi durante loading', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        v36EvaluationBundleLoading
+        onDownloadV36EvaluationBundle={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('v36-evaluation-bundle-download-btn').textContent).toBe(
+      'Preparazione analisi…',
+    )
+    expect(
+      screen.getByTestId('v36-evaluation-bundle-download-btn').hasAttribute('disabled'),
+    ).toBe(true)
+  })
+
+  it('mostra errore download bundle', () => {
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        v36EvaluationBundleError="Impossibile generare il bundle analisi V3.6."
+        onDownloadV36EvaluationBundle={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('v36-evaluation-bundle-export-error').textContent).toContain(
+      'Impossibile generare il bundle analisi V3.6.',
+    )
+  })
+
+  it('click invoca handler bundle', () => {
+    const onDownload = vi.fn()
+    render(
+      <CecchinoTodayPageHeader
+        {...baseProps}
+        onDownloadV36EvaluationBundle={onDownload}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('v36-evaluation-bundle-download-btn'))
+    expect(onDownload).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('CecchinoTodayPageHeader production route — no V3.5 UI', () => {
   afterEach(() => {
     cleanup()
@@ -106,6 +185,7 @@ describe('CecchinoTodayPageHeader production route — no V3.5 UI', () => {
         onScanDay={vi.fn()}
         onUpdateResults={vi.fn()}
         onDownloadDailyAudit={vi.fn()}
+        onDownloadV36EvaluationBundle={vi.fn()}
       />,
     )
     expect(screen.queryByTestId('daily-v35-purch-audit-download-btn')).toBeNull()
