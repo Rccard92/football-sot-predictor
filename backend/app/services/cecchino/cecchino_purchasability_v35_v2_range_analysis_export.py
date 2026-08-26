@@ -31,6 +31,7 @@ from app.schemas.cecchino_purchasability_v35_v2 import (
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_purchasability_v35_analysis_evaluation import (
+    compute_profit_1u_from_quote,
     normalize_match_status,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_analysis_export import (
@@ -91,9 +92,19 @@ CSV_COLUMNS = [
     "v2_raw_score",
     "v2_class",
     "paired",
+    "strict_paired",
+    "pair_alignment_reason",
+    "pair_key",
+    "v1_source_snapshot_at",
+    "v2_source_snapshot_at",
+    "v1_execution_quote",
+    "v2_execution_quote",
+    "v1_status",
+    "v2_status",
     "v1_score_A",
     "v1_raw_score_A",
     "v1_class_A",
+    "input_mismatch_fields",
     "formula_freeze_sha256",
     "match_status",
     "ht_home",
@@ -227,9 +238,23 @@ def _csv_row_from_analysis(
         "v2_raw_score": fields.get("v2_raw_score"),
         "v2_class": fields.get("v2_class"),
         "paired": bool(paired.get("paired")),
+        "strict_paired": bool(paired.get("strict_paired")),
+        "pair_alignment_reason": paired.get("pair_alignment_reason"),
+        "pair_key": paired.get("pair_key"),
+        "v1_source_snapshot_at": paired.get("v1_source_snapshot_at"),
+        "v2_source_snapshot_at": paired.get("v2_source_snapshot_at"),
+        "v1_execution_quote": paired.get("v1_execution_quote"),
+        "v2_execution_quote": paired.get("v2_execution_quote"),
+        "v1_status": paired.get("v1_status"),
+        "v2_status": paired.get("v2_status"),
         "v1_score_A": paired.get("v1_score_A"),
         "v1_raw_score_A": paired.get("v1_raw_score_A"),
         "v1_class_A": paired.get("v1_class_A"),
+        "input_mismatch_fields": (
+            ",".join(paired.get("input_mismatch_fields") or [])
+            if isinstance(paired.get("input_mismatch_fields"), list)
+            else paired.get("input_mismatch_fields")
+        ),
         "formula_freeze_sha256": integrity.get("formula_freeze_sha256")
         or pre.get("formula_freeze_sha256"),
         "match_status": post.get("match_status"),
@@ -245,45 +270,131 @@ def _csv_row_from_analysis(
     }
 
 
-def _top_v1_from_analysis(analysis: dict[str, Any]) -> dict[str, Any] | None:
-    """Top V1 A among paired scored markets — select pre-match then attach outcome."""
+def _v1_rank_score(paired: dict[str, Any]) -> float | None:
+    raw = paired.get("v1_raw_score_A")
+    try:
+        if raw is not None:
+            return float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        sc = paired.get("v1_score_A")
+        return float(sc) if sc is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _strict_paired_market_items(
+    analysis: dict[str, Any],
+) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Same market universe for V1/V2 strict paired top picks."""
     markets = analysis.get("markets") if isinstance(analysis.get("markets"), dict) else {}
-    fixture = analysis.get("fixture") if isinstance(analysis.get("fixture"), dict) else {}
-    best_mk = None
-    best_score = None
-    best_idx = 10**9
-    for idx, mk in enumerate(PANEL_MARKET_KEYS):
+    out: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for mk in PANEL_MARKET_KEYS:
         item = markets.get(mk)
-        if not isinstance(item, dict) or str(item.get("status") or "") != "score":
+        if not isinstance(item, dict):
             continue
         paired = item.get("paired_v1") if isinstance(item.get("paired_v1"), dict) else None
-        if not paired:
+        if not paired or paired.get("strict_paired") is not True:
             continue
+        out.append((mk, item, paired))
+    return out
+
+
+def _top_v2_strict_paired_from_analysis(analysis: dict[str, Any]) -> dict[str, Any] | None:
+    fixture = analysis.get("fixture") if isinstance(analysis.get("fixture"), dict) else {}
+    best_mk = None
+    best_raw = None
+    best_idx = 10**9
+    best_item: dict[str, Any] | None = None
+    best_paired: dict[str, Any] | None = None
+    for mk, item, paired in _strict_paired_market_items(analysis):
         try:
-            sc = float(paired.get("v1_score_A"))
+            panel_idx = PANEL_MARKET_KEYS.index(mk)
+        except ValueError:
+            panel_idx = 10**9
+        try:
+            raw = float(item["raw_score"]) if item.get("raw_score") is not None else None
         except (TypeError, ValueError):
+            raw = None
+        if raw is None:
             continue
-        if best_score is None or sc > best_score or (sc == best_score and idx < best_idx):
+        if best_raw is None or raw > best_raw or (raw == best_raw and panel_idx < best_idx):
             best_mk = mk
-            best_score = sc
-            best_idx = idx
-    if best_mk is None:
+            best_raw = raw
+            best_idx = panel_idx
+            best_item = item
+            best_paired = paired
+    if best_mk is None or best_item is None or best_paired is None:
         return None
-    item = markets[best_mk]
-    paired = item.get("paired_v1") or {}
-    ev = item.get("evaluation") if isinstance(item.get("evaluation"), dict) else {}
-    inp = item.get("input") if isinstance(item.get("input"), dict) else {}
+    ev = best_item.get("evaluation") if isinstance(best_item.get("evaluation"), dict) else {}
+    outcome = ev.get("outcome")
+    quote = best_paired.get("v2_execution_quote")
+    profit = compute_profit_1u_from_quote(
+        execution_quote=quote,
+        execution_quote_real=best_paired.get("v2_execution_quote_real") is True,
+        outcome=str(outcome or ""),
+    )
     return {
         "today_fixture_id": fixture.get("today_fixture_id"),
         "provider_fixture_id": fixture.get("provider_fixture_id"),
         "scan_date": fixture.get("scan_date"),
         "holdout_cohort": fixture.get("holdout_cohort"),
         "market_key": best_mk,
-        "v1_score_A": paired.get("v1_score_A"),
-        "v1_raw_score_A": paired.get("v1_raw_score_A"),
-        "outcome": ev.get("outcome"),
-        "profit_1u": ev.get("profit_1u"),
-        "execution_quote": inp.get("execution_quote"),
+        "pair_key": best_paired.get("pair_key"),
+        "v2_score": best_item.get("score"),
+        "v2_raw_score": best_item.get("raw_score"),
+        "outcome": outcome,
+        "profit_1u": profit,
+        "execution_quote": quote,
+        "selection_basis": "strict_paired_v2_raw_score",
+    }
+
+
+def _top_v1_strict_paired_from_analysis(analysis: dict[str, Any]) -> dict[str, Any] | None:
+    fixture = analysis.get("fixture") if isinstance(analysis.get("fixture"), dict) else {}
+    best_mk = None
+    best_score = None
+    best_idx = 10**9
+    best_item: dict[str, Any] | None = None
+    best_paired: dict[str, Any] | None = None
+    for mk, item, paired in _strict_paired_market_items(analysis):
+        try:
+            panel_idx = PANEL_MARKET_KEYS.index(mk)
+        except ValueError:
+            panel_idx = 10**9
+        sc = _v1_rank_score(paired)
+        if sc is None:
+            continue
+        if best_score is None or sc > best_score or (sc == best_score and panel_idx < best_idx):
+            best_mk = mk
+            best_score = sc
+            best_idx = panel_idx
+            best_item = item
+            best_paired = paired
+    if best_mk is None or best_item is None or best_paired is None:
+        return None
+    ev = best_item.get("evaluation") if isinstance(best_item.get("evaluation"), dict) else {}
+    outcome = ev.get("outcome")
+    quote = best_paired.get("v1_execution_quote")
+    profit = compute_profit_1u_from_quote(
+        execution_quote=quote,
+        execution_quote_real=best_paired.get("v1_execution_quote_real") is True,
+        outcome=str(outcome or ""),
+    )
+    return {
+        "today_fixture_id": fixture.get("today_fixture_id"),
+        "provider_fixture_id": fixture.get("provider_fixture_id"),
+        "scan_date": fixture.get("scan_date"),
+        "holdout_cohort": fixture.get("holdout_cohort"),
+        "market_key": best_mk,
+        "pair_key": best_paired.get("pair_key"),
+        "v1_score_A": best_paired.get("v1_score_A"),
+        "v1_raw_score_A": best_paired.get("v1_raw_score_A"),
+        "outcome": outcome,
+        "profit_1u": profit,
+        "execution_quote": quote,
+        "selection_basis": "strict_paired_v1_A_score",
     }
 
 
@@ -300,8 +411,9 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
     manifest_fixtures: list[dict[str, Any]] = []
     file_entries: dict[str, bytes] = {}
     csv_rows: list[dict[str, Any]] = []
-    top_v2_rows: list[dict[str, Any]] = []
-    top_v1_rows: list[dict[str, Any]] = []
+    top_v2_all_rows: list[dict[str, Any]] = []
+    top_v2_strict_rows: list[dict[str, Any]] = []
+    top_v1_strict_rows: list[dict[str, Any]] = []
     days_summary: dict[str, dict[str, int]] = defaultdict(
         lambda: {
             "eligible_fixtures": 0,
@@ -419,7 +531,7 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
         top_v2 = analysis.get("top_v2_market")
         fixture = analysis.get("fixture") if isinstance(analysis.get("fixture"), dict) else {}
         if isinstance(top_v2, dict):
-            top_v2_rows.append(
+            top_v2_all_rows.append(
                 {
                     "today_fixture_id": fixture.get("today_fixture_id"),
                     "provider_fixture_id": fixture.get("provider_fixture_id"),
@@ -433,14 +545,18 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
                     "execution_quote": top_v2.get("execution_quote"),
                 }
             )
-        top_v1 = _top_v1_from_analysis(analysis)
-        if top_v1 is not None:
-            top_v1_rows.append(top_v1)
+        top_v2_strict = _top_v2_strict_paired_from_analysis(analysis)
+        if top_v2_strict is not None:
+            top_v2_strict_rows.append(top_v2_strict)
+        top_v1_strict = _top_v1_strict_paired_from_analysis(analysis)
+        if top_v1_strict is not None:
+            top_v1_strict_rows.append(top_v1_strict)
 
     diagnostics = build_holdout_diagnostics(
         csv_rows,
-        top_v2_fixture_rows=top_v2_rows,
-        top_v1_fixture_rows=top_v1_rows,
+        top_v2_all_markets_rows=top_v2_all_rows,
+        top_v2_strict_paired_rows=top_v2_strict_rows,
+        top_v1_strict_paired_rows=top_v1_strict_rows,
     )
 
     manifest = make_json_safe(

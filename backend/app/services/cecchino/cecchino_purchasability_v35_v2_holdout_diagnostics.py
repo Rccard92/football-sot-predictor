@@ -297,6 +297,47 @@ def build_correlation_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def _v1_auc_score(row: dict[str, Any]) -> float | None:
+    raw = _safe_float(row.get("v1_raw_score_A"))
+    if raw is not None:
+        return raw
+    return _safe_float(row.get("v1_score_A"))
+
+
+def _strict_paired_settled(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for r in rows:
+        if r.get("strict_paired") is not True:
+            continue
+        if r.get("outcome") not in {EVAL_WON, EVAL_LOST}:
+            continue
+        if _safe_float(r.get("v2_raw_score")) is None:
+            continue
+        if _v1_auc_score(r) is None:
+            continue
+        out.append(r)
+    return out
+
+
+def build_pair_alignment_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    paired_count = 0
+    strict_paired_count = 0
+    failures: dict[str, int] = defaultdict(int)
+    for r in rows:
+        if r.get("paired") is True:
+            paired_count += 1
+            if r.get("strict_paired") is True:
+                strict_paired_count += 1
+            else:
+                reason = str(r.get("pair_alignment_reason") or "unknown")
+                failures[reason] += 1
+    return {
+        "paired_count": paired_count,
+        "strict_paired_count": strict_paired_count,
+        "pair_alignment_failures": dict(sorted(failures.items())),
+    }
+
+
 def build_ranking_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     settled = _settled_binary(rows)
     y = np.array(
@@ -322,11 +363,48 @@ def build_ranking_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         auc_v1 = roc_auc(y1, s1)
 
+    strict = _strict_paired_settled(rows)
+    auc_v2_strict = None
+    auc_v1_strict = None
+    delta_auc = None
+    v1_score_source = "v1_raw_score_A"
+    if strict:
+        uses_raw = any(_safe_float(r.get("v1_raw_score_A")) is not None for r in strict)
+        v1_score_source = "v1_raw_score_A" if uses_raw else "v1_score_A"
+    if len(strict) >= 2:
+        y_s = np.array(
+            [1.0 if r.get("outcome") == EVAL_WON else 0.0 for r in strict], dtype=float
+        )
+        s_v2_s = np.array(
+            [_safe_float(r.get("v2_raw_score")) or 0.0 for r in strict], dtype=float
+        )
+        s_v1_s = np.array([_v1_auc_score(r) or 0.0 for r in strict], dtype=float)
+        auc_v2_strict = roc_auc(y_s, s_v2_s)
+        auc_v1_strict = roc_auc(y_s, s_v1_s)
+        if auc_v2_strict is not None and auc_v1_strict is not None:
+            delta_auc = auc_v2_strict - auc_v1_strict
+
+    auc_v2_rounded = round(auc_v2, 6) if auc_v2 is not None else None
     return {
-        "roc_auc_v2_raw_score": round(auc_v2, 6) if auc_v2 is not None else None,
+        "roc_auc_v2_raw_score": auc_v2_rounded,
+        "roc_auc_v2_all_settled": auc_v2_rounded,
         "roc_auc_v1_score_A_paired_only": round(auc_v1, 6) if auc_v1 is not None else None,
+        "roc_auc_v2_strict_paired": round(auc_v2_strict, 6)
+        if auc_v2_strict is not None
+        else None,
+        "roc_auc_v1_A_strict_paired": round(auc_v1_strict, 6)
+        if auc_v1_strict is not None
+        else None,
+        "delta_auc_v2_minus_v1_strict_paired": round(delta_auc, 6)
+        if delta_auc is not None
+        else None,
         "n_settled_v2": len(settled),
         "n_paired_settled": len(paired),
+        "n_strict_paired_settled": len(strict),
+        "v1_score_source_strict_paired": v1_score_source,
+        "strict_paired_pair_keys": [
+            r.get("pair_key") for r in strict if r.get("pair_key") is not None
+        ],
     }
 
 
@@ -336,15 +414,40 @@ def build_top_per_fixture_report(
     label: str,
 ) -> dict[str, Any]:
     """Aggregate pre-selected top-per-fixture rows (outcome already attached)."""
-    settled = [
-        r for r in top_rows if r.get("outcome") in {EVAL_WON, EVAL_LOST}
-    ]
+    settled = [r for r in top_rows if r.get("outcome") in {EVAL_WON, EVAL_LOST}]
     stats = _group_stats(settled)
     return {
         "label": label,
         "fixtures": len(top_rows),
+        "settled": len(settled),
         "settled_fixtures": len(settled),
-        **stats,
+        "wins": stats["wins"],
+        "losses": stats["losses"],
+        "hit_rate": stats["hit_rate"],
+        "avg_quote": stats["avg_quote"],
+        "median_quote": stats["median_quote"],
+        "profit_1u": stats["profit_1u"],
+        "ROI": stats["ROI"],
+        "n": stats["n"],
+        "avg_v2_score": stats["avg_v2_score"],
+    }
+
+
+def build_paired_top_delta(
+    top_v2: dict[str, Any],
+    top_v1: dict[str, Any],
+) -> dict[str, Any]:
+    hr2 = top_v2.get("hit_rate")
+    hr1 = top_v1.get("hit_rate")
+    roi2 = top_v2.get("ROI")
+    roi1 = top_v1.get("ROI")
+    return {
+        "delta_hit_rate": round(hr2 - hr1, 6)
+        if hr2 is not None and hr1 is not None
+        else None,
+        "delta_ROI": round(roi2 - roi1, 6)
+        if roi2 is not None and roi1 is not None
+        else None,
     }
 
 
@@ -357,34 +460,54 @@ def filter_rows_by_cohort(
 def build_holdout_diagnostics(
     csv_rows: list[dict[str, Any]],
     *,
+    top_v2_all_markets_rows: list[dict[str, Any]] | None = None,
+    top_v2_strict_paired_rows: list[dict[str, Any]] | None = None,
+    top_v1_strict_paired_rows: list[dict[str, Any]] | None = None,
+    # Back-compat aliases
     top_v2_fixture_rows: list[dict[str, Any]] | None = None,
     top_v1_fixture_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Full diagnostics block for manifest."""
-    top_v2_fixture_rows = top_v2_fixture_rows or []
-    top_v1_fixture_rows = top_v1_fixture_rows or []
+    top_v2_all = top_v2_all_markets_rows or top_v2_fixture_rows or []
+    top_v2_strict = top_v2_strict_paired_rows or []
+    top_v1_strict = top_v1_strict_paired_rows or top_v1_fixture_rows or []
 
-    def _tops_for_cohort(cohort: str | None) -> tuple[list[dict], list[dict]]:
+    def _filter_tops(rows: list[dict], cohort: str | None) -> list[dict]:
         if cohort is None:
-            return top_v2_fixture_rows, top_v1_fixture_rows
-        return (
-            [t for t in top_v2_fixture_rows if t.get("holdout_cohort") == cohort],
-            [t for t in top_v1_fixture_rows if t.get("holdout_cohort") == cohort],
-        )
+            return rows
+        return [t for t in rows if t.get("holdout_cohort") == cohort]
 
     def bundle(rows: list[dict[str, Any]], cohort: str | None) -> dict[str, Any]:
-        tv2, tv1 = _tops_for_cohort(cohort)
+        tv2_all = _filter_tops(top_v2_all, cohort)
+        tv2_strict = _filter_tops(top_v2_strict, cohort)
+        tv1_strict = _filter_tops(top_v1_strict, cohort)
+        top_v2_rep = build_top_per_fixture_report(
+            tv2_strict, label="top_v2_strict_paired_per_fixture"
+        )
+        top_v1_rep = build_top_per_fixture_report(
+            tv1_strict, label="top_v1_strict_paired_per_fixture"
+        )
         return {
             "n_rows": len(rows),
             "n_settled": len(_settled_binary(rows)),
+            **build_pair_alignment_report(rows),
             "fixed_score_bands": build_fixed_band_report(rows),
             "quantiles": build_quantile_report(rows),
             "odds_controlled": build_odds_controlled_report(rows),
             "market_family_control": build_market_family_report(rows),
             "correlation_diagnostics": build_correlation_diagnostics(rows),
             "ranking_quality": build_ranking_quality(rows),
-            "top_v2_per_fixture": build_top_per_fixture_report(tv2, label="top_v2"),
-            "top_v1_per_fixture": build_top_per_fixture_report(tv1, label="top_v1"),
+            "top_v2_all_markets_per_fixture": build_top_per_fixture_report(
+                tv2_all, label="top_v2_all_markets_per_fixture"
+            ),
+            "top_v2_strict_paired_per_fixture": top_v2_rep,
+            "top_v1_strict_paired_per_fixture": top_v1_rep,
+            "paired_top_delta": build_paired_top_delta(top_v2_rep, top_v1_rep),
+            # Legacy aliases (operational / soft era)
+            "top_v2_per_fixture": build_top_per_fixture_report(
+                tv2_all, label="top_v2"
+            ),
+            "top_v1_per_fixture": top_v1_rep,
         }
 
     smoke = filter_rows_by_cohort(csv_rows, COHORT_TECHNICAL_SMOKE)
@@ -405,6 +528,8 @@ __all__ = [
     "MIN_N_PER_SUBGROUP",
     "ODDS_BUCKETS",
     "build_holdout_diagnostics",
+    "build_pair_alignment_report",
     "build_quantile_report",
+    "build_ranking_quality",
     "sort_rows_by_raw_desc",
 ]

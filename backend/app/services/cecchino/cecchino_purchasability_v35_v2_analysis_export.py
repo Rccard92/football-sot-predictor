@@ -34,6 +34,8 @@ from app.services.cecchino.cecchino_purchasability_v35_analysis_evaluation impor
     normalize_match_status,
 )
 from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
+    _iso_at,
+    _parse_dt,
     index_purchasability_v35_snapshot_by_market,
     validate_purchasability_preview_v35_snapshot,
 )
@@ -63,6 +65,29 @@ COHORT_TECHNICAL_SMOKE = "technical_smoke_cohort"
 COHORT_PROSPECTIVE = "prospective_holdout"
 COHORT_OTHER = "other_cohort"
 PRIMARY_DIAGNOSTIC_COHORT = COHORT_PROSPECTIVE
+
+FLOAT_ALIGNMENT_TOLERANCE = 1e-9
+
+COMMON_INPUT_ALIGNMENT_FIELDS: tuple[str, ...] = (
+    "execution_quote",
+    "execution_quote_real",
+    "probability_cecchino",
+    "fair_book_probability",
+    "rating",
+    "overround",
+    "book_fallback_used",
+    "fair_probability_may_be_derived",
+)
+
+_FLOAT_INPUT_ALIGNMENT_FIELDS = frozenset(
+    {
+        "execution_quote",
+        "probability_cecchino",
+        "fair_book_probability",
+        "rating",
+        "overround",
+    }
+)
 
 _POST_MATCH_EXCLUDE_KEYS = frozenset(
     {
@@ -124,6 +149,55 @@ def _safe_float(value: Any) -> float | None:
     if f != f:
         return None
     return f
+
+
+def _normalize_source_snapshot_at(raw: Any) -> str | None:
+    """Normalize snapshot timestamp for strict equality (ISO UTC when parseable)."""
+    if raw is None:
+        return None
+    parsed = _parse_dt(raw)
+    if parsed is not None:
+        return parsed.astimezone(timezone.utc).isoformat()
+    text = _iso_at(raw)
+    return str(text) if text is not None else None
+
+
+def _floats_aligned(a: Any, b: Any, *, tol: float = FLOAT_ALIGNMENT_TOLERANCE) -> bool:
+    fa = _safe_float(a)
+    fb = _safe_float(b)
+    if fa is None and fb is None:
+        return True
+    if fa is None or fb is None:
+        return False
+    return abs(fa - fb) <= tol
+
+
+def _bools_aligned(a: Any, b: Any) -> bool:
+    return a == b
+
+
+def _extract_common_input(item: dict[str, Any] | None) -> dict[str, Any]:
+    inp = item.get("input") if isinstance(item, dict) and isinstance(item.get("input"), dict) else {}
+    return {field: inp.get(field) for field in COMMON_INPUT_ALIGNMENT_FIELDS}
+
+
+def _build_pair_input_alignment(
+    v1_input: dict[str, Any],
+    v2_input: dict[str, Any],
+) -> tuple[dict[str, bool], list[str]]:
+    alignment: dict[str, bool] = {}
+    mismatches: list[str] = []
+    for field in COMMON_INPUT_ALIGNMENT_FIELDS:
+        if field in _FLOAT_INPUT_ALIGNMENT_FIELDS:
+            ok = _floats_aligned(v1_input.get(field), v2_input.get(field))
+        elif field in {"execution_quote_real", "book_fallback_used", "fair_probability_may_be_derived"}:
+            ok = _bools_aligned(v1_input.get(field), v2_input.get(field))
+        else:
+            ok = v1_input.get(field) == v2_input.get(field)
+        alignment[field] = ok
+        if not ok:
+            mismatches.append(field)
+    return alignment, mismatches
 
 
 def resolve_analysis_ev(item: dict[str, Any]) -> dict[str, Any]:
@@ -285,8 +359,10 @@ def resolve_paired_v1_a(
     *,
     row: CecchinoTodayFixture,
     market_key: str,
+    v2_snapshot: dict[str, Any],
+    v2_item: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Paired V1 candidate A — only if V1 snapshot validation passes."""
+    """Soft/strict V1↔V2 pair for the same fixture market (historical + fair holdout)."""
     output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
     v1 = output.get("purchasability_preview_v35")
     if not isinstance(v1, dict):
@@ -295,20 +371,73 @@ def resolve_paired_v1_a(
     if not check.get("ok"):
         return None
     by_mk = index_purchasability_v35_snapshot_by_market(v1)
-    item = by_mk.get(market_key)
-    if not isinstance(item, dict):
+    v1_item = by_mk.get(market_key)
+    if not isinstance(v1_item, dict):
         return None
-    candidates = item.get("candidates") if isinstance(item.get("candidates"), dict) else {}
-    cand_a = candidates.get("A")
-    if not isinstance(cand_a, dict):
-        return None
-    return {
+
+    candidates = v1_item.get("candidates") if isinstance(v1_item.get("candidates"), dict) else {}
+    cand_a = candidates.get("A") if isinstance(candidates.get("A"), dict) else None
+
+    v1_status = str(v1_item.get("status") or "") or None
+    v2_status = str(v2_item.get("status") or "") or None
+    v1_score_a = cand_a.get("score") if cand_a else None
+    v1_raw_score_a = cand_a.get("raw_score") if cand_a else None
+    v1_class_a = cand_a.get("class") if cand_a else None
+    v2_score = v2_item.get("score")
+    v2_raw_score = v2_item.get("raw_score")
+
+    v1_snap_at = _normalize_source_snapshot_at(v1.get("source_snapshot_at"))
+    v2_snap_at = _normalize_source_snapshot_at(v2_snapshot.get("source_snapshot_at"))
+
+    v1_input = _extract_common_input(v1_item)
+    v2_input = _extract_common_input(v2_item)
+    pair_input_alignment, input_mismatch_fields = _build_pair_input_alignment(
+        v1_input, v2_input
+    )
+
+    pair: dict[str, Any] = {
         "paired": True,
         "pair_key": f"{int(row.id)}::{market_key}",
-        "v1_score_A": cand_a.get("score"),
-        "v1_raw_score_A": cand_a.get("raw_score"),
-        "v1_class_A": cand_a.get("class"),
+        "v1_score_A": v1_score_a,
+        "v1_raw_score_A": v1_raw_score_a,
+        "v1_class_A": v1_class_a,
+        "v1_source_snapshot_at": v1_snap_at,
+        "v2_source_snapshot_at": v2_snap_at,
+        "v1_execution_quote": v1_input.get("execution_quote"),
+        "v2_execution_quote": v2_input.get("execution_quote"),
+        "v1_execution_quote_real": v1_input.get("execution_quote_real"),
+        "v2_execution_quote_real": v2_input.get("execution_quote_real"),
+        "v1_status": v1_status,
+        "v2_status": v2_status,
+        "strict_paired": False,
+        "pair_alignment_reason": None,
+        "pair_input_alignment": pair_input_alignment,
+        "input_mismatch_fields": input_mismatch_fields,
     }
+
+    reason: str | None = None
+    if v1_status != "score":
+        reason = "v1_not_scored"
+    elif v2_status != "score":
+        reason = "v2_not_scored"
+    elif cand_a is None:
+        reason = "v1_score_missing"
+    elif _safe_float(v1_raw_score_a) is None and _safe_float(v1_score_a) is None:
+        reason = "v1_score_missing"
+    elif _safe_float(v2_raw_score) is None and _safe_float(v2_score) is None:
+        reason = "v2_score_missing"
+    elif v1_snap_at is None or v2_snap_at is None or v1_snap_at != v2_snap_at:
+        reason = "snapshot_timestamp_mismatch"
+    elif input_mismatch_fields:
+        reason = "input_context_mismatch"
+    else:
+        pair["strict_paired"] = True
+        pair["pair_alignment_reason"] = None
+        return pair
+
+    pair["strict_paired"] = False
+    pair["pair_alignment_reason"] = reason
+    return pair
 
 
 def select_top_v2_market_pre_match(markets: dict[str, Any]) -> dict[str, Any] | None:
@@ -412,7 +541,12 @@ def build_purchasability_v35_v2_analysis_export(
         enriched = dict(item)
         analysis_fields = extract_v2_analysis_fields(item)
         enriched["analysis"] = analysis_fields
-        paired = resolve_paired_v1_a(row=row, market_key=mk)
+        paired = resolve_paired_v1_a(
+            row=row,
+            market_key=mk,
+            v2_snapshot=snapshot,
+            v2_item=item,
+        )
         if paired is not None:
             enriched["paired_v1"] = paired
         enriched["evaluation"] = build_market_evaluation_block(
@@ -475,6 +609,8 @@ __all__ = [
     "COHORT_OTHER",
     "COHORT_PROSPECTIVE",
     "COHORT_TECHNICAL_SMOKE",
+    "COMMON_INPUT_ALIGNMENT_FIELDS",
+    "FLOAT_ALIGNMENT_TOLERANCE",
     "HOLDOUT_MARKET_FAMILIES",
     "PRIMARY_DIAGNOSTIC_COHORT",
     "PROSPECTIVE_HOLDOUT_START",

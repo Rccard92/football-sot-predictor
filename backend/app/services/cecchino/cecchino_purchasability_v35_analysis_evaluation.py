@@ -155,20 +155,33 @@ def compute_break_even_probability(execution_quote: float | None) -> float | Non
     return round(1.0 / execution_quote, 6)
 
 
+def compute_profit_1u_from_quote(
+    *,
+    execution_quote: float | None,
+    execution_quote_real: bool,
+    outcome: str,
+) -> float | None:
+    """Profit flat stake 1u da quote esplicita (model-specific)."""
+    eq = _safe_float(execution_quote)
+    if not execution_quote_real or eq is None or eq <= 1:
+        return None
+    if outcome == EVAL_WON:
+        return round(eq - 1.0, 4)
+    if outcome == EVAL_LOST:
+        return -1.0
+    return None
+
+
 def compute_profit_1u(item: dict[str, Any], outcome: str) -> float | None:
     """Profit flat stake 1u — solo mercati scored con quota reale."""
     if str(item.get("status") or "") != "score":
         return None
     inp = item.get("input") if isinstance(item.get("input"), dict) else {}
-    execution_quote = _safe_float(inp.get("execution_quote"))
-    execution_quote_real = inp.get("execution_quote_real") is True
-    if not execution_quote_real or execution_quote is None or execution_quote <= 1:
-        return None
-    if outcome == EVAL_WON:
-        return round(execution_quote - 1.0, 4)
-    if outcome == EVAL_LOST:
-        return -1.0
-    return None
+    return compute_profit_1u_from_quote(
+        execution_quote=_safe_float(inp.get("execution_quote")),
+        execution_quote_real=inp.get("execution_quote_real") is True,
+        outcome=outcome,
+    )
 
 
 def build_market_evaluation_block(
@@ -261,6 +274,7 @@ __all__ = [
     "compute_break_even_probability",
     "compute_candidate_top_picks",
     "compute_profit_1u",
+    "compute_profit_1u_from_quote",
     "evaluate_v35_market_outcome",
     "normalize_match_status",
 ]

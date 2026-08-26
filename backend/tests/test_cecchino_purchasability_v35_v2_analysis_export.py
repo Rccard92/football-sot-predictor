@@ -23,6 +23,7 @@ from app.routes.cecchino_today import router
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     attach_purchasability_preview_v35_to_output,
+    engine_payload_sha256_v35,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_analysis_export import (
     COHORT_PROSPECTIVE,
@@ -32,18 +33,27 @@ from app.services.cecchino.cecchino_purchasability_v35_v2_analysis_export import
     holdout_cohort_for_scan_date,
     holdout_market_family,
     resolve_analysis_ev,
+    resolve_paired_v1_a,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_holdout_diagnostics import (
     MIN_N_FOR_TERTILES,
     build_holdout_diagnostics,
     build_quantile_report,
+    build_ranking_quality,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export import (
     CSV_COLUMNS,
     V35V2AnalysisRangeError,
+    _strict_paired_market_items,
+    _top_v1_strict_paired_from_analysis,
+    _top_v2_strict_paired_from_analysis,
     build_range_purchasability_v35_v2_analysis_zip,
     validate_v2_analysis_date_range,
 )
+from app.services.cecchino.cecchino_purchasability_v35_analysis_evaluation import (
+    compute_profit_1u_from_quote,
+)
+from app.models.cecchino_signal_activation import EVAL_LOST, EVAL_WON
 from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
     EXPECTED_FORMULA_FREEZE_SHA256,
     SNAPSHOT_OUTPUT_KEY,
@@ -210,6 +220,7 @@ def test_paired_v1_v2_join():
     snap = row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]
     analysis = build_purchasability_v35_v2_analysis_export(row, snap)
     paired_count = 0
+    strict_count = 0
     for mk, item in analysis["markets"].items():
         if item.get("status") != "score":
             continue
@@ -217,10 +228,215 @@ def test_paired_v1_v2_join():
         if paired:
             paired_count += 1
             assert paired["pair_key"] == f"{row.id}::{mk}"
+            assert paired["paired"] is True
             assert "v1_score_A" in paired
             assert "v1_raw_score_A" in paired
             assert "v1_class_A" in paired
+            assert "strict_paired" in paired
+            assert "pair_input_alignment" in paired
+            if paired.get("strict_paired") is True:
+                strict_count += 1
+                assert paired.get("pair_alignment_reason") is None
     assert paired_count >= 1
+    assert strict_count >= 1
+
+
+def _rehash_v1(v1: dict) -> dict:
+    v1 = copy.deepcopy(v1)
+    v1["engine_payload_sha256"] = engine_payload_sha256_v35(v1)
+    return v1
+
+
+def _first_scored_market_key(snap: dict) -> str:
+    for item in snap.get("items") or []:
+        if isinstance(item, dict) and item.get("status") == "score":
+            return str(item["market_key"])
+    raise AssertionError("no scored market")
+
+
+def test_strict_paired_identical_common_inputs():
+    row = _fixture_row()
+    snap = row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]
+    mk = _first_scored_market_key(snap)
+    v2_item = next(i for i in snap["items"] if i.get("market_key") == mk)
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired is not None
+    assert paired["paired"] is True
+    assert paired["strict_paired"] is True
+    assert paired["pair_alignment_reason"] is None
+    assert all(paired["pair_input_alignment"].values())
+
+
+def test_soft_pair_candidate_a_missing():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    v1 = copy.deepcopy(row.cecchino_output_json["purchasability_preview_v35"])
+    mk = _first_scored_market_key(snap)
+    for item in v1["items"]:
+        if item.get("market_key") == mk:
+            item["candidates"] = {}
+            break
+    row.cecchino_output_json["purchasability_preview_v35"] = _rehash_v1(v1)
+    v2_item = next(i for i in snap["items"] if i.get("market_key") == mk)
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired is not None
+    assert paired["paired"] is True
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "v1_score_missing"
+
+
+def test_soft_pair_timestamp_mismatch():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    snap["source_snapshot_at"] = "2026-08-26T09:00:00+00:00"
+    mk = _first_scored_market_key(snap)
+    v2_item = next(i for i in snap["items"] if i.get("market_key") == mk)
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired is not None
+    assert paired["paired"] is True
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "snapshot_timestamp_mismatch"
+
+
+def test_soft_pair_quote_mismatch_is_input_context():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    mk = _first_scored_market_key(snap)
+    v2_item = copy.deepcopy(next(i for i in snap["items"] if i.get("market_key") == mk))
+    v2_item["input"] = dict(v2_item.get("input") or {})
+    v2_item["input"]["execution_quote"] = float(v2_item["input"]["execution_quote"]) + 0.05
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired is not None
+    assert paired["paired"] is True
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "input_context_mismatch"
+    assert "execution_quote" in paired["input_mismatch_fields"]
+
+
+def test_soft_pair_p_cec_mismatch():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    mk = _first_scored_market_key(snap)
+    v2_item = copy.deepcopy(next(i for i in snap["items"] if i.get("market_key") == mk))
+    v2_item["input"] = dict(v2_item.get("input") or {})
+    v2_item["input"]["probability_cecchino"] = 0.11
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "input_context_mismatch"
+    assert "probability_cecchino" in paired["input_mismatch_fields"]
+
+
+def test_soft_pair_p_fair_mismatch():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    mk = _first_scored_market_key(snap)
+    v2_item = copy.deepcopy(next(i for i in snap["items"] if i.get("market_key") == mk))
+    v2_item["input"] = dict(v2_item.get("input") or {})
+    v2_item["input"]["fair_book_probability"] = 0.22
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "input_context_mismatch"
+    assert "fair_book_probability" in paired["input_mismatch_fields"]
+
+
+def test_soft_pair_v1_not_scored():
+    row = _fixture_row()
+    snap = copy.deepcopy(row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY])
+    v1 = copy.deepcopy(row.cecchino_output_json["purchasability_preview_v35"])
+    mk = _first_scored_market_key(snap)
+    for item in v1["items"]:
+        if item.get("market_key") == mk:
+            item["status"] = "gate_failed"
+            break
+    row.cecchino_output_json["purchasability_preview_v35"] = _rehash_v1(v1)
+    v2_item = next(i for i in snap["items"] if i.get("market_key") == mk)
+    paired = resolve_paired_v1_a(
+        row=row, market_key=mk, v2_snapshot=snap, v2_item=v2_item
+    )
+    assert paired["paired"] is True
+    assert paired["strict_paired"] is False
+    assert paired["pair_alignment_reason"] == "v1_not_scored"
+
+
+def test_auc_strict_paired_identical_pair_keys():
+    rows = []
+    for i in range(12):
+        rows.append(
+            {
+                "pair_key": f"f{i}::home",
+                "strict_paired": True,
+                "paired": True,
+                "outcome": EVAL_WON if i % 2 == 0 else EVAL_LOST,
+                "v2_raw_score": float(10 + i),
+                "v1_raw_score_A": float(5 + i),
+                "v1_score_A": float(5 + i),
+            }
+        )
+    # Extra non-strict row must not enter primary AUC set
+    rows.append(
+        {
+            "pair_key": "noise::home",
+            "strict_paired": False,
+            "paired": True,
+            "outcome": EVAL_WON,
+            "v2_raw_score": 99.0,
+            "v1_raw_score_A": 99.0,
+            "v1_score_A": 99.0,
+        }
+    )
+    rq = build_ranking_quality(rows)
+    assert rq["n_strict_paired_settled"] == 12
+    keys = set(rq["strict_paired_pair_keys"])
+    assert keys == {f"f{i}::home" for i in range(12)}
+    assert "noise::home" not in keys
+    assert rq["roc_auc_v2_strict_paired"] is not None
+    assert rq["roc_auc_v1_A_strict_paired"] is not None
+    assert rq["delta_auc_v2_minus_v1_strict_paired"] is not None
+    assert rq["roc_auc_v2_all_settled"] == rq["roc_auc_v2_raw_score"]
+
+
+def test_top_strict_paired_same_market_universe():
+    row = _fixture_row(scan_date=date(2026, 8, 27))
+    snap = row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]
+    analysis = build_purchasability_v35_v2_analysis_export(row, snap)
+    universe = {mk for mk, _, _ in _strict_paired_market_items(analysis)}
+    assert len(universe) >= 1
+    top_v2 = _top_v2_strict_paired_from_analysis(analysis)
+    top_v1 = _top_v1_strict_paired_from_analysis(analysis)
+    assert top_v2 is not None and top_v1 is not None
+    assert top_v2["market_key"] in universe
+    assert top_v1["market_key"] in universe
+    assert top_v2["selection_basis"] == "strict_paired_v2_raw_score"
+    assert top_v1["selection_basis"] == "strict_paired_v1_A_score"
+
+
+def test_model_specific_execution_quote_profit():
+    assert compute_profit_1u_from_quote(
+        execution_quote=2.5, execution_quote_real=True, outcome=EVAL_WON
+    ) == pytest.approx(1.5)
+    assert compute_profit_1u_from_quote(
+        execution_quote=2.5, execution_quote_real=True, outcome=EVAL_LOST
+    ) == -1.0
+    # Distinct model quotes produce distinct profits even with same outcome
+    p_v1 = compute_profit_1u_from_quote(
+        execution_quote=2.0, execution_quote_real=True, outcome=EVAL_WON
+    )
+    p_v2 = compute_profit_1u_from_quote(
+        execution_quote=3.0, execution_quote_real=True, outcome=EVAL_WON
+    )
+    assert p_v1 != p_v2
 
 
 def test_top_market_selected_before_outcome():
@@ -333,11 +549,26 @@ def test_range_zip_and_route():
             "R",
             "base_rate_reliability",
             "v1_score_A",
+            "strict_paired",
+            "pair_alignment_reason",
+            "v1_execution_quote",
+            "v2_execution_quote",
             "holdout_cohort",
             "formula_freeze_sha256",
         ):
             assert col in header
         assert set(CSV_COLUMNS) == set(header)
+        smoke = manifest["holdout_diagnostics"]["technical_smoke_cohort"]
+        assert "paired_count" in smoke
+        assert "strict_paired_count" in smoke
+        assert "pair_alignment_failures" in smoke
+        rq = smoke["ranking_quality"]
+        assert "roc_auc_v2_strict_paired" in rq
+        assert "n_strict_paired_settled" in rq
+        assert "top_v2_all_markets_per_fixture" in smoke
+        assert "top_v2_strict_paired_per_fixture" in smoke
+        assert "top_v1_strict_paired_per_fixture" in smoke
+        assert "paired_top_delta" in smoke
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
