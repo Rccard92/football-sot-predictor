@@ -1172,6 +1172,184 @@ export function indexPurchasabilityV35ByMarketKey(
   return map
 }
 
+// ============================================================================
+// Acquistabilità V3.6 UI (= backend Structural V2 / purchasability_preview_v35_v2)
+// ============================================================================
+
+export type CecchinoPurchasabilityV36SnapshotStatus =
+  | 'valid'
+  | 'absent'
+  | 'present_but_invalid'
+
+export type V36SnapshotStatus = CecchinoPurchasabilityV36SnapshotStatus
+
+export type CecchinoPurchasabilityV36ItemStatus = 'score' | 'gate_failed' | 'not_calculable'
+
+export type CecchinoPurchasabilityV36StructuralRelation = {
+  related_market?: string | null
+  support_score?: number | null
+  opponent_delta_logit?: number | null
+  related_delta_logit?: number | null
+  relation_weight?: number | null
+  relation_type?: string | null
+  used_in_score?: boolean | null
+  data_available?: boolean | null
+  reason?: string | null
+}
+
+export type V36StructuralBlock = {
+  block_type?: string | null
+  selected_market?: string | null
+  related_markets?: string[] | null
+  configured_strength?: number | null
+  configured_opponents?: number | null
+  available_opponents?: number | null
+  coverage?: number | null
+  block_confidence?: number | null
+  block_raw?: number | null
+  data_available?: boolean | null
+  opponents?: CecchinoPurchasabilityV36StructuralRelation[] | null
+  reason?: string | null
+  support_mode?: string | null
+}
+
+export type CecchinoPurchasabilityV36StructuralBlock = V36StructuralBlock
+
+export type CecchinoPurchasabilityV36ComponentBlock = {
+  component?: string
+  score?: number | null
+  status?: string | null
+  expected_value?: number | null
+  delta_logit?: number | null
+  S?: number | null
+  S_raw?: number | null
+  raw_score?: number | null
+  structural_confidence?: number | null
+  structural_factor?: number | null
+  structural_status?: string | null
+  structural_missing_penalty_applied?: boolean | null
+  coverage?: number | null
+  overround_penalty?: number | null
+  fallback_penalty?: number | null
+  derived_fair_penalty?: number | null
+  extreme_divergence_penalty?: number | null
+  blocks?: V36StructuralBlock[] | null
+  relations?: CecchinoPurchasabilityV36StructuralRelation[] | null
+  formula?: string | null
+}
+
+export type CecchinoPurchasabilityV36Gate = {
+  gate_status?: string | null
+  gate_passed?: boolean | null
+  item_status?: string | null
+  reason?: string | null
+  reason_codes?: string[]
+  expected_value?: number | null
+  probability_cecchino?: number | null
+  fair_book_probability?: number | null
+  rating?: number | null
+}
+
+export type CecchinoPurchasabilityV36ItemInput = {
+  execution_quote?: number | null
+  execution_quote_real?: boolean | null
+  execution_quote_source?: string | null
+  probability_cecchino?: number | null
+  fair_book_probability?: number | null
+  rating?: number | null
+  overround?: number | null
+  book_fallback_used?: boolean | null
+  fair_probability_may_be_derived?: boolean | null
+  expected_value?: number | null
+}
+
+export type V36Reference = {
+  id?: string | null
+  label?: string | null
+  score?: number | null
+  raw_score?: number | null
+  class?: string | null
+}
+
+export type CecchinoPurchasabilityV36Reference = V36Reference
+
+export type V36Components = {
+  executable_value?: CecchinoPurchasabilityV36ComponentBlock | null
+  market_disagreement?: CecchinoPurchasabilityV36ComponentBlock | null
+  base_rate_reliability?: CecchinoPurchasabilityV36ComponentBlock | null
+  structural_coherence?: CecchinoPurchasabilityV36ComponentBlock | null
+  information_quality?: CecchinoPurchasabilityV36ComponentBlock | null
+}
+
+export type CecchinoPurchasabilityV36Components = V36Components
+
+export type V36Item = {
+  market_key: string
+  label?: string | null
+  status: CecchinoPurchasabilityV36ItemStatus | string
+  gate_status?: string | null
+  gate?: CecchinoPurchasabilityV36Gate | null
+  input?: CecchinoPurchasabilityV36ItemInput | null
+  components?: V36Components | null
+  value_core?: number | null
+  acquisition_core?: number | null
+  structural_factor?: number | null
+  quality_factor?: number | null
+  adjusted_confidence?: number | null
+  structural_missing_penalty_applied?: boolean | null
+  score?: number | null
+  raw_score?: number | null
+  class?: string | null
+  reference?: V36Reference | null
+  diagnostics?: Record<string, unknown> | null
+  dependency_meta?: Record<string, unknown> | null
+  formula_version?: string | null
+  formula_freeze_sha256?: string | null
+}
+
+export type CecchinoPurchasabilityV36Item = V36Item
+
+export type V36Snapshot = {
+  snapshot_version?: string | null
+  contract_version?: string | null
+  feature_version?: string | null
+  formula_version?: string | null
+  formula_freeze_sha256?: string | null
+  relation_registry_version?: string | null
+  registry_status?: string | null
+  experiment_version?: string | null
+  generated_at?: string | null
+  source_snapshot_at?: string | null
+  source_snapshot_verified?: boolean | null
+  source_snapshot_before_kickoff?: boolean | null
+  pre_match_verified?: boolean | null
+  kickoff?: string | null
+  source_mode?: string | null
+  input_fingerprint_sha256?: string | null
+  engine_payload_sha256?: string | null
+  frozen_config?: Record<string, unknown> | null
+  relation_registry?: unknown[]
+  items: V36Item[]
+  summary?: Record<string, unknown> | null
+  pre_match_only?: boolean
+  warnings?: string[]
+}
+
+export type CecchinoPurchasabilityV36Snapshot = V36Snapshot
+
+/** Indexer V3.6 (Structural V2) per market_key. */
+export function indexPurchasabilityV36ByMarketKey(
+  snapshot: V36Snapshot | null | undefined,
+): Record<string, V36Item> {
+  const items = snapshot?.items
+  if (!items?.length) return {}
+  const map: Record<string, V36Item> = {}
+  for (const it of items) {
+    if (it?.market_key) map[it.market_key] = it
+  }
+  return map
+}
+
 /** Indexer V3 per market_key — analogo ai resolver V1.1/V2 del DetailPanel. */
 export function indexPurchasabilityV3ByMarketKey(
   snapshot: CecchinoPurchasabilityV3Snapshot | null | undefined,
@@ -2003,6 +2181,10 @@ export type CecchinoTodayDetailResponse = {
   purchasability_preview_v35?: CecchinoPurchasabilityV35Snapshot | null
   purchasability_v35_snapshot_status?: CecchinoPurchasabilityV35SnapshotStatus | null
   purchasability_v35_snapshot_reason?: string | null
+  /** UI V3.6 = backend Structural V2 */
+  purchasability_preview_v35_v2?: V36Snapshot | null
+  purchasability_v35_v2_snapshot_status?: CecchinoPurchasabilityV36SnapshotStatus | null
+  purchasability_v35_v2_snapshot_reason?: string | null
   purchasability_observational_v1_1?: Record<
     string,
     CecchinoPurchasabilityObservationalItem
@@ -2350,6 +2532,26 @@ export async function getPurchasabilityV35AuditExport(
 ): Promise<CecchinoPurchasabilityV35AuditExport> {
   return requestJson<CecchinoPurchasabilityV35AuditExport>(
     `/api/cecchino/today/${todayFixtureId}/purchasability-v35-audit-export`,
+  )
+}
+
+export type CecchinoPurchasabilityV36AuditExport = {
+  contract_version: string
+  generated_at: string
+  fixture: Record<string, unknown>
+  snapshot_identity: Record<string, unknown>
+  frozen_config: Record<string, unknown>
+  relation_registry: unknown[]
+  market_order: string[]
+  markets: Record<string, unknown>
+}
+
+/** Audit Structural V2 — etichetta UI V3.6. */
+export async function getPurchasabilityV36AuditExport(
+  todayFixtureId: number,
+): Promise<CecchinoPurchasabilityV36AuditExport> {
+  return requestJson<CecchinoPurchasabilityV36AuditExport>(
+    `/api/cecchino/today/${todayFixtureId}/purchasability-v35-v2-audit-export`,
   )
 }
 

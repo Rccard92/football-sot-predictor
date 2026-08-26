@@ -9,18 +9,12 @@ type Props = {
   refreshBetfairLoading?: boolean
   dailyAuditExportLoading?: boolean
   dailyAuditExportError?: string | null
-  dailyV35AuditExportLoading?: boolean
-  dailyV35AuditExportError?: string | null
-  v35AnalysisExportLoading?: boolean
-  v35AnalysisExportError?: string | null
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
   onRecomputeCecchino?: () => void
   onRefreshBetfairOdds?: () => void
   onDownloadDailyAudit?: () => void
-  onDownloadDailyV35Audit?: () => void
-  onDownloadV35Analysis?: () => void
 }
 
 export function CecchinoTodayPageHeader({
@@ -34,18 +28,12 @@ export function CecchinoTodayPageHeader({
   refreshBetfairLoading = false,
   dailyAuditExportLoading = false,
   dailyAuditExportError = null,
-  dailyV35AuditExportLoading = false,
-  dailyV35AuditExportError = null,
-  v35AnalysisExportLoading = false,
-  v35AnalysisExportError = null,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
   onRecomputeCecchino,
   onRefreshBetfairOdds,
   onDownloadDailyAudit,
-  onDownloadDailyV35Audit,
-  onDownloadV35Analysis,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
 
@@ -119,51 +107,9 @@ export function CecchinoTodayPageHeader({
                 {dailyAuditExportLoading ? 'Preparazione…' : 'Scarica audit giornata'}
               </button>
             )}
-            {onDownloadDailyV35Audit && (
-              <button
-                type="button"
-                data-testid="daily-v35-purch-audit-download-btn"
-                onClick={() => onDownloadDailyV35Audit()}
-                disabled={dailyV35AuditExportLoading || scanBusy}
-                className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-5 py-2.5 text-sm font-semibold text-violet-900 shadow-sm transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {dailyV35AuditExportLoading ? 'Preparazione…' : (
-                  <>
-                    Scarica audit V3.5 giornata
-                    <span className="text-[10px] font-bold uppercase tracking-wide opacity-80">SHADOW</span>
-                  </>
-                )}
-              </button>
-            )}
-            {onDownloadV35Analysis && (
-              <button
-                type="button"
-                data-testid="v35-analysis-export-btn"
-                onClick={() => onDownloadV35Analysis()}
-                disabled={v35AnalysisExportLoading || scanBusy}
-                className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-5 py-2.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {v35AnalysisExportLoading ? 'Preparazione…' : (
-                  <>
-                    Scarica dataset V3.5 test 20–26/08
-                    <span className="text-[10px] font-bold uppercase tracking-wide opacity-80">ANALYSIS</span>
-                  </>
-                )}
-              </button>
-            )}
             {dailyAuditExportError ? (
               <p className="w-full text-sm text-red-700" data-testid="daily-purch-audit-export-error">
                 {dailyAuditExportError}
-              </p>
-            ) : null}
-            {dailyV35AuditExportError ? (
-              <p className="w-full text-sm text-red-700" data-testid="daily-v35-purch-audit-export-error">
-                {dailyV35AuditExportError}
-              </p>
-            ) : null}
-            {v35AnalysisExportError ? (
-              <p className="w-full text-sm text-red-700" data-testid="v35-analysis-export-error">
-                {v35AnalysisExportError}
               </p>
             ) : null}
             {selectedFixtureId != null && onRefreshBetfairOdds && (

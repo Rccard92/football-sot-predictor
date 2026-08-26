@@ -4,12 +4,12 @@ import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalRel
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
-import { indexPurchasabilityV31ByMarketKey, indexPurchasabilityV35ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
+import { indexPurchasabilityV31ByMarketKey, indexPurchasabilityV36ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoPurchasabilityPanel } from './CecchinoPurchasabilityPanel'
-import { CecchinoPurchasabilityV35Panel } from './CecchinoPurchasabilityV35Panel'
+import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
@@ -68,9 +68,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     detail.purchasability_preview_v31 != null &&
     detail.purchasability_preview_v31.status !== 'unavailable'
 
-  const purchasabilityV35ByMarketKey = useMemo(
-    () => indexPurchasabilityV35ByMarketKey(detail.purchasability_preview_v35),
-    [detail.purchasability_preview_v35],
+  const purchasabilityV36ByMarketKey = useMemo(
+    () => indexPurchasabilityV36ByMarketKey(detail.purchasability_preview_v35_v2),
+    [detail.purchasability_preview_v35_v2],
   )
 
   if (loading) {
@@ -95,26 +95,36 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     <div className="space-y-5">
       <CecchinoTodayDetailHeader detail={detail} />
 
-      <CecchinoPurchasabilityPanel
-        key={todayFixtureId}
-        formulaVersion={detail.purchasability_preview_v31?.formula_version}
-        candidateName={detail.purchasability_preview_v31?.candidate_name}
-        candidateVersion={detail.purchasability_preview_v31?.candidate_version}
-        itemsByMarket={purchasabilityV31ByMarketKey}
-        snapshotAvailable={purchasabilityV31SnapshotAvailable}
+      <CecchinoPurchasabilityV36Panel
+        key={`v36-${todayFixtureId}`}
+        snapshot={detail.purchasability_preview_v35_v2}
+        snapshotStatus={detail.purchasability_v35_v2_snapshot_status ?? 'absent'}
+        snapshotReason={detail.purchasability_v35_v2_snapshot_reason}
+        itemsByMarket={purchasabilityV36ByMarketKey}
         todayFixtureId={todayFixtureId}
         providerFixtureId={detail.provider_fixture_id}
       />
 
-      <CecchinoPurchasabilityV35Panel
-        key={`v35-${todayFixtureId}`}
-        snapshot={detail.purchasability_preview_v35}
-        snapshotStatus={detail.purchasability_v35_snapshot_status ?? 'unavailable'}
-        snapshotReason={detail.purchasability_v35_snapshot_reason}
-        itemsByMarket={purchasabilityV35ByMarketKey}
-        todayFixtureId={todayFixtureId}
-        providerFixtureId={detail.provider_fixture_id}
-      />
+      <details
+        className="rounded-xl border border-slate-200 bg-slate-50/60"
+        data-testid="purchasability-v31-legacy"
+      >
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
+          Versione precedente V3.1
+        </summary>
+        <div className="border-t border-slate-200 p-3">
+          <CecchinoPurchasabilityPanel
+            key={todayFixtureId}
+            formulaVersion={detail.purchasability_preview_v31?.formula_version}
+            candidateName={detail.purchasability_preview_v31?.candidate_name}
+            candidateVersion={detail.purchasability_preview_v31?.candidate_version}
+            itemsByMarket={purchasabilityV31ByMarketKey}
+            snapshotAvailable={purchasabilityV31SnapshotAvailable}
+            todayFixtureId={todayFixtureId}
+            providerFixtureId={detail.provider_fixture_id}
+          />
+        </div>
+      </details>
 
       {(detail.kpi_panel_v2 ?? detail.kpi_panel) && (
         <CecchinoTodayKpiPanel

@@ -7,6 +7,12 @@ import type {
   CecchinoPurchasabilityV35Item,
   CecchinoPurchasabilityV35Snapshot,
 } from '../../lib/cecchinoTodayApi'
+import {
+  PANEL_MARKET_KEYS,
+  PANEL_MARKET_ORDER,
+} from './cecchinoPurchasabilityMarketKeys'
+
+export { PANEL_MARKET_KEYS }
 
 export const V35_CANDIDATE_KEYS: readonly CecchinoPurchasabilityV35CandidateKey[] = [
   'A',
@@ -21,30 +27,6 @@ export const V35_CANDIDATE_LABELS: Record<CecchinoPurchasabilityV35CandidateKey,
   C: 'Structure Heavy',
   D: 'Quality Conservative',
 }
-
-export const PANEL_MARKET_KEYS: readonly string[] = [
-  'HOME',
-  'DRAW',
-  'AWAY',
-  'HOME_PT',
-  'DRAW_PT',
-  'AWAY_PT',
-  'ONE_X',
-  'X_TWO',
-  'ONE_TWO',
-  'OVER_1_5',
-  'UNDER_1_5',
-  'OVER_2_5',
-  'UNDER_2_5',
-  'OVER_3_5',
-  'UNDER_3_5',
-  'OVER_PT_0_5',
-  'UNDER_PT_0_5',
-  'OVER_PT_1_5',
-  'UNDER_PT_1_5',
-] as const
-
-const PANEL_MARKET_ORDER = new Map(PANEL_MARKET_KEYS.map((k, i) => [k, i]))
 
 export function isActiveV35Market(item: CecchinoPurchasabilityV35Item): boolean {
   if (item.status !== 'score') return false
