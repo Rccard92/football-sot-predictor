@@ -2414,6 +2414,7 @@ def update_today_fixture_results(
     }
 
     id_fetched: set[int] = set()
+    rescheduled_today_ids: set[int] = set()
     now_utc = utc_now()
 
     for row in rows:
@@ -2433,17 +2434,20 @@ def update_today_fixture_results(
             )
             continue
 
-        apply_display_from_api(row, api_item)
-        row.raw_fixture_json = api_item
-
         provider_ko = parse_provider_kickoff(api_item)
         if provider_ko is not None and provider_kickoff_moved_to_other_day(
-            historical_kickoff=row.kickoff,
             provider_kickoff=provider_ko,
             scan_date=resolved,
+            timezone_str=timezone,
         ):
-            # Vecchia giornata: resta storica; marca rinviata/rescheduled (anche se provider=NS).
-            apply_old_today_rescheduled_postponed(row, api_item, provider_kickoff=provider_ko)
+            # Vecchia giornata: non assorbire display/score/raw della nuova data.
+            apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
+            rescheduled_today_ids.add(int(row.id))
+            results_updated += 1
+            continue
+
+        apply_display_from_api(row, api_item)
+        row.raw_fixture_json = api_item
 
         st = _resolve_row_match_status(row)
         if st == MATCH_UPCOMING:
@@ -2485,6 +2489,8 @@ def update_today_fixture_results(
 
     # Passata mirata: unresolved con kickoff trascorso → lookup per provider_fixture_id
     for row in rows:
+        if int(row.id) in rescheduled_today_ids:
+            continue
         if not today_row_needs_past_kickoff_id_reconciliation(row, now=now_utc):
             continue
         pid = int(row.provider_fixture_id)
@@ -2501,18 +2507,20 @@ def update_today_fixture_results(
             warnings.append(f"past_kickoff_reconcile_not_found:{pid}")
             continue
 
-        apply_display_from_api(row, api_item)
-        row.raw_fixture_json = api_item
         provider_ko = parse_provider_kickoff(api_item)
         short = parse_provider_status_short(api_item)
         if provider_ko is not None and provider_kickoff_moved_to_other_day(
-            historical_kickoff=row.kickoff,
             provider_kickoff=provider_ko,
             scan_date=resolved,
+            timezone_str=timezone,
         ):
-            apply_old_today_rescheduled_postponed(row, api_item, provider_kickoff=provider_ko)
-        elif short in {"PST", "SUSP", "INT"}:
-            # mapping display già applica postponed; assicuriamo raw aggiornato
+            apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
+            rescheduled_today_ids.add(int(row.id))
+            continue
+        if short in {"PST", "SUSP", "INT"}:
+            apply_display_from_api(row, api_item)
+            row.raw_fixture_json = api_item
+        else:
             apply_display_from_api(row, api_item)
             row.raw_fixture_json = api_item
 
@@ -2549,7 +2557,10 @@ def update_today_fixture_results(
     try:
         from app.services.cecchino.cecchino_goal_intensity_v5 import attach_results_for_rows
 
-        attach_results_for_rows(db, rows, commit=False)
+        rows_for_goal_result_attach = [
+            row for row in rows if int(row.id) not in rescheduled_today_ids
+        ]
+        attach_results_for_rows(db, rows_for_goal_result_attach, commit=False)
     except Exception:
         logger.exception("goal intensity v5 attach skipped after update-results")
 

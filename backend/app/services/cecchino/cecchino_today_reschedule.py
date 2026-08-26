@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -288,43 +289,39 @@ def append_reschedule_warnings(
 
 def provider_kickoff_moved_to_other_day(
     *,
-    historical_kickoff: datetime | None,
     provider_kickoff: datetime | None,
-    scan_date: Any | None = None,
+    scan_date: Any,
+    timezone_str: str,
 ) -> bool:
-    """True se il provider ha spostato il kickoff su un'altra giornata."""
+    """
+    True se il kickoff provider, nella timezone dello scan, cade in un giorno
+    diverso da scan_date. Semantica allineata a get_fixture_local_date().
+    NON confrontare mai .date() UTC con scan_date locale.
+    """
     p_ko = normalize_kickoff(provider_kickoff)
-    if p_ko is None:
+    if p_ko is None or scan_date is None:
         return False
-    h_ko = normalize_kickoff(historical_kickoff)
-    if h_ko is not None and h_ko.date() != p_ko.date():
-        return True
-    if scan_date is not None:
-        try:
-            if p_ko.date() != scan_date:
-                return True
-        except TypeError:
-            pass
-    return False
+    try:
+        local_date = p_ko.astimezone(ZoneInfo(timezone_str)).date()
+    except Exception:
+        return False
+    try:
+        return local_date != scan_date
+    except TypeError:
+        return False
 
 
 def apply_old_today_rescheduled_postponed(
     row: CecchinoTodayFixture,
-    api_item: dict[str, Any],
     *,
     provider_kickoff: datetime,
 ) -> None:
     """
     Marca la vecchia CecchinoTodayFixture come rinviata/rescheduled.
-    NON muta scan_date. NON sovrascrive il kickoff storico con la nuova data.
+    NON muta scan_date, kickoff, goals, score, raw_fixture_json.
     """
     old_ko = normalize_kickoff(row.kickoff)
     row.match_display_status = MATCH_POSTPONED
-    # Conserva short provider utile (PST o NS sulla nuova data) senza reinventare FT.
-    short = parse_provider_status_short(api_item)
-    if short in {"PST", "SUSP", "INT", "NS", "TBD"}:
-        row.fixture_status = short
-    row.raw_fixture_json = api_item
     row.warnings_json = append_reschedule_warnings(
         row.warnings_json,
         old_kickoff=old_ko,

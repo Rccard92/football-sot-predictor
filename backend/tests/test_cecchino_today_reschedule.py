@@ -29,6 +29,7 @@ from app.services.cecchino.cecchino_today_reschedule import (
     apply_old_today_rescheduled_postponed,
     assert_post_upsert_invariant,
     is_terminal_finished_status,
+    provider_kickoff_moved_to_other_day,
     reconcile_canonical_fixture_from_api,
     today_row_needs_past_kickoff_id_reconciliation,
 )
@@ -209,20 +210,47 @@ def test_old_today_preserved_as_postponed_metadata():
     row = MagicMock()
     row.scan_date = date(2026, 7, 20)
     row.kickoff = datetime.fromisoformat(OLD_KO)
+    historical_raw = {"fixture": {"id": API_ID_A, "date": OLD_KO}, "historic": True}
+    row.raw_fixture_json = historical_raw
     row.warnings_json = []
     row.match_display_status = MATCH_UPCOMING
     row.fixture_status = "NS"
-    item = _api_item(kickoff=NEW_KO, short="NS")
+    row.goals_home = None
+    row.goals_away = None
     apply_old_today_rescheduled_postponed(
         row,
-        item,
         provider_kickoff=datetime.fromisoformat(NEW_KO),
     )
     assert row.scan_date == date(2026, 7, 20)
     assert row.kickoff == datetime.fromisoformat(OLD_KO)
     assert row.match_display_status == MATCH_POSTPONED
+    assert row.raw_fixture_json is historical_raw
+    assert row.goals_home is None
     assert "fixture_rescheduled" in row.warnings_json
     assert any(str(w).startswith("rescheduled_to=") for w in row.warnings_json)
+
+
+def test_provider_kickoff_midnight_boundary_rome_same_day():
+    """2026-08-26T22:30Z → 2026-08-27 00:30 Europe/Rome = stesso scan_date."""
+    assert (
+        provider_kickoff_moved_to_other_day(
+            provider_kickoff=datetime(2026, 8, 26, 22, 30, tzinfo=timezone.utc),
+            scan_date=date(2026, 8, 27),
+            timezone_str="Europe/Rome",
+        )
+        is False
+    )
+
+
+def test_provider_kickoff_genuine_other_local_day():
+    assert (
+        provider_kickoff_moved_to_other_day(
+            provider_kickoff=datetime.fromisoformat(NEW_KO),
+            scan_date=date(2026, 7, 20),
+            timezone_str="Europe/Rome",
+        )
+        is True
+    )
 
 
 def _run_scan_with_existing_local(
@@ -471,7 +499,12 @@ def test_update_results_id_lookup_rescheduled_marks_postponed_preserves_kickoff(
     row.kickoff = historical
     row.match_display_status = MATCH_UPCOMING
     row.warnings_json = []
-    row.raw_fixture_json = None
+    historical_raw = {"fixture": {"id": API_ID_A, "date": OLD_KO}, "scan": "2026-07-20"}
+    row.raw_fixture_json = historical_raw
+    row.goals_home = None
+    row.goals_away = None
+    row.score_fulltime_home = None
+    row.score_fulltime_away = None
 
     db = MagicMock()
     db.scalars.return_value.all.return_value = [row]
@@ -490,28 +523,181 @@ def test_update_results_id_lookup_rescheduled_marks_postponed_preserves_kickoff(
         patch(
             "app.services.cecchino.cecchino_today_service.evaluate_activations_for_fixture",
             return_value={"evaluated": 0, "pending": 0},
-        ),
+        ) as eval_mock,
         patch(
             "app.services.cecchino.cecchino_balance_v5_readiness.safe_upsert_balance_readiness_daily_snapshot",
             return_value={},
         ),
         patch(
             "app.services.cecchino.cecchino_goal_intensity_v5.attach_results_for_rows",
-        ),
+        ) as attach_mock,
     ):
         out = update_today_fixture_results(
             db,
             scan_date=date(2026, 7, 20),
-            timezone="UTC",
+            timezone="Europe/Rome",
             client=client,
         )
 
     assert row.scan_date == date(2026, 7, 20)
     assert row.kickoff == historical
     assert row.match_display_status == MATCH_POSTPONED
+    assert row.raw_fixture_json is historical_raw
     assert "fixture_rescheduled" in (row.warnings_json or [])
     assert out["still_upcoming"] == 0
     client.get_fixture_by_id.assert_called()
+    eval_mock.assert_not_called()
+    attached_rows = attach_mock.call_args[0][1]
+    assert all(int(r.id) != 1 for r in attached_rows)
+
+
+def test_update_results_ft_new_date_does_not_absorb_score_or_settle():
+    """FT 2-1 della nuova data non deve contaminare la vecchia Today 20/07."""
+    historical_raw = {
+        "fixture": {"id": API_ID_A, "date": OLD_KO, "status": {"short": "NS"}},
+        "goals": {"home": None, "away": None},
+    }
+    row = MagicMock()
+    row.id = 25081
+    row.provider_fixture_id = API_ID_A
+    row.scan_date = date(2026, 7, 20)
+    row.kickoff = datetime.fromisoformat(OLD_KO)
+    row.match_display_status = MATCH_UPCOMING
+    row.fixture_status = "NS"
+    row.warnings_json = []
+    row.raw_fixture_json = historical_raw
+    row.goals_home = None
+    row.goals_away = None
+    row.score_fulltime_home = None
+    row.score_fulltime_away = None
+    row.score_halftime_home = None
+    row.score_halftime_away = None
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [row]
+    db.begin_nested.return_value = MagicMock()
+
+    client = MagicMock()
+    client.get_fixtures_by_date.return_value = []
+    client.get_fixture_by_id.return_value = _api_item(
+        fid=API_ID_A,
+        kickoff=NEW_KO,
+        short="FT",
+        goals_home=2,
+        goals_away=1,
+    )
+
+    with (
+        patch(
+            "app.services.cecchino.cecchino_today_service.evaluate_activations_for_fixture",
+            return_value={"evaluated": 0, "pending": 0},
+        ) as eval_mock,
+        patch(
+            "app.services.cecchino.cecchino_kpi_signals.revaluate_kpi_signals_for_fixture",
+        ) as kpi_mock,
+        patch(
+            "app.services.cecchino.cecchino_purchasability_validation.evaluate_purchasability_validation_for_fixture",
+        ) as purch_mock,
+        patch(
+            "app.services.cecchino.cecchino_balance_v5_empirical.settle_balance_empirical_record",
+        ) as settle_mock,
+        patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness.safe_upsert_balance_readiness_daily_snapshot",
+            return_value={},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5.attach_results_for_rows",
+        ) as attach_mock,
+    ):
+        update_today_fixture_results(
+            db,
+            scan_date=date(2026, 7, 20),
+            timezone="Europe/Rome",
+            client=client,
+        )
+
+    assert row.scan_date == date(2026, 7, 20)
+    assert row.kickoff == datetime.fromisoformat(OLD_KO)
+    assert row.match_display_status == MATCH_POSTPONED
+    assert row.goals_home is None
+    assert row.goals_away is None
+    assert row.score_fulltime_home is None
+    assert row.score_fulltime_away is None
+    assert row.raw_fixture_json is historical_raw
+    assert "fixture_rescheduled" in (row.warnings_json or [])
+
+    eval_mock.assert_not_called()
+    kpi_mock.assert_not_called()
+    purch_mock.assert_not_called()
+    settle_mock.assert_not_called()
+    attached_rows = attach_mock.call_args[0][1]
+    assert all(int(r.id) != 25081 for r in attached_rows)
+    assert attached_rows == []
+
+
+def test_update_results_same_local_day_rome_not_treated_as_reschedule():
+    """Kickoff UTC giorno prima ma locale Rome = scan_date → flusso normale."""
+    row = MagicMock()
+    row.id = 99
+    row.provider_fixture_id = API_ID_A
+    row.scan_date = date(2026, 8, 27)
+    row.kickoff = datetime(2026, 8, 26, 22, 30, tzinfo=timezone.utc)
+    row.match_display_status = MATCH_UPCOMING
+    row.warnings_json = []
+    row.raw_fixture_json = None
+    row.goals_home = None
+    row.goals_away = None
+    row.score_fulltime_home = None
+    row.score_fulltime_away = None
+    row.score_halftime_home = None
+    row.score_halftime_away = None
+    row.fixture_status = "NS"
+    row.elapsed_minutes = None
+    row.country_flag_url = None
+    row.league_logo_url = None
+    row.home_team_logo_url = None
+    row.away_team_logo_url = None
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [row]
+    db.begin_nested.return_value = MagicMock()
+
+    client = MagicMock()
+    client.get_fixtures_by_date.return_value = [
+        _api_item(
+            fid=API_ID_A,
+            kickoff="2026-08-26T22:30:00+00:00",
+            short="NS",
+        ),
+    ]
+
+    with (
+        patch(
+            "app.services.cecchino.cecchino_today_service.evaluate_activations_for_fixture",
+            return_value={"evaluated": 0, "pending": 0},
+        ) as eval_mock,
+        patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness.safe_upsert_balance_readiness_daily_snapshot",
+            return_value={},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5.attach_results_for_rows",
+        ) as attach_mock,
+    ):
+        update_today_fixture_results(
+            db,
+            scan_date=date(2026, 8, 27),
+            timezone="Europe/Rome",
+            client=client,
+        )
+
+    assert row.match_display_status != MATCH_POSTPONED or "fixture_rescheduled" not in (
+        row.warnings_json or []
+    )
+    # Stesso giorno locale: apply_display eseguito, non reschedule skip
+    eval_mock.assert_called_once()
+    attached_rows = attach_mock.call_args[0][1]
+    assert any(int(r.id) == 99 for r in attached_rows)
 
 
 def test_update_results_provider_fail_no_invention():
