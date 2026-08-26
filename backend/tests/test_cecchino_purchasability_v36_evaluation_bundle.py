@@ -233,9 +233,19 @@ def test_bundle_inclusive_five_days_same_zip():
         assert summary["expected_comparison_rows_count"] == 5 * PANEL_SIZE
         assert summary["comparison_rows_complete"] is True
         assert summary["unique_fixture_summary_count"] == 5
+        assert summary["fixture_summary_matches_population"] is True
+        assert summary["panel_rows_exact_per_valid_v36"] is True
+        assert summary["v35_population_partition_complete"] is True
+        assert summary["v31_population_partition_complete"] is True
         assert summary["technical_smoke_fixture_count"] == 1
         assert summary["prospective_holdout_fixture_count"] == 4
         assert summary["PRIMARY_DIAGNOSTIC_COHORT"] == COHORT_PROSPECTIVE
+        sc = manifest["self_check"]
+        assert sc["comparison_rows_complete"] is True
+        assert sc["fixture_summary_matches_population"] is True
+        assert sc["panel_rows_exact_per_valid_v36"] is True
+        assert sc["v35_population_partition_complete"] is True
+        assert sc["v31_population_partition_complete"] is True
         days = manifest["days"]
         for d in ("2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30"):
             assert d in days
@@ -338,6 +348,407 @@ def test_invalid_v36_marked_in_summary_not_comparison():
         assert summary_rows[0]["v36_snapshot_status"] == "invalid"
 
 
+def test_v31_pairable_requires_pre_match_evidence():
+    row = _fixture_row(
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=_minimal_v31(
+            snap_at="2026-08-27T08:00:00+00:00",
+            pre_match_only=True,
+            before_kickoff=False,
+        ),
+    )
+    v36 = row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]
+    v36_item = v36["items"][0]
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=v36_item["market_key"],
+        v36_item=v36_item,
+        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
+        v31_availability="available",
+        v36_source_snapshot_at=v36.get("source_snapshot_at"),
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "v31_pre_match_not_verified"
+
+
+def _aligned_v36_for_v31(*, snap_at: str = "2026-08-27T08:00:00+00:00"):
+    v35, v36 = _build_v35_v2()
+    v36["source_snapshot_at"] = snap_at
+    for item in v36.get("items") or []:
+        if isinstance(item, dict) and isinstance(item.get("input"), dict):
+            item["input"]["execution_quote"] = 2.2
+            item["input"]["probability_cecchino"] = 0.55
+            item["input"]["fair_book_probability"] = round(1 / 2.2, 6)
+    return v35, v36
+
+
+def test_v31_pairable_true_when_same_timestamp():
+    snap_at = "2026-08-27T08:00:00+00:00"
+    v35, v36 = _aligned_v36_for_v31(snap_at=snap_at)
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=_minimal_v31(
+            snap_at=snap_at,
+            pre_match_only=True,
+            before_kickoff=True,
+            align_inputs=True,
+        ),
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_by = {
+        it["market_key"]: it
+        for it in row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]["items"]
+        if isinstance(it, dict)
+    }
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_by[mk],
+        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
+        v31_availability="available",
+        v36_source_snapshot_at=snap_at,
+    )
+    assert result["v31_pairable"] is True
+    assert result["v31_alignment_reason"] is None
+
+
+def test_v31_timestamp_mismatch():
+    v35, v36 = _aligned_v36_for_v31(snap_at="2026-08-27T08:00:00+00:00")
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=_minimal_v31(snap_at="2026-08-27T09:00:00+00:00"),
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_item = next(
+        it for it in v36["items"] if isinstance(it, dict) and it.get("market_key") == mk
+    )
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_item,
+        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
+        v31_availability="available",
+        v36_source_snapshot_at="2026-08-27T08:00:00+00:00",
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "snapshot_timestamp_mismatch"
+
+
+def test_v31_post_kickoff_not_pairable():
+    v35, v36 = _aligned_v36_for_v31(snap_at="2026-08-27T16:00:00+00:00")
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=_minimal_v31(snap_at="2026-08-27T16:00:00+00:00"),
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_item = next(
+        it for it in v36["items"] if isinstance(it, dict) and it.get("market_key") == mk
+    )
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_item,
+        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
+        v31_availability="available",
+        v36_source_snapshot_at="2026-08-27T16:00:00+00:00",
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "v31_pre_match_not_verified"
+
+
+def test_v31_missing_source_timestamp():
+    v35, v36 = _aligned_v36_for_v31()
+    v31 = _minimal_v31(snap_at="2026-08-27T08:00:00+00:00")
+    v31["source_snapshot_at"] = None
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=v31,
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_item = next(
+        it for it in v36["items"] if isinstance(it, dict) and it.get("market_key") == mk
+    )
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_item,
+        v31_snapshot=v31,
+        v31_availability="available",
+        v36_source_snapshot_at=v36.get("source_snapshot_at"),
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "v31_pre_match_not_verified"
+
+
+def test_v31_provisional_not_strict_pairable():
+    v35, v36 = _aligned_v36_for_v31(snap_at="2026-08-27T08:00:00+00:00")
+    v31 = _minimal_v31(snap_at="2026-08-27T08:00:00+00:00")
+    for item in v31["items"]:
+        item["status"] = "score_provisional"
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=v31,
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_item = next(
+        it for it in v36["items"] if isinstance(it, dict) and it.get("market_key") == mk
+    )
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_item,
+        v31_snapshot=v31,
+        v31_availability="available",
+        v36_source_snapshot_at="2026-08-27T08:00:00+00:00",
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "v31_provisional"
+    assert result["v31_score"] is not None
+
+
+def test_v31_input_context_mismatch():
+    v35, v36 = _aligned_v36_for_v31(snap_at="2026-08-27T08:00:00+00:00")
+    row = _fixture_row(
+        v35=v35,
+        v36=v36,
+        scan_date=date(2026, 8, 27),
+        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        v31=_minimal_v31(
+            snap_at="2026-08-27T08:00:00+00:00",
+            align_inputs=False,
+        ),
+    )
+    mk = PANEL_MARKET_KEYS[0]
+    v36_item = next(
+        it for it in v36["items"] if isinstance(it, dict) and it.get("market_key") == mk
+    )
+    result = resolve_v31_pairability(
+        row=row,
+        market_key=mk,
+        v36_item=v36_item,
+        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
+        v31_availability="available",
+        v36_source_snapshot_at="2026-08-27T08:00:00+00:00",
+    )
+    assert result["v31_pairable"] is False
+    assert result["v31_alignment_reason"] == "input_context_mismatch"
+
+
+def test_invalid_v35_no_top_no_strict_pair():
+    v35, v36 = _build_v35_v2()
+    bad_v35 = copy.deepcopy(v35)
+    bad_v35["snapshot_version"] = "broken"
+    row = _fixture_row(v35=bad_v35, v36=v36, scan_date=date(2026, 8, 28))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 28), date_to=date(2026, 8, 28)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["summary"]["v35_invalid_fixture_count"] == 1
+        assert manifest["summary"]["v35_missing_fixture_count"] == 0
+        summary_rows = list(
+            csv.DictReader(io.StringIO(zf.read("fixture_summary.csv").decode()))
+        )
+        assert summary_rows[0]["top_v35_market"] in {"", None}
+        rows = list(csv.DictReader(io.StringIO(zf.read("comparison_rows.csv").decode())))
+        assert all(r["strict_paired"] in {"False", "false"} for r in rows)
+        assert all(
+            (r["v35_score_A"] in {"", None}) and (r["v35_status"] == "invalid")
+            for r in rows
+        )
+
+
+def test_invalid_v31_no_top_no_pairability():
+    v35, v36 = _build_v35_v2()
+    bad_v31 = _minimal_v31()
+    bad_v31["snapshot_version"] = "broken"
+    row = _fixture_row(v35=v35, v36=v36, v31=bad_v31, scan_date=date(2026, 8, 28))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 28), date_to=date(2026, 8, 28)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["summary"]["v31_invalid_fixture_count"] == 1
+        summary_rows = list(
+            csv.DictReader(io.StringIO(zf.read("fixture_summary.csv").decode()))
+        )
+        assert summary_rows[0]["top_v31_market"] in {"", None}
+        rows = list(csv.DictReader(io.StringIO(zf.read("comparison_rows.csv").decode())))
+        assert all(r["v31_pairable"] in {"False", "false"} for r in rows)
+        assert all(r["v31_alignment_reason"] == "v31_invalid" for r in rows)
+
+
+def test_manifest_partition_available_missing_invalid():
+    v35, v36 = _build_v35_v2()
+    bad_v35 = copy.deepcopy(v35)
+    bad_v35["snapshot_version"] = "broken"
+    bad_v31 = _minimal_v31()
+    bad_v31["snapshot_version"] = "broken"
+    rows = [
+        _fixture_row(fid=1, provider_id=1, scan_date=date(2026, 8, 26)),
+        _fixture_row(
+            fid=2, provider_id=2, scan_date=date(2026, 8, 26), omit_v35=True, omit_v31=True
+        ),
+        _fixture_row(
+            fid=3,
+            provider_id=3,
+            scan_date=date(2026, 8, 26),
+            v35=bad_v35,
+            v36=v36,
+            v31=bad_v31,
+        ),
+    ]
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=rows,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 26), date_to=date(2026, 8, 30)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        s = manifest["summary"]
+        assert s["snapshot_population_count"] == 3
+        assert (
+            s["v35_available_fixture_count"]
+            + s["v35_missing_fixture_count"]
+            + s["v35_invalid_fixture_count"]
+            == 3
+        )
+        assert (
+            s["v31_available_fixture_count"]
+            + s["v31_missing_fixture_count"]
+            + s["v31_invalid_fixture_count"]
+            == 3
+        )
+        assert s["v35_available_fixture_count"] == 1
+        assert s["v35_missing_fixture_count"] == 1
+        assert s["v35_invalid_fixture_count"] == 1
+        assert s["v31_available_fixture_count"] == 1
+        assert s["v31_missing_fixture_count"] == 1
+        assert s["v31_invalid_fixture_count"] == 1
+        sc = manifest["self_check"]
+        assert sc["v35_population_partition_complete"] is True
+        assert sc["v31_population_partition_complete"] is True
+        days = manifest["days"]
+        for d in ("2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30"):
+            assert d in days
+        assert days["2026-08-27"]["snapshot_population_count"] == 0
+        assert days["2026-08-27"]["holdout_cohort"] == COHORT_PROSPECTIVE
+
+
+def test_valid_v36_exact_panel_rows():
+    row = _fixture_row(scan_date=date(2026, 8, 27))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 27), date_to=date(2026, 8, 27)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["self_check"]["panel_rows_exact_per_valid_v36"] is True
+        rows = list(csv.DictReader(io.StringIO(zf.read("comparison_rows.csv").decode())))
+        assert len(rows) == 19
+        assert {r["market_key"] for r in rows} == set(PANEL_MARKET_KEYS)
+
+
+def test_offline_comparison_csv_contract_fields():
+    required = {
+        "scan_date",
+        "today_fixture_id",
+        "provider_fixture_id",
+        "holdout_cohort",
+        "match_status",
+        "current_eligibility_status",
+        "market_key",
+        "market_family",
+        "execution_quote",
+        "probability_cecchino",
+        "fair_book_probability",
+        "EV",
+        "outcome",
+        "profit_1u",
+        "v36_score",
+        "v36_raw_score",
+        "v36_class",
+        "V",
+        "D",
+        "R",
+        "S",
+        "Q",
+        "VALUE_CORE",
+        "ACQUISITION_CORE",
+        "structural_factor",
+        "quality_factor",
+        "adjusted_confidence",
+        "v36_source_snapshot_at",
+        "v36_formula_freeze_sha256",
+        "v35_score_A",
+        "v35_raw_score_A",
+        "v35_class_A",
+        "v35_source_snapshot_at",
+        "v35_available",
+        "v35_status",
+        "strict_paired",
+        "v31_score",
+        "v31_raw_score",
+        "v31_class",
+        "v31_candidate_version",
+        "v31_source_snapshot_at",
+        "v31_available",
+        "v31_status",
+        "v31_pairable",
+        "v31_alignment_reason",
+    }
+    assert required.issubset(set(COMPARISON_CSV_COLUMNS))
+
+
 def test_zero_recompute():
     row = _fixture_row(scan_date=date(2026, 8, 27))
     with patch(
@@ -362,63 +773,70 @@ def test_zero_recompute():
         assert manifest["summary"]["valid_v36_snapshots"] == 1
 
 
-def test_v31_pairable_requires_pre_match_evidence():
-    row = _fixture_row(
-        scan_date=date(2026, 8, 27),
-        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
-        v31=_minimal_v31(
-            snap_at="2026-08-27T08:00:00+00:00",
-            pre_match_only=True,
-            before_kickoff=False,
-        ),
-    )
-    v36_item = row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]["items"][0]
-    result = resolve_v31_pairability(
-        row=row,
-        market_key=v36_item["market_key"],
-        v36_item=v36_item,
-        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
-        v31_availability="available",
-    )
-    assert result["v31_pairable"] is False
-    assert result["v31_alignment_reason"] == "v31_pre_match_not_verified"
+def test_engine_v36_patched_bundle_still_works():
+    row = _fixture_row(scan_date=date(2026, 8, 27))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_engine."
+        "calculate_purchasability_v35_v2_item",
+        side_effect=AssertionError("v36_engine_forbidden"),
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 27), date_to=date(2026, 8, 27)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        assert json.loads(zf.read("manifest.json"))["recompute_used"] is False
 
 
-def test_v31_pairable_true_when_verified():
-    # Align V36 item inputs with V31 minimal snapshot
-    v35, v36 = _build_v35_v2()
-    for item in v36.get("items") or []:
-        if isinstance(item, dict) and isinstance(item.get("input"), dict):
-            item["input"]["execution_quote"] = 2.2
-            item["input"]["probability_cecchino"] = 0.55
-            item["input"]["fair_book_probability"] = round(1 / 2.2, 6)
-    row = _fixture_row(
-        v35=v35,
-        v36=v36,
-        scan_date=date(2026, 8, 27),
-        kickoff=datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
-        v31=_minimal_v31(
-            snap_at="2026-08-27T08:00:00+00:00",
-            pre_match_only=True,
-            before_kickoff=True,
-            align_inputs=True,
-        ),
-    )
-    mk = PANEL_MARKET_KEYS[0]
-    v36_by = {
-        it["market_key"]: it
-        for it in row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY]["items"]
-        if isinstance(it, dict)
-    }
-    result = resolve_v31_pairability(
-        row=row,
-        market_key=mk,
-        v36_item=v36_by[mk],
-        v31_snapshot=row.cecchino_output_json["purchasability_preview_v31"],
-        v31_availability="available",
-    )
-    assert result["v31_pairable"] is True
-    assert result["v31_alignment_reason"] is None
+def test_engine_v35_patched_bundle_still_works():
+    row = _fixture_row(scan_date=date(2026, 8, 27))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_candidate."
+        "calculate_purchasability_v35_batch",
+        side_effect=AssertionError("v35_engine_forbidden"),
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 27), date_to=date(2026, 8, 27)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        assert json.loads(zf.read("manifest.json"))["recompute_used"] is False
+
+
+def test_engine_v31_patched_bundle_still_works():
+    row = _fixture_row(scan_date=date(2026, 8, 27))
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v36_evaluation_bundle."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v31_candidate."
+        "calculate_purchasability_v31_batch",
+        side_effect=AssertionError("v31_engine_forbidden"),
+    ):
+        zip_bytes, _ = build_v36_evaluation_bundle_zip(
+            _mock_db([]), date_from=date(2026, 8, 27), date_to=date(2026, 8, 27)
+        )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        assert json.loads(zf.read("manifest.json"))["recompute_used"] is False
 
 
 def test_formula_sha_and_route():

@@ -7,7 +7,7 @@ import io
 import json
 import zipfile
 from collections import Counter, defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -317,6 +317,7 @@ def resolve_v31_pairability(
     v36_item: dict[str, Any] | None,
     v31_snapshot: dict[str, Any] | None,
     v31_availability: str,
+    v36_source_snapshot_at: Any = None,
 ) -> dict[str, Any]:
     """Conservative V3.1 pairability — never assume pre-match."""
     base = {
@@ -360,6 +361,11 @@ def resolve_v31_pairability(
         base["v31_alignment_reason"] = "v31_not_scored"
         return base
 
+    # Provisional may remain as audit data but is never strict-pairable.
+    if str(v31_item.get("status") or "") == "score_provisional":
+        base["v31_alignment_reason"] = "v31_provisional"
+        return base
+
     # Temporal pre-match evidence (snapshot-level + item fallbacks)
     pre_match_only = v31_snapshot.get("pre_match_only")
     if pre_match_only is None:
@@ -368,18 +374,28 @@ def resolve_v31_pairability(
     snap_at_raw = v31_snapshot.get("source_snapshot_at")
     if snap_at_raw is None:
         snap_at_raw = v31_item.get("snapshot_at")
-    snap_at = _parse_dt(snap_at_raw)
+    v31_snap_at = _parse_dt(snap_at_raw)
+    v36_snap_at = _parse_dt(v36_source_snapshot_at)
     kickoff = row.kickoff if isinstance(row.kickoff, datetime) else _parse_dt(row.kickoff)
 
     temporal_ok = (
         pre_match_only is True
         and before_ko is True
-        and snap_at is not None
+        and v31_snap_at is not None
+        and v36_snap_at is not None
         and kickoff is not None
-        and snap_at < kickoff
+        and v31_snap_at < kickoff
+        and v36_snap_at < kickoff
     )
     if not temporal_ok:
         base["v31_alignment_reason"] = "v31_pre_match_not_verified"
+        return base
+
+    v31_norm = _normalize_source_snapshot_at(v31_snap_at)
+    v36_norm = _normalize_source_snapshot_at(v36_snap_at)
+    base["v31_source_snapshot_at"] = v31_norm
+    if v31_norm is None or v36_norm is None or v31_norm != v36_norm:
+        base["v31_alignment_reason"] = "snapshot_timestamp_mismatch"
         return base
 
     if not isinstance(v36_item, dict):
@@ -535,7 +551,14 @@ def build_v36_evaluation_bundle_payload(
     snapshot_files: dict[str, bytes] = {}
     manifest_fixtures: list[dict[str, Any]] = []
 
-    days: dict[str, dict[str, Any]] = defaultdict(_empty_day_bucket)
+    days: dict[str, dict[str, Any]] = {}
+    cursor = date_from
+    while cursor <= date_to:
+        day_key = cursor.isoformat()
+        bucket = _empty_day_bucket()
+        bucket["holdout_cohort"] = holdout_cohort_for_scan_date(cursor)
+        days[day_key] = bucket
+        cursor += timedelta(days=1)
     eligibility_counter: Counter[str] = Counter()
 
     valid_v36 = 0
@@ -547,8 +570,10 @@ def build_v36_evaluation_bundle_payload(
     pairable_v36_v31_rows = 0
     v35_available_fixture_count = 0
     v35_missing_fixture_count = 0
+    v35_invalid_fixture_count = 0
     v31_available_fixture_count = 0
     v31_missing_fixture_count = 0
+    v31_invalid_fixture_count = 0
     technical_smoke_fixture_count = 0
     prospective_holdout_fixture_count = 0
     technical_smoke_settled_fixture_count = 0
@@ -561,6 +586,8 @@ def build_v36_evaluation_bundle_payload(
     for row in fixtures:
         scan_key = row.scan_date.isoformat() if row.scan_date else "unknown"
         cohort = holdout_cohort_for_scan_date(row.scan_date)
+        if scan_key not in days:
+            days[scan_key] = _empty_day_bucket()
         day = days[scan_key]
         day["snapshot_population_count"] += 1
         day["holdout_cohort"] = cohort
@@ -607,10 +634,14 @@ def build_v36_evaluation_bundle_payload(
 
         if v35_avail == "available":
             v35_available_fixture_count += 1
+        elif v35_avail == "invalid":
+            v35_invalid_fixture_count += 1
         else:
             v35_missing_fixture_count += 1
         if v31_avail == "available":
             v31_available_fixture_count += 1
+        elif v31_avail == "invalid":
+            v31_invalid_fixture_count += 1
         else:
             v31_missing_fixture_count += 1
 
@@ -668,9 +699,17 @@ def build_v36_evaluation_bundle_payload(
                     "v31_pairable_any": False,
                 }
             )
-            # Still attach TOP v35/v31 from persisted when present
-            top_v35 = _top_v35_from_snapshot(row, v35_snap)
-            top_v31 = _top_v31_from_snapshot(row, v31_snap)
+            # TOP baselines only from available snapshots (never invalid)
+            top_v35 = (
+                _top_v35_from_snapshot(row, v35_snap)
+                if v35_avail == "available"
+                else None
+            )
+            top_v31 = (
+                _top_v31_from_snapshot(row, v31_snap)
+                if v31_avail == "available"
+                else None
+            )
             if top_v35:
                 fixture_summary_rows[-1].update(
                     {
@@ -777,6 +816,11 @@ def build_v36_evaluation_bundle_payload(
                 v36_item=item if isinstance(item, dict) else None,
                 v31_snapshot=v31_snap,
                 v31_availability=v31_avail,
+                v36_source_snapshot_at=(
+                    v36_snap.get("source_snapshot_at")
+                    if isinstance(v36_snap, dict)
+                    else None
+                ),
             )
 
             strict = bool(paired and paired.get("strict_paired") is True)
@@ -962,8 +1006,16 @@ def build_v36_evaluation_bundle_payload(
         if best_strict_v1 is not None:
             top_v1_strict_rows.append(best_strict_v1)
 
-        top_v35 = _top_v35_from_snapshot(row, v35_snap)
-        top_v31 = _top_v31_from_snapshot(row, v31_snap)
+        top_v35 = (
+            _top_v35_from_snapshot(row, v35_snap)
+            if v35_avail == "available"
+            else None
+        )
+        top_v31 = (
+            _top_v31_from_snapshot(row, v31_snap)
+            if v31_avail == "available"
+            else None
+        )
 
         fixture_summary_rows.append(
             {
@@ -996,26 +1048,62 @@ def build_v36_evaluation_bundle_payload(
     comparison_rows_count = len(comparison_rows)
     unique_summary = len({r["today_fixture_id"] for r in fixture_summary_rows})
     unique_pop = len({int(r.id) for r in fixtures})
+    population_count = len(fixtures)
+
+    panel_set = set(PANEL_MARKET_KEYS)
+    keys_by_fixture: dict[int, set[str]] = defaultdict(set)
+    for crow in comparison_rows:
+        keys_by_fixture[int(crow["today_fixture_id"])].add(str(crow["market_key"]))
+    panel_rows_exact_per_valid_v36 = (
+        len(keys_by_fixture) == valid_v36
+        and all(
+            keys == panel_set and len(keys) == PANEL_SIZE
+            for keys in keys_by_fixture.values()
+        )
+    )
+
+    v35_partition_complete = (
+        v35_available_fixture_count
+        + v35_missing_fixture_count
+        + v35_invalid_fixture_count
+        == population_count
+    )
+    v31_partition_complete = (
+        v31_available_fixture_count
+        + v31_missing_fixture_count
+        + v31_invalid_fixture_count
+        == population_count
+    )
+    population_partition_v36_ok = (
+        population_count == valid_v36 + invalid_v36
+    )
+    comparison_rows_complete = comparison_rows_count == expected_comparison_rows
+    fixture_summary_matches_population = unique_summary == population_count
 
     summary: dict[str, Any] = {
         "population_inclusion_basis": "persisted_v2_snapshot_key",
-        "snapshot_population_count": len(fixtures),
+        "snapshot_population_count": population_count,
         "valid_v36_snapshots": valid_v36,
         "invalid_v36_snapshots": invalid_v36,
         "analysis_included_count": valid_v36,
         "v35_available_fixture_count": v35_available_fixture_count,
         "v35_missing_fixture_count": v35_missing_fixture_count,
+        "v35_invalid_fixture_count": v35_invalid_fixture_count,
         "v31_available_fixture_count": v31_available_fixture_count,
         "v31_missing_fixture_count": v31_missing_fixture_count,
+        "v31_invalid_fixture_count": v31_invalid_fixture_count,
         "settled_fixture_count": settled_fixture_count,
         "pending_fixture_count": pending_fixture_count,
         "scored_market_rows": scored_market_rows,
         "comparison_rows_count": comparison_rows_count,
         "expected_comparison_rows_count": expected_comparison_rows,
-        "comparison_rows_complete": comparison_rows_count == expected_comparison_rows,
+        "comparison_rows_complete": comparison_rows_complete,
         "unique_v36_population_fixture_count": unique_pop,
         "unique_fixture_summary_count": unique_summary,
-        "fixture_summary_matches_population": unique_summary == len(fixtures),
+        "fixture_summary_matches_population": fixture_summary_matches_population,
+        "panel_rows_exact_per_valid_v36": panel_rows_exact_per_valid_v36,
+        "v35_population_partition_complete": v35_partition_complete,
+        "v31_population_partition_complete": v31_partition_complete,
         "strict_v36_v35_rows": strict_v36_v35_rows,
         "pairable_v36_v31_rows": pairable_v36_v31_rows,
         "current_eligibility_counts": dict(eligibility_counter),
@@ -1053,14 +1141,20 @@ def build_v36_evaluation_bundle_payload(
             "days": dict(days),
             "fixtures": manifest_fixtures,
             "self_check": {
+                "snapshot_population_count": population_count,
+                "valid_v36_snapshots": valid_v36,
+                "invalid_v36_snapshots": invalid_v36,
+                "population_equals_valid_plus_invalid_v36": population_partition_v36_ok,
                 "comparison_rows_count": comparison_rows_count,
                 "expected_comparison_rows_count": expected_comparison_rows,
-                "comparison_rows_complete": comparison_rows_count
-                == expected_comparison_rows,
+                "comparison_rows_complete": comparison_rows_complete,
                 "unique_v36_population_fixture_count": unique_pop,
                 "unique_fixture_summary_count": unique_summary,
-                "unique_fixture_summary_equals_population": unique_summary
-                == len(fixtures),
+                "unique_fixture_summary_equals_population": fixture_summary_matches_population,
+                "fixture_summary_matches_population": fixture_summary_matches_population,
+                "panel_rows_exact_per_valid_v36": panel_rows_exact_per_valid_v36,
+                "v35_population_partition_complete": v35_partition_complete,
+                "v31_population_partition_complete": v31_partition_complete,
             },
         }
     )
