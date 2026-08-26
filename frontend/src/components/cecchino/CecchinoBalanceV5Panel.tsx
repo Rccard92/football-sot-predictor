@@ -136,11 +136,16 @@ function isIdentityMismatch(
 
 function blockedAlertMessage(snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null): string {
   const warnings = snapshotMeta?.warnings ?? []
+  const isHistorical = snapshotMeta?.mode === 'historical_snapshot'
   if (warnings.includes('historical_target_kickoff_mismatch') || warnings.includes('today_local_kickoff_mismatch')) {
-    return 'Snapshot storico bloccato: kickoff non coerente.'
+    return isHistorical
+      ? 'Snapshot storico bloccato: kickoff non coerente.'
+      : 'Dati partita non coerenti: il kickoff locale non è allineato alla programmazione corrente.'
   }
   if (warnings.includes('provider_fixture_id_mismatch')) {
-    return 'Snapshot storico bloccato: fixture provider differente.'
+    return isHistorical
+      ? 'Snapshot storico bloccato: fixture provider differente.'
+      : 'Dati partita non coerenti: fixture provider differente.'
   }
   if (
     warnings.includes('historical_cecchino_output_absent') ||
@@ -149,19 +154,27 @@ function blockedAlertMessage(snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null
     return 'Snapshot storico non disponibile: output Cecchino originale assente.'
   }
   if (warnings.includes('local_fixture_id_mismatch') || warnings.includes('historical_local_fixture_missing')) {
-    return 'Snapshot storico bloccato: fixture locale non coerente.'
+    return isHistorical
+      ? 'Snapshot storico bloccato: fixture locale non coerente.'
+      : 'Dati partita non coerenti: fixture locale non coerente.'
   }
   if (warnings.includes('competition_mismatch')) {
-    return 'Snapshot storico bloccato: competizione differente.'
+    return isHistorical
+      ? 'Snapshot storico bloccato: competizione differente.'
+      : 'Dati partita non coerenti: competizione differente.'
   }
   if (warnings.includes('teams_mismatch')) {
-    return 'Snapshot storico bloccato: squadre non coerenti.'
+    return isHistorical
+      ? 'Snapshot storico bloccato: squadre non coerenti.'
+      : 'Dati partita non coerenti: squadre non coerenti.'
   }
-  if (snapshotMeta?.mode === 'historical_snapshot') {
+  if (isHistorical) {
     return 'Snapshot storico bloccato: identità o dati pre-match non coerenti.'
   }
   return IDENTITY_MISMATCH_ALERT
 }
+
+export { blockedAlertMessage }
 
 function bookStatusLabel(status: string | undefined): string {
   switch (status) {

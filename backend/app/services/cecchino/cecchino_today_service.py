@@ -149,6 +149,15 @@ from app.services.cecchino.cecchino_service import (
 )
 from app.services.cecchino.cecchino_today_bookmaker_gate import verify_complete_1x2_odds
 from app.services.cecchino.cecchino_today_bootstrap import ensure_competition_and_history
+from app.services.cecchino.cecchino_today_reschedule import (
+    apply_old_today_rescheduled_postponed,
+    assert_post_upsert_invariant,
+    parse_provider_kickoff,
+    parse_provider_status_short,
+    provider_kickoff_moved_to_other_day,
+    reconcile_canonical_fixture_from_api,
+    today_row_needs_past_kickoff_id_reconciliation,
+)
 from app.services.cecchino.cecchino_today_competition_filter import is_cecchino_allowed_competition
 from app.services.cecchino.cecchino_today_constants import (
     CECCHINO_TODAY_VERSION,
@@ -1281,6 +1290,73 @@ def run_scan(
                         by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
                     continue
 
+                # Reschedule safety: allinea kickoff canonico anche se bootstrap è saltato
+                reconcile = reconcile_canonical_fixture_from_api(db, local_fx, item)
+                if reconcile.rescheduled and reconcile.classification:
+                    row_warnings.append(reconcile.classification)
+                if not reconcile.ok:
+                    reason = reconcile.reason or "reschedule_reconcile_failed"
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            eligibility_reason=reason,
+                            local_fixture_id=int(local_fx.id),
+                            competition_id=int(comp.id),
+                            bookmaker_status="ok",
+                            odds_snapshot=odds_snapshot,
+                            warnings=row_warnings,
+                            blocking_reasons=[reason],
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
+                    continue
+
+                invariant = assert_post_upsert_invariant(db, local_fx, item)
+                if not invariant.ok:
+                    reason = invariant.reason or "local_fixture_kickoff_not_reconciled"
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            eligibility_reason=reason,
+                            local_fixture_id=int(local_fx.id),
+                            competition_id=int(comp.id),
+                            bookmaker_status="ok",
+                            odds_snapshot=odds_snapshot,
+                            warnings=row_warnings,
+                            blocking_reasons=[reason],
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
+                    continue
+
                 _emit_progress(progress, current_step="importing_stats")
                 bundle = build_calculation_input_for_fixture(db, local_fx)
                 leakage_check = bundle.data_quality.get("leakage_check") or {}
@@ -2337,12 +2413,16 @@ def update_today_fixture_results(
         if (item.get("fixture") or {}).get("id") is not None
     }
 
+    id_fetched: set[int] = set()
+    now_utc = utc_now()
+
     for row in rows:
         api_item = by_api_id.get(int(row.provider_fixture_id))
         if api_item is None:
             try:
                 api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
                 api_calls += 1
+                id_fetched.add(int(row.provider_fixture_id))
             except ApiFootballError as exc:
                 failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
                 warnings.append(str(exc))
@@ -2355,6 +2435,16 @@ def update_today_fixture_results(
 
         apply_display_from_api(row, api_item)
         row.raw_fixture_json = api_item
+
+        provider_ko = parse_provider_kickoff(api_item)
+        if provider_ko is not None and provider_kickoff_moved_to_other_day(
+            historical_kickoff=row.kickoff,
+            provider_kickoff=provider_ko,
+            scan_date=resolved,
+        ):
+            # Vecchia giornata: resta storica; marca rinviata/rescheduled (anche se provider=NS).
+            apply_old_today_rescheduled_postponed(row, api_item, provider_kickoff=provider_ko)
+
         st = _resolve_row_match_status(row)
         if st == MATCH_UPCOMING:
             still_upcoming += 1
@@ -2392,6 +2482,49 @@ def update_today_fixture_results(
             logger.exception(
                 "balance empirical settle skipped fixture_id=%s", row.id
             )
+
+    # Passata mirata: unresolved con kickoff trascorso → lookup per provider_fixture_id
+    for row in rows:
+        if not today_row_needs_past_kickoff_id_reconciliation(row, now=now_utc):
+            continue
+        pid = int(row.provider_fixture_id)
+        if pid in id_fetched:
+            continue
+        try:
+            api_item = af_client.get_fixture_by_id(pid)
+            api_calls += 1
+            id_fetched.add(pid)
+        except ApiFootballError as exc:
+            warnings.append(f"past_kickoff_reconcile_failed:{pid}:{exc}")
+            continue
+        if not api_item:
+            warnings.append(f"past_kickoff_reconcile_not_found:{pid}")
+            continue
+
+        apply_display_from_api(row, api_item)
+        row.raw_fixture_json = api_item
+        provider_ko = parse_provider_kickoff(api_item)
+        short = parse_provider_status_short(api_item)
+        if provider_ko is not None and provider_kickoff_moved_to_other_day(
+            historical_kickoff=row.kickoff,
+            provider_kickoff=provider_ko,
+            scan_date=resolved,
+        ):
+            apply_old_today_rescheduled_postponed(row, api_item, provider_kickoff=provider_ko)
+        elif short in {"PST", "SUSP", "INT"}:
+            # mapping display già applica postponed; assicuriamo raw aggiornato
+            apply_display_from_api(row, api_item)
+            row.raw_fixture_json = api_item
+
+    # Ricalcola tally dopo eventuale reconciliation past-kickoff
+    still_upcoming = 0
+    live = 0
+    for row in rows:
+        st = _resolve_row_match_status(row)
+        if st == MATCH_UPCOMING:
+            still_upcoming += 1
+        elif st == MATCH_LIVE:
+            live += 1
 
     try:
         from app.services.cecchino.cecchino_balance_v5_readiness import (
