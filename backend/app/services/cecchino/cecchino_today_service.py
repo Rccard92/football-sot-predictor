@@ -122,6 +122,10 @@ from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     attach_purchasability_preview_v35_to_output,
     resolve_purchasability_preview_v35_for_detail,
 )
+from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+    attach_purchasability_preview_v35_v2_to_output,
+    resolve_purchasability_preview_v35_v2_for_detail,
+)
 from app.services.cecchino.cecchino_purchasability_v31_hr import (
     build_hr_history_context,
     resolve_hr_by_market_for_fixture,
@@ -1672,6 +1676,52 @@ def run_scan(
                         type(exc).__name__,
                         exc_info=True,
                     )
+                # Structural V2 holdout (paired with V1) — error-isolated from V1
+                existing_prev_v35_v2 = None
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_prev_v35_v2 = existing_row.cecchino_output_json.get(
+                        "purchasability_preview_v35_v2"
+                    )
+                try:
+                    attach_purchasability_preview_v35_v2_to_output(
+                        cecchino_output=cecchino_output,
+                        kpi_panel=kpi_panel,
+                        fixture_meta={
+                            "today_fixture_id": (
+                                int(existing_row.id)
+                                if existing_row is not None
+                                else None
+                            ),
+                            "local_fixture_id": int(local_fx.id),
+                            "provider_fixture_id": api_fid,
+                            "competition_id": int(comp.id),
+                            "scan_date": resolved_date,
+                            "kickoff": getattr(local_fx, "kickoff", None)
+                            or (item.get("fixture") or {}).get("date"),
+                        },
+                        snapshot_info={
+                            "snapshot_at": snap_at,
+                            "snapshot_source": snap_src,
+                            "snapshot_fidelity": (
+                                "verified_panel_odds_meta"
+                                if snap_verified
+                                else "missing"
+                            ),
+                            "snapshot_timestamp_verified": snap_verified,
+                        },
+                        existing_preview_v35_v2=existing_prev_v35_v2
+                        if isinstance(existing_prev_v35_v2, dict)
+                        else None,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "purchasability_v35_v2_attach_failed fixture=%s error=%s",
+                        api_fid,
+                        type(exc).__name__,
+                        exc_info=True,
+                    )
                 existing_bal = None
                 if existing_row is not None and isinstance(
                     existing_row.cecchino_output_json, dict
@@ -2544,6 +2594,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
             historical_by_market=hr_by_market_detail,
         )
     v35_detail = resolve_purchasability_preview_v35_for_detail(row=row)
+    v35_v2_detail = resolve_purchasability_preview_v35_v2_for_detail(row=row)
     try:
         from app.services.cecchino.cecchino_purchasability_observational import (
             build_observational_maps_for_previews,
@@ -2604,6 +2655,15 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         ],
         "purchasability_v35_snapshot_reason": v35_detail[
             "purchasability_v35_snapshot_reason"
+        ],
+        "purchasability_preview_v35_v2": v35_v2_detail[
+            "purchasability_preview_v35_v2"
+        ],
+        "purchasability_v35_v2_snapshot_status": v35_v2_detail[
+            "purchasability_v35_v2_snapshot_status"
+        ],
+        "purchasability_v35_v2_snapshot_reason": v35_v2_detail[
+            "purchasability_v35_v2_snapshot_reason"
         ],
         "purchasability_observational_v1_1": obs_v1,
         "purchasability_observational_v2": obs_v2,

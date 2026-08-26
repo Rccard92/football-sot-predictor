@@ -20,8 +20,15 @@ PURCHASABILITY_V35_V2_EXPERIMENT_VERSION = (
     "cecchino_purchasability_v35_live_experiment_v2"
 )
 PURCHASABILITY_V35_V2_REGISTRY_STATUS = "shadow_engine"
+PURCHASABILITY_V35_V2_SNAPSHOT_REGISTRY_STATUS = "shadow_live_experiment"
 PURCHASABILITY_V35_V2_REFERENCE_ID = "v35_structural_v2_reference"
 PURCHASABILITY_V35_V2_REFERENCE_LABEL = "V3.5 Structural V2"
+PURCHASABILITY_V35_V2_AUDIT_EXPORT_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_v2_audit_export_v1"
+)
+PURCHASABILITY_V35_V2_DAILY_AUDIT_MANIFEST_CONTRACT_VERSION = (
+    "cecchino_purchasability_v35_v2_daily_audit_manifest_v1"
+)
 
 PurchasabilityV35V2Status = Literal[
     "score",
