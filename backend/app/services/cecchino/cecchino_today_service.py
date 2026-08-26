@@ -123,6 +123,7 @@ from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     resolve_purchasability_preview_v35_for_detail,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+    EXISTING_PREVIEW_MISSING,
     attach_purchasability_preview_v35_v2_to_output,
     resolve_purchasability_preview_v35_v2_for_detail,
 )
@@ -1677,13 +1678,16 @@ def run_scan(
                         exc_info=True,
                     )
                 # Structural V2 holdout (paired with V1) — error-isolated from V1
-                existing_prev_v35_v2 = None
+                existing_prev_v35_v2 = EXISTING_PREVIEW_MISSING
                 if existing_row is not None and isinstance(
                     existing_row.cecchino_output_json, dict
                 ):
-                    existing_prev_v35_v2 = existing_row.cecchino_output_json.get(
-                        "purchasability_preview_v35_v2"
-                    )
+                    _out_json = existing_row.cecchino_output_json
+                    if "purchasability_preview_v35_v2" in _out_json:
+                        # RAW value including None / non-dict → PRESENT_BUT_INVALID
+                        existing_prev_v35_v2 = _out_json[
+                            "purchasability_preview_v35_v2"
+                        ]
                 try:
                     attach_purchasability_preview_v35_v2_to_output(
                         cecchino_output=cecchino_output,
@@ -1711,9 +1715,7 @@ def run_scan(
                             ),
                             "snapshot_timestamp_verified": snap_verified,
                         },
-                        existing_preview_v35_v2=existing_prev_v35_v2
-                        if isinstance(existing_prev_v35_v2, dict)
-                        else None,
+                        existing_preview_v35_v2=existing_prev_v35_v2,
                     )
                 except Exception as exc:
                     logger.warning(

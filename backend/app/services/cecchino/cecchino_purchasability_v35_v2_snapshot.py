@@ -49,6 +49,10 @@ EXPECTED_FORMULA_FREEZE_SHA256 = (
     "3488f0d8e97f52b3db126ff96758c51adef0acfc8fd98f953b2443e629cd0bfe"
 )
 
+# Sentinel: key absent. Distinct from explicit None (PRESENT_BUT_INVALID).
+_MISSING: Any = object()
+EXISTING_PREVIEW_MISSING = _MISSING
+
 _SCORE_BANDS = (
     ("0_39", 0, 39),
     ("40_49", 40, 49),
@@ -158,11 +162,20 @@ def _parse_dt(dt: Any) -> datetime | None:
     return None
 
 
+def _normalize_now_utc(now_utc: datetime | None) -> datetime:
+    """Timezone-aware UTC clock used for creation guard and generated_at."""
+    if now_utc is None:
+        return datetime.now(timezone.utc)
+    if now_utc.tzinfo is None:
+        return now_utc.replace(tzinfo=timezone.utc)
+    return now_utc.astimezone(timezone.utc)
+
+
 def _iso_at(dt: Any) -> str | None:
     if dt is None:
         return None
     if isinstance(dt, datetime):
-        return dt.isoformat()
+        return _normalize_now_utc(dt).isoformat()
     return str(dt)
 
 
@@ -423,6 +436,15 @@ def validate_purchasability_preview_v35_v2_snapshot(snapshot: Any) -> dict[str, 
     if snapshot.get("contains_post_match_fields") is True:
         return {"ok": False, "reason": "contains_post_match_fields"}
 
+    generated_at_raw = snapshot.get("generated_at")
+    if not generated_at_raw:
+        return {"ok": False, "reason": "missing_generated_at"}
+    generated_dt = _parse_dt(generated_at_raw)
+    if generated_dt is None:
+        return {"ok": False, "reason": "unparseable_generated_at"}
+    if generated_dt >= kick_dt:
+        return {"ok": False, "reason": "creation_not_before_kickoff"}
+
     items = snapshot.get("items")
     if not isinstance(items, list):
         return {"ok": False, "reason": "items_not_list"}
@@ -468,10 +490,19 @@ def validate_purchasability_preview_v35_v2_snapshot(snapshot: Any) -> dict[str, 
     return {"ok": True, "reason": None}
 
 
-def classify_existing_v35_v2_snapshot(existing: Any) -> ClassifiedExistingV35V2Snapshot:
-    """ABSENT / VALID / PRESENT_BUT_INVALID."""
-    if existing is None:
+def classify_existing_v35_v2_snapshot(
+    existing: Any = _MISSING,
+) -> ClassifiedExistingV35V2Snapshot:
+    """ABSENT (key missing) / VALID / PRESENT_BUT_INVALID (incl. explicit None)."""
+    if existing is _MISSING:
         return ClassifiedExistingV35V2Snapshot("absent", None, None)
+    # Key present with any value — including None / non-dict / malformed.
+    if not isinstance(existing, dict):
+        return ClassifiedExistingV35V2Snapshot(
+            "present_but_invalid",
+            existing,
+            {"ok": False, "reason": "not_a_dict"},
+        )
     check = validate_purchasability_preview_v35_v2_snapshot(existing)
     if check.get("ok"):
         return ClassifiedExistingV35V2Snapshot("valid", existing, check)
@@ -482,11 +513,12 @@ def _resolve_existing_v2_from_sources(
     existing_preview_v35_v2: Any,
     cecchino_output: dict[str, Any],
 ) -> ClassifiedExistingV35V2Snapshot:
-    if existing_preview_v35_v2 is not None:
+    # Explicit argument (including None) wins over output dict.
+    if existing_preview_v35_v2 is not _MISSING:
         return classify_existing_v35_v2_snapshot(existing_preview_v35_v2)
     if SNAPSHOT_OUTPUT_KEY in cecchino_output:
         return classify_existing_v35_v2_snapshot(cecchino_output[SNAPSHOT_OUTPUT_KEY])
-    return classify_existing_v35_v2_snapshot(None)
+    return classify_existing_v35_v2_snapshot(_MISSING)
 
 
 def resolve_valid_persisted_purchasability_v35_v2(
@@ -510,6 +542,7 @@ def build_candidate_and_compact_snapshot_v35_v2(
     snapshot_info: dict[str, Any] | None = None,
     source_mode: str = "persisted_pre_match_snapshot",
     warnings: list[str] | None = None,
+    generated_at: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     meta = dict(fixture_meta or {})
     batch = calculate_purchasability_v35_v2_batch(
@@ -525,6 +558,7 @@ def build_candidate_and_compact_snapshot_v35_v2(
         snapshot_info=snapshot_info,
         source_mode=source_mode,
         warnings=warnings,
+        generated_at=generated_at,
         input_fingerprint=fp,
         kickoff=meta.get("kickoff"),
     )
@@ -537,9 +571,14 @@ def attach_purchasability_preview_v35_v2_to_output(
     kpi_panel: dict[str, Any] | None,
     fixture_meta: dict[str, Any],
     snapshot_info: dict[str, Any] | None = None,
-    existing_preview_v35_v2: dict[str, Any] | None = None,
+    existing_preview_v35_v2: Any = _MISSING,
+    now_utc: datetime | None = None,
 ) -> dict[str, Any]:
-    """Scrive purchasability_preview_v35_v2 — first valid pre-match write wins."""
+    """Scrive purchasability_preview_v35_v2 — first valid pre-match write wins.
+
+    Creation requires verified source_snapshot_at < kickoff AND now_utc < kickoff.
+    Explicit None / non-dict existing values are PRESENT_BUT_INVALID (preserved).
+    """
     if not isinstance(cecchino_output, dict):
         return cecchino_output
 
@@ -556,24 +595,33 @@ def attach_purchasability_preview_v35_v2_to_output(
             existing.snapshot,
             existing.validation.get("reason") if existing.validation else None,
         )
+        # Preserve exact original value (None / str / list / int / malformed dict).
         cecchino_output[SNAPSHOT_OUTPUT_KEY] = existing.snapshot
         return cecchino_output
 
-    # ABSENT — may create only if pre-match gate OK
+    # ABSENT — may create only if pre-match + wall-clock before kickoff
     snap = snapshot_info or {}
     verified = bool(snap.get("snapshot_timestamp_verified"))
     snap_dt = _parse_dt(snap.get("snapshot_at"))
     kick_dt = _parse_dt(fixture_meta.get("kickoff"))
-    before: bool | None = None
+    creation_now = _normalize_now_utc(now_utc)
+
+    source_before: bool | None = None
     if snap_dt is not None and kick_dt is not None:
-        before = snap_dt < kick_dt
+        source_before = snap_dt < kick_dt
 
     warnings: list[str] = []
 
-    if before is False:
+    if kick_dt is None:
         return cecchino_output
-    if not verified or before is not True:
+    if creation_now >= kick_dt:
         return cecchino_output
+    if source_before is False:
+        return cecchino_output
+    if not verified or source_before is not True:
+        return cecchino_output
+
+    generated_at_iso = creation_now.isoformat()
 
     try:
         _batch, snapshot = build_candidate_and_compact_snapshot_v35_v2(
@@ -585,10 +633,11 @@ def attach_purchasability_preview_v35_v2_to_output(
             },
             snapshot_info={
                 **snap,
-                "source_snapshot_before_kickoff": before,
+                "source_snapshot_before_kickoff": source_before,
             },
             source_mode="persisted_pre_match_snapshot",
             warnings=warnings,
+            generated_at=generated_at_iso,
         )
     except Exception as exc:  # noqa: BLE001 — non bloccante
         warnings.append(f"purchasability_v35_v2_attach_failed:{type(exc).__name__}")
@@ -605,15 +654,12 @@ def attach_purchasability_preview_v35_v2_to_output(
 
     if snapshot.get("source_snapshot_verified") is None:
         snapshot["source_snapshot_verified"] = verified
-    if snapshot.get("source_snapshot_before_kickoff") is None and before is not None:
-        snapshot["source_snapshot_before_kickoff"] = before
+    if snapshot.get("source_snapshot_before_kickoff") is None and source_before is not None:
+        snapshot["source_snapshot_before_kickoff"] = source_before
     if snapshot.get("source_snapshot_at") is None and snap.get("snapshot_at"):
         snapshot["source_snapshot_at"] = _iso_at(snap.get("snapshot_at"))
     if warnings:
         snapshot["warnings"] = list(snapshot.get("warnings") or []) + warnings
-        # warnings excluded from engine hash — recompute hash after warning mutate? 
-        # Keep hash from build time; warnings are excluded so hash stays valid.
-        # But if we mutate warnings after hash, validation still OK since excluded.
 
     cecchino_output[SNAPSHOT_OUTPUT_KEY] = snapshot
     return cecchino_output
@@ -646,18 +692,15 @@ def fixture_has_v35_v2_score(snapshot: dict[str, Any] | None) -> bool:
 def resolve_purchasability_preview_v35_v2_for_detail(*, row: Any) -> dict[str, Any]:
     """Detail read-only — no V2 recalculation."""
     output = getattr(row, "cecchino_output_json", None)
-    persisted = None
-    if isinstance(output, dict):
-        persisted = output.get(SNAPSHOT_OUTPUT_KEY)
-
-    classified = classify_existing_v35_v2_snapshot(persisted)
-
-    if classified.status == "absent":
+    if not isinstance(output, dict) or SNAPSHOT_OUTPUT_KEY not in output:
         return {
             "purchasability_preview_v35_v2": None,
             "purchasability_v35_v2_snapshot_status": "absent",
             "purchasability_v35_v2_snapshot_reason": "snapshot_unavailable",
         }
+
+    persisted = output.get(SNAPSHOT_OUTPUT_KEY)
+    classified = classify_existing_v35_v2_snapshot(persisted)
 
     if classified.status == "valid" and isinstance(classified.snapshot, dict):
         return {
@@ -678,8 +721,19 @@ def resolve_purchasability_preview_v35_v2_for_detail(*, row: Any) -> dict[str, A
     }
 
 
+def is_holdout_eligible_v2_snapshot(snapshot: Any) -> bool:
+    """True solo se snapshot VALID e generated_at < kickoff (holdout analysis)."""
+    classified = classify_existing_v35_v2_snapshot(
+        snapshot if snapshot is not _MISSING else _MISSING
+    )
+    if classified.status != "valid" or not isinstance(classified.snapshot, dict):
+        return False
+    return True
+
+
 __all__ = [
     "EXPECTED_FORMULA_FREEZE_SHA256",
+    "EXISTING_PREVIEW_MISSING",
     "SNAPSHOT_OUTPUT_KEY",
     "ClassifiedExistingV35V2Snapshot",
     "attach_purchasability_preview_v35_v2_to_output",
@@ -691,6 +745,7 @@ __all__ = [
     "fixture_has_v35_v2_score",
     "index_purchasability_v35_v2_snapshot_by_market",
     "input_fingerprint_v35_v2",
+    "is_holdout_eligible_v2_snapshot",
     "resolve_purchasability_preview_v35_v2_for_detail",
     "resolve_valid_persisted_purchasability_v35_v2",
     "validate_purchasability_preview_v35_v2_snapshot",

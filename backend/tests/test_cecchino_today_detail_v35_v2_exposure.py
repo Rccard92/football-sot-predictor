@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+    EXISTING_PREVIEW_MISSING,
     SNAPSHOT_OUTPUT_KEY,
     attach_purchasability_preview_v35_v2_to_output,
     resolve_purchasability_preview_v35_v2_for_detail,
@@ -40,6 +42,8 @@ def _valid_snap() -> dict:
             "snapshot_at": "2026-08-19T10:00:00+00:00",
             "snapshot_timestamp_verified": True,
         },
+        existing_preview_v35_v2=EXISTING_PREVIEW_MISSING,
+        now_utc=datetime(2026, 8, 19, 14, 0, tzinfo=timezone.utc),
     )
     return out[SNAPSHOT_OUTPUT_KEY]
 
@@ -50,6 +54,12 @@ def test_detail_statuses():
             row=SimpleNamespace(cecchino_output_json={})
         )["purchasability_v35_v2_snapshot_status"]
         == "absent"
+    )
+    assert (
+        resolve_purchasability_preview_v35_v2_for_detail(
+            row=SimpleNamespace(cecchino_output_json={SNAPSHOT_OUTPUT_KEY: None})
+        )["purchasability_v35_v2_snapshot_status"]
+        == "present_but_invalid"
     )
     snap = _valid_snap()
     with patch(

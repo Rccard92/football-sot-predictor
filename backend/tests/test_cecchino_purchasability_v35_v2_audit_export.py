@@ -16,6 +16,7 @@ from app.services.cecchino.cecchino_purchasability_v35_v2_audit_export import (
     get_purchasability_v35_v2_audit_export,
 )
 from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+    EXISTING_PREVIEW_MISSING,
     EXPECTED_FORMULA_FREEZE_SHA256,
     SNAPSHOT_OUTPUT_KEY,
     attach_purchasability_preview_v35_v2_to_output,
@@ -49,7 +50,8 @@ def _valid_snapshot() -> dict:
             "snapshot_timestamp_verified": True,
             "source_snapshot_before_kickoff": True,
         },
-        existing_preview_v35_v2=None,
+        existing_preview_v35_v2=EXISTING_PREVIEW_MISSING,
+        now_utc=datetime(2026, 8, 19, 14, 0, tzinfo=timezone.utc),
     )
     return output[SNAPSHOT_OUTPUT_KEY]
 
