@@ -267,7 +267,7 @@ def _primary_passes_filters(
     if origin and primary.get("origin") != origin:
         return False
     if min_purchasability is not None:
-        score = (primary.get("purchasability_v31") or {}).get("score")
+        score = (primary.get("purchasability_v36") or {}).get("score")
         if score is None:
             return False
         try:
@@ -326,7 +326,7 @@ def _sort_fixture_results(
     if sort == SORT_PURCHASABILITY_DESC:
 
         def purch_key(item: dict[str, Any]) -> tuple:
-            score = (item.get("primary") or {}).get("purchasability_v31") or {}
+            score = (item.get("primary") or {}).get("purchasability_v36") or {}
             val = score.get("score")
             null = val is None
             try:

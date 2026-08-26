@@ -52,7 +52,7 @@ vi.mock('sonner', () => ({
 }))
 
 function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOpportunity {
-  return {
+  const op: BetBuilderOpportunity = {
     opportunity_key: 'op-1',
     fixture: {
       today_fixture_id: 16511,
@@ -95,6 +95,12 @@ function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBui
       calculation_quality: 'full',
       reading_short: 'Valore elevato',
     },
+    purchasability_v36: {
+      available: true,
+      score: 86,
+      class: 'Molto Alta',
+      version: 'v36',
+    },
     context_support: {
       available: true,
       module: 'balance_v5',
@@ -112,6 +118,16 @@ function baseOpportunity(overrides: Partial<BetBuilderOpportunity> = {}): BetBui
     freshness: {},
     ...overrides,
   }
+  if (overrides.purchasability_v31 && overrides.purchasability_v36 === undefined) {
+    const v31 = overrides.purchasability_v31
+    op.purchasability_v36 = {
+      available: v31.available ?? false,
+      score: v31.score ?? null,
+      class: v31.class ?? null,
+      version: 'v36',
+    }
+  }
+  return op
 }
 
 function baseResponse(
@@ -121,7 +137,7 @@ function baseResponse(
   return {
     contract_version: 'cecchino_bet_builder_contract_v1',
     aggregator_version: 'cecchino_bet_builder_opportunity_aggregator_v2',
-    purchasability_policy: 'v31_only',
+    purchasability_policy: 'v36_display_v31_evidence',
     scan_date: '2026-08-08',
     source_revision: 'rev-1',
     source_scan_status: 'completed',
@@ -139,6 +155,8 @@ function baseResponse(
       price_and_signals: 1,
       with_purchasability_v31: opportunities.length,
       without_purchasability_v31: 0,
+      with_purchasability_v36: opportunities.length,
+      without_purchasability_v36: 0,
       by_market: {
         HOME: 1,
         DRAW: 1,
@@ -399,7 +417,7 @@ describe('BetBuilderPage', () => {
     })
   })
 
-  it('ordina fixture per max Acquistabilità V3.1; null in fondo', async () => {
+  it('ordina fixture per max Acquistabilità V3.6; null in fondo', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -622,8 +640,8 @@ describe('BetBuilderPage', () => {
     const ring = screen.getByTestId('purchasability-ring')
     expect(ring.className).toMatch(/flex-col/)
     expect(ring.className).toMatch(/sm:flex-row/)
-    expect(screen.getByText('Completa').className).toMatch(/whitespace-normal/)
-    expect(screen.getByText('Completa').className).toMatch(/max-w-full/)
+    expect(screen.getByText('Acquistabilità V3.6')).toBeTruthy()
+    expect(screen.getByTestId('purchasability-ring-class').textContent).toMatch(/Molto Alta/)
 
     const metaRow = screen.getByTestId('bet-builder-fixture-meta')
     expect(metaRow.className).toMatch(/grid-cols-\[minmax\(0,1fr\)_auto\]/)
@@ -652,7 +670,7 @@ describe('BetBuilderPage', () => {
     expect(screen.getByTestId('bet-builder-cart-slot-mobile')).toBeTruthy()
   })
 
-  it('BET-03.1: derived Signals columns separate; direct invariato; Provvisoria wrap-safe', async () => {
+  it('BET-03.1: derived Signals columns separate; direct invariato; ring V3.6 class', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
       baseResponse({
         opportunities: [
@@ -702,7 +720,7 @@ describe('BetBuilderPage', () => {
     expect(within(signals).getByText('3 / 4 SI')).toBeTruthy()
     expect(within(signals).getByText('E · F · G')).toBeTruthy()
     expect(within(signals).queryByText(/3 \/ 4 SI · E/)).toBeNull()
-    expect(screen.getByText('Provvisoria').className).toMatch(/whitespace-normal/)
+    expect(screen.getByTestId('purchasability-ring-class').textContent).toMatch(/Alta/)
 
     fireEvent.click(
       screen.getAllByTestId('bet-builder-opportunity-tab').find((t) =>
@@ -1591,7 +1609,7 @@ describe('BetBuilderPage', () => {
     expect(screen.queryByText(/Kelly/i)).toBeNull()
   })
 
-  it('Acquistabilità come score /100 non probabilità; nessun nuovo score; V3.1 reale', async () => {
+  it('Acquistabilità come score /100 non probabilità; nessun nuovo score; V3.6 reale', async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
     await waitFor(() => expect(screen.getByTestId('purchasability-ring')).toBeTruthy())

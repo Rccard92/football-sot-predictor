@@ -1,12 +1,12 @@
-import type { BetBuilderPurchasabilityV31 } from '../../lib/cecchinoBetBuilderApi'
+import type { BetBuilderPurchasabilityV36 } from '../../lib/cecchinoBetBuilderApi'
 import { BetBuilderPurchasabilityRing } from './BetBuilderPurchasabilityRing'
 
 type Props = {
-  purchasability: BetBuilderPurchasabilityV31
+  purchasability: BetBuilderPurchasabilityV36
   compact?: boolean
 }
 
-/** Wrapper compatibile: ring al posto della progress bar. */
+/** Wrapper compatibile: ring V3.6 al posto della progress bar. */
 export function BetBuilderPurchasabilityBlock({ purchasability, compact = false }: Props) {
   return (
     <div data-testid={compact ? 'purchasability-compact' : 'purchasability-block'}>

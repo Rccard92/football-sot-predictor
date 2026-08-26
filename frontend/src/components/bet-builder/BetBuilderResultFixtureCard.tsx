@@ -47,7 +47,7 @@ export function BetBuilderResultFixtureCard({ item, onOpenDetail }: Props) {
   const matchStatus = fixture.match_status
   const outcome = primary.prediction_outcome
   const price = primary.price_value
-  const purch = primary.purchasability_v31
+  const purch = primary.purchasability_v36
   const signals = primary.signals
   const isLost = outcome === 'lost'
   const isWon = outcome === 'won'
@@ -119,10 +119,11 @@ export function BetBuilderResultFixtureCard({ item, onOpenDetail }: Props) {
             <dd className="font-medium text-slate-800">{originBadgeLabel(primary.origin)}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">V3.1</dt>
-            <dd className="font-medium text-slate-800" data-testid="result-v31">
-              {purch.score != null ? Math.round(purch.score) : 'N/D'}
-              {purch.class ? ` · ${purch.class}` : ''}
+            <dt className="text-slate-500">V3.6</dt>
+            <dd className="font-medium text-slate-800" data-testid="result-v36">
+              {purch?.available && purch.score != null
+                ? `${Math.round(purch.score)}${purch.class ? ` · ${purch.class}` : ''}`
+                : 'Indice V3.6 non disponibile'}
             </dd>
           </div>
           <div>
@@ -187,9 +188,9 @@ export function BetBuilderResultFixtureCard({ item, onOpenDetail }: Props) {
                   <span className="font-semibold text-slate-900">{op.market.label}</span>
                   <span className="text-xs text-slate-500">
                     {originBadgeLabel(op.origin)}
-                    {op.purchasability_v31.score != null
-                      ? ` · V3.1 ${Math.round(op.purchasability_v31.score)}`
-                      : ''}
+                    {op.purchasability_v36?.available && op.purchasability_v36.score != null
+                      ? ` · V3.6 ${Math.round(op.purchasability_v36.score)}`
+                      : ' · Indice V3.6 non disponibile'}
                     {op.price_value.quota_book != null
                       ? ` · Book ${op.price_value.quota_book.toFixed(2)}`
                       : ' · Book N/D'}

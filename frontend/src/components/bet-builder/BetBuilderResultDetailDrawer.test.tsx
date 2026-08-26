@@ -146,6 +146,7 @@ function baseItem(): BetBuilderResultsFixture {
         passed: true,
       },
       purchasability_v31: { available: true, score: 80, class: 'Buona' },
+      purchasability_v36: { available: true, score: 80, class: 'Buona', version: 'v36' },
       context_support: { available: true, module: 'balance_v5', payload: {} },
       freshness: { source_scan_date: '2026-08-19' },
       prediction_outcome: 'lost',
@@ -180,6 +181,7 @@ function baseItem(): BetBuilderResultsFixture {
           passed: true,
         },
         purchasability_v31: { available: true, score: 70 },
+        purchasability_v36: { available: true, score: 70, version: 'v36' },
         context_support: { available: false },
         freshness: { source_scan_date: '2026-08-19' },
         prediction_outcome: 'won',
@@ -211,7 +213,7 @@ describe('BetBuilderResultDetailDrawer', () => {
 
   it('keeps acquistabilità / segnali summary', () => {
     render(<BetBuilderResultDetailDrawer open item={baseItem()} onClose={() => {}} />)
-    expect(screen.getByText('Acquistabilità / Segnali')).toBeTruthy()
+    expect(screen.getByText('Acquistabilità V3.6 / Segnali')).toBeTruthy()
     expect(screen.getByText(/2\/4 SI/)).toBeTruthy()
   })
 

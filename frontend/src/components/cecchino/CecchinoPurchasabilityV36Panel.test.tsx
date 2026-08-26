@@ -83,7 +83,9 @@ describe('CecchinoPurchasabilityV36Panel', () => {
         itemsByMarket={{}}
       />,
     )
-    expect(screen.getByText(/Snapshot V3.6 non valido/)).toBeTruthy()
+    expect(screen.getByTestId('v36-absent-message').textContent).toMatch(
+      /Indice V3.6 non disponibile/,
+    )
     expect(screen.getByTestId('v36-invalid-diagnostics').textContent).toContain(
       'formula_freeze_mismatch',
     )
@@ -101,7 +103,7 @@ describe('CecchinoPurchasabilityV36Panel', () => {
     expect(screen.getAllByText(/Base-rate Reliability Index \(R\)/).length).toBeGreaterThan(0)
     expect(screen.getByTestId('v36-r-disclaimer').textContent).toMatch(/non è una\s+probabilità calibrata/i)
     expect(screen.getByTestId('v36-header-disclaimer').textContent).toMatch(
-      /Non è una probabilità calibrata di vittoria/,
+      /Non rappresenta una probabilità certa di vittoria/,
     )
   })
 

@@ -46,7 +46,7 @@ export function BetBuilderOpportunityRow({ opportunity }: Props) {
           </div>
         </div>
         <BetBuilderPurchasabilityBlock
-          purchasability={opportunity.purchasability_v31}
+          purchasability={opportunity.purchasability_v36}
           compact
         />
       </div>

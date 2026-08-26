@@ -19,7 +19,7 @@ import {
 } from './betBuilderCartUtils'
 
 function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOpportunity {
-  return {
+  const op: BetBuilderOpportunity = {
     opportunity_key: '10:DRAW',
     fixture: {
       today_fixture_id: 10,
@@ -61,10 +61,26 @@ function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOppor
       class: 'Molto Alta',
       calculation_quality: 'full',
     },
+    purchasability_v36: {
+      available: true,
+      score: 86,
+      class: 'Molto Alta',
+      version: 'v36',
+    },
     context_support: { available: false, reason: 'no_validated_context_module' },
     freshness: {},
     ...overrides,
   }
+  if (overrides.purchasability_v31 && overrides.purchasability_v36 === undefined) {
+    const v31 = overrides.purchasability_v31
+    op.purchasability_v36 = {
+      available: v31.available ?? false,
+      score: v31.score ?? null,
+      class: v31.class ?? null,
+      version: 'v36',
+    }
+  }
+  return op
 }
 
 const DATE = '2026-08-08'

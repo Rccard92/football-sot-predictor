@@ -87,6 +87,44 @@ export type BetBuilderPurchasabilityV31 = {
   reason?: string
 }
 
+/** Display primario Acquistabilità V3.6 (snapshot Structural V2, zero recompute). */
+export type BetBuilderPurchasabilityV36 = {
+  available: boolean
+  version?: string
+  score: number | null
+  raw_score?: number | null
+  class?: string | null
+  status?: string | null
+  gate_status?: string | null
+  gate_reason_codes?: string[]
+  formula_version?: string | null
+  formula_freeze_sha256?: string | null
+  generated_at?: string | null
+  source_snapshot_at?: string | null
+  source_snapshot_verified?: boolean | null
+  source_snapshot_before_kickoff?: boolean | null
+  snapshot_status?: string | null
+  reason?: string | null
+  market_key?: string
+  market_label?: string | null
+  value_core?: number | null
+  acquisition_core?: number | null
+  structural_factor?: number | null
+  quality_factor?: number | null
+  adjusted_confidence?: number | null
+  structural_missing_penalty_applied?: boolean | null
+  component_scores?: {
+    V?: number | null
+    D?: number | null
+    R?: number | null
+    S?: number | null
+    Q?: number | null
+  }
+  components?: Record<string, unknown> | null
+  input?: Record<string, unknown> | null
+  gate?: Record<string, unknown> | null
+}
+
 export type BetBuilderBalancePillar = {
   index: number | null
   class_label: string | null
@@ -163,12 +201,15 @@ export type BetBuilderOpportunity = {
   price_value: BetBuilderPriceValue
   signals: BetBuilderSignalsEvidence
   purchasability_v31: BetBuilderPurchasabilityV31
+  /** Indice di Acquistabilità V3.6 (display primario). */
+  purchasability_v36: BetBuilderPurchasabilityV36
   context_support: BetBuilderContextSupport
   freshness: {
     source_scan_date?: string
     fixture_updated_at?: string | null
     signals_updated_at?: string | null
     purchasability_v31_generated_at?: string | null
+    purchasability_v36_generated_at?: string | null
     context_snapshot_at?: string | null
   }
 }
@@ -183,6 +224,8 @@ export type BetBuilderOpportunitiesSummary = {
   price_and_signals: number
   with_purchasability_v31: number
   without_purchasability_v31: number
+  with_purchasability_v36?: number
+  without_purchasability_v36?: number
   by_market: Record<string, number>
 }
 

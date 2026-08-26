@@ -94,7 +94,7 @@ export function BetBuilderOpportunitySelector({
           const isPrimary = op.opportunity_key === primaryKey
           const selected = op.opportunity_key === selectedKey
           const inCart = inCartSet?.has(op.opportunity_key) ?? false
-          const scoreLabel = formatPurchasabilityTab(op.purchasability_v31.score)
+          const scoreLabel = formatPurchasabilityTab(op.purchasability_v36?.score)
           let className = bbOppTabIdle
           if (isPrimary && selected) className = bbOppTabPrimarySelected
           else if (isPrimary) className = bbOppTabPrimary

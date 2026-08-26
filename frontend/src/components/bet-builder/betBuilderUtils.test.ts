@@ -30,7 +30,7 @@ import {
 } from './betBuilderUtils'
 
 function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOpportunity {
-  return {
+  const op: BetBuilderOpportunity = {
     opportunity_key: 'k1',
     fixture: {
       today_fixture_id: 1,
@@ -72,10 +72,26 @@ function baseOp(overrides: Partial<BetBuilderOpportunity> = {}): BetBuilderOppor
       class: 'Molto Alta',
       calculation_quality: 'full',
     },
+    purchasability_v36: {
+      available: true,
+      score: 86,
+      class: 'Molto Alta',
+      version: 'v36',
+    },
     context_support: { available: false, reason: 'no_validated_context_module' },
     freshness: {},
     ...overrides,
   }
+  if (overrides.purchasability_v31 && overrides.purchasability_v36 === undefined) {
+    const v31 = overrides.purchasability_v31
+    op.purchasability_v36 = {
+      available: v31.available ?? false,
+      score: v31.score ?? null,
+      class: v31.class ?? null,
+      version: 'v36',
+    }
+  }
+  return op
 }
 
 describe('betBuilderUtils', () => {
@@ -441,9 +457,21 @@ describe('betBuilderUtils', () => {
 
   it('sorts purchasability desc with nulls last', () => {
     const ops = [
-      baseOp({ opportunity_key: 'null', purchasability_v31: { available: false, score: null } }),
-      baseOp({ opportunity_key: 'low', purchasability_v31: { available: true, score: 40 } }),
-      baseOp({ opportunity_key: 'high', purchasability_v31: { available: true, score: 90 } }),
+      baseOp({
+        opportunity_key: 'null',
+        purchasability_v31: { available: false, score: null },
+        purchasability_v36: { available: false, score: null },
+      }),
+      baseOp({
+        opportunity_key: 'low',
+        purchasability_v31: { available: true, score: 40 },
+        purchasability_v36: { available: true, score: 40 },
+      }),
+      baseOp({
+        opportunity_key: 'high',
+        purchasability_v31: { available: true, score: 90 },
+        purchasability_v36: { available: true, score: 90 },
+      }),
     ]
     const sorted = sortOpportunities(ops, 'purchasability_desc')
     expect(sorted.map((o) => o.opportunity_key)).toEqual(['high', 'low', 'null'])
@@ -584,28 +612,32 @@ describe('betBuilderUtils', () => {
     ])
   })
 
-  it('fixture sort uses max visible V3.1; null score does not win', () => {
+  it('fixture sort uses max visible V3.6; null score does not win', () => {
     const groups = groupOpportunitiesByFixture([
       baseOp({
         opportunity_key: 'a-high',
         fixture: { ...baseOp().fixture, today_fixture_id: 10, home: { name: 'A' } },
         purchasability_v31: { available: true, score: 86 },
+        purchasability_v36: { available: true, score: 86 },
       }),
       baseOp({
         opportunity_key: 'a-low',
         fixture: { ...baseOp().fixture, today_fixture_id: 10, home: { name: 'A' } },
         market: { market_key: 'HOME', label: '1' },
         purchasability_v31: { available: true, score: 40 },
+        purchasability_v36: { available: true, score: 40 },
       }),
       baseOp({
         opportunity_key: 'b',
         fixture: { ...baseOp().fixture, today_fixture_id: 20, home: { name: 'B' } },
         purchasability_v31: { available: true, score: 80 },
+        purchasability_v36: { available: true, score: 80 },
       }),
       baseOp({
         opportunity_key: 'c-null',
         fixture: { ...baseOp().fixture, today_fixture_id: 30, home: { name: 'C' } },
         purchasability_v31: { available: false, score: null },
+        purchasability_v36: { available: false, score: null },
       }),
     ])
     const sorted = sortFixtureGroups(groups, 'purchasability_desc')
@@ -854,30 +886,33 @@ describe('betBuilderUtils', () => {
     ).toBe(4)
   })
 
-  it('mobile selector data: label + V3.1 + origin for each opportunity', () => {
+  it('mobile selector data: label + V3.6 + origin for each opportunity', () => {
     const group = groupOpportunitiesByFixture([
       baseOp({
         opportunity_key: 'x',
         market: { market_key: 'DRAW', label: 'X' },
         purchasability_v31: { available: true, score: 86 },
+        purchasability_v36: { available: true, score: 86 },
         origin: 'price_and_signals',
       }),
       baseOp({
         opportunity_key: 'ox',
         market: { market_key: 'ONE_X', label: '1X' },
         purchasability_v31: { available: true, score: 71 },
+        purchasability_v36: { available: true, score: 71 },
         origin: 'price',
       }),
       baseOp({
         opportunity_key: 'nd',
         market: { market_key: 'OVER_2_5', label: 'Over 2.5' },
         purchasability_v31: { available: false, score: null },
+        purchasability_v36: { available: false, score: null },
         origin: 'signals',
       }),
     ])[0]
     const selectorData = group.opportunities.map((o) => ({
       label: o.market.label,
-      score: formatPurchasabilityTab(o.purchasability_v31.score),
+      score: formatPurchasabilityTab(o.purchasability_v36?.score),
       origin: originMicroLabel(o.origin),
       isPrimary: o.opportunity_key === getPrimaryOpportunity(group)?.opportunity_key,
     }))

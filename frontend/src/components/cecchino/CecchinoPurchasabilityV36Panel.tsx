@@ -62,7 +62,8 @@ function V36PanelHeader() {
         </span>
       </div>
       <p className="mt-1 text-xs text-slate-500" data-testid="v36-header-disclaimer">
-        Indice strutturale pre-match su scala 0–100. Non è una probabilità calibrata di vittoria.
+        Indicatore strutturale pre-match su scala 0–100. Non rappresenta una probabilità certa di
+        vittoria.
       </p>
     </div>
   )
@@ -125,8 +126,8 @@ export function CecchinoPurchasabilityV36Panel({
         data-status="present_but_invalid"
       >
         <V36PanelHeader />
-        <p className="mt-3 text-sm font-medium text-amber-800" role="alert">
-          Snapshot V3.6 non valido — escluso.
+        <p className="mt-3 text-sm font-medium text-amber-800" role="alert" data-testid="v36-absent-message">
+          Indice V3.6 non disponibile
         </p>
         <details className="mt-2 text-xs text-slate-500" data-testid="v36-invalid-diagnostics">
           <summary className="cursor-pointer">Dettaglio diagnostico</summary>
@@ -145,8 +146,7 @@ export function CecchinoPurchasabilityV36Panel({
       >
         <V36PanelHeader />
         <p className="mt-3 text-sm font-medium text-slate-700" data-testid="v36-absent-message">
-          Indice V3.6 non disponibile per questa partita. Lo snapshot viene creato esclusivamente
-          pre-match.
+          Indice V3.6 non disponibile
         </p>
       </section>
     )

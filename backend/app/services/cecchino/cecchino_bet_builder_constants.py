@@ -9,7 +9,7 @@ BET_BUILDER_CONTRACT_VERSION = "cecchino_bet_builder_contract_v1"
 BET_BUILDER_AGGREGATOR_VERSION = "cecchino_bet_builder_opportunity_aggregator_v2"
 BET_BUILDER_SIGNAL_EVIDENCE_VERSION = "cecchino_bet_builder_signal_evidence_v1"
 BET_BUILDER_PURCHASABILITY_POLICY_VERSION = (
-    "cecchino_bet_builder_purchasability_v31_only_v1"
+    "cecchino_bet_builder_purchasability_v36_display_v1"
 )
 
 # BET-RESULTS-01 — Outcome Monitor (read-only, no freeze / no backfill)
@@ -21,7 +21,8 @@ BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION = (
     "bet_builder_result_analysis_context_v2"
 )
 
-PURCHASABILITY_POLICY = "v31_only"
+# Display primario V3.6; Evidence Sort / primary selection restano su V3.1 interno.
+PURCHASABILITY_POLICY = "v36_display_v31_evidence"
 
 PRICE_VALUE_METHOD = "v31_theoretical_gate_v1"
 
@@ -32,6 +33,7 @@ ORIGIN_PRICE_AND_SIGNALS = "price_and_signals"
 FRESHNESS_WARNING_SCAN_IN_PROGRESS = "cecchino_today_scan_in_progress"
 
 REASON_PURCHASABILITY_V31_UNAVAILABLE = "purchasability_v31_unavailable"
+REASON_PURCHASABILITY_V36_UNAVAILABLE = "purchasability_v36_unavailable"
 REASON_NO_VALIDATED_CONTEXT_MODULE = "no_validated_context_module"
 REASON_NO_CANONICAL_RAW_SIGNAL_MAPPING = "no_canonical_raw_signal_mapping"
 REASON_SIGNALS_MATRIX_UNAVAILABLE = "signals_matrix_unavailable"

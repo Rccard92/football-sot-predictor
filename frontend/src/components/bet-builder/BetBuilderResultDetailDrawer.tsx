@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { BetBuilderResultsFixture } from '../../lib/cecchinoBetBuilderApi'
 import { useBetBuilderResultAnalysisContext } from '../../hooks/useBetBuilderResultAnalysisContext'
+import { BetBuilderPurchasabilityRing } from './BetBuilderPurchasabilityRing'
 import { BetBuilderResultTechnicalAnalysis } from './BetBuilderResultTechnicalAnalysis'
 import { bbSecondaryBtn } from './betBuilderStyles'
 import {
@@ -218,18 +219,16 @@ export function BetBuilderResultDetailDrawer({ open, item, onClose }: Props) {
                   </dl>
                 </OverviewSection>
 
-                <OverviewSection title="Acquistabilità / Segnali">
-                  <p className="text-sm font-semibold">
-                    {primary.purchasability_v31.score != null
-                      ? Math.round(primary.purchasability_v31.score)
-                      : 'N/D'}
-                    {primary.purchasability_v31.class
-                      ? ` · ${primary.purchasability_v31.class}`
-                      : ''}
-                    {primary.purchasability_v31.status
-                      ? ` · ${primary.purchasability_v31.status}`
-                      : ''}
-                  </p>
+                <OverviewSection title="Acquistabilità V3.6 / Segnali">
+                  <BetBuilderPurchasabilityRing
+                    purchasability={
+                      primary.purchasability_v36 ?? {
+                        available: false,
+                        score: null,
+                      }
+                    }
+                    size="md"
+                  />
                   <p className="mt-2 text-sm">
                     {primary.signals.yes_count}/{primary.signals.available_count} SI
                     {primary.signals.yes_columns?.length
@@ -271,9 +270,10 @@ export function BetBuilderResultDetailDrawer({ open, item, onClose }: Props) {
                         >
                           <span className="font-medium">{op.market.label}</span>
                           <span className="text-xs text-slate-500">
-                            {op.purchasability_v31.score != null
-                              ? `V3.1 ${Math.round(op.purchasability_v31.score)}`
-                              : 'V3.1 N/D'}
+                            {op.purchasability_v36?.available &&
+                            op.purchasability_v36.score != null
+                              ? `V3.6 ${Math.round(op.purchasability_v36.score)}`
+                              : 'Indice V3.6 non disponibile'}
                             {op.price_value.quota_book != null
                               ? ` · Book ${op.price_value.quota_book.toFixed(2)}`
                               : ' · Book N/D'}

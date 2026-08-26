@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import type { V36Item, V36Snapshot } from '../../lib/cecchinoTodayApi'
+import { PurchasabilityScoreRing } from './PurchasabilityScoreRing'
 import {
+  buildV36HumanExplanation,
   formatV36ComponentScore,
   formatV36FinalScore,
   formatV36OptionalNumber,
@@ -55,7 +57,7 @@ function Metric({
   )
 }
 
-export function CecchinoPurchasabilityV36DetailPanel({ item, snapshot, panelId }: Props) {
+function TechnicalBlocks({ item, snapshot }: { item: V36Item; snapshot: V36Snapshot }) {
   const score = getV36Score(item)
   const rawScore = getV36RawScore(item)
   const v = item.components?.executable_value
@@ -75,27 +77,7 @@ export function CecchinoPurchasabilityV36DetailPanel({ item, snapshot, panelId }
   const blocks = s?.blocks ?? []
 
   return (
-    <div
-      className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"
-      id={`${panelId}-v36-detail`}
-      data-testid="v36-detail-panel"
-      role="tabpanel"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Mercato</p>
-          <h4 className="text-base font-bold text-slate-900">{getV36MarketLabel(item)}</h4>
-        </div>
-        <div className="text-right">
-          <p
-            className="text-3xl font-bold tabular-nums text-slate-900"
-            data-testid="v36-final-score"
-          >
-            {formatV36FinalScore(score)}
-          </p>
-        </div>
-      </div>
-
+    <div className="space-y-3" data-testid="v36-technical-blocks">
       <Block title="INPUT" testId="v36-block-input">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <Metric
@@ -248,38 +230,118 @@ export function CecchinoPurchasabilityV36DetailPanel({ item, snapshot, panelId }
         </ol>
       </Block>
 
-      <details className="rounded-lg border border-slate-200 p-3" data-testid="v36-technical-details">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-          Dettagli tecnici V3.6
+      <dl className="grid gap-1 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 sm:grid-cols-2">
+        <div>
+          <dt className="font-medium">raw_score</dt>
+          <dd>{rawScore != null ? rawScore.toFixed(2) : 'N/D'}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">gate_status</dt>
+          <dd>{item.gate?.gate_status ?? item.gate_status ?? 'N/D'}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">formula_version</dt>
+          <dd>{snapshot.formula_version ?? 'N/D'}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">formula_freeze_sha256</dt>
+          <dd className="break-all">
+            {snapshot.formula_freeze_sha256 ?? item.formula_freeze_sha256 ?? 'N/D'}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium">input_fingerprint_sha256</dt>
+          <dd className="break-all">{snapshot.input_fingerprint_sha256 ?? 'N/D'}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">engine_payload_sha256</dt>
+          <dd className="break-all">{snapshot.engine_payload_sha256 ?? 'N/D'}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
+export function CecchinoPurchasabilityV36DetailPanel({ item, snapshot, panelId }: Props) {
+  const score = getV36Score(item)
+  const explanation = buildV36HumanExplanation(item)
+
+  return (
+    <div
+      className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4"
+      id={`${panelId}-v36-detail`}
+      data-testid="v36-detail-panel"
+      role="tabpanel"
+    >
+      <div className="flex flex-wrap items-center gap-4">
+        <PurchasabilityScoreRing
+          score={score}
+          classLabel={item.class ?? null}
+          size="lg"
+          title="Indice V3.6"
+          testId="v36-score-ring"
+        />
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Mercato</p>
+          <h4 className="text-base font-bold text-slate-900">{getV36MarketLabel(item)}</h4>
+          <p className="sr-only" data-testid="v36-final-score">
+            {formatV36FinalScore(score)}
+          </p>
+        </div>
+      </div>
+
+      <details
+        open
+        className="rounded-lg border border-slate-200 bg-slate-50/50 p-3"
+        data-testid="v36-why-accordion"
+      >
+        <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+          Perché questo punteggio
         </summary>
-        <dl className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+        <dl className="mt-3 space-y-2 text-sm text-slate-700" data-testid="v36-human-explanation">
           <div>
-            <dt className="font-medium">raw_score</dt>
-            <dd>{rawScore != null ? rawScore.toFixed(2) : 'N/D'}</dd>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Valore</dt>
+            <dd data-testid="v36-explain-valore">{explanation.valore}</dd>
           </div>
           <div>
-            <dt className="font-medium">gate_status</dt>
-            <dd>{item.gate?.gate_status ?? item.gate_status ?? 'N/D'}</dd>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Affidabilità
+            </dt>
+            <dd data-testid="v36-explain-affidabilita">{explanation.affidabilita}</dd>
           </div>
           <div>
-            <dt className="font-medium">formula_version</dt>
-            <dd>{snapshot.formula_version ?? 'N/D'}</dd>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Struttura
+            </dt>
+            <dd data-testid="v36-explain-struttura">{explanation.struttura}</dd>
           </div>
           <div>
-            <dt className="font-medium">formula_freeze_sha256</dt>
-            <dd className="break-all">
-              {snapshot.formula_freeze_sha256 ?? item.formula_freeze_sha256 ?? 'N/D'}
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Qualità dati
+            </dt>
+            <dd data-testid="v36-explain-qualita">{explanation.qualita}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Conclusione
+            </dt>
+            <dd className="font-medium" data-testid="v36-explain-conclusione">
+              {explanation.conclusione}
             </dd>
           </div>
-          <div>
-            <dt className="font-medium">input_fingerprint_sha256</dt>
-            <dd className="break-all">{snapshot.input_fingerprint_sha256 ?? 'N/D'}</dd>
-          </div>
-          <div>
-            <dt className="font-medium">engine_payload_sha256</dt>
-            <dd className="break-all">{snapshot.engine_payload_sha256 ?? 'N/D'}</dd>
-          </div>
         </dl>
+
+        <details
+          className="mt-3 rounded-lg border border-slate-200 bg-white p-3"
+          data-testid="v36-technical-details"
+        >
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+            Dettagli tecnici
+          </summary>
+          <div className="mt-3">
+            <TechnicalBlocks item={item} snapshot={snapshot} />
+          </div>
+        </details>
       </details>
     </div>
   )

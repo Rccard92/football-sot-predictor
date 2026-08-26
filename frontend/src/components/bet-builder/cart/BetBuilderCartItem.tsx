@@ -110,7 +110,7 @@ export function BetBuilderCartItem({ item, scanDate, onRemove }: Props) {
         </div>
         <div className="rounded-lg bg-slate-50 px-2 py-1.5">
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            V3.1
+            V3.6
           </dt>
           <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
             {purchasabilitySummaryLabel(current)}

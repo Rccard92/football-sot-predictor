@@ -454,7 +454,7 @@ export function signalsSummaryLabel(opportunity: BetBuilderOpportunity | null): 
 
 export function purchasabilitySummaryLabel(opportunity: BetBuilderOpportunity | null): string {
   if (!opportunity) return '—'
-  const score = opportunity.purchasability_v31.score
+  const score = opportunity.purchasability_v36?.score
   if (score == null || !Number.isFinite(score)) return '—'
   return String(Math.round(score))
 }

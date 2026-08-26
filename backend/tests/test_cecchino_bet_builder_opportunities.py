@@ -34,8 +34,10 @@ from app.services.cecchino.cecchino_bet_builder_freshness import (
 from app.services.cecchino.cecchino_bet_builder_markets import BET_BUILDER_MARKET_KEYS
 from app.services.cecchino.cecchino_bet_builder_opportunity_aggregator import (
     aggregate_bet_builder_opportunities,
+    build_opportunities_for_rows,
     build_price_value,
     build_purchasability_v31_block,
+    build_purchasability_v36_block,
     build_signals_evidence,
     opportunity_key,
 )
@@ -202,6 +204,49 @@ def _v31_item(market_key: str, *, score: float | None = 80.0, class_v: str = "al
     }
 
 
+def _v36_item(market_key: str, *, score: float | None = 53.0, class_v: str = "Media") -> dict:
+    return {
+        "market_key": market_key,
+        "label": market_key,
+        "status": "score" if score is not None else "not_calculable",
+        "score": score,
+        "raw_score": score,
+        "class": class_v,
+        "gate_status": "passed",
+        "gate": {"gate_status": "passed", "reason_codes": []},
+        "value_core": 50.0,
+        "acquisition_core": 52.0,
+        "structural_factor": 0.95,
+        "quality_factor": 0.96,
+        "adjusted_confidence": 0.9,
+        "components": {
+            "executable_value": {"score": 55},
+            "market_disagreement": {"score": 48},
+            "base_rate_reliability": {"score": 62},
+            "structural_coherence": {"score": 58, "S": 58},
+            "information_quality": {"score": 88},
+        },
+        "formula_version": "cecchino_purchasability_v35_structural_v2",
+        "formula_freeze_sha256": (
+            "3488f0d8e97f52b3db126ff96758c51adef0acfc8fd98f953b2443e629cd0bfe"
+        ),
+    }
+
+
+def _valid_v36_snapshot(items: list[dict]) -> dict:
+    from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+        EXPECTED_FORMULA_FREEZE_SHA256,
+    )
+
+    return {
+        "snapshot_version": "purchasability_preview_v35_v2",
+        "formula_version": "cecchino_purchasability_v35_structural_v2",
+        "formula_freeze_sha256": EXPECTED_FORMULA_FREEZE_SHA256,
+        "generated_at": "2026-08-07T10:00:00+00:00",
+        "items": items,
+    }
+
+
 def _fixture_row(
     *,
     fid: int = 1,
@@ -210,6 +255,7 @@ def _fixture_row(
     kpi_rows: list[dict] | None = None,
     signals_matrix: dict | None = None,
     v31_items: list[dict] | None = None,
+    v36_snapshot: dict | None = None,
     v3_items: list[dict] | None = None,
     balance: dict | None = None,
     match_status: str = "upcoming",
@@ -228,6 +274,8 @@ def _fixture_row(
             "registry_status": "shadow_candidate",
             "candidate_version": "cecchino_purchasability_v31_candidate_2",
         }
+    if v36_snapshot is not None:
+        output["purchasability_preview_v35_v2"] = v36_snapshot
     if v3_items is not None:
         output["purchasability_preview_v3"] = {
             "status": "ok",
@@ -802,6 +850,85 @@ def test_v31_fields_preserved():
     assert block["gate_status"] == "passed"
     assert block["formula_version"]
     assert block["historical_adjustment_pct"] == 5.0
+
+
+# ---------------------------------------------------------------------------
+# Purchasability V3.6 display (read-only snapshot, zero recompute)
+# ---------------------------------------------------------------------------
+
+
+def test_v36_block_from_persisted_item():
+    item = _v36_item(SEL_DRAW, score=53, class_v="Media")
+    block = build_purchasability_v36_block(
+        market_key=SEL_DRAW,
+        v36_by_market={SEL_DRAW: item},
+        snapshot=_valid_v36_snapshot([item]),
+        snapshot_status="valid",
+    )
+    assert block["available"] is True
+    assert block["score"] == 53
+    assert block["class"] == "Media"
+    assert block["component_scores"]["V"] == 55
+    assert block["version"] == "v36"
+
+
+def test_v36_absent_no_fallback_to_v31():
+    block = build_purchasability_v36_block(
+        market_key=SEL_DRAW,
+        v36_by_market={},
+        snapshot=None,
+        snapshot_status="absent",
+    )
+    assert block["available"] is False
+    assert block["score"] is None
+    assert block["reason"] == "purchasability_v36_unavailable"
+
+
+def test_v36_display_from_persisted_snapshot_even_if_engine_fails(monkeypatch):
+    """Engine V3.6 patchato per fallire: Bet Builder usa solo snapshot persistito."""
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("engine must not be called")
+
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_engine.calculate_purchasability_v35_v2_batch",
+        _boom,
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_engine.calculate_purchasability_v35_v2_item",
+        _boom,
+    )
+
+    snap = _valid_v36_snapshot([_v36_item(SEL_DRAW, score=61, class_v="Alta")])
+    # Bypass full schema validation: force resolve to return our persisted snapshot.
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v35_v2_for_detail",
+        lambda **_kw: {
+            "purchasability_preview_v35_v2": snap,
+            "purchasability_v35_v2_snapshot_status": "valid",
+            "purchasability_v35_v2_snapshot_reason": None,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_bet_builder_opportunity_aggregator.resolve_purchasability_preview_v31_for_detail",
+        lambda **_kw: {"items": [_v31_item(SEL_DRAW, score=90)]},
+    )
+
+    row = _fixture_row(
+        kpi_rows=[_kpi_row(SEL_DRAW, book=3.0, cecchino=2.0, rating=70)],
+        signals_matrix=_matrix_v3(draw_yes=2),
+        v31_items=[_v31_item(SEL_DRAW, score=90)],
+        v36_snapshot=snap,
+    )
+    ops, _ = build_opportunities_for_rows([row], gi_by_fixture={})
+    draw_ops = [o for o in ops if o["market"]["market_key"] == SEL_DRAW]
+    assert draw_ops
+    purch36 = draw_ops[0]["purchasability_v36"]
+    assert purch36["available"] is True
+    assert purch36["score"] == 61
+    assert purch36["class"] == "Alta"
+    # Evidence / legacy interno resta V3.1
+    assert draw_ops[0]["purchasability_v31"]["score"] == 90
 
 
 # ---------------------------------------------------------------------------

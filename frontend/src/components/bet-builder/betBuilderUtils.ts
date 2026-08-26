@@ -162,7 +162,7 @@ export function resolveSelectedOpportunity(
   return opportunities[0] ?? null
 }
 
-/** Acquistabilità V3.1 per tab: numero arrotondato oppure N/D. */
+/** Acquistabilità V3.6 per tab: numero arrotondato oppure N/D. */
 export function formatPurchasabilityTab(score: number | null | undefined): string {
   if (score == null || Number.isNaN(score)) return 'N/D'
   return String(Math.round(score))
@@ -233,7 +233,7 @@ export function filterOpportunities(
     if (filters.league && (op.fixture.league ?? '') !== filters.league) return false
     if (!matchesSearch(op, filters.search)) return false
     if (filters.minPurchasability != null) {
-      const score = op.purchasability_v31.score
+      const score = op.purchasability_v36?.score
       if (score == null || score < filters.minPurchasability) return false
     }
     return true
@@ -307,7 +307,7 @@ export function sortOpportunities(
     if (sort === 'evidence_strength_desc') {
       primary = compareOpportunityEvidenceStrength(a, b)
     } else if (sort === 'purchasability_desc') {
-      primary = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
+      primary = cmpNullableNumberDesc(a.purchasability_v36?.score, b.purchasability_v36?.score)
     } else if (sort === 'signals_desc') {
       primary = cmpNullableNumberDesc(a.signals.yes_count, b.signals.yes_count)
     } else if (sort === 'edge_desc') {
@@ -415,8 +415,8 @@ export function sortFixtureGroups(
       else primary = compareOpportunityEvidenceStrength(aPrimary, bPrimary)
     } else if (sort === 'purchasability_desc') {
       primary = cmpNullableNumberDesc(
-        maxNullable(a.opportunities.map((o) => o.purchasability_v31.score)),
-        maxNullable(b.opportunities.map((o) => o.purchasability_v31.score)),
+        maxNullable(a.opportunities.map((o) => o.purchasability_v36?.score)),
+        maxNullable(b.opportunities.map((o) => o.purchasability_v36?.score)),
       )
     } else if (sort === 'signals_desc') {
       primary = cmpNullableNumberDesc(

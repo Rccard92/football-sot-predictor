@@ -52,6 +52,7 @@ function baseItem(overrides: Partial<BetBuilderResultsFixture> = {}): BetBuilder
         passed: true,
       },
       purchasability_v31: { available: true, score: 80 },
+      purchasability_v36: { available: true, score: 80, class: 'Alta', version: 'v36' },
       context_support: { available: false },
       freshness: { source_scan_date: '2026-08-19' },
       prediction_outcome: 'lost',

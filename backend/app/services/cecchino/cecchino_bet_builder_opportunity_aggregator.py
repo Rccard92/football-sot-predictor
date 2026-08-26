@@ -41,6 +41,7 @@ from app.services.cecchino.cecchino_bet_builder_constants import (
     REASON_NO_CANONICAL_RAW_SIGNAL_MAPPING,
     REASON_NO_VALIDATED_CONTEXT_MODULE,
     REASON_PURCHASABILITY_V31_UNAVAILABLE,
+    REASON_PURCHASABILITY_V36_UNAVAILABLE,
     REASON_SIGNALS_FORMULA_NOT_CURRENT,
     REASON_SIGNALS_MATRIX_UNAVAILABLE,
 )
@@ -73,6 +74,10 @@ from app.services.cecchino.cecchino_purchasability_v31_candidate import (
 from app.services.cecchino.cecchino_purchasability_v31_snapshot import (
     index_purchasability_v31_snapshot_by_market,
     resolve_purchasability_preview_v31_for_detail,
+)
+from app.services.cecchino.cecchino_purchasability_v35_v2_snapshot import (
+    index_purchasability_v35_v2_snapshot_by_market,
+    resolve_purchasability_preview_v35_v2_for_detail,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -458,6 +463,124 @@ def build_purchasability_v31_block(
             or hist.get("historical_reason_codes")
             or []
         ),
+    }
+
+
+def _v36_component_score(components: dict[str, Any] | None, key: str) -> float | None:
+    if not isinstance(components, dict):
+        return None
+    block = components.get(key)
+    if not isinstance(block, dict):
+        return None
+    score = block.get("score")
+    if score is None and key == "structural_coherence":
+        score = block.get("S")
+    try:
+        return float(score) if score is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def build_purchasability_v36_block(
+    *,
+    market_key: str,
+    v36_by_market: dict[str, dict[str, Any]],
+    snapshot: dict[str, Any] | None,
+    snapshot_status: str | None,
+) -> dict[str, Any]:
+    """Read-only projection from persisted purchasability_preview_v35_v2. Zero recompute."""
+    unavailable = {
+        "available": False,
+        "version": "v36",
+        "score": None,
+        "raw_score": None,
+        "class": None,
+        "status": None,
+        "gate_status": None,
+        "gate_reason_codes": [],
+        "formula_version": None,
+        "generated_at": None,
+        "reason": REASON_PURCHASABILITY_V36_UNAVAILABLE,
+        "snapshot_status": snapshot_status or "absent",
+        "value_core": None,
+        "acquisition_core": None,
+        "structural_factor": None,
+        "quality_factor": None,
+        "adjusted_confidence": None,
+        "component_scores": {
+            "V": None,
+            "D": None,
+            "R": None,
+            "S": None,
+            "Q": None,
+        },
+        "structural_missing_penalty_applied": None,
+    }
+    if snapshot_status != "valid" or not isinstance(snapshot, dict):
+        return unavailable
+
+    item = v36_by_market.get(market_key)
+    if not isinstance(item, dict):
+        return unavailable
+
+    components = item.get("components") if isinstance(item.get("components"), dict) else {}
+    gate = item.get("gate") if isinstance(item.get("gate"), dict) else {}
+    generated_at = (
+        item.get("generated_at")
+        or item.get("snapshot_at")
+        or snapshot.get("generated_at")
+        or snapshot.get("snapshot_at")
+    )
+    score = item.get("score")
+    raw_score = item.get("raw_score")
+    class_v = item.get("class")
+    status = item.get("status")
+    # Solo item con score utilizzabile in display; altrimenti unavailable (no fallback).
+    if status != "score" or score is None:
+        out = dict(unavailable)
+        out["status"] = status
+        out["gate_status"] = gate.get("gate_status") or item.get("gate_status")
+        out["gate_reason_codes"] = list(gate.get("reason_codes") or [])
+        out["reason"] = REASON_PURCHASABILITY_V36_UNAVAILABLE
+        return out
+
+    return {
+        "available": True,
+        "version": "v36",
+        "market_key": item.get("market_key") or market_key,
+        "market_label": item.get("label") or item.get("market_label"),
+        "status": status,
+        "score": score,
+        "raw_score": raw_score,
+        "class": class_v,
+        "gate_status": gate.get("gate_status") or item.get("gate_status"),
+        "gate_reason_codes": list(gate.get("reason_codes") or []),
+        "formula_version": item.get("formula_version") or snapshot.get("formula_version"),
+        "formula_freeze_sha256": item.get("formula_freeze_sha256")
+        or snapshot.get("formula_freeze_sha256"),
+        "generated_at": generated_at,
+        "source_snapshot_at": snapshot.get("source_snapshot_at"),
+        "source_snapshot_verified": snapshot.get("source_snapshot_verified"),
+        "source_snapshot_before_kickoff": snapshot.get("source_snapshot_before_kickoff"),
+        "snapshot_status": "valid",
+        "value_core": item.get("value_core"),
+        "acquisition_core": item.get("acquisition_core"),
+        "structural_factor": item.get("structural_factor"),
+        "quality_factor": item.get("quality_factor"),
+        "adjusted_confidence": item.get("adjusted_confidence"),
+        "structural_missing_penalty_applied": item.get(
+            "structural_missing_penalty_applied"
+        ),
+        "component_scores": {
+            "V": _v36_component_score(components, "executable_value"),
+            "D": _v36_component_score(components, "market_disagreement"),
+            "R": _v36_component_score(components, "base_rate_reliability"),
+            "S": _v36_component_score(components, "structural_coherence"),
+            "Q": _v36_component_score(components, "information_quality"),
+        },
+        "components": components,
+        "input": item.get("input") if isinstance(item.get("input"), dict) else None,
+        "gate": gate or None,
     }
 
 
@@ -893,6 +1016,7 @@ def build_opportunities_for_rows(
 
     Riusato da Pre-match e Results — nessuna formula duplicata.
     Ritorna (opportunities, max_v31_generated_at).
+    V3.6 è solo proiezione read-only da snapshot persistito (zero recompute).
     """
     opportunities: list[dict[str, Any]] = []
     max_v31_at: str | None = None
@@ -911,6 +1035,15 @@ def build_opportunities_for_rows(
             max_v31_at = v31_at
         v31_by_market = index_purchasability_v31_snapshot_by_market(v31_snapshot)
         # Mai usare V3: non leggere purchasability_preview_v3 per score/ordinamento
+
+        v36_detail = resolve_purchasability_preview_v35_v2_for_detail(row=row)
+        v36_status = v36_detail.get("purchasability_v35_v2_snapshot_status")
+        v36_snapshot = v36_detail.get("purchasability_preview_v35_v2")
+        v36_by_market = (
+            index_purchasability_v35_v2_snapshot_by_market(v36_snapshot)
+            if isinstance(v36_snapshot, dict)
+            else {}
+        )
 
         gi_payload = gi_by_fixture.get(int(row.id))
         fixture_block = _fixture_block(row)
@@ -951,6 +1084,12 @@ def build_opportunities_for_rows(
                 v31_by_market=v31_by_market,
                 snapshot=v31_snapshot if isinstance(v31_snapshot, dict) else None,
             )
+            purch_v36 = build_purchasability_v36_block(
+                market_key=mk,
+                v36_by_market=v36_by_market,
+                snapshot=v36_snapshot if isinstance(v36_snapshot, dict) else None,
+                snapshot_status=str(v36_status) if v36_status else "absent",
+            )
             ctx = _context_support(market_key=mk, row=row, gi_payload=gi_payload)
 
             signals_updated = None
@@ -971,12 +1110,14 @@ def build_opportunities_for_rows(
                 "price_value": price,
                 "signals": signals,
                 "purchasability_v31": purch,
+                "purchasability_v36": purch_v36,
                 "context_support": ctx,
                 "freshness": {
                     "source_scan_date": scan_date_iso,
                     "fixture_updated_at": _iso(getattr(row, "updated_at", None)),
                     "signals_updated_at": signals_updated,
                     "purchasability_v31_generated_at": purch.get("generated_at"),
+                    "purchasability_v36_generated_at": purch_v36.get("generated_at"),
                     "context_snapshot_at": context_snap_at,
                 },
             }
@@ -1051,6 +1192,7 @@ def aggregate_bet_builder_opportunities(
     by_market: dict[str, int] = {mk: 0 for mk in BET_BUILDER_MARKET_KEYS}
     price_only = signals_only = both = 0
     with_v31 = without_v31 = 0
+    with_v36 = without_v36 = 0
     for opp in opportunities:
         mk = opp["market"]["market_key"]
         by_market[mk] = by_market.get(mk, 0) + 1
@@ -1064,6 +1206,10 @@ def aggregate_bet_builder_opportunities(
             with_v31 += 1
         else:
             without_v31 += 1
+        if (opp.get("purchasability_v36") or {}).get("available"):
+            with_v36 += 1
+        else:
+            without_v36 += 1
 
     freshness = {
         "source_scan_date": scan_date.isoformat(),
@@ -1095,6 +1241,8 @@ def aggregate_bet_builder_opportunities(
             "price_and_signals": both,
             "with_purchasability_v31": with_v31,
             "without_purchasability_v31": without_v31,
+            "with_purchasability_v36": with_v36,
+            "without_purchasability_v36": without_v36,
             "by_market": by_market,
         },
         "opportunities": opportunities,

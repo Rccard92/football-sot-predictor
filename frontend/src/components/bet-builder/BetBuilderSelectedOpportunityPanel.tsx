@@ -140,7 +140,7 @@ export function BetBuilderSelectedOpportunityPanel({
         >
           <div className={bbMetricCell}>
             <BetBuilderPurchasabilityRing
-              purchasability={opportunity.purchasability_v31}
+              purchasability={opportunity.purchasability_v36}
               size="md"
             />
           </div>

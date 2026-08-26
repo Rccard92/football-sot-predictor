@@ -4,6 +4,7 @@ import {
   formatV36FinalScore,
   getV36MarketLabel,
   getV36Score,
+  v36BadgeClass,
 } from './cecchinoPurchasabilityV36UiUtils'
 
 type Props = {
@@ -20,10 +21,10 @@ export function CecchinoPurchasabilityV36MarketSelector({
   panelId,
 }: Props) {
   return (
-    <div className="space-y-2" data-testid="v36-market-selector">
+    <div className="space-y-1.5" data-testid="v36-market-selector">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Mercati valutati</p>
       <div
-        className={`${bbOppTabScroll} gap-2`}
+        className={`${bbOppTabScroll} gap-1.5`}
         role="tablist"
         aria-label="Mercati V3.6"
         id={`${panelId}-v36-market-panel`}
@@ -48,7 +49,14 @@ export function CecchinoPurchasabilityV36MarketSelector({
             >
               <span className="flex flex-col items-start gap-0.5 text-left">
                 <span className="text-[11px] font-medium">{getV36MarketLabel(item)}</span>
-                <span className="text-sm font-bold tabular-nums">{formatV36FinalScore(score)}</span>
+                <span className="flex flex-wrap items-center gap-1">
+                  <span className="text-sm font-bold tabular-nums">{formatV36FinalScore(score)}</span>
+                  {item.class ? (
+                    <span className={v36BadgeClass(item.class)} data-testid={`v36-selector-class-${item.market_key}`}>
+                      {item.class}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="text-[10px] tabular-nums text-slate-500">
                   quota {quote != null ? Number(quote).toFixed(2) : 'N/D'}
                 </span>

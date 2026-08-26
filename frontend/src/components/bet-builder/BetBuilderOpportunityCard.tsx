@@ -92,7 +92,7 @@ export function BetBuilderOpportunityCard({ opportunity, scanDate }: Props) {
         </p>
       </header>
 
-      <BetBuilderPurchasabilityBlock purchasability={opportunity.purchasability_v31} />
+      <BetBuilderPurchasabilityBlock purchasability={opportunity.purchasability_v36} />
       <BetBuilderPriceBlock price={opportunity.price_value} />
       <BetBuilderSignalsBlock
         signals={opportunity.signals}
