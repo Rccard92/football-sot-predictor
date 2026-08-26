@@ -18,8 +18,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
-from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, MATCH_FINISHED
+from app.models.cecchino_today_fixture import (
+    ELIGIBILITY_ELIGIBLE,
+    ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+    MATCH_FINISHED,
+)
 from app.routes.cecchino_today import router
+from app.schemas.cecchino_purchasability_v35_v2 import (
+    PURCHASABILITY_V35_V2_ANALYSIS_MANIFEST_CONTRACT_VERSION,
+)
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_v35_snapshot import (
     attach_purchasability_preview_v35_to_output,
@@ -44,9 +51,12 @@ from app.services.cecchino.cecchino_purchasability_v35_v2_holdout_diagnostics im
 from app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export import (
     CSV_COLUMNS,
     V35V2AnalysisRangeError,
+    _count_current_eligible_without_v2_key,
+    _load_v2_snapshot_population_range,
     _strict_paired_market_items,
     _top_v1_strict_paired_from_analysis,
     _top_v2_strict_paired_from_analysis,
+    build_range_purchasability_v35_v2_analysis_manifest_and_files,
     build_range_purchasability_v35_v2_analysis_zip,
     validate_v2_analysis_date_range,
 )
@@ -118,11 +128,26 @@ def _fixture_row(
     scan_date: date | None = None,
     v1: dict | None = None,
     v2: dict | None = None,
+    eligibility_status: str = ELIGIBILITY_ELIGIBLE,
+    match_display_status: str = MATCH_FINISHED,
+    goals_home: int | None = 2,
+    goals_away: int | None = 1,
+    omit_v2_key: bool = False,
 ) -> SimpleNamespace:
-    if v1 is None or v2 is None:
-        built_v1, built_v2 = _build_paired_snapshots()
-        v1 = v1 or built_v1
-        v2 = v2 or built_v2
+    if omit_v2_key:
+        if v1 is None:
+            built_v1, _ = _build_paired_snapshots()
+            v1 = built_v1
+        output = {"purchasability_preview_v35": v1}
+    else:
+        if v1 is None or v2 is None:
+            built_v1, built_v2 = _build_paired_snapshots()
+            v1 = v1 or built_v1
+            v2 = v2 or built_v2
+        output = {
+            "purchasability_preview_v35": v1,
+            SNAPSHOT_OUTPUT_KEY: v2,
+        }
     return SimpleNamespace(
         id=fid,
         provider_fixture_id=provider_id,
@@ -133,21 +158,25 @@ def _fixture_row(
         provider_season=2026,
         country_name="Italy",
         league_name="Serie A",
-        eligibility_status=ELIGIBILITY_ELIGIBLE,
-        fixture_status="FT",
-        match_display_status=MATCH_FINISHED,
-        goals_home=2,
-        goals_away=1,
-        score_halftime_home=1,
-        score_halftime_away=0,
-        score_fulltime_home=2,
-        score_fulltime_away=1,
+        eligibility_status=eligibility_status,
+        fixture_status="FT" if match_display_status == MATCH_FINISHED else "NS",
+        match_display_status=match_display_status,
+        goals_home=goals_home,
+        goals_away=goals_away,
+        score_halftime_home=1 if goals_home is not None else None,
+        score_halftime_away=0 if goals_away is not None else None,
+        score_fulltime_home=goals_home,
+        score_fulltime_away=goals_away,
         kpi_panel_json={"rows": [_kpi_row(mk) for mk in PANEL_MARKET_KEYS]},
-        cecchino_output_json={
-            "purchasability_preview_v35": v1,
-            SNAPSHOT_OUTPUT_KEY: v2,
-        },
+        cecchino_output_json=output,
     )
+
+
+def _mock_db_population(rows: list) -> MagicMock:
+    """Population loader + eligible-without-v2 diagnostic both use db.scalars."""
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = rows
+    return db
 
 
 def test_formula_freeze_sha_intact():
@@ -523,8 +552,7 @@ def test_range_zip_and_route():
     v1, v2 = _build_paired_snapshots()
     row = _fixture_row(v1=v1, v2=v2, scan_date=date(2026, 8, 26))
 
-    db = MagicMock()
-    db.scalars.return_value.all.return_value = [row]
+    db = _mock_db_population([row])
 
     zip_bytes, filename = build_range_purchasability_v35_v2_analysis_zip(
         db, date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
@@ -535,11 +563,29 @@ def test_range_zip_and_route():
         assert "manifest.json" in names
         assert "analysis_rows.csv" in names
         manifest = json.loads(zf.read("manifest.json"))
+        assert (
+            manifest["contract_version"]
+            == PURCHASABILITY_V35_V2_ANALYSIS_MANIFEST_CONTRACT_VERSION
+        )
+        assert manifest["contract_version"].endswith("_analysis_manifest_v2")
         assert manifest["PRIMARY_DIAGNOSTIC_COHORT"] == COHORT_PROSPECTIVE
         assert "holdout_diagnostics" in manifest
         assert (
             manifest["formula_freeze_sha256_expected"] == EXPECTED_FORMULA_FREEZE_SHA256
         )
+        summary = manifest["summary"]
+        assert summary["population_inclusion_basis"] == "persisted_v2_snapshot_key"
+        assert summary["snapshot_population_count"] == 1
+        assert summary["valid_v2_snapshots"] == 1
+        assert summary["invalid_v2_snapshots"] == 0
+        assert summary["analysis_included_count"] == 1
+        assert summary["snapshot_population_count"] == (
+            summary["valid_v2_snapshots"] + summary["invalid_v2_snapshots"]
+        )
+        assert summary["eligible_fixtures"] == 1
+        assert summary["valid_current_eligible_count"] == 1
+        # eligible_fixtures is metadata count within population, not alias of pop size
+        assert "current_eligibility_status" in manifest["fixtures"][0]
         csv_text = zf.read("analysis_rows.csv").decode("utf-8")
         header = csv_text.splitlines()[0].split(",")
         for col in (
@@ -554,6 +600,7 @@ def test_range_zip_and_route():
             "v1_execution_quote",
             "v2_execution_quote",
             "holdout_cohort",
+            "current_eligibility_status",
             "formula_freeze_sha256",
         ):
             assert col in header
@@ -589,3 +636,299 @@ def test_range_zip_and_route():
 def test_range_validation():
     with pytest.raises(V35V2AnalysisRangeError):
         validate_v2_analysis_date_range(date(2026, 1, 1), date(2026, 3, 1))
+
+
+def test_c12b_a_valid_eligible_included():
+    row = _fixture_row(fid=1, eligibility_status=ELIGIBILITY_ELIGIBLE)
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        manifest, _, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["fixtures"][0]["analysis_status"] == "included"
+    assert manifest["fixtures"][0]["current_eligibility_status"] == ELIGIBILITY_ELIGIBLE
+
+
+def test_c12b_b_valid_noneligible_included():
+    row = _fixture_row(
+        fid=2,
+        eligibility_status=ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+    )
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        manifest, files, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["fixtures"][0]["analysis_status"] == "included"
+    assert manifest["summary"]["valid_current_noneligible_count"] == 1
+    assert any("1507044" in name or str(row.provider_fixture_id) in name for name in files)
+
+
+def test_c12b_c_eligibility_flip_still_included():
+    row = _fixture_row(
+        fid=3,
+        eligibility_status=ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+    )
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        manifest, _, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["fixtures"][0]["analysis_status"] == "included"
+
+
+def test_c12b_d_eligible_without_v2_key_not_in_population():
+    eligible_no_v2 = _fixture_row(fid=99, omit_v2_key=True)
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=1,
+    ):
+        manifest, files, csv_rows = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["summary"]["snapshot_population_count"] == 0
+    assert manifest["summary"]["current_eligible_without_v2_key_count"] == 1
+    assert manifest["fixtures"] == []
+    assert files == {}
+    assert csv_rows == []
+    # loader filter itself
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [eligible_no_v2]
+    assert _load_v2_snapshot_population_range(
+        db, date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+    ) == []
+    assert (
+        _count_current_eligible_without_v2_key(
+            db, date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+        == 1
+    )
+
+
+def test_c12b_e_invalid_snapshot_in_population_no_recompute():
+    bad = {"snapshot_version": "wrong"}
+    row = _fixture_row(fid=4, v2=bad)
+    # ensure key present with invalid dict
+    row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY] = bad
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_engine."
+        "calculate_purchasability_v35_v2_batch",
+        side_effect=AssertionError("v2_recompute_forbidden"),
+    ):
+        manifest, files, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["summary"]["snapshot_population_count"] == 1
+    assert manifest["summary"]["invalid_v2_snapshots"] == 1
+    assert manifest["summary"]["analysis_included_count"] == 0
+    assert manifest["fixtures"][0]["analysis_status"] == "snapshot_invalid"
+    assert "current_eligibility_status" in manifest["fixtures"][0]
+    assert files == {}
+
+
+def test_c12b_f_key_present_none_reported_invalid():
+    row = _fixture_row(fid=5)
+    row.cecchino_output_json[SNAPSHOT_OUTPUT_KEY] = None
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        manifest, _, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    fx = manifest["fixtures"][0]
+    assert fx["analysis_status"] == "snapshot_invalid"
+    assert fx["snapshot_invalid_reason"] == "not_a_dict"
+    assert fx["current_eligibility_status"] == ELIGIBILITY_ELIGIBLE
+    assert manifest["summary"]["invalid_v2_snapshots"] == 1
+
+
+def test_c12b_g_noneligible_outcome_join():
+    row = _fixture_row(
+        fid=6,
+        eligibility_status=ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+        match_display_status=MATCH_FINISHED,
+        goals_home=2,
+        goals_away=1,
+    )
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ):
+        _, _, csv_rows = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    outcomes = {r.get("outcome") for r in csv_rows if r.get("status") == "score"}
+    assert outcomes & {EVAL_WON, EVAL_LOST}
+    assert all(
+        r.get("current_eligibility_status") == ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS
+        for r in csv_rows
+    )
+
+
+def test_c12b_h_engine_fail_export_still_works():
+    row = _fixture_row(fid=7)
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=[row],
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_engine."
+        "calculate_purchasability_v35_v2_batch",
+        side_effect=RuntimeError("engine_must_not_run"),
+    ):
+        manifest, files, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+    assert manifest["summary"]["analysis_included_count"] == 1
+    assert files
+
+
+def test_c12b_i_cohorts_unchanged():
+    assert holdout_cohort_for_scan_date(date(2026, 8, 26)) == COHORT_TECHNICAL_SMOKE
+    assert holdout_cohort_for_scan_date(date(2026, 8, 27)) == COHORT_PROSPECTIVE
+    assert PRIMARY_DIAGNOSTIC_COHORT == COHORT_PROSPECTIVE
+
+
+def test_c12b_j_max_range_31_unchanged():
+    validate_v2_analysis_date_range(date(2026, 8, 1), date(2026, 8, 31))
+    with pytest.raises(V35V2AnalysisRangeError):
+        validate_v2_analysis_date_range(date(2026, 8, 1), date(2026, 9, 1))
+
+
+def test_c12b_k_formula_freeze_sha():
+    assert EXPECTED_FORMULA_FREEZE_SHA256 == (
+        "3488f0d8e97f52b3db126ff96758c51adef0acfc8fd98f953b2443e629cd0bfe"
+    )
+
+
+def test_c12b_regression_set_level_22_17_5():
+    """Production C1.2A case: 22 valid (17 eligible + 5 non-eligible) all included."""
+    v1, v2 = _build_paired_snapshots()
+    eligible_ids = list(range(1000, 1017))
+    noneligible_ids = [2001, 2002, 2003, 2004, 2005]
+    rows = []
+    for i, fid in enumerate(eligible_ids):
+        rows.append(
+            _fixture_row(
+                fid=fid,
+                provider_id=5000 + i,
+                v1=copy.deepcopy(v1),
+                v2=copy.deepcopy(v2),
+                eligibility_status=ELIGIBILITY_ELIGIBLE,
+            )
+        )
+    for i, fid in enumerate(noneligible_ids):
+        rows.append(
+            _fixture_row(
+                fid=fid,
+                provider_id=6000 + i,
+                v1=copy.deepcopy(v1),
+                v2=copy.deepcopy(v2),
+                eligibility_status=ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+            )
+        )
+    assert len(rows) == 22
+
+    with patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_load_v2_snapshot_population_range",
+        return_value=rows,
+    ), patch(
+        "app.services.cecchino.cecchino_purchasability_v35_v2_range_analysis_export."
+        "_count_current_eligible_without_v2_key",
+        return_value=7,
+    ):
+        manifest, files, _ = build_range_purchasability_v35_v2_analysis_manifest_and_files(
+            MagicMock(), date_from=date(2026, 8, 26), date_to=date(2026, 8, 26)
+        )
+
+    summary = manifest["summary"]
+    P = {int(f["today_fixture_id"]) for f in manifest["fixtures"]}
+    I = {
+        int(f["today_fixture_id"])
+        for f in manifest["fixtures"]
+        if f.get("analysis_status") == "included"
+    }
+    NE = {
+        int(f["today_fixture_id"])
+        for f in manifest["fixtures"]
+        if f.get("analysis_status") == "included"
+        and f.get("current_eligibility_status") != ELIGIBILITY_ELIGIBLE
+    }
+
+    assert len(P) == 22
+    assert len(I) == 22
+    assert P == I
+    assert len(NE) == 5
+    assert NE.issubset(I)
+    assert NE == set(noneligible_ids)
+
+    assert summary["snapshot_population_count"] == 22
+    assert summary["valid_v2_snapshots"] == 22
+    assert summary["invalid_v2_snapshots"] == 0
+    assert summary["analysis_included_count"] == 22
+    assert summary["snapshot_population_count"] == (
+        summary["valid_v2_snapshots"] + summary["invalid_v2_snapshots"]
+    )
+    assert summary["valid_current_eligible_count"] == 17
+    assert summary["valid_current_noneligible_count"] == 5
+    assert summary["current_eligibility_counts"]["eligible"] == 17
+    assert (
+        summary["current_eligibility_counts"]["excluded_insufficient_stats"] == 5
+    )
+    assert summary["eligible_fixtures"] == 17
+    assert summary["eligible_fixtures"] != summary["snapshot_population_count"]
+    assert summary["population_inclusion_basis"] == "persisted_v2_snapshot_key"
+    assert summary["current_eligible_without_v2_key_count"] == 7
+    assert len(files) == 22
+    for fx in manifest["fixtures"]:
+        assert "current_eligibility_status" in fx

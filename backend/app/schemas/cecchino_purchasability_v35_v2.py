@@ -33,7 +33,7 @@ PURCHASABILITY_V35_V2_ANALYSIS_EXPORT_CONTRACT_VERSION = (
     "cecchino_purchasability_v35_v2_analysis_export_v1"
 )
 PURCHASABILITY_V35_V2_ANALYSIS_MANIFEST_CONTRACT_VERSION = (
-    "cecchino_purchasability_v35_v2_analysis_manifest_v1"
+    "cecchino_purchasability_v35_v2_analysis_manifest_v2"
 )
 
 PurchasabilityV35V2Status = Literal[

@@ -6,7 +6,7 @@ import csv
 import io
 import json
 import zipfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -64,6 +64,7 @@ CSV_COLUMNS = [
     "source_snapshot_at",
     "generated_at",
     "holdout_cohort",
+    "current_eligibility_status",
     "market_key",
     "market_label",
     "market_family",
@@ -133,12 +134,43 @@ def validate_v2_analysis_date_range(date_from: date, date_to: date) -> None:
         )
 
 
-def _load_eligible_fixtures_range(
+def _load_v2_snapshot_population_range(
     db: Session,
     *,
     date_from: date,
     date_to: date,
 ) -> list[CecchinoTodayFixture]:
+    """Snapshot-driven holdout population: KEY presence only, no eligibility gate."""
+    stmt = (
+        select(CecchinoTodayFixture)
+        .where(
+            CecchinoTodayFixture.scan_date >= date_from,
+            CecchinoTodayFixture.scan_date <= date_to,
+            CecchinoTodayFixture.cecchino_output_json.isnot(None),
+            CecchinoTodayFixture.cecchino_output_json.has_key(SNAPSHOT_OUTPUT_KEY),
+        )
+        .order_by(
+            CecchinoTodayFixture.scan_date.asc(),
+            CecchinoTodayFixture.kickoff.asc(),
+            CecchinoTodayFixture.id.asc(),
+        )
+    )
+    rows = list(db.scalars(stmt).all())
+    population: list[CecchinoTodayFixture] = []
+    for row in rows:
+        output = row.cecchino_output_json
+        if isinstance(output, dict) and SNAPSHOT_OUTPUT_KEY in output:
+            population.append(row)
+    return population
+
+
+def _count_current_eligible_without_v2_key(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+) -> int:
+    """Coverage diagnostic only — must not feed analysis population/CSV/pairing."""
     stmt = (
         select(CecchinoTodayFixture)
         .where(
@@ -146,11 +178,17 @@ def _load_eligible_fixtures_range(
             CecchinoTodayFixture.scan_date <= date_to,
             CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
         )
-        .order_by(
-            CecchinoTodayFixture.scan_date.asc(), CecchinoTodayFixture.kickoff.asc()
-        )
     )
-    return list(db.scalars(stmt).all())
+    n = 0
+    for row in db.scalars(stmt).all():
+        output = (
+            row.cecchino_output_json
+            if isinstance(row.cecchino_output_json, dict)
+            else None
+        )
+        if output is None or SNAPSHOT_OUTPUT_KEY not in output:
+            n += 1
+    return n
 
 
 def _json_bytes(payload: Any) -> bytes:
@@ -210,6 +248,7 @@ def _csv_row_from_analysis(
         "source_snapshot_at": pre.get("source_snapshot_at"),
         "generated_at": pre.get("generated_at"),
         "holdout_cohort": fixture.get("holdout_cohort"),
+        "current_eligibility_status": fixture.get("current_eligibility_status"),
         "market_key": market_key,
         "market_label": fields.get("market_label"),
         "market_family": fields.get("market_family"),
@@ -405,7 +444,12 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
     date_to: date,
 ) -> tuple[dict[str, Any], dict[str, bytes], list[dict[str, Any]]]:
     validate_v2_analysis_date_range(date_from, date_to)
-    fixtures = _load_eligible_fixtures_range(db, date_from=date_from, date_to=date_to)
+    fixtures = _load_v2_snapshot_population_range(
+        db, date_from=date_from, date_to=date_to
+    )
+    eligible_without_v2 = _count_current_eligible_without_v2_key(
+        db, date_from=date_from, date_to=date_to
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
 
     manifest_fixtures: list[dict[str, Any]] = []
@@ -416,18 +460,33 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
     top_v1_strict_rows: list[dict[str, Any]] = []
     days_summary: dict[str, dict[str, int]] = defaultdict(
         lambda: {
-            "eligible_fixtures": 0,
+            "snapshot_population_count": 0,
             "valid_v2_snapshots": 0,
-            "snapshot_unavailable": 0,
+            "invalid_v2_snapshots": 0,
             "snapshot_invalid": 0,
+            "analysis_included_count": 0,
         }
     )
 
-    summary = {
-        "eligible_fixtures": len(fixtures),
+    eligibility_counter: Counter[str] = Counter()
+    valid_current_eligible_count = 0
+    valid_current_noneligible_count = 0
+    population_current_eligible_count = 0
+
+    summary: dict[str, Any] = {
+        "population_inclusion_basis": "persisted_v2_snapshot_key",
+        "snapshot_population_count": len(fixtures),
+        "v2_key_present_count": len(fixtures),
         "valid_v2_snapshots": 0,
-        "snapshot_unavailable": 0,
+        "invalid_v2_snapshots": 0,
         "snapshot_invalid": 0,
+        "analysis_included_count": 0,
+        "snapshot_unavailable": 0,
+        "eligible_fixtures": 0,
+        "valid_current_eligible_count": 0,
+        "valid_current_noneligible_count": 0,
+        "current_eligibility_counts": {},
+        "current_eligible_without_v2_key_count": eligible_without_v2,
         "finished": 0,
         "pending": 0,
         "cancelled": 0,
@@ -445,9 +504,14 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
 
     for row in fixtures:
         scan_key = row.scan_date.isoformat() if row.scan_date else "unknown"
-        days_summary[scan_key]["eligible_fixtures"] += 1
+        days_summary[scan_key]["snapshot_population_count"] += 1
+        elig = row.eligibility_status
+        eligibility_counter[str(elig)] += 1
+        if elig == ELIGIBILITY_ELIGIBLE:
+            population_current_eligible_count += 1
+
         output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
-        snap = output.get(SNAPSHOT_OUTPUT_KEY)
+        snap = output[SNAPSHOT_OUTPUT_KEY]
         match_status = normalize_match_status(row)
         entry: dict[str, Any] = {
             "today_fixture_id": int(row.id),
@@ -460,6 +524,7 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
             "away_team": row.away_team_name,
             "kickoff": row.kickoff.isoformat() if row.kickoff else None,
             "match_status": match_status,
+            "current_eligibility_status": elig,
         }
 
         if match_status == MATCH_FINISHED:
@@ -471,24 +536,23 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
         elif match_status == MATCH_POSTPONED:
             summary["postponed"] += 1
 
-        if not isinstance(snap, dict):
-            entry["analysis_status"] = "snapshot_unavailable"
-            summary["snapshot_unavailable"] += 1
-            days_summary[scan_key]["snapshot_unavailable"] += 1
-            manifest_fixtures.append(entry)
-            continue
-
         check = validate_purchasability_preview_v35_v2_snapshot(snap)
         if not check.get("ok"):
             entry["analysis_status"] = "snapshot_invalid"
             entry["snapshot_invalid_reason"] = check.get("reason")
+            summary["invalid_v2_snapshots"] += 1
             summary["snapshot_invalid"] += 1
+            days_summary[scan_key]["invalid_v2_snapshots"] += 1
             days_summary[scan_key]["snapshot_invalid"] += 1
             manifest_fixtures.append(entry)
             continue
 
         summary["valid_v2_snapshots"] += 1
         days_summary[scan_key]["valid_v2_snapshots"] += 1
+        if elig == ELIGIBILITY_ELIGIBLE:
+            valid_current_eligible_count += 1
+        else:
+            valid_current_noneligible_count += 1
         valid_pairs.append((row, snap))
         if not _fixture_terminal_for_analysis(row):
             summary["analysis_ready"] = False
@@ -505,11 +569,25 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
         )
         manifest_fixtures.append(entry)
 
+    summary["eligible_fixtures"] = population_current_eligible_count
+    summary["valid_current_eligible_count"] = valid_current_eligible_count
+    summary["valid_current_noneligible_count"] = valid_current_noneligible_count
+    summary["current_eligibility_counts"] = dict(eligibility_counter)
+
     for row, snap in valid_pairs:
         analysis = build_purchasability_v35_v2_analysis_export(row, snap)
         scan_key = row.scan_date.isoformat() if row.scan_date else "unknown"
         fname = f"purchasability-v35-v2-analysis-{int(row.provider_fixture_id)}.json"
         file_entries[f"days/{scan_key}/{fname}"] = _json_bytes(analysis)
+        summary["analysis_included_count"] += 1
+        days_summary[scan_key]["analysis_included_count"] += 1
+
+        fixture_block = (
+            analysis.get("fixture") if isinstance(analysis.get("fixture"), dict) else {}
+        )
+        # Inject eligibility into analysis fixture for CSV extraction (export contract unchanged).
+        fixture_block["current_eligibility_status"] = row.eligibility_status
+        analysis["fixture"] = fixture_block
 
         markets = analysis.get("markets") if isinstance(analysis.get("markets"), dict) else {}
         for mk in PANEL_MARKET_KEYS:
@@ -551,6 +629,10 @@ def build_range_purchasability_v35_v2_analysis_manifest_and_files(
         top_v1_strict = _top_v1_strict_paired_from_analysis(analysis)
         if top_v1_strict is not None:
             top_v1_strict_rows.append(top_v1_strict)
+
+    assert summary["snapshot_population_count"] == (
+        summary["valid_v2_snapshots"] + summary["invalid_v2_snapshots"]
+    )
 
     diagnostics = build_holdout_diagnostics(
         csv_rows,
@@ -625,4 +707,6 @@ __all__ = [
     "build_range_purchasability_v35_v2_analysis_manifest_and_files",
     "build_range_purchasability_v35_v2_analysis_zip",
     "validate_v2_analysis_date_range",
+    "_count_current_eligible_without_v2_key",
+    "_load_v2_snapshot_population_range",
 ]
