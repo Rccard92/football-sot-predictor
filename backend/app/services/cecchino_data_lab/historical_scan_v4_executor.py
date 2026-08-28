@@ -219,6 +219,25 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _canonicalize_no_book_quote_markets_lists(signals: dict[str, Any]) -> None:
+    """Ordine deterministico per no_book_quote_markets (insieme, ordine non semantico). V4-only."""
+
+    def _sort_matrix(matrix: dict[str, Any] | None) -> None:
+        if not isinstance(matrix, dict):
+            return
+        qc = matrix.get("quote_classification")
+        if not isinstance(qc, dict):
+            return
+        vals = qc.get("no_book_quote_markets")
+        if isinstance(vals, list):
+            qc["no_book_quote_markets"] = sorted(vals)
+
+    _sort_matrix(signals.get("default_matrix"))
+    for block in (signals.get("models") or {}).values():
+        if isinstance(block, dict):
+            _sort_matrix(block.get("matrix"))
+
+
 def _signals_prematch_for_hash(signals: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(signals, dict):
         return {}
@@ -372,6 +391,7 @@ def _process_one_match_v4(
         match=None,
         settle=False,
     )
+    _canonicalize_no_book_quote_markets_lists(signals)
     perf.signals_seconds += time.perf_counter() - t_sig
 
     elig = evaluate_historical_eligibility(

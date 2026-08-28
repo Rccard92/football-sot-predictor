@@ -637,6 +637,38 @@ def test_from_resume_commits_all_same_kickoff_siblings():
     assert len(priors) == 2
 
 
+def test_v4_canonical_no_book_quote_markets_same_sha256():
+    from app.services.cecchino_data_lab.historical_scan_v4_executor import (
+        _canonicalize_no_book_quote_markets_lists,
+        _signals_prematch_for_hash,
+    )
+
+    perm_a = ["UNDER_3_5", "OVER_PT_0_5", "UNDER_PT_1_5", "DRAW_PT", "OVER_1_5"]
+    perm_b = ["OVER_PT_0_5", "OVER_1_5", "DRAW_PT", "UNDER_3_5", "UNDER_PT_1_5"]
+
+    def _signals_with_order(order: list[str]) -> dict:
+        qc = {"no_book_quote_markets": list(order)}
+        matrix = {"quote_classification": dict(qc)}
+        return {
+            "default_model_key": "F",
+            "default_matrix": dict(matrix),
+            "models": {"F": {"matrix": {"quote_classification": dict(qc)}}},
+        }
+
+    signals_a = _signals_with_order(perm_a)
+    signals_b = _signals_with_order(perm_b)
+    _canonicalize_no_book_quote_markets_lists(signals_a)
+    _canonicalize_no_book_quote_markets_lists(signals_b)
+
+    canonical = sorted(perm_a)
+    assert signals_a["default_matrix"]["quote_classification"]["no_book_quote_markets"] == canonical
+    assert signals_b["default_matrix"]["quote_classification"]["no_book_quote_markets"] == canonical
+
+    payload_a = {"signals_matrix": _signals_prematch_for_hash(signals_a)}
+    payload_b = {"signals_matrix": _signals_prematch_for_hash(signals_b)}
+    assert sha256_prematch_payload(payload_a) == sha256_prematch_payload(payload_b)
+
+
 def test_deep_diff_payload_first_divergence():
     from app.services.cecchino_data_lab.historical_payload_diff import deep_diff_payload
 
