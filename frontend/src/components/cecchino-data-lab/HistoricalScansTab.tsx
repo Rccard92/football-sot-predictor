@@ -619,50 +619,13 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   <td>{r.matches_eligible_core}</td>
                   <td className="space-x-3 whitespace-nowrap">
                     {r.status.startsWith('completed') ? (
-                      <>
-                        <Link
-                          to={`/cecchino-lab/historical-scans/${r.id}`}
-                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                          data-testid={`historical-dashboard-link-${r.id}`}
-                        >
-                          Dashboard run
-                        </Link>
-                        {' · '}
-                        <Link
-                          to={`/cecchino-lab/historical-scans/${r.id}#gi-benchmark`}
-                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                          data-testid={`historical-gi-benchmark-link-${r.id}`}
-                        >
-                          Benchmark Goal
-                        </Link>
-                        {' · '}
-                        <Link
-                          to={`/cecchino-lab/historical-scans/${r.id}/kpi-signals`}
-                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                          data-testid={`historical-kpi-link-${r.id}`}
-                        >
-                          Analisi KPI
-                        </Link>
-                        <Link
-                          to={`/cecchino-lab/historical-scans/${r.id}/signals-af`}
-                          className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
-                          data-testid={`historical-signals-af-link-${r.id}`}
-                        >
-                          Segnali A–F
-                        </Link>
-                        {' · '}
-                        <button
-                          type="button"
-                          className="underline"
-                          data-testid={`historical-report-link-${r.id}`}
-                          onClick={() => {
-                            setActiveRun(r)
-                            setReportOpen(true)
-                          }}
-                        >
-                          Report
-                        </button>
-                      </>
+                      <Link
+                        to={`/cecchino-lab/pattern-lab?run_ids=${r.id}`}
+                        className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                        data-testid={`historical-analyze-link-${r.id}`}
+                      >
+                        Analizza
+                      </Link>
                     ) : null}
                   </td>
                 </tr>

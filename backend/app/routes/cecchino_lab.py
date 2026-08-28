@@ -1815,6 +1815,98 @@ def historical_scan_report(
 
 
 # ---------------------------------------------------------------------------
+# Pattern Lab (READ-ONLY multi-run analytics)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pattern-lab/runs")
+def pattern_lab_runs(
+    season_label: str | None = Query(None),
+    include_pilots: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_lab_service import list_pattern_lab_runs
+
+    items = list_pattern_lab_runs(
+        db, season_label=season_label, include_pilots=include_pilots
+    )
+    return JSONResponse(content=jsonable_encoder({"items": items, "count": len(items)}))
+
+
+@router.post("/pattern-lab/query")
+def pattern_lab_query(
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_lab_service import query_pattern_lab
+
+    try:
+        run_ids = [int(x) for x in (body.get("run_ids") or [])]
+        result = query_pattern_lab(
+            db,
+            run_ids=run_ids,
+            filters=body.get("filters") if isinstance(body.get("filters"), dict) else {},
+            include_rows=bool(body.get("include_rows")),
+            page=int(body.get("page") or 1),
+            page_size=int(body.get("page_size") or 50),
+        )
+        return JSONResponse(content=jsonable_encoder(result))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/pattern-lab/bet-builder-replay")
+def pattern_lab_bet_builder_replay(
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_lab_service import bet_builder_replay
+
+    try:
+        run_ids = [int(x) for x in (body.get("run_ids") or [])]
+        result = bet_builder_replay(
+            db,
+            run_ids=run_ids,
+            filters=body.get("filters") if isinstance(body.get("filters"), dict) else {},
+        )
+        return JSONResponse(content=jsonable_encoder(result))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/pattern-lab/export-discovery")
+def pattern_lab_export_discovery(
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    from app.services.cecchino_data_lab.pattern_lab_constants import EXPORT_MODE_FULL
+    from app.services.cecchino_data_lab.pattern_lab_discovery_export import (
+        build_discovery_export_zip_response,
+    )
+
+    try:
+        run_ids = [int(x) for x in (body.get("run_ids") or [])]
+        mode = str(body.get("mode") or EXPORT_MODE_FULL)
+        return build_discovery_export_zip_response(
+            db,
+            run_ids=run_ids,
+            mode=mode,
+            filters=body.get("filters") if isinstance(body.get("filters"), dict) else {},
+            include_observational_only=bool(
+                body.get("include_observational_only", True)
+            ),
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
 # Goal Intensity V4 vs V5 historical benchmark (derived job)
 # ---------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { LegacyLabRedirect } from './components/module-monitoring/LegacyLabRedirect'
 import { Admin } from './pages/Admin'
@@ -23,12 +23,16 @@ import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { BetBuilderPage } from './pages/BetBuilderPage'
 import { CecchinoLabPage } from './pages/CecchinoLabPage'
-import { CecchinoLabHistoricalRunPage } from './pages/CecchinoLabHistoricalRunPage'
-import { CecchinoLabHistoricalKpiSignalsPage } from './pages/CecchinoLabHistoricalKpiSignalsPage'
-import { CecchinoLabHistoricalSignalsAfPage } from './pages/CecchinoLabHistoricalSignalsAfPage'
+import { CecchinoLabPatternLabPage } from './pages/CecchinoLabPatternLabPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
+
+function RedirectHistoricalRunToPatternLab() {
+  const { runId } = useParams()
+  const qs = runId ? `?run_ids=${encodeURIComponent(runId)}` : ''
+  return <Navigate to={`/cecchino-lab/pattern-lab${qs}`} replace />
+}
 
 export default function App() {
   return (
@@ -40,17 +44,18 @@ export default function App() {
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
+          <Route path="/cecchino-lab/pattern-lab" element={<CecchinoLabPatternLabPage />} />
           <Route
             path="/cecchino-lab/historical-scans/:runId/kpi-signals"
-            element={<CecchinoLabHistoricalKpiSignalsPage />}
+            element={<RedirectHistoricalRunToPatternLab />}
           />
           <Route
             path="/cecchino-lab/historical-scans/:runId/signals-af"
-            element={<CecchinoLabHistoricalSignalsAfPage />}
+            element={<RedirectHistoricalRunToPatternLab />}
           />
           <Route
             path="/cecchino-lab/historical-scans/:runId"
-            element={<CecchinoLabHistoricalRunPage />}
+            element={<RedirectHistoricalRunToPatternLab />}
           />
           <Route
             path="/cecchino-lab/purchasability-replay"
