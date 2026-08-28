@@ -119,7 +119,7 @@ describe('cecchinoLabApi helpers', () => {
   it('historical scan helpers', () => {
     expect(DEFAULT_HISTORICAL_SEASON).toBe('2021/2022')
     expect(HISTORICAL_SCAN_CONFIRM_TOKEN).toBe('RUN_CECCHINO_LAB_HISTORICAL_SCAN')
-    expect(HISTORICAL_SCAN_PILOT_MAX_MATCHES).toBe(200)
+    expect(HISTORICAL_SCAN_PILOT_MAX_MATCHES).toBe(400)
     expect(historicalScanStatusLabel('ready_with_warnings')).toBe('Pronta con warning')
     expect(historicalScanStatusLabel('blocked')).toBe('Bloccata')
     expect(historicalScanStatusLabel('running')).toBe('In esecuzione')

@@ -847,6 +847,10 @@ export type HistoricalScanPreflight = {
   bet365_ou25_pre_coverage?: number
   bet365_ou25_closing_coverage?: number
   quote_counts?: { real: number; derived: number; not_available: number }
+  quote_policy_version?: string
+  quote_reference_pre_only?: boolean
+  scan_version?: string | null
+  feature_contract_version?: string | null
   blocking_anomalies?: Array<{ code: string; message: string }>
   warnings?: Array<{ code: string; message: string }>
   module_availability?: Record<string, { status: string; note?: string }>
@@ -904,7 +908,7 @@ export function preflightHistoricalScan(seasonLabel: string): Promise<Historical
   })
 }
 
-export const HISTORICAL_SCAN_PILOT_MAX_MATCHES = 200
+export const HISTORICAL_SCAN_PILOT_MAX_MATCHES = 400
 export const HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP = 20
 
 export type HistoricalReportMode =

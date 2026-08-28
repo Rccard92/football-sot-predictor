@@ -744,8 +744,10 @@ def build_adapter_panel_row(m: Any) -> dict[str, Any]:
     if str(source_type).startswith("bet365") or source_type in (
         "bet365_closing",
         "bet365_pre_fallback",
+        "bet365_pre_closing_reference",
         "derived_from_bet365_1x2_closing",
         "derived_from_bet365_1x2_pre",
+        "derived_from_bet365_1x2_pre_closing_reference",
     ):
         quote_source = f"historical_{source_type}" if not str(source_type).startswith("historical_") else source_type
     else:

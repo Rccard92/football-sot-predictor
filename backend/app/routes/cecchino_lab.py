@@ -28,6 +28,7 @@ from app.services.cecchino_data_lab.query_service import (
     list_datasets,
     list_matches,
 )
+from app.services.cecchino_data_lab.constants import HISTORICAL_QUOTE_POLICY_VERSION_V4
 from app.services.cecchino_data_lab.historical_scan_preflight import run_historical_scan_preflight
 from app.services.cecchino_data_lab.historical_scan_service import (
     cancel_historical_scan,
@@ -417,7 +418,11 @@ def historical_scan_preflight(
     season_label = str((body or {}).get("season_label") or "").strip()
     if not season_label:
         raise HTTPException(status_code=400, detail="season_label richiesto")
-    result = run_historical_scan_preflight(db, season_label=season_label)
+    result = run_historical_scan_preflight(
+        db,
+        season_label=season_label,
+        quote_policy_version=HISTORICAL_QUOTE_POLICY_VERSION_V4,
+    )
     return JSONResponse(content=jsonable_encoder(result))
 
 

@@ -161,6 +161,36 @@ def _settle_acquired_signals(
     return settlements
 
 
+def attach_historical_signal_settlements(
+    signals: dict[str, Any],
+    *,
+    match: Any,
+    quote_bundle: dict[str, Any],
+) -> dict[str, Any]:
+    """Attacca settlement PnL senza ricalcolare matrici pre-match."""
+    if not isinstance(signals, dict):
+        return signals
+    models = signals.get("models")
+    if not isinstance(models, dict):
+        return signals
+    for key, block in models.items():
+        if not isinstance(block, dict):
+            continue
+        matrix = block.get("matrix")
+        final = block.get("final") if isinstance(block.get("final"), dict) else {}
+        matrix_ok = is_current_signal_matrix(matrix) if isinstance(matrix, dict) else False
+        if matrix_ok and match is not None:
+            block["settlements"] = _settle_acquired_signals(
+                matrix=matrix,
+                match=match,
+                quote_bundle=quote_bundle,
+                final=final,
+            )
+        else:
+            block["settlements"] = []
+    return signals
+
+
 def build_historical_signal_models(
     *,
     cecchino_output: dict[str, Any],

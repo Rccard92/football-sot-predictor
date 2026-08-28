@@ -38,19 +38,29 @@ def build_historical_kpi_panel_bet365(
 
     # Riscrive esclusivamente i metadati provider (formule già calcolate).
     panel["version"] = HISTORICAL_KPI_VERSION
+    provider_source = bundle.get("provider_source") or PROVIDER_SOURCE
     panel["bookmaker"] = {
         "name": PROVIDER,
-        "source": PROVIDER_SOURCE,
+        "source": provider_source,
         "provider_bookmaker_id": 0,
-        "provider_source": PROVIDER_SOURCE,
+        "provider_source": provider_source,
     }
     panel["historical_only"] = True
     panel["operational_today_unchanged"] = True
     panel["source_builder_version"] = KPI_V2_VERSION
-    panel["quote_policy_version"] = HISTORICAL_QUOTE_POLICY_VERSION
+    policy = bundle.get("quote_policy_version") or HISTORICAL_QUOTE_POLICY_VERSION
+    panel["quote_policy_version"] = policy
     panel["quote_bundle_counts"] = bundle.get("counts")
     panel["kpi_1x2_real_available"] = bundle.get("kpi_1x2_real_available")
     panel["kpi_ou25_real_available"] = bundle.get("kpi_ou25_real_available")
+    if bundle.get("reference_timing"):
+        panel["reference_timing"] = bundle["reference_timing"]
+        panel["family_1x2_reference_status"] = (bundle.get("family_1x2") or {}).get(
+            "reference_quote_status"
+        )
+        panel["family_ou25_reference_status"] = (bundle.get("family_ou25") or {}).get(
+            "reference_quote_status"
+        )
 
     # Annota status riga per quote derivate/reali/mancanti
     quotes = bundle.get("quotes") or {}

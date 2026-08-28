@@ -70,6 +70,7 @@ class CecchinoLabHistoricalMatchSnapshot(Base, TimestampMixin):
     purchasability_compatibility_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )
+    quote_observations_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     quote_sources_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     pre_match_payload_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pre_match_locked_at: Mapped[datetime | None] = mapped_column(

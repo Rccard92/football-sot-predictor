@@ -8,15 +8,32 @@ IMPORT_CONFIRM_TOKEN = "IMPORT_CECCHINO_LAB_CSV"
 REPLACE_CONFIRM_TOKEN = "REPLACE_CECCHINO_LAB_DATASET"
 HISTORICAL_SCAN_CONFIRM_TOKEN = "RUN_CECCHINO_LAB_HISTORICAL_SCAN"
 HISTORICAL_SCAN_VERSION = "cecchino_lab_historical_scan_v3"
+HISTORICAL_SCAN_VERSION_V4 = "cecchino_lab_historical_scan_v4"
+HISTORICAL_FEATURE_CONTRACT_V4 = "cecchino_lab_historical_feature_contract_v4"
 HISTORICAL_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION = 20
 HISTORICAL_PILOT_STRATEGY_MAX_MATCHES = "max_matches"
 HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP = "eligible_per_competition"
 HISTORICAL_KPI_VERSION = "cecchino_lab_kpi_bet365_v1"
 HISTORICAL_QUOTE_POLICY_VERSION = "bet365_closing_pre_fallback_v1"
+HISTORICAL_QUOTE_POLICY_VERSION_V4 = "bet365_pre_reference_v1"
+HISTORICAL_QUOTE_REFERENCE_TIMING = "pre_closing_reference"
+HISTORICAL_QUOTE_PROVIDER_SOURCE = "football-data.co.uk / Bet365"
 HISTORICAL_DERIVATION_METHOD = "normalized_fair_probability_from_bet365_1x2"
 DEFAULT_HISTORICAL_SEASON = "2021/2022"
 RAW_EXTRA_COLUMNS_KEY = "__extra_columns__"
 SCAN_BATCH_SIZE = 25
+
+
+def resolve_scan_batch_size() -> int:
+    """Batch size configurabile (default prudente 25)."""
+    import os
+
+    raw = os.environ.get("CECCHINO_LAB_SCAN_BATCH_SIZE", str(SCAN_BATCH_SIZE))
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return SCAN_BATCH_SIZE
+    return n if n > 0 else SCAN_BATCH_SIZE
 
 # Limiti import multiplo (batch preview)
 BATCH_MAX_FILES = 20

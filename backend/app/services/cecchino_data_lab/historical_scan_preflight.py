@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_lab_dataset import CecchinoLabDataset
 from app.models.cecchino_lab_match import CecchinoLabMatch
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
+from app.services.cecchino_data_lab.constants import (
+    HISTORICAL_FEATURE_CONTRACT_V4,
+    HISTORICAL_QUOTE_POLICY_VERSION_V4,
+    HISTORICAL_SCAN_VERSION_V4,
+)
 from app.services.cecchino_data_lab.historical_bet365_adapter import (
     DERIVABLE_MARKETS,
     NON_DERIVABLE_MARKETS,
@@ -36,8 +41,14 @@ def _sort_key(m: CecchinoLabMatch) -> tuple:
     )
 
 
-def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str, Any]:
+def run_historical_scan_preflight(
+    db: Session,
+    *,
+    season_label: str,
+    quote_policy_version: str | None = None,
+) -> dict[str, Any]:
     """Analizza dataset della stagione senza scritture."""
+    use_pre_only = quote_policy_version == HISTORICAL_QUOTE_POLICY_VERSION_V4
     datasets = list(
         db.scalars(
             select(CecchinoLabDataset).where(CecchinoLabDataset.season_label == season_label)
@@ -130,7 +141,7 @@ def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str
         else:
             ambiguous_identity += 1
 
-        bundle = build_match_quote_bundle(m)
+        bundle = build_match_quote_bundle(m, policy_version=quote_policy_version)
         real_quotes += int(bundle["counts"]["real_quote_markets_count"])
         derived_quotes += int(bundle["counts"]["derived_quote_markets_count"])
         unavailable_quotes += int(bundle["counts"]["unavailable_quote_markets_count"])
@@ -190,16 +201,16 @@ def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str
     market_availability = {}
     for mk in PANEL_MARKET_KEYS:
         if mk in REAL_BOOK_MARKETS:
-            if mk in ( "HOME", "DRAW", "AWAY"):
-                cov = max(bet365_1x2_pre, bet365_1x2_closing)
+            if mk in ("HOME", "DRAW", "AWAY"):
+                cov = bet365_1x2_pre if use_pre_only else max(bet365_1x2_pre, bet365_1x2_closing)
             else:
-                cov = max(bet365_ou_pre, bet365_ou_closing)
+                cov = bet365_ou_pre if use_pre_only else max(bet365_ou_pre, bet365_ou_closing)
             market_availability[mk] = {
                 "status": "real_quote_expected" if cov > 0 else "often_unavailable",
                 "expected_coverage_pct": round(100.0 * cov / n, 1),
             }
         elif mk in DERIVABLE_MARKETS:
-            cov = max(bet365_1x2_pre, bet365_1x2_closing)
+            cov = bet365_1x2_pre if use_pre_only else max(bet365_1x2_pre, bet365_1x2_closing)
             market_availability[mk] = {
                 "status": "derived_from_1x2_expected" if cov > 0 else "often_unavailable",
                 "expected_coverage_pct": round(100.0 * cov / n, 1),
@@ -216,7 +227,9 @@ def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str
             "note": "Richiede campioni minimi; prime giornate escluse",
         },
         "kpi_bet365": {
-            "status": "available" if max(bet365_1x2_pre, bet365_1x2_closing) > 0 else "partial",
+            "status": "available"
+            if (bet365_1x2_pre if use_pre_only else max(bet365_1x2_pre, bet365_1x2_closing)) > 0
+            else "partial",
         },
         "signals": {"status": "available"},
         "balance_v5": {"status": "available"},
@@ -278,6 +291,10 @@ def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str
         "bet365_1x2_closing_coverage": bet365_1x2_closing,
         "bet365_ou25_pre_coverage": bet365_ou_pre,
         "bet365_ou25_closing_coverage": bet365_ou_closing,
+        "quote_policy_version": quote_policy_version or HISTORICAL_QUOTE_POLICY_VERSION_V4,
+        "quote_reference_pre_only": use_pre_only,
+        "scan_version": HISTORICAL_SCAN_VERSION_V4 if use_pre_only else None,
+        "feature_contract_version": HISTORICAL_FEATURE_CONTRACT_V4 if use_pre_only else None,
         "rows_missing_teams": missing_teams,
         "rows_missing_dates": missing_dates,
         "duplicate_or_potential_duplicate_keys": duplicates,

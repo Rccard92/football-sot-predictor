@@ -28,7 +28,9 @@ from app.services.cecchino_data_lab.historical_modules_compat import (
 )
 
 MODULE_VERSION = "cecchino_lab_goal_intensity_historical_v1"
+MODULE_VERSION_V4 = "cecchino_lab_goal_intensity_historical_v4"
 FORMULA_VERSION = "cecchino_lab_goal_intensity_pillars_v1"
+FORMULA_VERSION_V4 = "cecchino_lab_goal_intensity_pillars_v4"
 MIN_CORE_SAMPLE = 10
 MIN_ECDF_TRAIN_N = 10
 
@@ -194,8 +196,13 @@ def build_historical_goal_intensity(
     competition_ordered: list[Any],
     target: Any,
     prior_feature_rows: list[dict[str, Any]] | None = None,
+    prefitted_ecdfs: dict[str, TrainEcdf] | None = None,
+    module_version: str | None = None,
+    formula_version: str | None = None,
 ) -> dict[str, Any]:
     """Calcola pilastri storici quando scientificamente possibile."""
+    mod_ver = module_version or MODULE_VERSION
+    form_ver = formula_version or FORMULA_VERSION
     compat = build_goal_intensity_compatibility(
         input_snapshot=input_snapshot,
         contexts=contexts,
@@ -237,7 +244,7 @@ def build_historical_goal_intensity(
         status = "insufficient_ecdf_train"
         warnings.append("progressive_ecdf_train_below_minimum")
     else:
-        ecdfs = fit_progressive_ecdfs(prior_rows)
+        ecdfs = prefitted_ecdfs if prefitted_ecdfs else fit_progressive_ecdfs(prior_rows)
         pct: dict[str, float | None] = {
             k: ecdfs[k].transform(features.get(k)) for k in BUNDLE_FEATURE_KEYS
         }
@@ -284,7 +291,7 @@ def build_historical_goal_intensity(
                 "sample_size": sample_size,
                 "warnings": list(warnings),
                 "status": "ok" if score is not None else "unavailable",
-                "formula_version": FORMULA_VERSION,
+                "formula_version": form_ver,
             }
 
     final_class = None
@@ -306,8 +313,8 @@ def build_historical_goal_intensity(
         **compat,
         "execution_status": execution_status,
         "parity_status": "partial",
-        "module_version": MODULE_VERSION,
-        "formula_version": FORMULA_VERSION,
+        "module_version": mod_ver,
+        "formula_version": form_ver,
         "status": status,
         "pillars": pillars,
         "final_class": final_class,

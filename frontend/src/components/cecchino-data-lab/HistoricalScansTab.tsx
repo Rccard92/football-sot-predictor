@@ -296,7 +296,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                 }}
               >
                 <p className="mb-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
-                  Diagnostica — non necessarie per la scansione ordinaria
+                  Diagnostica V4 — ordering deterministico, gruppo kickoff atomico
                 </p>
                 <ul className="space-y-1 text-sm">
                   <li>
@@ -362,6 +362,15 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               value={String(preflight.bet365_ou25_closing_coverage ?? '—')}
             />
             <Stat label="O/U 2.5 pre" value={String(preflight.bet365_ou25_pre_coverage ?? '—')} />
+            {preflight.scan_version && (
+              <>
+                <Stat label="Scan version" value={preflight.scan_version} />
+                <Stat
+                  label="Quote policy"
+                  value={preflight.quote_policy_version ?? 'bet365_pre_reference_v1'}
+                />
+              </>
+            )}
           </div>
           {preflight.quote_counts && (
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
