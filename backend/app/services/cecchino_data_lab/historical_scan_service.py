@@ -293,7 +293,7 @@ def start_historical_scan(
         raise CecchinoLabImportError(
             "source_revision_unknown",
             "Revisione codice sconosciuta: impossibile avviare la scansione completa. "
-            "Impostare RAILWAY_GIT_COMMIT_SHA / SOURCE_VERSION / GIT_COMMIT_SHA "
+            "Impostare GIT_COMMIT_SHA / SOURCE_VERSION / RAILWAY_GIT_COMMIT_SHA "
             "oppure eseguire in ambiente con repository git.",
             status_code=400,
             details=revision,

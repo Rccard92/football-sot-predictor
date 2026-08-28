@@ -2,6 +2,9 @@
 
 Orchestrazione read/write controllata per Pilot A/B, quality gate, determinismo e resume.
 Eseguire con DATABASE_URL configurato (es. `railway run --service backend python -m scripts.gate_pilot_historical_scan_v4`).
+
+Nota cap pilot: con max_matches=400 il run può terminare a 401 snapshot (+1) se il confine
+cade in un gruppo same-kickoff atomico V4 — comportamento atteso, non bug.
 """
 
 from __future__ import annotations

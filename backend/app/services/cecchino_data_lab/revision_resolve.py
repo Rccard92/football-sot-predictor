@@ -11,7 +11,10 @@ from typing import Any
 
 
 def resolve_code_revision() -> dict[str, str | None]:
-    """Risolve revisione codice: env Railway/CI prima, poi git locale.
+    """Risolve revisione codice: env deploy esplicita, poi Railway/CI, poi git locale.
+
+    Ordine (deploy manuali ``railway up``): impostare ``GIT_COMMIT_SHA`` (e opzionalmente
+    ``SOURCE_VERSION`` allo stesso SHA) via ``railway variables set`` prima del deploy.
 
     Ritorna chiavi neutre:
     - git_commit
@@ -19,9 +22,9 @@ def resolve_code_revision() -> dict[str, str | None]:
     - revision_status
     """
     env_chain = (
-        ("RAILWAY_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"),
-        ("SOURCE_VERSION", "SOURCE_VERSION"),
         ("GIT_COMMIT_SHA", "GIT_COMMIT_SHA"),
+        ("SOURCE_VERSION", "SOURCE_VERSION"),
+        ("RAILWAY_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"),
         ("VERCEL_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA"),
     )
     for env_key, source in env_chain:

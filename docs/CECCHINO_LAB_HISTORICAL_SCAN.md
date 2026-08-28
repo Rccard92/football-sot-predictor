@@ -262,13 +262,17 @@ Intensità Goal e Equilibrio vs Squilibrio sono **moduli osservazionali**: valor
 
 Pilota bilanciato: per ogni campionato, ordine cronologico, registra escluse, si ferma a N `eligible_core`, poi passa al successivo. Target tipico fino a 320 eleggibili; processate totali possono superare il target. `run_scope=balanced_pilot`, `is_partial_run=true`, `not_full_season_report=true`.
 
+Pilota `max_matches` (V4): con `pilot_strategy=max_matches` e cap es. 400, il run può terminare con **401–404 snapshot** (tipicamente +1) se il confine cade **dentro** un gruppo same-kickoff cross-campionato. Motivo: atomicità V4 — un gruppo kickoff non viene mai spezzato (prior rolling state / anti-leakage). `matches_total` resta il cap nominale; `matches_processed` e il conteggio snapshot possono superarlo leggermente. Comportamento atteso (es. Run #7 a 401 con cap 400), non bug.
+
 Progresso: a completamento `competitions_completed == competitions_total`, `current_competition=null`, `progress_pct=100` (fix off-by-one sull’ultimo campionato). Run #1/#2 già persistiti non vengono riscritti.
 
 Scansione completa con revisione git sconosciuta: **bloccata**. Pilota: permesso + warning in policy/manifest.
 
 ## Revisione Git
 
-Ordine: `RAILWAY_GIT_COMMIT_SHA` → `SOURCE_VERSION` → `GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `git rev-parse HEAD`.
+Ordine: `GIT_COMMIT_SHA` → `SOURCE_VERSION` → `RAILWAY_GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `git rev-parse HEAD` → `unknown`.
+
+Deploy manuali (`railway up`): **non** assumere `RAILWAY_GIT_COMMIT_SHA`. Working tree clean, poi `DEPLOY_SHA=$(git rev-parse HEAD)` e `railway variables set GIT_COMMIT_SHA=$DEPLOY_SHA` (e opzionalmente `SOURCE_VERSION=$DEPLOY_SHA`) sul servizio backend **prima** di `railway up`. Verificare post-deploy che `resolve_code_revision()` restituisca `revision_status=resolved` e `git_commit` uguale a `DEPLOY_SHA`.
 
 Salvati sul run: `source_git_commit`, `source_git_commit_source`, `source_revision_status` (revisione **scan**).
 Report/dashboard espongono anche la revisione **runtime** (`report_generator_git_commit` / `analytics_runtime_git_commit`) risolva a generazione/lettura — non riscrivono il run.
