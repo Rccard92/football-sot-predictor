@@ -262,7 +262,96 @@ def test_accumulate_summary():
     agg = accumulate_rows([row, row])
     assert agg["summary"]["selections"] == 2
     assert agg["summary"]["wins"] == 2
+    assert agg["summary"]["avg_rating"] == 72
+    assert agg["summary"]["avg_purchasability_v36"] == 62
     assert agg["match_count"] == 1
+    assert "module_insights" in agg
+    assert agg["module_insights"]["kpi"]["rating_bands"]
+    assert agg["module_insights"]["signals"]["excel_column_frequency"]["D"] == 2
+
+
+def test_filters_date_and_score_acquisto():
+    row = project_row(_snap(), _market())
+    f = parse_pattern_lab_filters(
+        {
+            "date_from": "2021-09-01",
+            "date_to": "2021-09-30",
+            "score_acquisto_min": 0.1,
+            "vantaggio_prob_min": 0.01,
+        }
+    )
+    assert row_passes_filters(row, f) is True
+    f2 = parse_pattern_lab_filters({"date_from": "2022-01-01"})
+    assert row_passes_filters(row, f2) is False
+
+
+def test_canonical_flags_require_full_v4_policy_revision_v36():
+    from app.services.cecchino_data_lab.pattern_lab_canonical import evaluate_canonical_flags
+
+    run = SimpleNamespace(
+        status="completed",
+        scan_version="cecchino_lab_historical_scan_v4",
+        quote_policy_json={"version": "bet365_pre_reference_v1"},
+        source_revision_status="resolved",
+        module_policy_json={
+            "run_scope": "full",
+            "is_partial_run": False,
+            "purchasability": "historical_v4_v35_v2_canonical",
+        },
+    )
+    ok = evaluate_canonical_flags(run, has_v36=True, has_v36_scores=True)
+    assert ok["is_canonical"] is True
+    assert ok["incomplete_v36"] is False
+
+    legacy_v3 = SimpleNamespace(
+        status="completed",
+        scan_version="cecchino_lab_historical_scan_v3",
+        quote_policy_json={"version": "bet365_pre_reference_v1"},
+        source_revision_status="resolved",
+        module_policy_json={"run_scope": "full", "is_partial_run": False},
+    )
+    bad = evaluate_canonical_flags(legacy_v3, has_v36=False, has_v36_scores=False)
+    assert bad["is_canonical"] is False
+    assert bad["is_legacy"] is True
+
+    no_v36 = evaluate_canonical_flags(run, has_v36=False, has_v36_scores=False)
+    assert no_v36["is_canonical"] is False
+    assert no_v36["canonical_checks"]["purchasability_v36_present"] is False
+
+    # JSON presente ma score assenti → incomplete, non canonica
+    incomplete = evaluate_canonical_flags(run, has_v36=True, has_v36_scores=False)
+    assert incomplete["is_canonical"] is False
+    assert incomplete["incomplete_v36"] is True
+    assert incomplete["canonical_checks"]["purchasability_v36_present"] is True
+    assert incomplete["canonical_checks"]["purchasability_v36_scores_present"] is False
+
+    bad_policy = SimpleNamespace(
+        status="completed",
+        scan_version="cecchino_lab_historical_scan_v4",
+        quote_policy_json={"version": "other_policy"},
+        source_revision_status="resolved",
+        module_policy_json={"run_scope": "full", "is_partial_run": False},
+    )
+    assert (
+        evaluate_canonical_flags(bad_policy, has_v36=True, has_v36_scores=True)[
+            "is_canonical"
+        ]
+        is False
+    )
+
+    unresolved = SimpleNamespace(
+        status="completed",
+        scan_version="cecchino_lab_historical_scan_v4",
+        quote_policy_json={"version": "bet365_pre_reference_v1"},
+        source_revision_status="unknown",
+        module_policy_json={"run_scope": "full", "is_partial_run": False},
+    )
+    assert (
+        evaluate_canonical_flags(unresolved, has_v36=True, has_v36_scores=True)[
+            "is_canonical"
+        ]
+        is False
+    )
 
 
 def test_bet_builder_v36_sort_prefers_higher_score():

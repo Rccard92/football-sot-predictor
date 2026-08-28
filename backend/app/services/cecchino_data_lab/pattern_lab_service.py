@@ -13,8 +13,11 @@ from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_bet_builder_projection import (
     bet_builder_meta_by_market,
 )
-from app.services.cecchino_data_lab.historical_scan_service import run_to_dict
 from app.services.cecchino_data_lab.pattern_lab_aggregations import PatternLabAccumulator
+from app.services.cecchino_data_lab.pattern_lab_canonical import (
+    filter_options_for_runs,
+    list_pattern_lab_runs as list_pattern_lab_runs_canonical,
+)
 from app.services.cecchino_data_lab.pattern_lab_constants import (
     DEFAULT_ELIGIBILITY,
     PATTERN_LAB_SORT_POLICY_BB,
@@ -40,40 +43,19 @@ def list_pattern_lab_runs(
     *,
     season_label: str | None = None,
     include_pilots: bool = False,
+    include_legacy: bool = False,
 ) -> list[dict[str, Any]]:
-    q = select(CecchinoLabHistoricalScanRun).order_by(CecchinoLabHistoricalScanRun.id.desc())
-    if season_label:
-        q = q.where(CecchinoLabHistoricalScanRun.season_label == season_label)
-    out: list[dict[str, Any]] = []
-    for run in db.scalars(q).all():
-        d = run_to_dict(run)
-        status = str(d.get("status") or "")
-        if not status.startswith("completed"):
-            continue
-        scope = str(d.get("run_scope") or "full")
-        is_pilot = scope in ("pilot", "balanced_pilot") or bool(d.get("is_partial_run"))
-        if is_pilot and not include_pilots:
-            continue
-        if not is_pilot and scope != "full" and not include_pilots:
-            # unknown scope treated as full if not partial
-            if d.get("is_partial_run"):
-                continue
-        out.append(
-            {
-                "run_id": d["id"],
-                "season_label": d["season_label"],
-                "status": d["status"],
-                "scan_version": d["scan_version"],
-                "run_scope": d.get("run_scope"),
-                "is_partial_run": d.get("is_partial_run"),
-                "is_pilot": is_pilot,
-                "matches_eligible_core": d.get("matches_eligible_core"),
-                "matches_processed": d.get("matches_processed"),
-                "completed_at": d.get("completed_at"),
-                "source_git_commit": d.get("source_git_commit"),
-            }
-        )
-    return out
+    return list_pattern_lab_runs_canonical(
+        db,
+        season_label=season_label,
+        include_pilots=include_pilots,
+        include_legacy=include_legacy,
+    )
+
+
+def pattern_lab_filter_options(db: Session, run_ids: list[int]) -> dict[str, Any]:
+    _resolve_runs(db, run_ids)
+    return filter_options_for_runs(db, run_ids)
 
 
 def _resolve_runs(db: Session, run_ids: list[int]) -> list[CecchinoLabHistoricalScanRun]:
@@ -188,6 +170,7 @@ def query_pattern_lab(
         },
         "summary": agg["summary"],
         "breakdown": agg["breakdown"],
+        "module_insights": agg["module_insights"],
         "rows": page_rows if include_rows else [],
     }
 
@@ -241,5 +224,6 @@ def bet_builder_replay(
         },
         "summary": agg["summary"],
         "breakdown": agg["breakdown"],
+        "module_insights": agg["module_insights"],
         "timeline_by_day": timeline,
     }

@@ -620,7 +620,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   <td className="space-x-3 whitespace-nowrap">
                     {r.status.startsWith('completed') ? (
                       <Link
-                        to={`/cecchino-lab/pattern-lab?run_ids=${r.id}`}
+                        to={`/cecchino-lab?tab=pattern_lab&run_ids=${r.id}`}
                         className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
                         data-testid={`historical-analyze-link-${r.id}`}
                       >

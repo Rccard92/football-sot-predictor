@@ -20,6 +20,11 @@ export type PatternLabRunItem = {
   run_scope: string | null
   is_partial_run: boolean | null
   is_pilot: boolean
+  is_canonical?: boolean
+  is_legacy?: boolean
+  quote_policy_version?: string | null
+  source_revision_status?: string | null
+  canonical_checks?: Record<string, boolean>
   matches_eligible_core: number | null
   matches_processed: number | null
   completed_at: string | null
@@ -36,21 +41,36 @@ export type PatternLabFilters = {
   value?: boolean | null
   edge_min?: number | null
   edge_max?: number | null
+  score_acquisto_min?: number | null
+  score_acquisto_max?: number | null
+  vantaggio_prob_min?: number | null
+  vantaggio_prob_max?: number | null
   signals_count_min?: number | null
   signals_count_max?: number | null
   signal_columns?: Record<string, string>
+  consensus_status?: string | null
+  consensus_yes_count_min?: number | null
+  consensus_yes_count_max?: number | null
   balance_class?: string | null
   gap_coherence_score_min?: number | null
   gap_coherence_score_max?: number | null
+  balance_pillar_filters?: Record<string, { min?: number; max?: number; class?: string }>
   goal_final_class?: string | null
   goal_composite_min?: number | null
   goal_composite_max?: number | null
+  goal_pillar_filters?: Record<string, { min?: number; max?: number; class?: string }>
   purchasability_v36_min?: number | null
   purchasability_v36_max?: number | null
   purchasability_v36_class?: string | null
+  purchasability_v36_status?: string | null
+  purchasability_v36_gate_status?: string | null
   bet_builder_active?: boolean | null
+  bet_builder_rank_min?: number | null
+  bet_builder_rank_max?: number | null
   outcome?: string | null
   quote_type?: string | null
+  date_from?: string | null
+  date_to?: string | null
   eligibility?: string
 }
 
@@ -61,11 +81,46 @@ export type PatternLabSummary = {
   void: number
   win_rate: number | null
   avg_quota: number | null
+  avg_rating?: number | null
+  avg_purchasability_v36?: number | null
   profit_1u: number
   roi: number | null
 }
 
 export type PatternLabBreakdownBucket = PatternLabSummary & { key: string }
+
+export type PatternLabHistBucket = { key: string; count: number }
+
+export type PatternLabModuleInsights = {
+  kpi: {
+    rating_bands: PatternLabHistBucket[]
+    value_positive_count: number
+    value_negative_count: number
+    avg_edge_pct: number | null
+    edge_sample_n: number
+  }
+  signals: {
+    active_count: number
+    active_rate: number | null
+    count_distribution: PatternLabHistBucket[]
+    excel_column_frequency: Record<string, number>
+  }
+  balance: {
+    structural_class_distribution: PatternLabHistBucket[]
+    avg_geometry: number | null
+    geometry_sample_n: number
+  }
+  goal_v4_compat: {
+    final_class_distribution: PatternLabHistBucket[]
+    direction_distribution: PatternLabHistBucket[]
+    avg_composite: number | null
+    composite_sample_n: number
+  }
+  purchasability_v36: {
+    class_distribution: PatternLabHistBucket[]
+    score_bands: PatternLabHistBucket[]
+  }
+}
 
 export type PatternLabQueryResponse = {
   meta: Record<string, unknown>
@@ -75,6 +130,7 @@ export type PatternLabQueryResponse = {
     by_competition: PatternLabBreakdownBucket[]
     by_market: PatternLabBreakdownBucket[]
   }
+  module_insights?: PatternLabModuleInsights
   rows: Array<Record<string, unknown>>
 }
 
@@ -82,6 +138,7 @@ export type PatternLabBetBuilderReplayResponse = {
   meta: Record<string, unknown>
   summary: PatternLabSummary
   breakdown: PatternLabQueryResponse['breakdown']
+  module_insights?: PatternLabModuleInsights
   timeline_by_day: Array<{
     date: string
     selections: number
@@ -92,15 +149,39 @@ export type PatternLabBetBuilderReplayResponse = {
   }>
 }
 
+export type PatternLabFilterOptions = {
+  competitions: string[]
+  markets: Array<{ key: string; label: string }>
+  balance_classes: string[]
+  goal_final_classes: string[]
+  purchasability_v36_classes: string[]
+  purchasability_v36_statuses: string[]
+  purchasability_v36_gates: string[]
+  consensus_statuses: string[]
+  balance_pillars: Array<{ key: string; label: string }>
+  goal_pillars: Array<{ key: string; label: string }>
+  signal_columns: string[]
+}
+
 export async function listPatternLabRuns(params?: {
   season_label?: string
   include_pilots?: boolean
+  include_legacy?: boolean
 }): Promise<{ items: PatternLabRunItem[]; count: number }> {
   const q = new URLSearchParams()
   if (params?.season_label) q.set('season_label', params.season_label)
   if (params?.include_pilots) q.set('include_pilots', 'true')
+  if (params?.include_legacy) q.set('include_legacy', 'true')
   const qs = q.toString()
   return requestJson(`/api/cecchino-lab/pattern-lab/runs${qs ? `?${qs}` : ''}`)
+}
+
+export async function fetchPatternLabFilterOptions(
+  runIds: number[],
+): Promise<PatternLabFilterOptions> {
+  const q = new URLSearchParams()
+  q.set('run_ids', runIds.join(','))
+  return requestJson(`/api/cecchino-lab/pattern-lab/filter-options?${q.toString()}`)
 }
 
 export async function queryPatternLab(body: {

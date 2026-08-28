@@ -18,6 +18,9 @@ HISTORICAL_QUOTE_POLICY_VERSION = "bet365_closing_pre_fallback_v1"
 HISTORICAL_QUOTE_POLICY_VERSION_V4 = "bet365_pre_reference_v1"
 HISTORICAL_QUOTE_REFERENCE_TIMING = "pre_closing_reference"
 HISTORICAL_QUOTE_PROVIDER_SOURCE = "football-data.co.uk / Bet365"
+# Epoch sintetico solo per gate temporale engine V3.6 (non cattura fisica quote).
+HISTORICAL_PRE_MATCH_EPOCH_POLICY_VERSION = "historical_pre_match_epoch_synthetic_v1"
+HISTORICAL_PRE_MATCH_EPOCH_LEAD_HOURS = 24
 HISTORICAL_DERIVATION_METHOD = "normalized_fair_probability_from_bet365_1x2"
 DEFAULT_HISTORICAL_SEASON = "2021/2022"
 RAW_EXTRA_COLUMNS_KEY = "__extra_columns__"

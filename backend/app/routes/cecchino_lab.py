@@ -1823,14 +1823,35 @@ def historical_scan_report(
 def pattern_lab_runs(
     season_label: str | None = Query(None),
     include_pilots: bool = Query(False),
+    include_legacy: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     from app.services.cecchino_data_lab.pattern_lab_service import list_pattern_lab_runs
 
     items = list_pattern_lab_runs(
-        db, season_label=season_label, include_pilots=include_pilots
+        db,
+        season_label=season_label,
+        include_pilots=include_pilots,
+        include_legacy=include_legacy,
     )
     return JSONResponse(content=jsonable_encoder({"items": items, "count": len(items)}))
+
+
+@router.get("/pattern-lab/filter-options")
+def pattern_lab_filter_options(
+    run_ids: str = Query(..., description="Comma-separated run ids"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_lab_service import pattern_lab_filter_options
+
+    try:
+        ids = [int(x.strip()) for x in run_ids.split(",") if x.strip()]
+        result = pattern_lab_filter_options(db, ids)
+        return JSONResponse(content=jsonable_encoder(result))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/pattern-lab/query")

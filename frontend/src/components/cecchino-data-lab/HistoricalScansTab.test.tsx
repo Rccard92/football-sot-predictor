@@ -53,7 +53,7 @@ describe('HistoricalScansTab Pattern Lab navigation', () => {
     )
     await waitFor(() => expect(screen.getByTestId('historical-analyze-link-3')).toBeTruthy())
     const analyze = screen.getByTestId('historical-analyze-link-3')
-    expect(analyze.getAttribute('href')).toBe('/cecchino-lab/pattern-lab?run_ids=3')
+    expect(analyze.getAttribute('href')).toBe('/cecchino-lab?tab=pattern_lab&run_ids=3')
     expect(screen.queryByTestId('historical-dashboard-link-3')).toBeNull()
     expect(screen.queryByTestId('historical-gi-benchmark-link-3')).toBeNull()
     expect(screen.queryByTestId('historical-kpi-link-3')).toBeNull()

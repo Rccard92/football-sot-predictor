@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useSearchParams } from 'react-router-dom'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import { OverviewTab } from '../components/cecchino-data-lab/OverviewTab'
 import { ImportWizardTab } from '../components/cecchino-data-lab/ImportWizardTab'
@@ -7,6 +8,7 @@ import { DatasetsTab } from '../components/cecchino-data-lab/DatasetsTab'
 import { MatchesExplorerTab } from '../components/cecchino-data-lab/MatchesExplorerTab'
 import { DataQualityTab } from '../components/cecchino-data-lab/DataQualityTab'
 import { HistoricalScansTab } from '../components/cecchino-data-lab/HistoricalScansTab'
+import { PatternLabTab } from '../components/cecchino-data-lab/PatternLabTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
 
 const TABS = [
@@ -16,17 +18,39 @@ const TABS = [
   { id: 'matches', label: 'Partite' },
   { id: 'quality', label: 'Qualità dati' },
   { id: 'historical', label: 'Scansioni storiche' },
+  { id: 'pattern_lab', label: 'Pattern Lab' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
 
+function parseTab(raw: string | null): TabId {
+  if (raw && TABS.some((t) => t.id === raw)) return raw as TabId
+  return 'overview'
+}
+
 export function CecchinoLabPage() {
-  const [tab, setTab] = useState<TabId>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState<TabId>(() => parseTab(searchParams.get('tab')))
   const [refreshKey, setRefreshKey] = useState(0)
   const [focusDatasetId, setFocusDatasetId] = useState<number | null>(null)
   const [drawerMatchId, setDrawerMatchId] = useState<number | null>(null)
 
   const bump = () => setRefreshKey((k) => k + 1)
+
+  useEffect(() => {
+    const fromUrl = parseTab(searchParams.get('tab'))
+    if (fromUrl !== tab) setTab(fromUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const goTab = (id: TabId) => {
+    setTab(id)
+    const next = new URLSearchParams(searchParams)
+    if (id === 'overview') next.delete('tab')
+    else next.set('tab', id)
+    if (id !== 'pattern_lab') next.delete('run_ids')
+    setSearchParams(next, { replace: true })
+  }
 
   return (
     <CecchinoLabShell>
@@ -50,7 +74,7 @@ export function CecchinoLabPage() {
               key={t.id}
               type="button"
               className={`lab-tab rounded-t-lg px-4 py-2 text-sm font-medium ${tab === t.id ? 'lab-tab-active' : ''}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => goTab(t.id)}
             >
               {t.label}
             </button>
@@ -60,7 +84,7 @@ export function CecchinoLabPage() {
 
       <div>
         {tab === 'overview' && (
-          <OverviewTab refreshKey={refreshKey} onGoImport={() => setTab('import')} />
+          <OverviewTab refreshKey={refreshKey} onGoImport={() => goTab('import')} />
         )}
         {tab === 'import' && (
           <ImportWizardTab
@@ -68,16 +92,16 @@ export function CecchinoLabPage() {
               bump()
               if (datasetId > 0) {
                 setFocusDatasetId(datasetId)
-                setTab('datasets')
+                goTab('datasets')
               }
             }}
             onGoDatasets={() => {
               bump()
-              setTab('datasets')
+              goTab('datasets')
             }}
             onGoOverview={() => {
               bump()
-              setTab('overview')
+              goTab('overview')
             }}
           />
         )}
@@ -86,7 +110,7 @@ export function CecchinoLabPage() {
             refreshKey={refreshKey}
             onOpenMatches={(id) => {
               setFocusDatasetId(id)
-              setTab('matches')
+              goTab('matches')
             }}
             onReplaced={() => {
               bump()
@@ -99,11 +123,12 @@ export function CecchinoLabPage() {
             refreshKey={refreshKey}
             onOpenMatch={(id) => {
               setDrawerMatchId(id)
-              setTab('matches')
+              goTab('matches')
             }}
           />
         )}
         {tab === 'historical' && <HistoricalScansTab refreshKey={refreshKey} />}
+        {tab === 'pattern_lab' && <PatternLabTab />}
       </div>
 
       <MatchDetailDrawer matchId={drawerMatchId} onClose={() => setDrawerMatchId(null)} />

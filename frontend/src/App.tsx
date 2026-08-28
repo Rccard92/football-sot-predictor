@@ -30,8 +30,10 @@ import { UpcomingMatches } from './pages/UpcomingMatches'
 
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
-  const qs = runId ? `?run_ids=${encodeURIComponent(runId)}` : ''
-  return <Navigate to={`/cecchino-lab/pattern-lab${qs}`} replace />
+  const qs = new URLSearchParams()
+  qs.set('tab', 'pattern_lab')
+  if (runId) qs.set('run_ids', runId)
+  return <Navigate to={`/cecchino-lab?${qs.toString()}`} replace />
 }
 
 export default function App() {
