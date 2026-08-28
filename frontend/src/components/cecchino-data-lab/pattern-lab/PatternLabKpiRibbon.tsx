@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
-import { formatNum, formatPct, type PatternLabSummary } from '../../lib/patternLabApi'
-import { roiColor } from './overview/overviewTheme'
+import { formatNum, formatPct, type PatternLabSummary } from '../../../lib/patternLabApi'
+import { roiColor } from '../overview/overviewTheme'
 
 type Props = { summary: PatternLabSummary }
 
