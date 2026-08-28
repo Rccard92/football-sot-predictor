@@ -120,11 +120,16 @@ export function PatternLabTab() {
   const [quoteType, setQuoteType] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  /** Toggle tecnico: ON = mostra anche mercati senza evidenza (market_informative=false). */
+  const [showWithoutEvidence, setShowWithoutEvidence] = useState(false)
 
   const effectivePurchMin = purchCustom !== '' ? purchCustom : purchMin
 
   const filters: PatternLabFilters = useMemo(() => {
-    const f: PatternLabFilters = { eligibility: 'eligible_core' }
+    const f: PatternLabFilters = {
+      eligibility: 'eligible_core',
+      market_informative: !showWithoutEvidence,
+    }
     if (competition) f.competitions = [competition]
     if (marketKey) f.market_keys = [marketKey]
     const band = RATING_BANDS.find((b) => b.id === ratingBand)
@@ -199,10 +204,13 @@ export function PatternLabTab() {
     quoteType,
     dateFrom,
     dateTo,
+    showWithoutEvidence,
   ])
 
   const patternRecap = useMemo(() => {
     const parts: string[] = []
+    if (!showWithoutEvidence) parts.push('Solo mercati con evidenza')
+    else parts.push('Tutti i mercati storici')
     if (marketKey) {
       const lab = options.markets.find((m) => m.key === marketKey)?.label || marketKey
       parts.push(lab)
@@ -215,8 +223,9 @@ export function PatternLabTab() {
     if (geometryMin !== '') parts.push(`Geometry ≥${geometryMin}`)
     if (goalClass) parts.push(`Goal ${goalClass}`)
     if (bbActive === 'yes') parts.push('Bet Builder')
-    return parts.length ? parts.join(' · ') : 'Nessun filtro primario (tutte le selezioni eleggibili)'
+    return parts.join(' · ')
   }, [
+    showWithoutEvidence,
     marketKey,
     options.markets,
     ratingBand,
@@ -334,6 +343,7 @@ export function PatternLabTab() {
     setQuoteType('')
     setDateFrom('')
     setDateTo('')
+    setShowWithoutEvidence(false)
   }
 
   const runQuery = async () => {
@@ -479,7 +489,21 @@ export function PatternLabTab() {
       </section>
 
       <section className="lab-card rounded-xl p-4">
-        <h3 className="font-semibold">Filtri principali</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">Filtri principali</h3>
+          <label
+            className="flex cursor-pointer items-center gap-2 text-xs"
+            style={{ color: 'var(--lab-muted)' }}
+            title="Di default solo mercati con evidenza KPI (rating≥30 + value+), Signals o V3.6"
+          >
+            <input
+              type="checkbox"
+              checked={showWithoutEvidence}
+              onChange={(e) => setShowWithoutEvidence(e.target.checked)}
+            />
+            Mostra mercati senza evidenza
+          </label>
+        </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Campionato">
             <select
@@ -746,7 +770,10 @@ export function PatternLabTab() {
 
       {summary ? (
         <>
-          <PatternLabKpiRibbon summary={summary} />
+          <PatternLabKpiRibbon
+            summary={summary}
+            marketInformativeDefault={!showWithoutEvidence}
+          />
           <div
             className="rounded-xl px-4 py-3 text-sm font-medium"
             style={{

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, FrozenSet
 
 
 BALANCE_PILLAR_KEYS = ("f36", "dominance", "draw_credibility", "gap_coherence")
@@ -13,6 +13,56 @@ GOAL_PILLAR_KEYS = (
     "match_tempo",
     "offensive_stability",
 )
+
+# Soglia Rating KPI per market_informative (non riguarda edge_pct).
+KPI_INFORMATIVE_RATING_MIN = 30
+
+
+def kpi_informative(row: dict[str, Any]) -> bool:
+    """Rating >= 30 e value_positive=True. Value False non è evidenza."""
+    rating = row.get("pre_rating")
+    if rating is None:
+        return False
+    try:
+        if int(rating) < KPI_INFORMATIVE_RATING_MIN:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return row.get("pre_value_positive") is True
+
+
+def signal_informative(row: dict[str, Any]) -> bool:
+    """Segnale acquisito attivo oppure count > 0. Bypass soglia Rating 30."""
+    if row.get("pre_signal_active") is True:
+        return True
+    try:
+        return int(row.get("pre_signal_count") or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def v36_informative(row: dict[str, Any]) -> bool:
+    """V3.6 realmente calcolato. Bypass soglia Rating 30."""
+    return (
+        row.get("pre_purch_v36_status") == "score"
+        and row.get("pre_purch_v36_score") is not None
+    )
+
+
+def market_informative_reasons(row: dict[str, Any]) -> FrozenSet[str]:
+    reasons: set[str] = set()
+    if kpi_informative(row):
+        reasons.add("kpi")
+    if signal_informative(row):
+        reasons.add("signals")
+    if v36_informative(row):
+        reasons.add("v36")
+    return frozenset(reasons)
+
+
+def is_market_informative(row: dict[str, Any]) -> bool:
+    """MATCH+MARKET informativo: KPI OR Signals OR V3.6. Balance/Goal esclusi."""
+    return bool(market_informative_reasons(row))
 
 
 def parse_pattern_lab_filters(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -129,6 +179,12 @@ def parse_pattern_lab_filters(raw: dict[str, Any] | None) -> dict[str, Any]:
         "date_from": _date("date_from"),
         "date_to": _date("date_to"),
         "eligibility": raw.get("eligibility") or "eligible_core",
+        # Default operativo True; False/assenza esplicita di True → nessun vincolo.
+        "market_informative": (
+            True
+            if "market_informative" not in raw or raw.get("market_informative") == ""
+            else (_bool("market_informative") is True)
+        ),
     }
 
 
@@ -180,6 +236,10 @@ def _pillar_filters_match(
 def row_passes_filters(row: dict[str, Any], filters: dict[str, Any] | None) -> bool:
     if not filters:
         return True
+
+    # Per singolo MATCH+MARKET; Balance/Goal non entrano nella regola.
+    if filters.get("market_informative") is True and not is_market_informative(row):
+        return False
 
     comps = filters.get("competitions")
     if comps and row.get("competition") not in comps:

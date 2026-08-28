@@ -72,10 +72,14 @@ export type PatternLabFilters = {
   date_from?: string | null
   date_to?: string | null
   eligibility?: string
+  /** Default operativo true: solo MATCH+MARKET con evidenza KPI/Signals/V3.6. */
+  market_informative?: boolean
 }
 
 export type PatternLabSummary = {
   selections: number
+  /** COUNT DB mercati eligible (universo storico, senza filtro informative). */
+  selections_historical_total?: number
   wins: number
   losses: number
   void: number

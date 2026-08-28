@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.cecchino_lab_historical_market_result import CecchinoLabHistoricalMarketResult
+from app.models.cecchino_lab_historical_match_snapshot import CecchinoLabHistoricalMatchSnapshot
 from app.models.cecchino_lab_historical_scan_run import CecchinoLabHistoricalScanRun
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_bet_builder_projection import (
@@ -83,6 +85,32 @@ def _resolve_runs(db: Session, run_ids: list[int]) -> list[CecchinoLabHistorical
     return runs
 
 
+def count_eligible_market_rows(
+    db: Session,
+    run_ids: list[int],
+    *,
+    eligibility: str | None = DEFAULT_ELIGIBILITY,
+) -> int:
+    """COUNT SQL efficiente: mercati storici totali (no proiezione riga-per-riga)."""
+    if not run_ids:
+        return 0
+    stmt = (
+        select(func.count())
+        .select_from(CecchinoLabHistoricalMarketResult)
+        .join(
+            CecchinoLabHistoricalMatchSnapshot,
+            CecchinoLabHistoricalMatchSnapshot.id
+            == CecchinoLabHistoricalMarketResult.match_snapshot_id,
+        )
+        .where(CecchinoLabHistoricalMatchSnapshot.run_id.in_(run_ids))
+    )
+    if eligibility and eligibility != "all":
+        stmt = stmt.where(
+            CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status == eligibility
+        )
+    return int(db.scalar(stmt) or 0)
+
+
 def iter_pattern_lab_rows(
     db: Session,
     run_ids: list[int],
@@ -155,20 +183,29 @@ def query_pattern_lab(
 
     runs = _resolve_runs(db, run_ids)
     agg = acc.result()
+    parsed = parse_pattern_lab_filters(filters)
+    historical_total = count_eligible_market_rows(
+        db,
+        run_ids,
+        eligibility=parsed.get("eligibility") or DEFAULT_ELIGIBILITY,
+    )
+    summary = dict(agg["summary"])
+    summary["selections_historical_total"] = historical_total
     return {
         "meta": {
             "pattern_lab_version": PATTERN_LAB_VERSION,
             "run_ids": [int(r) for r in run_ids],
             "seasons": sorted({str(r.season_label) for r in runs}),
-            "filters_applied": parse_pattern_lab_filters(filters),
+            "filters_applied": parsed,
             "selection_count": agg["market_row_count"],
+            "selections_historical_total": historical_total,
             "match_count": agg["match_count"],
             "page": page,
             "page_size": page_size,
             "bet_builder_sort_policy": PATTERN_LAB_SORT_POLICY_BB,
             "goal_intensity_note": "goal fields are V4-compat historical, not live V5",
         },
-        "summary": agg["summary"],
+        "summary": summary,
         "breakdown": agg["breakdown"],
         "module_insights": agg["module_insights"],
         "rows": page_rows if include_rows else [],
@@ -215,14 +252,24 @@ def bet_builder_replay(
             }
         )
 
+    parsed = parse_pattern_lab_filters(base_filters)
+    historical_total = count_eligible_market_rows(
+        db,
+        run_ids,
+        eligibility=parsed.get("eligibility") or DEFAULT_ELIGIBILITY,
+    )
+    summary = dict(agg["summary"])
+    summary["selections_historical_total"] = historical_total
+
     return {
         "meta": {
             "pattern_lab_version": PATTERN_LAB_VERSION,
             "run_ids": [int(r) for r in run_ids],
             "sort_policy": PATTERN_LAB_SORT_POLICY_BB,
+            "selections_historical_total": historical_total,
             "note": "Historical Bet Builder uses V3.6 for evidence sort (not live V3.1)",
         },
-        "summary": agg["summary"],
+        "summary": summary,
         "breakdown": agg["breakdown"],
         "module_insights": agg["module_insights"],
         "timeline_by_day": timeline,

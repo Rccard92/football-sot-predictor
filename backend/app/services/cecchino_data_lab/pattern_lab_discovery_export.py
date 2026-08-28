@@ -459,7 +459,11 @@ def write_discovery_dataset_files(
 
     runs = _resolve_runs(db, run_ids)
     apply_filters = mode == EXPORT_MODE_FILTERED
-    parsed = parse_pattern_lab_filters(filters) if apply_filters else parse_pattern_lab_filters({})
+    # FULL: solo eligibility, mai market_informative (tutte le 86k+ righe).
+    # FILTERED: rispetta i filtri UI incluso market_informative.
+    parsed = parse_pattern_lab_filters(filters) if apply_filters else parse_pattern_lab_filters(
+        {"eligibility": (filters or {}).get("eligibility") or "eligible_core"}
+    )
 
     parquet_path = dest_dir / "pattern_lab_dataset.parquet"
     csv_path = dest_dir / "pattern_lab_dataset.csv"

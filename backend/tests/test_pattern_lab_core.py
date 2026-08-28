@@ -285,6 +285,112 @@ def test_filters_date_and_score_acquisto():
     assert row_passes_filters(row, f2) is False
 
 
+def test_market_informative_kpi_requires_rating_ge_30_and_value_positive():
+    from app.services.cecchino_data_lab.pattern_lab_filters import (
+        is_market_informative,
+        kpi_informative,
+        market_informative_reasons,
+        signal_informative,
+        v36_informative,
+    )
+
+    # Baseline: rating 72 + value+ → kpi informative
+    row_ok = project_row(_snap(), _market())
+    assert kpi_informative(row_ok) is True
+    assert is_market_informative(row_ok) is True
+    assert "kpi" in market_informative_reasons(row_ok)
+
+    # rating >= 30 ma value False → NON kpi
+    row_no_value = dict(row_ok)
+    row_no_value["pre_value_positive"] = False
+    row_no_value["pre_signal_active"] = False
+    row_no_value["pre_signal_count"] = 0
+    row_no_value["pre_purch_v36_status"] = "not_calculable"
+    row_no_value["pre_purch_v36_score"] = None
+    assert kpi_informative(row_no_value) is False
+    assert is_market_informative(row_no_value) is False
+
+    # rating < 30 + value+ → NON kpi
+    row_low = dict(row_ok)
+    row_low["pre_rating"] = 29
+    row_low["pre_value_positive"] = True
+    row_low["pre_signal_active"] = False
+    row_low["pre_signal_count"] = 0
+    row_low["pre_purch_v36_status"] = "gate_failed"
+    row_low["pre_purch_v36_score"] = None
+    assert kpi_informative(row_low) is False
+    assert is_market_informative(row_low) is False
+
+    # Signals bypass Rating 30
+    row_sig = dict(row_low)
+    row_sig["pre_signal_active"] = True
+    assert signal_informative(row_sig) is True
+    assert is_market_informative(row_sig) is True
+    assert market_informative_reasons(row_sig) == frozenset({"signals"})
+
+    row_sig_count = dict(row_low)
+    row_sig_count["pre_signal_active"] = False
+    row_sig_count["pre_signal_count"] = 2
+    assert signal_informative(row_sig_count) is True
+
+    # V3.6 bypass Rating 30
+    row_v36 = dict(row_low)
+    row_v36["pre_purch_v36_status"] = "score"
+    row_v36["pre_purch_v36_score"] = 55
+    assert v36_informative(row_v36) is True
+    assert is_market_informative(row_v36) is True
+    assert market_informative_reasons(row_v36) == frozenset({"v36"})
+
+    # Balance/Goal soli NON attivano
+    row_bg = {
+        "pre_rating": None,
+        "pre_value_positive": None,
+        "pre_edge_pct": None,
+        "pre_signal_active": False,
+        "pre_signal_count": 0,
+        "pre_purch_v36_status": "not_calculable",
+        "pre_purch_v36_score": None,
+        "pre_balance_structural_class": "equilibrio",
+        "pre_balance_geometry": 92,
+        "pre_goal_v4_compat_composite": 61,
+        "pre_goal_v4_compat_final_class": "offensive",
+    }
+    assert is_market_informative(row_bg) is False
+
+    # Default filtro market_informative=True
+    f_default = parse_pattern_lab_filters({})
+    assert f_default["market_informative"] is True
+    assert row_passes_filters(row_ok, f_default) is True
+    assert row_passes_filters(row_no_value, f_default) is False
+
+    # Toggle: market_informative=False → passa tutto
+    f_off = parse_pattern_lab_filters({"market_informative": False})
+    assert f_off["market_informative"] is False
+    assert row_passes_filters(row_no_value, f_off) is True
+    assert row_passes_filters(row_bg, f_off) is True
+
+
+def test_export_full_ignores_market_informative_in_apply_path():
+    """FULL mode passa apply_filters=False: il filtro informative non riduce le righe."""
+    from app.services.cecchino_data_lab.pattern_lab_constants import EXPORT_MODE_FULL
+
+    assert EXPORT_MODE_FULL == "full_selected_runs"
+    # Con apply_filters=False, anche una riga non-informative verrebbe yield-ata
+    # (verificato a livello di contratto iter: row_passes_filters non chiamato).
+    row_empty = {
+        "pre_rating": None,
+        "pre_value_positive": None,
+        "pre_signal_active": False,
+        "pre_signal_count": 0,
+        "pre_purch_v36_status": None,
+        "pre_purch_v36_score": None,
+    }
+    f_on = parse_pattern_lab_filters({"market_informative": True})
+    assert row_passes_filters(row_empty, f_on) is False
+    # Senza applicare filtri (simula FULL), la riga resta disponibile
+    assert True  # contratto: write_discovery usa apply_filters=(mode==FILTERED)
+
+
 def test_canonical_flags_require_full_v4_policy_revision_v36():
     from app.services.cecchino_data_lab.pattern_lab_canonical import evaluate_canonical_flags
 

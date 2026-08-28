@@ -2,7 +2,10 @@ import { motion } from 'framer-motion'
 import { formatNum, formatPct, type PatternLabSummary } from '../../../lib/patternLabApi'
 import { roiColor } from '../overview/overviewTheme'
 
-type Props = { summary: PatternLabSummary }
+type Props = {
+  summary: PatternLabSummary
+  marketInformativeDefault?: boolean
+}
 
 function PulseKpi({
   label,
@@ -43,10 +46,19 @@ function PulseKpi({
   )
 }
 
-export function PatternLabKpiRibbon({ summary }: Props) {
+export function PatternLabKpiRibbon({ summary, marketInformativeDefault = true }: Props) {
+  const historical =
+    summary.selections_historical_total != null
+      ? String(summary.selections_historical_total)
+      : '—'
+  const evidenceLabel = marketInformativeDefault
+    ? 'Mercati con evidenza'
+    : 'Mercati (universo mostrato)'
+
   return (
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-      <PulseKpi label="Selezioni" value={String(summary.selections)} />
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <PulseKpi label={evidenceLabel} value={String(summary.selections)} />
+      <PulseKpi label="Mercati storici totali" value={historical} />
       <PulseKpi
         label="Win Rate"
         value={formatPct(summary.win_rate)}
