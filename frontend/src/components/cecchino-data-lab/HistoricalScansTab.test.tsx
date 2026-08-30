@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HistoricalScansTab } from './HistoricalScansTab'
@@ -45,7 +45,7 @@ beforeEach(() => {
 })
 
 describe('HistoricalScansTab Pattern Lab navigation', () => {
-  it('mostra solo Analizza verso Pattern Lab; nasconde i vecchi 5 pulsanti', async () => {
+  it('mostra Apri e Analizza; Apri apre il pannello run; nasconde i vecchi 5 pulsanti', async () => {
     render(
       <MemoryRouter>
         <HistoricalScansTab refreshKey={0} />
@@ -54,6 +54,12 @@ describe('HistoricalScansTab Pattern Lab navigation', () => {
     await waitFor(() => expect(screen.getByTestId('historical-analyze-link-3')).toBeTruthy())
     const analyze = screen.getByTestId('historical-analyze-link-3')
     expect(analyze.getAttribute('href')).toBe('/cecchino-lab?tab=pattern_lab&run_ids=3')
+
+    const openBtn = screen.getByTestId('historical-open-link-3')
+    fireEvent.click(openBtn)
+    expect(screen.getByText(/Run #3/)).toBeTruthy()
+    expect(screen.getByText('Scarica report')).toBeTruthy()
+
     expect(screen.queryByTestId('historical-dashboard-link-3')).toBeNull()
     expect(screen.queryByTestId('historical-gi-benchmark-link-3')).toBeNull()
     expect(screen.queryByTestId('historical-kpi-link-3')).toBeNull()

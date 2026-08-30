@@ -618,6 +618,17 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   </td>
                   <td>{r.matches_eligible_core}</td>
                   <td className="space-x-3 whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                      data-testid={`historical-open-link-${r.id}`}
+                      onClick={() => {
+                        setActiveRun(r)
+                        setReportOpen(false)
+                      }}
+                    >
+                      Apri
+                    </button>
                     {r.status.startsWith('completed') ? (
                       <Link
                         to={`/cecchino-lab?tab=pattern_lab&run_ids=${r.id}`}
