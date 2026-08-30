@@ -47,6 +47,8 @@ export type PatternLabFilters = {
   vantaggio_prob_max?: number | null
   signals_count_min?: number | null
   signals_count_max?: number | null
+  /** Filtro esplicito su pre_signal_active (non sostituito da signals_count). */
+  signal_active?: boolean | null
   signal_columns?: Record<string, string>
   consensus_status?: string | null
   consensus_yes_count_min?: number | null
@@ -61,6 +63,8 @@ export type PatternLabFilters = {
   goal_pillar_filters?: Record<string, { min?: number; max?: number; class?: string }>
   purchasability_v36_min?: number | null
   purchasability_v36_max?: number | null
+  /** Se true, max è esclusivo (score < max). Default false = inclusivo. */
+  purchasability_v36_max_exclusive?: boolean | null
   purchasability_v36_class?: string | null
   purchasability_v36_status?: string | null
   purchasability_v36_gate_status?: string | null
@@ -74,6 +78,26 @@ export type PatternLabFilters = {
   eligibility?: string
   /** Default operativo true: solo MATCH+MARKET con evidenza KPI/Signals/V3.6. */
   market_informative?: boolean
+}
+
+export type PatternLabPreset = {
+  id: string
+  label: string
+  description?: string
+  status: string
+  ui_badge?: string
+  discovery_seasons?: string[]
+  validation_seasons?: string[]
+  first_oos_season?: string | null
+  performance_quote_policy?: string
+  filters: PatternLabFilters
+  notes?: string
+}
+
+export type PatternLabPresetsResponse = {
+  registry_version: string
+  performance_quote_policy_default?: string
+  presets: PatternLabPreset[]
 }
 
 export type PatternLabSummary = {
@@ -186,6 +210,10 @@ export async function fetchPatternLabFilterOptions(
   const q = new URLSearchParams()
   q.set('run_ids', runIds.join(','))
   return requestJson(`/api/cecchino-lab/pattern-lab/filter-options?${q.toString()}`)
+}
+
+export async function fetchPatternLabPresets(): Promise<PatternLabPresetsResponse> {
+  return requestJson('/api/cecchino-lab/pattern-lab/presets')
 }
 
 export async function queryPatternLab(body: {

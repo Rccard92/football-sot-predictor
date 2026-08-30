@@ -1837,6 +1837,14 @@ def pattern_lab_runs(
     return JSONResponse(content=jsonable_encoder({"items": items, "count": len(items)}))
 
 
+@router.get("/pattern-lab/presets")
+def pattern_lab_presets() -> JSONResponse:
+    """Registry canonico preset Pattern Lab (read-only, versionato)."""
+    from app.services.cecchino_data_lab.pattern_lab_presets import list_pattern_lab_presets
+
+    return JSONResponse(content=jsonable_encoder(list_pattern_lab_presets()))
+
+
 @router.get("/pattern-lab/filter-options")
 def pattern_lab_filter_options(
     run_ids: str = Query(..., description="Comma-separated run ids"),

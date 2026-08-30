@@ -1,9 +1,29 @@
 ﻿# Schema report AI — Cecchino Lab Historical Scan
 
+## Mode `ai_summary` (corrente)
+
+Versione schema: `cecchino_lab_ai_report_v5` (`AI_SUMMARY_SCHEMA_VERSION`)
+
+- Builder: `pattern_lab_ai_summary.py` — riusa Pattern Lab projection / filtri / preset registry
+- Acquistabilità **canonica**: V3.6 (`purchasability_v36_summary.json`)
+- Preset P01–P05: `preset_patterns_summary.json` (`filters` scientifici vs `performance_quote_policy=real_only`)
+- Costante legacy separata: `LEGACY_REPORT_SCHEMA_VERSION = cecchino_lab_ai_report_v4` per competition / module / full_archive
+
+## Mode legacy (`competition` / `module` / `full_archive`)
+
 Versione schema: `cecchino_lab_ai_report_v4`
 Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation_version`)
 Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
-Acquistabilità ufficiale: **V3 replay** (`cecchino_lab_purchasability_v3_analytics_v2` / `…_export_v2`)
+`module=purchasability` → ZIP **V3 replay legacy** (`cecchino-run-{id}-purchasability-v3.zip`) — non è l’indice corrente V3.6
+
+---
+
+# Storico v4 (riferimento)
+
+Versione schema: `cecchino_lab_ai_report_v4`
+Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation_version`)
+Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
+Acquistabilità ufficiale storica v4: **V3 replay** (`cecchino_lab_purchasability_v3_analytics_v2` / `…_export_v2`)
 Export V2 Lab (`cecchino_lab_purchasability_export_v1`): legacy tecnico isolato, non usato dai percorsi ufficiali
 
 ## Segnali A–F / mercati — allineamento V3 (2026-08-06)

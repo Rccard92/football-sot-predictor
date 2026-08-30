@@ -256,25 +256,36 @@ def _report_fixtures():
 
 
 def test_ai_summary_excludes_huge_raw_files():
+    from app.services.cecchino_data_lab.pattern_lab_ai_summary import AI_SUMMARY_SCHEMA_VERSION
+
     run, eligible, partial, market = _report_fixtures()
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
-    filename, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
+    with patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.count_eligible_market_rows",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.iter_pattern_lab_rows",
+        return_value=iter([]),
+    ), patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.resolve_code_revision",
+        return_value={"git_commit": "deadbeef", "git_commit_source": "test"},
+    ):
+        filename, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
     assert "ai_summary" in filename
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
-        assert "report_index.json" in names
-        assert "patterns_top.json" in names
-        assert "summary.json" in names
-        assert "matches.jsonl" not in names
+        assert "manifest.json" in names
+        assert "pattern_lab_summary.json" in names
+        assert "purchasability_v36_summary.json" in names
+        assert "preset_patterns_summary.json" in names
+        assert "README_FOR_AI.md" in names
+        assert "markets.jsonl" not in names
         assert "purchasability.jsonl" not in names
-        assert "patterns.json" not in names
-        idx = json.loads(zf.read("report_index.json"))
-        assert idx["schema_version"] == REPORT_SCHEMA_VERSION
-        assert idx["recommended_analysis_order"][0] == "ai_summary"
-        cov = json.loads(zf.read("module_coverage.json"))
-        assert "pilot_sample_roles" not in cov
+        assert "matches.jsonl" not in names
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["report_schema_version"] == AI_SUMMARY_SCHEMA_VERSION
+        assert manifest["report_mode"] == "ai_summary"
     assert len(data) < 500_000
 
 
@@ -490,13 +501,26 @@ def test_v2_1_manifest_dual_revision_and_markets_identity():
 
 
 def test_ai_summary_still_excludes_markets_jsonl():
-    run, eligible, partial, market = _report_fixtures()
+    run, _eligible, _partial, _market = _report_fixtures()
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
-    _fn, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
+    with patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.count_eligible_market_rows",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.iter_pattern_lab_rows",
+        return_value=iter([]),
+    ), patch(
+        "app.services.cecchino_data_lab.pattern_lab_ai_summary.resolve_code_revision",
+        return_value={"git_commit": "deadbeef", "git_commit_source": "test"},
+    ):
+        _fn, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
         assert "markets.jsonl" not in names
-        summary = json.loads(zf.read("summary.json"))
-    assert "rating_by_market" in summary["eligible_analysis"]
+        assert "summary.json" not in names  # v5 usa file dedicati, non summary.json v4
+        assert "kpi_summary.json" in names
+        assert "preset_patterns_summary.json" in names
+        presets = json.loads(zf.read("preset_patterns_summary.json"))
+        assert len(presets.get("presets") or []) == 5
+        assert "purchasability_by_market" not in presets

@@ -262,8 +262,8 @@ describe('cecchinoLabApi helpers', () => {
   it('report menu has single official purchasability V3 entry without V1.1/V2', () => {
     const purchItems = HISTORICAL_RUN_REPORT_MENU.filter((i) => i.module === 'purchasability')
     expect(purchItems).toHaveLength(1)
-    expect(purchItems[0]?.label).toBe('Dettaglio Acquistabilità')
-    expect(purchItems[0]?.description).toContain('Acquistabilità V3')
+    expect(purchItems[0]?.label).toBe('Acquistabilità V3 legacy (replay)')
+    expect(purchItems[0]?.description).toContain('V3')
     const labels = HISTORICAL_RUN_REPORT_MENU.map((i) => i.label).join(' ')
     expect(labels).not.toMatch(/V1\.1/)
     expect(labels).not.toMatch(/V2/)

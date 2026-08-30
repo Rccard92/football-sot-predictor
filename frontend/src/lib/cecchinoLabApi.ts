@@ -3176,8 +3176,9 @@ export const HISTORICAL_RUN_REPORT_MENU: Array<{
   {
     mode: 'module',
     module: 'purchasability',
-    label: 'Dettaglio Acquistabilità',
-    description: 'Acquistabilità V3 ricostruita dal replay storico completato.',
+    label: 'Acquistabilità V3 legacy (replay)',
+    description:
+      'ZIP replay V3 legacy (diagnostico). L’indice corrente nel Pattern Lab / AI Summary è V3.6.',
   },
   { mode: 'module', module: 'markets', label: 'Dettaglio mercati' },
   {

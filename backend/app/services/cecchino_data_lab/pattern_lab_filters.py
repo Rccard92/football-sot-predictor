@@ -150,6 +150,7 @@ def parse_pattern_lab_filters(raw: dict[str, Any] | None) -> dict[str, Any]:
         "vantaggio_prob_max": _float("vantaggio_prob_max"),
         "signals_count_min": _int("signals_count_min"),
         "signals_count_max": _int("signals_count_max"),
+        "signal_active": _bool("signal_active"),
         "signal_columns": signal_columns,
         "consensus_status": raw.get("consensus_status") or None,
         "consensus_yes_count_min": _int("consensus_yes_count_min"),
@@ -168,6 +169,8 @@ def parse_pattern_lab_filters(raw: dict[str, Any] | None) -> dict[str, Any]:
         "goal_pillar_filters": goal_pillar_filters,
         "purchasability_v36_min": _float("purchasability_v36_min"),
         "purchasability_v36_max": _float("purchasability_v36_max"),
+        # Default False: max resta inclusivo (<=). True → score < max (es. P05 [40,60)).
+        "purchasability_v36_max_exclusive": _bool("purchasability_v36_max_exclusive") is True,
         "purchasability_v36_class": raw.get("purchasability_v36_class") or None,
         "purchasability_v36_status": raw.get("purchasability_v36_status") or None,
         "purchasability_v36_gate_status": raw.get("purchasability_v36_gate_status") or None,
@@ -301,6 +304,10 @@ def row_passes_filters(row: dict[str, Any], filters: dict[str, Any] | None) -> b
         if sig_count > int(filters["signals_count_max"]):
             return False
 
+    if filters.get("signal_active") is not None:
+        if bool(row.get("pre_signal_active") is True) != bool(filters["signal_active"]):
+            return False
+
     if filters.get("signal_columns") and not _signal_column_match(row, filters["signal_columns"]):
         return False
 
@@ -360,7 +367,14 @@ def row_passes_filters(row: dict[str, Any], filters: dict[str, Any] | None) -> b
         if pscore is None or float(pscore) < float(filters["purchasability_v36_min"]):
             return False
     if filters.get("purchasability_v36_max") is not None:
-        if pscore is None or float(pscore) > float(filters["purchasability_v36_max"]):
+        if pscore is None:
+            return False
+        score_f = float(pscore)
+        vmax = float(filters["purchasability_v36_max"])
+        if filters.get("purchasability_v36_max_exclusive") is True:
+            if score_f >= vmax:
+                return False
+        elif score_f > vmax:
             return False
     if filters.get("purchasability_v36_class"):
         if row.get("pre_purch_v36_class") != filters["purchasability_v36_class"]:

@@ -5,6 +5,7 @@ import {
   downloadPatternLabDiscoveryExport,
   fetchPatternLabBetBuilderReplay,
   fetchPatternLabFilterOptions,
+  fetchPatternLabPresets,
   formatNum,
   formatPct,
   listPatternLabRuns,
@@ -12,11 +13,13 @@ import {
   type PatternLabBetBuilderReplayResponse,
   type PatternLabFilterOptions,
   type PatternLabFilters,
+  type PatternLabPreset,
   type PatternLabQueryResponse,
   type PatternLabRunItem,
 } from '../../lib/patternLabApi'
 import { PatternLabKpiRibbon } from './pattern-lab/PatternLabKpiRibbon'
 import { PatternLabModuleInsights } from './pattern-lab/PatternLabModuleInsights'
+import { PatternLabPresets } from './pattern-lab/PatternLabPresets'
 import { PatternLabStabilityCharts } from './pattern-lab/PatternLabStabilityCharts'
 
 type DetailTab = 'explore' | 'bet_builder'
@@ -70,6 +73,24 @@ function Field({
   )
 }
 
+/** Normalizza filtri per confronto preset (ordine chiavi stabile). */
+function normalizeFiltersForCompare(f: PatternLabFilters): string {
+  const scrub = (obj: unknown): unknown => {
+    if (obj == null) return undefined
+    if (Array.isArray(obj)) return obj.map(scrub)
+    if (typeof obj === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const k of Object.keys(obj as Record<string, unknown>).sort()) {
+        const v = scrub((obj as Record<string, unknown>)[k])
+        if (v !== undefined && v !== null && v !== '') out[k] = v
+      }
+      return out
+    }
+    return obj
+  }
+  return JSON.stringify(scrub(f))
+}
+
 export function PatternLabTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [runs, setRuns] = useState<PatternLabRunItem[]>([])
@@ -101,6 +122,7 @@ export function PatternLabTab() {
   const [vantMax, setVantMax] = useState('')
   const [signalsMin, setSignalsMin] = useState('')
   const [signalsMax, setSignalsMax] = useState('')
+  const [signalActive, setSignalActive] = useState('')
   const [signalCols, setSignalCols] = useState<Record<string, string>>({})
   const [consensusStatus, setConsensusStatus] = useState('')
   const [geometryMin, setGeometryMin] = useState('')
@@ -109,7 +131,11 @@ export function PatternLabTab() {
   const [goalMin, setGoalMin] = useState('')
   const [goalMax, setGoalMax] = useState('')
   const [goalClass, setGoalClass] = useState('')
+  const [goalPillarFilters, setGoalPillarFilters] = useState<
+    Record<string, { min?: number; max?: number; class?: string }>
+  >({})
   const [purchMax, setPurchMax] = useState('')
+  const [purchMaxExclusive, setPurchMaxExclusive] = useState(false)
   const [purchClass, setPurchClass] = useState('')
   const [purchStatus, setPurchStatus] = useState('')
   const [purchGate, setPurchGate] = useState('')
@@ -122,6 +148,10 @@ export function PatternLabTab() {
   const [dateTo, setDateTo] = useState('')
   /** Toggle tecnico: ON = mostra anche mercati senza evidenza (market_informative=false). */
   const [showWithoutEvidence, setShowWithoutEvidence] = useState(false)
+
+  const [presets, setPresets] = useState<PatternLabPreset[]>([])
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [presetBaseline, setPresetBaseline] = useState<string | null>(null)
 
   const effectivePurchMin = purchCustom !== '' ? purchCustom : purchMin
 
@@ -148,6 +178,8 @@ export function PatternLabTab() {
     if (vantMax !== '') f.vantaggio_prob_max = Number(vantMax)
     if (signalsMin !== '') f.signals_count_min = Number(signalsMin)
     if (signalsMax !== '') f.signals_count_max = Number(signalsMax)
+    if (signalActive === 'yes') f.signal_active = true
+    if (signalActive === 'no') f.signal_active = false
     if (Object.keys(signalCols).length) f.signal_columns = signalCols
     if (consensusStatus) f.consensus_status = consensusStatus
     if (geometryMin !== '') f.gap_coherence_score_min = Number(geometryMin)
@@ -156,7 +188,9 @@ export function PatternLabTab() {
     if (goalMin !== '') f.goal_composite_min = Number(goalMin)
     if (goalMax !== '') f.goal_composite_max = Number(goalMax)
     if (goalClass) f.goal_final_class = goalClass
+    if (Object.keys(goalPillarFilters).length) f.goal_pillar_filters = goalPillarFilters
     if (purchMax !== '') f.purchasability_v36_max = Number(purchMax)
+    if (purchMaxExclusive) f.purchasability_v36_max_exclusive = true
     if (purchClass) f.purchasability_v36_class = purchClass
     if (purchStatus) f.purchasability_v36_status = purchStatus
     if (purchGate) f.purchasability_v36_gate_status = purchGate
@@ -185,6 +219,7 @@ export function PatternLabTab() {
     vantMax,
     signalsMin,
     signalsMax,
+    signalActive,
     signalCols,
     consensusStatus,
     geometryMin,
@@ -193,7 +228,9 @@ export function PatternLabTab() {
     goalMin,
     goalMax,
     goalClass,
+    goalPillarFilters,
     purchMax,
+    purchMaxExclusive,
     purchClass,
     purchStatus,
     purchGate,
@@ -206,6 +243,10 @@ export function PatternLabTab() {
     dateTo,
     showWithoutEvidence,
   ])
+
+  const presetModified = Boolean(
+    activePresetId && presetBaseline && normalizeFiltersForCompare(filters) !== presetBaseline,
+  )
 
   const patternRecap = useMemo(() => {
     const parts: string[] = []
@@ -257,6 +298,21 @@ export function PatternLabTab() {
   useEffect(() => {
     void loadRuns()
   }, [loadRuns])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetchPatternLabPresets()
+        if (!cancelled) setPresets(res.presets || [])
+      } catch {
+        if (!cancelled) setPresets([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const fromUrl = parseRunIds(searchParams.get('run_ids'))
@@ -324,6 +380,7 @@ export function PatternLabTab() {
     setVantMax('')
     setSignalsMin('')
     setSignalsMax('')
+    setSignalActive('')
     setSignalCols({})
     setConsensusStatus('')
     setGeometryMin('')
@@ -332,7 +389,9 @@ export function PatternLabTab() {
     setGoalMin('')
     setGoalMax('')
     setGoalClass('')
+    setGoalPillarFilters({})
     setPurchMax('')
+    setPurchMaxExclusive(false)
     setPurchClass('')
     setPurchStatus('')
     setPurchGate('')
@@ -346,24 +405,64 @@ export function PatternLabTab() {
     setShowWithoutEvidence(false)
   }
 
-  const runQuery = async () => {
+  const clearPreset = () => {
+    resetFilters()
+    setActivePresetId(null)
+    setPresetBaseline(null)
+  }
+
+  const applyPresetFiltersToState = (pf: PatternLabFilters) => {
+    resetFilters()
+    if (pf.competitions?.[0]) setCompetition(pf.competitions[0])
+    if (pf.market_keys?.[0]) setMarketKey(pf.market_keys[0])
+    if (pf.rating_min != null && pf.rating_max != null) {
+      const band = RATING_BANDS.find((b) => b.min === pf.rating_min && b.max === pf.rating_max)
+      if (band) setRatingBand(band.id)
+    }
+    if (pf.purchasability_v36_min != null) {
+      const v = String(pf.purchasability_v36_min)
+      if (V36_PRESETS.map(String).includes(v)) {
+        setPurchMin(v)
+        setPurchCustom('')
+      } else {
+        setPurchCustom(v)
+        setPurchMin('')
+      }
+    }
+    if (pf.purchasability_v36_max != null) setPurchMax(String(pf.purchasability_v36_max))
+    if (pf.purchasability_v36_max_exclusive) setPurchMaxExclusive(true)
+    if (pf.purchasability_v36_class) setPurchClass(String(pf.purchasability_v36_class))
+    if (pf.purchasability_v36_status) setPurchStatus(String(pf.purchasability_v36_status))
+    if (pf.purchasability_v36_gate_status) setPurchGate(String(pf.purchasability_v36_gate_status))
+    if (pf.signal_active === true) setSignalActive('yes')
+    if (pf.signal_active === false) setSignalActive('no')
+    if (pf.goal_final_class) setGoalClass(String(pf.goal_final_class))
+    if (pf.goal_pillar_filters) setGoalPillarFilters({ ...pf.goal_pillar_filters })
+    if (pf.market_informative === false) setShowWithoutEvidence(true)
+    if (pf.quote_min != null) setQuoteMin(String(pf.quote_min))
+    if (pf.quote_max != null) setQuoteMax(String(pf.quote_max))
+    if (pf.balance_class) setBalanceClass(String(pf.balance_class))
+  }
+
+  const runQuery = async (filtersOverride?: PatternLabFilters) => {
     if (!selectedRunIds.length) {
       toast.error('Seleziona almeno una run')
       return
     }
+    const effective = filtersOverride ?? filters
     setLoading(true)
     try {
       const [queryRes, bbRes] = await Promise.all([
         queryPatternLab({
           run_ids: selectedRunIds,
-          filters,
+          filters: effective,
           include_rows: true,
           page: 1,
           page_size: 80,
         }),
         fetchPatternLabBetBuilderReplay({
           run_ids: selectedRunIds,
-          filters,
+          filters: effective,
         }),
       ])
       setResult(queryRes)
@@ -373,6 +472,15 @@ export function PatternLabTab() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyPreset = (preset: PatternLabPreset) => {
+    const pf = preset.filters || {}
+    applyPresetFiltersToState(pf)
+    const baseline = normalizeFiltersForCompare(pf)
+    setActivePresetId(preset.id)
+    setPresetBaseline(baseline)
+    void runQuery(pf)
   }
 
   const onExport = async (mode: 'full_selected_runs' | 'current_filters') => {
@@ -488,6 +596,15 @@ export function PatternLabTab() {
         </details>
       </section>
 
+      <PatternLabPresets
+        presets={presets}
+        activePresetId={activePresetId}
+        presetModified={presetModified}
+        disabled={loading}
+        onApply={applyPreset}
+        onClear={clearPreset}
+      />
+
       <section className="lab-card rounded-xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">Filtri principali</h3>
@@ -584,7 +701,7 @@ export function PatternLabTab() {
             type="button"
             className="lab-btn-ghost rounded-md border px-4 py-2 text-sm"
             style={{ borderColor: 'var(--lab-border)' }}
-            onClick={resetFilters}
+            onClick={clearPreset}
           >
             Reset filtri
           </button>
@@ -629,6 +746,17 @@ export function PatternLabTab() {
             </Field>
             <Field label="Signals count max">
               <input className="lab-input" value={signalsMax} onChange={(e) => setSignalsMax(e.target.value)} />
+            </Field>
+            <Field label="Signal attivo">
+              <select
+                className="lab-input"
+                value={signalActive}
+                onChange={(e) => setSignalActive(e.target.value)}
+              >
+                <option value="">Tutti</option>
+                <option value="yes">Attivo</option>
+                <option value="no">Non attivo</option>
+              </select>
             </Field>
             {(['D', 'E', 'F', 'G'] as const).map((col) => (
               <Field key={col} label={`Signal ${col}`}>
@@ -700,6 +828,41 @@ export function PatternLabTab() {
             <Field label="V3.6 max">
               <input className="lab-input" value={purchMax} onChange={(e) => setPurchMax(e.target.value)} />
             </Field>
+            <Field label="V3.6 max esclusivo">
+              <label className="flex items-center gap-2 pt-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={purchMaxExclusive}
+                  onChange={(e) => setPurchMaxExclusive(e.target.checked)}
+                />
+                score &lt; max (es. [40,60))
+              </label>
+            </Field>
+            {(
+              [
+                ['offensive_stability', 'Goal · offensive_stability'],
+                ['defensive_solidity', 'Goal · defensive_solidity'],
+                ['offensive_production', 'Goal · offensive_production'],
+                ['match_tempo', 'Goal · match_tempo'],
+              ] as const
+            ).map(([key, label]) => (
+              <Field key={key} label={label}>
+                <input
+                  className="lab-input"
+                  placeholder="class (es. high)"
+                  value={goalPillarFilters[key]?.class || ''}
+                  onChange={(e) => {
+                    const v = e.target.value.trim()
+                    setGoalPillarFilters((prev) => {
+                      const next = { ...prev }
+                      if (!v) delete next[key]
+                      else next[key] = { ...next[key], class: v }
+                      return next
+                    })
+                  }}
+                />
+              </Field>
+            ))}
             <Field label="V3.6 class">
               <select className="lab-input" value={purchClass} onChange={(e) => setPurchClass(e.target.value)}>
                 <option value="">Tutte</option>

@@ -89,6 +89,10 @@ from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 logger = logging.getLogger(__name__)
 
 REPORT_SCHEMA_VERSION = "cecchino_lab_ai_report_v4"
+# Alias espliciti: evitare che ai_summary e mode legacy condividano un constant ambiguo.
+LEGACY_REPORT_SCHEMA_VERSION = REPORT_SCHEMA_VERSION
+# Import lazy-safe: stringa allineata a pattern_lab_ai_summary.AI_SUMMARY_SCHEMA_VERSION
+AI_SUMMARY_SCHEMA_VERSION = "cecchino_lab_ai_report_v5"
 REPORT_MODES = frozenset({"ai_summary", "competition", "module", "full_archive"})
 REPORT_MODULES = frozenset({"markets", "signals", "goal_intensity", "purchasability", "balance"})
 SPOOL_MAX_SIZE = 8 * 1024 * 1024
@@ -360,6 +364,13 @@ def write_historical_report_zip(
             status_code=400,
         )
     module_norm = (module or "").strip().lower() or None
+    if mode_norm == "ai_summary":
+        from app.services.cecchino_data_lab.pattern_lab_ai_summary import (
+            write_ai_summary_v5_zip,
+        )
+
+        return write_ai_summary_v5_zip(db, int(run_id), dest)
+
     if mode_norm == "module":
         if module_norm not in REPORT_MODULES:
             raise CecchinoLabImportError(
