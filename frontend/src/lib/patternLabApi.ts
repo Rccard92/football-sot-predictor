@@ -80,18 +80,41 @@ export type PatternLabFilters = {
   market_informative?: boolean
 }
 
+export type PatternLabValidationEvent = {
+  season: string
+  phase: string
+  result: string
+  roi_pct?: number | null
+}
+
 export type PatternLabPreset = {
   id: string
   label: string
   description?: string
   status: string
+  /** Derivato da status lato API; non canonico nel registry. */
+  status_group?: string
   ui_badge?: string
   discovery_seasons?: string[]
   validation_seasons?: string[]
+  validation_history?: PatternLabValidationEvent[]
   first_oos_season?: string | null
+  flags?: Record<string, boolean> | null
+  scientific_filters_sha256?: string
   performance_quote_policy?: string
   filters: PatternLabFilters
   notes?: string
+}
+
+/** Raggruppamento visuale da status (specchio del backend). */
+export function derivePresetStatusGroup(status: string | null | undefined): string {
+  const s = (status || '').trim()
+  if (s === 'positive_oos_weakened') return 'positive_weak'
+  if (s === 'initial_replica_followup_negative') return 'mixed'
+  if (s.startsWith('failed_oos')) return 'failed_oos'
+  if (s.startsWith('candidate_oos')) return 'candidate_new'
+  if (s.startsWith('validated')) return 'positive_weak'
+  return 'mixed'
 }
 
 export type PatternLabPresetsResponse = {

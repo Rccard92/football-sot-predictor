@@ -1,4 +1,5 @@
 import type { PatternLabPreset } from '../../../lib/patternLabApi'
+import { derivePresetStatusGroup } from '../../../lib/patternLabApi'
 
 type Props = {
   presets: PatternLabPreset[]
@@ -7,6 +8,25 @@ type Props = {
   disabled?: boolean
   onApply: (preset: PatternLabPreset) => void
   onClear: () => void
+}
+
+const GROUP_STYLE: Record<string, { border: string; badge: string }> = {
+  positive_weak: {
+    border: 'var(--lab-success, #15803d)',
+    badge: 'var(--lab-success, #15803d)',
+  },
+  mixed: {
+    border: 'var(--lab-warning, #b45309)',
+    badge: 'var(--lab-warning, #b45309)',
+  },
+  failed_oos: {
+    border: 'var(--lab-danger, #b91c1c)',
+    badge: 'var(--lab-danger, #b91c1c)',
+  },
+  candidate_new: {
+    border: 'var(--lab-accent, #1d4ed8)',
+    badge: 'var(--lab-accent, #1d4ed8)',
+  },
 }
 
 export function PatternLabPresets({
@@ -23,8 +43,8 @@ export function PatternLabPresets({
         <div>
           <h3 className="font-semibold">Preset pattern</h3>
           <p className="mt-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            Filtri scientifici congelati. Le metriche ROI restano su quote Bet365 reali
-            (policy separata, non parte della formula).
+            Filtri scientifici congelati (ordine registry, non per ROI). I falliti OOS restano
+            visibili. Metriche ROI su quote Bet365 reali (policy separata).
           </p>
         </div>
         {(activePresetId || presetModified) && (
@@ -48,6 +68,11 @@ export function PatternLabPresets({
         {presets.map((p) => {
           const active = activePresetId === p.id && !presetModified
           const soft = activePresetId === p.id && presetModified
+          const group =
+            p.status_group || derivePresetStatusGroup(p.status)
+          const style = GROUP_STYLE[group] || GROUP_STYLE.mixed
+          const longshot =
+            p.flags?.longshot_pattern || p.flags?.high_variance
           return (
             <button
               key={p.id}
@@ -59,15 +84,14 @@ export function PatternLabPresets({
                 active ? 'lab-tab-active' : ''
               }`}
               style={{
-                borderColor: active
-                  ? 'var(--lab-accent, var(--lab-border))'
-                  : 'var(--lab-border)',
+                borderColor: active ? style.border : 'var(--lab-border)',
                 opacity: soft ? 0.75 : 1,
               }}
             >
               <div className="font-medium">{p.label}</div>
-              <div className="mt-0.5" style={{ color: 'var(--lab-muted)' }}>
+              <div className="mt-0.5" style={{ color: style.badge }}>
                 {p.ui_badge || p.status}
+                {longshot ? ' · longshot' : ''}
                 {active ? ' · attivo' : soft ? ' · modificato' : ''}
               </div>
             </button>

@@ -522,5 +522,6 @@ def test_ai_summary_still_excludes_markets_jsonl():
         assert "kpi_summary.json" in names
         assert "preset_patterns_summary.json" in names
         presets = json.loads(zf.read("preset_patterns_summary.json"))
-        assert len(presets.get("presets") or []) == 5
+        assert len(presets.get("presets") or []) == 12
         assert "purchasability_by_market" not in presets
+        assert presets["presets"][0].get("scientific_filters_sha256")

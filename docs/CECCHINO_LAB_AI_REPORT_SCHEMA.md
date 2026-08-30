@@ -6,7 +6,7 @@ Versione schema: `cecchino_lab_ai_report_v5` (`AI_SUMMARY_SCHEMA_VERSION`)
 
 - Builder: `pattern_lab_ai_summary.py` — riusa Pattern Lab projection / filtri / preset registry
 - Acquistabilità **canonica**: V3.6 (`purchasability_v36_summary.json`)
-- Preset P01–P05: `preset_patterns_summary.json` (`filters` scientifici vs `performance_quote_policy=real_only`)
+- Preset P01–P12 (`pattern_lab_presets_v3`): `preset_patterns_summary.json` (`filters` scientifici, `scientific_filters_sha256`, `validation_history` vs `performance_quote_policy=real_only`; P12 = low-sample refinement candidate — first OOS 2024/25)
 - Costante legacy separata: `LEGACY_REPORT_SCHEMA_VERSION = cecchino_lab_ai_report_v4` per competition / module / full_archive
 
 ## Mode legacy (`competition` / `module` / `full_archive`)

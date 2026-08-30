@@ -472,6 +472,7 @@ def write_historical_report_zip(
         "repository": "Rccard92/football-sot-predictor",
         # Commit scansione (congelato sul run) — non sovrascrivere in DB
         "scan_source_git_commit": run.source_git_commit,
+        "scan_source_git_commit_recorded": run.source_git_commit,
         "scan_source_git_commit_source": getattr(run, "source_git_commit_source", None),
         "scan_source_revision_status": getattr(run, "source_revision_status", None),
         # Alias legacy = scan commit
@@ -482,6 +483,12 @@ def write_historical_report_zip(
         "report_generator_git_commit": generator_rev.get("git_commit"),
         "report_generator_git_commit_source": generator_rev.get("git_commit_source"),
         "report_generator_revision_status": generator_rev.get("revision_status"),
+        "report_generator_revision_conflict": bool(
+            generator_rev.get("revision_conflict")
+        ),
+        "report_generator_revision_conflict_sources": generator_rev.get(
+            "revision_conflict_sources"
+        ),
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
         "purchasability_v3_analytics_schema_version": PURCHASABILITY_V3_ANALYTICS_SCHEMA_VERSION,

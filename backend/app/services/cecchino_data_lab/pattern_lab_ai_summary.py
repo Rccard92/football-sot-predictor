@@ -31,19 +31,20 @@ from app.services.cecchino_data_lab.pattern_lab_filters import (
     row_passes_filters,
     v36_informative,
 )
+from app.services.cecchino_data_lab.pattern_lab_presets import (
+    PATTERN_LAB_PRESETS,
+    PERFORMANCE_QUOTE_POLICY_REAL_ONLY,
+    PRESET_REGISTRY_VERSION,
+    preset_scientific_filters,
+)
 from app.services.cecchino_data_lab.pattern_lab_preset_metrics import (
     _bump_pattern,
     _bump_real,
     _empty_econ,
     _finalize_econ,
     _month_key,
+    _preset_meta_export,
     _quarter_key,
-)
-from app.services.cecchino_data_lab.pattern_lab_presets import (
-    PATTERN_LAB_PRESETS,
-    PERFORMANCE_QUOTE_POLICY_REAL_ONLY,
-    PRESET_REGISTRY_VERSION,
-    preset_scientific_filters,
 )
 from app.services.cecchino_data_lab.pattern_lab_service import (
     count_eligible_market_rows,
@@ -61,34 +62,39 @@ README_FOR_AI_MD = """# README per AI — Cecchino Lab AI Summary v5
 ## Principi scientifici
 
 1. **Separa discovery da validation.** Non dichiarare un pattern definitivo su una sola stagione.
-2. **P01** è l'unico preset attualmente con vera replica OOS 2021/22 → 2022/23 (`validated_2_seasons`).
-3. **P02–P05** sono candidati: vanno testati **senza modifiche** sulla stagione OOS 2023/24.
-4. **Non ottimizzare nuove soglie** usando la stagione di validazione/OOS.
-5. **Quote derivate** non devono essere usate per dichiarazioni di ROI reale. Usa `real_quote_count`, `profit_1u`, `roi` solo dove `performance_quote_policy=real_only`.
-6. **Balance V5** e **Goal V4-compat** nel report storico sono snapshot V4-compatible, **non** l'engine live futuro.
-7. **V3.6** (`purchasability_v36_summary.json`) è l'indice di acquistabilità **canonico corrente** nel Pattern Lab / Historical Scan V4.
-8. Il download `module=purchasability` resta lo ZIP **V3 replay legacy** (diagnostico/compatibilità); non confonderlo con V3.6.
-9. I `filters` dei preset sono la formula scientifica; `performance_quote_policy=real_only` è solo per le metriche economiche (`selections` ≠ `real_quote_count`).
-10. Non inventare capture fisica delle quote: vedi provenance in `purchasability_v36_summary.json` (`synthetic_timestamp=true`, `does_not_claim_physical_capture=true`).
+2. **P01–P05** sono preset precedenti con risultati OOS già osservati (vedi `status` + `validation_history`). Non chiamarli semplicemente «confermati» senza contesto.
+3. **P06–P12** sono pattern scoperti usando 2021/22–2023/24. **NON sono validati.** La prima vera OOS sarà 2024/25 (`candidate_oos_2024_25`). Registry congelato: `pattern_lab_presets_v3` (P01–P12).
+4. **È vietato modificare P06–P12** dopo aver osservato 2024/25. Una variante futura deve ottenere un nuovo ID/versione. Verifica `scientific_filters_sha256`.
+5. **P12** è un *low-sample refinement candidate — first OOS 2024/25*: refinement di P03 (`flags.derived_from=P03`) con `match_tempo=high`. **NON sostituisce né modifica P03.** Sample piccolo (`flags.low_sample`); non presentarlo come primario rispetto a P03.
+6. **Non ottimizzare nuove soglie** usando la stagione di validazione/OOS.
+7. **Quote derivate** non devono essere usate per dichiarazioni di ROI reale. Usa `real_quote_count`, `profit_1u`, `roi` solo dove `performance_quote_policy=real_only`.
+8. **Balance V5** e **Goal V4-compat** nel report storico sono snapshot V4-compatible, **non** l'engine live futuro.
+9. **V3.6** (`purchasability_v36_summary.json`) è l'indice di acquistabilità **canonico corrente** nel Pattern Lab / Historical Scan V4.
+10. Il download `module=purchasability` resta lo ZIP **V3 replay legacy** (diagnostico/compatibilità); non confonderlo con V3.6.
+11. I `filters` dei preset sono la formula scientifica; `performance_quote_policy=real_only` è solo per le metriche economiche (`selections` ≠ `real_quote_count`).
+12. I preset falliti OOS restano nel registro scientifico: non nasconderli.
+13. P10 è longshot/high_variance: non presentarlo come «migliore» solo per ROI elevato.
+14. Non inventare capture fisica delle quote: vedi provenance in `purchasability_v36_summary.json` (`synthetic_timestamp=true`, `does_not_claim_physical_capture=true`).
 """
 
 AI_INSTRUCTIONS_V5_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab (AI Summary v5)
 
 1. Leggi `README_FOR_AI.md`, `manifest.json` e `SCHEMA.md` prima di analizzare i JSON.
-2. Distingui `scan_source_git_commit` (snapshot congelati) da `report_generator_git_commit` (codice che genera il report).
+2. Distingui `scan_source_git_commit_recorded` / `scan_source_git_commit` (snapshot congelati immutabili) da `report_generator_git_commit` (codice che genera il report). Se `report_generator_revision_conflict=true`, le fonti env discordanti sono in `report_generator_revision_conflict_sources`.
 3. Universo performance: `eligible_core`. Non mescolare excluded/errors con la performance.
 4. **Pattern Lab**: usa `pattern_lab_summary.json` per mercati storici vs `market_informative` e i motivi (KPI / Signals / V3.6).
 5. **Acquistabilità corrente = V3.6** in `purchasability_v36_summary.json` (stessa projection del Pattern Lab). Non trattare il replay V3 come indice corrente.
 6. Il menu/download `module=purchasability` è **legacy V3 replay** (diagnostico). Non usarlo come sostituto di V3.6.
-7. **Preset P01–P05** in `preset_patterns_summary.json`: filtri scientifici congelati; `selections` = pattern; ROI/profit/avg odds **solo** su `real_quote_count` (`performance_quote_policy=real_only`).
-8. P01 = unico `validated_2_seasons`. P02–P05 = `candidate_oos_2023_24` (prima OOS = 2023/24). Non dichiarare P02–P05 validati.
-9. Non ottimizzare soglie sulla stagione di validation/OOS.
-10. Quote **reali Bet365**, **derivate** e **unavailable** restano separate. Mai mescolare derivate nei KPI economici reali.
-11. Balance/Goal: campi storici V4-compatible; non sono l'engine live.
-12. Provenance quote V3.6: epoch sintetico di riferimento pre-closing — **non** claim di capture fisica a kickoff-24h.
-13. Report compatto: niente dataset Pattern Discovery completo / JSONL partita-per-partita.
-14. Confronta fasce e mercati in modo market-specific.
-15. Non modificare pesi o formule basandoti su una sola stagione.
+7. **Preset P01–P12** in `preset_patterns_summary.json`: filtri scientifici congelati (`pattern_lab_presets_v3`); ROI/profit/avg odds **solo** su `real_quote_count` (`performance_quote_policy=real_only`). Controlla `scientific_filters_sha256`.
+8. P01–P05 = OOS già osservati (`validation_history`). P06–P12 = candidati 2024/25, **non validati**. Non dichiarare P06–P12 validati.
+9. **P12** = low-sample refinement candidate — first OOS 2024/25 (`derived_from=P03`). Non sostituisce P03; non presentarlo come primario.
+10. Non ottimizzare soglie sulla stagione di validation/OOS. Vietato ritoccare P06–P12 dopo 2024/25 (nuovo ID).
+11. Quote **reali Bet365**, **derivate** e **unavailable** restano separate. Mai mescolare derivate nei KPI economici reali.
+12. Balance/Goal: campi storici V4-compatible; non sono l'engine live.
+13. Provenance quote V3.6: epoch sintetico di riferimento pre-closing — **non** claim di capture fisica a kickoff-24h.
+14. Report compatto: niente dataset Pattern Discovery completo / JSONL partita-per-partita.
+15. Confronta fasce e mercati in modo market-specific.
+16. Non modificare pesi o formule basandoti su una sola stagione.
 """
 
 SCHEMA_V5_MD = """# Schema AI Summary Cecchino Lab (v5)
@@ -97,7 +103,10 @@ SCHEMA_V5_MD = """# Schema AI Summary Cecchino Lab (v5)
 - Altri mode report (`competition` / `module` / `full_archive`) usano ancora `cecchino_lab_ai_report_v4` (legacy)
 - File primari: `manifest.json`, `run_summary.json`, `pattern_lab_summary.json`, `kpi_summary.json`, `signals_summary.json`, `balance_v5_summary.json`, `goal_v4_compat_summary.json`, `purchasability_v36_summary.json`, `preset_patterns_summary.json`, `README_FOR_AI.md`, `AI_INSTRUCTIONS.md`, `SCHEMA.md`
 - Acquistabilità **canonica corrente**: V3.6 (Pattern Lab projection). V3 replay = legacy diagnostic via endpoint dedicato
-- Preset: `filters` = pattern; `performance_quote_policy=real_only` = metriche economiche
+- Preset P01–P12 (`pattern_lab_presets_v3`): `filters` = pattern; `scientific_filters_sha256` = fingerprint; `validation_history` = storico OOS; `performance_quote_policy=real_only` = metriche economiche
+- P12 = low-sample refinement candidate — first OOS 2024/25 (`flags.derived_from=P03`; non sostituisce P03)
+- `status_group` è derivato da `status` (non canonico nel registry)
+- Provenance: `scan_source_git_commit_recorded` (immutabile) vs `report_generator_git_commit*` (+ eventuale `revision_conflict`)
 - `market_informative` = KPI (≥30 + value) OR Signals OR V3.6 score
 """
 
@@ -456,6 +465,9 @@ def write_ai_summary_v5_zip(
 
     generator_rev = resolve_code_revision()
     quote_pol = dict(getattr(run, "quote_policy_json", None) or {}) if getattr(run, "quote_policy_json", None) else {}
+    scan_commit = getattr(run, "source_git_commit", None)
+    scan_source = getattr(run, "source_git_commit_source", None)
+    scan_status = getattr(run, "source_revision_status", None)
 
     manifest = {
         "report_schema_version": AI_SUMMARY_SCHEMA_VERSION,
@@ -466,10 +478,21 @@ def write_ai_summary_v5_zip(
         "run_scope": run_scope,
         "is_partial_run": is_partial,
         "scan_version": getattr(run, "scan_version", None) or HISTORICAL_SCAN_VERSION,
-        "scan_source_git_commit": getattr(run, "source_git_commit", None),
-        "scan_source_git_commit_source": getattr(run, "source_git_commit_source", None),
+        # Scan commit congelato sul run (immutabile) — alias legacy + recorded
+        "scan_source_git_commit": scan_commit,
+        "scan_source_git_commit_recorded": scan_commit,
+        "scan_source_git_commit_source": scan_source,
+        "scan_source_revision_status": scan_status,
+        # Generatore report a runtime
         "report_generator_git_commit": generator_rev.get("git_commit"),
         "report_generator_git_commit_source": generator_rev.get("git_commit_source"),
+        "report_generator_revision_status": generator_rev.get("revision_status"),
+        "report_generator_revision_conflict": bool(
+            generator_rev.get("revision_conflict")
+        ),
+        "report_generator_revision_conflict_sources": generator_rev.get(
+            "revision_conflict_sources"
+        ),
         "quote_policy": quote_pol.get("version") or HISTORICAL_QUOTE_POLICY_VERSION,
         "quote_reference_timing": quote_pol.get("reference_timing"),
         "derivation_policy": HISTORICAL_DERIVATION_METHOD,
@@ -636,15 +659,7 @@ def write_ai_summary_v5_zip(
         pid = preset["id"]
         preset_items.append(
             {
-                "preset_id": preset["id"],
-                "label": preset.get("label"),
-                "status": preset.get("status"),
-                "discovery_seasons": list(preset.get("discovery_seasons") or []),
-                "validation_seasons": list(preset.get("validation_seasons") or []),
-                "first_oos_season": preset.get("first_oos_season"),
-                "filters": preset_scientific_filters(preset),
-                "performance_quote_policy": PERFORMANCE_QUOTE_POLICY_REAL_ONLY,
-                "notes": preset.get("notes"),
+                **_preset_meta_export(preset),
                 **_finalize_econ(preset_totals[pid]),
                 "by_competition": [
                     _finalize_econ(b, key=k)

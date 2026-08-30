@@ -270,9 +270,11 @@ Scansione completa con revisione git sconosciuta: **bloccata**. Pilota: permesso
 
 ## Revisione Git
 
-Ordine: `GIT_COMMIT_SHA` → `SOURCE_VERSION` → `RAILWAY_GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `git rev-parse HEAD` → `unknown`.
+Ordine (platform-first): `RAILWAY_GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `GIT_COMMIT_SHA` → `SOURCE_VERSION` → `git rev-parse HEAD` → `unknown`.
 
-Deploy manuali (`railway up`): **non** assumere `RAILWAY_GIT_COMMIT_SHA`. Working tree clean, poi `DEPLOY_SHA=$(git rev-parse HEAD)` e `railway variables set GIT_COMMIT_SHA=$DEPLOY_SHA` (e opzionalmente `SOURCE_VERSION=$DEPLOY_SHA`) sul servizio backend **prima** di `railway up`. Verificare post-deploy che `resolve_code_revision()` restituisca `revision_status=resolved` e `git_commit` uguale a `DEPLOY_SHA`.
+Se più fonti env espongono SHA diversi, la fonte autorevole (prima in catena) vince, ma `revision_conflict=true` e `revision_conflict_sources` espongono la discordanza (es. `GIT_COMMIT_SHA` stale vs Railway).
+
+Deploy manuali (`railway up`): **non** assumere `RAILWAY_GIT_COMMIT_SHA`. Working tree clean, poi `DEPLOY_SHA=$(git rev-parse HEAD)` e `railway variables set GIT_COMMIT_SHA=$DEPLOY_SHA` (e opzionalmente `SOURCE_VERSION=$DEPLOY_SHA`) sul servizio backend **prima** di `railway up` — come **fallback**, non come override sopra Railway. Preferire allineare/rimuovere SHA stale. Verificare post-deploy che `resolve_code_revision()` restituisca `revision_status=resolved` e `git_commit` uguale al deploy effettivo.
 
 Salvati sul run: `source_git_commit`, `source_git_commit_source`, `source_revision_status` (revisione **scan**).
 Report/dashboard espongono anche la revisione **runtime** (`report_generator_git_commit` / `analytics_runtime_git_commit`) risolva a generazione/lettura — non riscrivono il run.

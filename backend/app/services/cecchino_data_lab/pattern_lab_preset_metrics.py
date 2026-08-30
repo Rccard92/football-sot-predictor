@@ -15,7 +15,9 @@ from app.services.cecchino_data_lab.pattern_lab_presets import (
     PERFORMANCE_QUOTE_POLICY_REAL_ONLY,
     PATTERN_LAB_PRESETS,
     PRESET_REGISTRY_VERSION,
+    derive_preset_status_group,
     preset_scientific_filters,
+    scientific_filters_sha256,
 )
 from app.services.cecchino_data_lab.pattern_lab_service import iter_pattern_lab_rows
 
@@ -89,6 +91,29 @@ def _finalize_econ(bucket: dict[str, Any], *, key: str | None = None) -> dict[st
     return out
 
 
+def _preset_meta_export(preset: dict[str, Any]) -> dict[str, Any]:
+    """Meta scientifici esportati (non alterano i filtri)."""
+    filters = preset_scientific_filters(preset)
+    return {
+        "preset_id": preset["id"],
+        "label": preset.get("label"),
+        "status": preset.get("status"),
+        "ui_badge": preset.get("ui_badge"),
+        "status_group": derive_preset_status_group(preset.get("status")),
+        "discovery_seasons": list(preset.get("discovery_seasons") or []),
+        "validation_seasons": list(preset.get("validation_seasons") or []),
+        "validation_history": list(preset.get("validation_history") or []),
+        "first_oos_season": preset.get("first_oos_season"),
+        "flags": dict(preset.get("flags") or {}) or None,
+        "filters": filters,
+        "scientific_filters_sha256": scientific_filters_sha256(filters),
+        "performance_quote_policy": preset.get(
+            "performance_quote_policy", PERFORMANCE_QUOTE_POLICY_REAL_ONLY
+        ),
+        "notes": preset.get("notes"),
+    }
+
+
 def _month_key(row: dict[str, Any]) -> str:
     kick = str(row.get("kickoff_at") or "")[:7]
     return kick if len(kick) == 7 else "unknown"
@@ -138,17 +163,7 @@ def evaluate_preset_on_rows(
             _bump_real(store[key], row)
 
     return {
-        "preset_id": preset["id"],
-        "label": preset.get("label"),
-        "status": preset.get("status"),
-        "discovery_seasons": list(preset.get("discovery_seasons") or []),
-        "validation_seasons": list(preset.get("validation_seasons") or []),
-        "first_oos_season": preset.get("first_oos_season"),
-        "filters": preset_scientific_filters(preset),
-        "performance_quote_policy": preset.get(
-            "performance_quote_policy", PERFORMANCE_QUOTE_POLICY_REAL_ONLY
-        ),
-        "notes": preset.get("notes"),
+        **_preset_meta_export(preset),
         **_finalize_econ(total),
         "by_competition": [
             _finalize_econ(b, key=k) for k, b in sorted(by_competition.items())
@@ -207,17 +222,7 @@ def evaluate_all_presets(
         pid = preset["id"]
         items.append(
             {
-                "preset_id": preset["id"],
-                "label": preset.get("label"),
-                "status": preset.get("status"),
-                "discovery_seasons": list(preset.get("discovery_seasons") or []),
-                "validation_seasons": list(preset.get("validation_seasons") or []),
-                "first_oos_season": preset.get("first_oos_season"),
-                "filters": preset_scientific_filters(preset),
-                "performance_quote_policy": preset.get(
-                    "performance_quote_policy", PERFORMANCE_QUOTE_POLICY_REAL_ONLY
-                ),
-                "notes": preset.get("notes"),
+                **_preset_meta_export(preset),
                 **_finalize_econ(totals[pid]),
                 "by_competition": [
                     _finalize_econ(b, key=k) for k, b in sorted(by_comp[pid].items())
