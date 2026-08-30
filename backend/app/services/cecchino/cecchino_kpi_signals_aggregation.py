@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_kpi_signal_activation import (
@@ -43,6 +43,10 @@ from app.services.cecchino.cecchino_kpi_signals_purchasability import (
     serialize_purchasability_from_activation,
 )
 from app.services.cecchino.cecchino_purchasability_v3_opposition import SUPPORTED_V3_MARKETS
+from app.services.cecchino.kpi_signals_memory_profile import (
+    memory_profile_enabled,
+    profile_kpi_signals_memory,
+)
 
 
 def _float_odds(value: Any) -> float | None:
@@ -321,86 +325,164 @@ def _count_filters_kwargs(
     return query
 
 
+def _eligible_fixture_clauses(*, date_from: date, date_to: date):
+    return (
+        CecchinoTodayFixture.scan_date >= date_from,
+        CecchinoTodayFixture.scan_date <= date_to,
+        CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+    )
+
+
+def _current_activation_clauses(*, date_from: date, date_to: date):
+    return (
+        CecchinoKpiSignalActivation.scan_date >= date_from,
+        CecchinoKpiSignalActivation.scan_date <= date_to,
+        CecchinoKpiSignalActivation.is_current.is_(True),
+    )
+
+
+def _accumulate_kpi_panel_diagnostics(panel: Any) -> tuple[int, int, int, int, int, int]:
+    """Ritorna (has_rows, seen, supported, unsupported, below_50, without_book)."""
+    if not isinstance(panel, dict):
+        return 0, 0, 0, 0, 0, 0
+    rows = panel.get("rows") or []
+    if not rows:
+        return 0, 0, 0, 0, 0, 0
+    seen = supported = unsupported = below_50 = without_book = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        seen += 1
+        score = extract_kpi_rating_score(row)
+        if score is None or score < MIN_KPI_RATING:
+            below_50 += 1
+        if _float_odds(row.get("quota_book")) is None:
+            without_book += 1
+        normalized = normalize_kpi_row(row)
+        if normalized:
+            supported += 1
+        else:
+            market_key = str(row.get("market_key") or "").strip().upper()
+            if market_key and market_key not in KPI_MARKET_FOR_KEY:
+                unsupported += 1
+    return 1, seen, supported, unsupported, below_50, without_book
+
+
 def _build_diagnostics(
     db: Session,
     *,
     date_from: date,
     date_to: date,
+    _prof: Any | None = None,
 ) -> dict[str, Any]:
-    fixtures = list(
-        db.scalars(
-            select(CecchinoTodayFixture).where(
-                CecchinoTodayFixture.scan_date >= date_from,
-                CecchinoTodayFixture.scan_date <= date_to,
-                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
-            ),
-        ).all(),
+    """Diagnostics leggeri: COUNT/GROUP BY + stream solo kpi_panel_json (mai ORM fixture completi)."""
+    fixture_where = _eligible_fixture_clauses(date_from=date_from, date_to=date_to)
+    activation_where = _current_activation_clauses(date_from=date_from, date_to=date_to)
+
+    today_fixtures_count = int(
+        db.scalar(select(func.count()).select_from(CecchinoTodayFixture).where(*fixture_where)) or 0
     )
+    if _prof is not None:
+        _prof.set_counter("fixtures_materialized", 0)
+        _prof.set_counter("fixtures_count_sql", today_fixtures_count)
+        _prof.mark("after_diagnostics_fixtures_count")
+
     kpi_rows_seen = 0
     kpi_rows_supported = 0
     kpi_rows_unsupported = 0
     below_50 = 0
     without_book = 0
     fixtures_with_kpi = 0
-    for fixture in fixtures:
-        panel = fixture.kpi_panel_json or {}
-        rows = panel.get("rows") or []
-        if not rows:
-            continue
-        fixtures_with_kpi += 1
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            kpi_rows_seen += 1
-            score = extract_kpi_rating_score(row)
-            if score is None or score < MIN_KPI_RATING:
-                below_50 += 1
-            if _float_odds(row.get("quota_book")) is None:
-                without_book += 1
-            normalized = normalize_kpi_row(row)
-            if normalized:
-                kpi_rows_supported += 1
-            else:
-                market_key = str(row.get("market_key") or "").strip().upper()
-                if market_key and market_key not in KPI_MARKET_FOR_KEY:
-                    kpi_rows_unsupported += 1
+    panels_streamed = 0
 
-    activations = list(
-        db.scalars(
-            select(CecchinoKpiSignalActivation).where(
-                CecchinoKpiSignalActivation.scan_date >= date_from,
-                CecchinoKpiSignalActivation.scan_date <= date_to,
-                CecchinoKpiSignalActivation.is_current.is_(True),
-            ),
-        ).all(),
+    panel_stmt = (
+        select(CecchinoTodayFixture.kpi_panel_json)
+        .where(*fixture_where)
+        .execution_options(yield_per=100)
     )
-    created = len(activations)
+    for (panel,) in db.execute(panel_stmt):
+        panels_streamed += 1
+        has_rows, seen, supported, unsupported, b50, no_book = _accumulate_kpi_panel_diagnostics(
+            panel
+        )
+        fixtures_with_kpi += has_rows
+        kpi_rows_seen += seen
+        kpi_rows_supported += supported
+        kpi_rows_unsupported += unsupported
+        below_50 += b50
+        without_book += no_book
+
+    if _prof is not None:
+        _prof.set_counter("kpi_panels_streamed", panels_streamed)
+        _prof.mark("after_diagnostics_fixtures_walk")
+
+    created = int(
+        db.scalar(
+            select(func.count()).select_from(CecchinoKpiSignalActivation).where(*activation_where)
+        )
+        or 0
+    )
+
     by_market: dict[str, int] = {d["selection_key"]: 0 for d in KPI_SIGNAL_MARKET_DEFS}
-    rows_with_v3 = rows_without_v3 = 0
-    rows_with_v31 = rows_without_v31 = 0
-    v31_provisional = v31_definitive = 0
-    v3_unsupported = 0
-    for act in activations:
-        by_market[act.selection_key] = by_market.get(act.selection_key, 0) + 1
-        v3_status = act.purchasability_v3_status
-        if v3_status and v3_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE:
-            rows_with_v3 += 1
-        else:
-            rows_without_v3 += 1
-        if v3_status == PURCHASABILITY_STATUS_UNSUPPORTED:
-            v3_unsupported += 1
-        v31_status = act.purchasability_v31_status
-        if v31_status and v31_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE:
-            rows_with_v31 += 1
-        else:
-            rows_without_v31 += 1
-        if v31_status == PURCHASABILITY_STATUS_SCORE_PROVISIONAL:
-            v31_provisional += 1
-        elif v31_status == PURCHASABILITY_STATUS_SCORE:
-            v31_definitive += 1
+    market_rows = db.execute(
+        select(
+            CecchinoKpiSignalActivation.selection_key,
+            func.count().label("cnt"),
+        )
+        .where(*activation_where)
+        .group_by(CecchinoKpiSignalActivation.selection_key)
+    ).all()
+    for selection_key, cnt in market_rows:
+        by_market[selection_key] = by_market.get(selection_key, 0) + int(cnt)
+
+    v3_status = CecchinoKpiSignalActivation.purchasability_v3_status
+    v31_status = CecchinoKpiSignalActivation.purchasability_v31_status
+    v3_available = (v3_status.is_not(None)) & (v3_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE)
+    v31_available = (v31_status.is_not(None)) & (
+        v31_status != PURCHASABILITY_STATUS_SNAPSHOT_UNAVAILABLE
+    )
+    agg = db.execute(
+        select(
+            func.coalesce(
+                func.sum(case((v3_available, 1), else_=0)),
+                0,
+            ).label("rows_with_v3"),
+            func.coalesce(
+                func.sum(case((v3_status == PURCHASABILITY_STATUS_UNSUPPORTED, 1), else_=0)),
+                0,
+            ).label("v3_unsupported"),
+            func.coalesce(
+                func.sum(case((v31_available, 1), else_=0)),
+                0,
+            ).label("rows_with_v31"),
+            func.coalesce(
+                func.sum(
+                    case((v31_status == PURCHASABILITY_STATUS_SCORE_PROVISIONAL, 1), else_=0)
+                ),
+                0,
+            ).label("v31_provisional"),
+            func.coalesce(
+                func.sum(case((v31_status == PURCHASABILITY_STATUS_SCORE, 1), else_=0)),
+                0,
+            ).label("v31_definitive"),
+        ).where(*activation_where)
+    ).one()
+
+    rows_with_v3 = int(agg.rows_with_v3 or 0)
+    rows_without_v3 = created - rows_with_v3
+    rows_with_v31 = int(agg.rows_with_v31 or 0)
+    rows_without_v31 = created - rows_with_v31
+    v31_provisional = int(agg.v31_provisional or 0)
+    v31_definitive = int(agg.v31_definitive or 0)
+    v3_unsupported = int(agg.v3_unsupported or 0)
+
+    if _prof is not None:
+        _prof.set_counter("diagnostics_activations_materialized", 0)
+        _prof.set_counter("diagnostics_activations_count_sql", created)
+        _prof.mark("after_diagnostics_complete")
 
     return {
-        "today_fixtures_count": len(fixtures),
+        "today_fixtures_count": today_fixtures_count,
         "fixtures_with_kpi_panel": fixtures_with_kpi,
         "kpi_rows_seen": kpi_rows_seen,
         "kpi_rows_supported": kpi_rows_supported,
@@ -420,6 +502,26 @@ def _build_diagnostics(
         "purchasability_snapshot_extraction_errors": 0,
         "v3_supported_markets": sorted(SUPPORTED_V3_MARKETS),
     }
+
+
+def build_kpi_signals_diagnostics(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+) -> dict[str, Any]:
+    """Endpoint dedicato: solo diagnostics, senza summary aggregato."""
+    engine = db.get_bind() if memory_profile_enabled() else None
+    with profile_kpi_signals_memory("kpi_signals_diagnostics", engine=engine) as prof:
+        diagnostics = _build_diagnostics(db, date_from=date_from, date_to=date_to, _prof=prof)
+        return {
+            "status": "ok",
+            "filters": {
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            },
+            "diagnostics": diagnostics,
+        }
 
 
 def _filter_payload(
@@ -479,135 +581,147 @@ def build_kpi_signals_summary(
     purchasability_score_max: float | None = None,
     purchasability_quality: str | None = None,
 ) -> dict[str, Any]:
-    validate_purchasability_filters(
-        purchasability_version=purchasability_version,
-        purchasability_status=purchasability_status,
-        purchasability_class=purchasability_class,
-        purchasability_score_min=purchasability_score_min,
-        purchasability_score_max=purchasability_score_max,
-        purchasability_quality=purchasability_quality,
-    )
-    filters = _filter_payload(
-        date_from=date_from,
-        date_to=date_to,
-        rating_bucket=rating_bucket,
-        selection_key=selection_key,
-        normalized_market=normalized_market,
-        evaluation_status=evaluation_status,
-        league_name=league_name,
-        country_name=country_name,
-        only_current=only_current,
-        purchasability_version=purchasability_version,
-        purchasability_status=purchasability_status,
-        purchasability_class=purchasability_class,
-        purchasability_score_min=purchasability_score_min,
-        purchasability_score_max=purchasability_score_max,
-        purchasability_quality=purchasability_quality,
-    )
-    rows = list(
-        db.scalars(
-            _base_query(
+    engine = db.get_bind() if memory_profile_enabled() else None
+    with profile_kpi_signals_memory("kpi_signals_summary", engine=engine) as prof:
+        validate_purchasability_filters(
+            purchasability_version=purchasability_version,
+            purchasability_status=purchasability_status,
+            purchasability_class=purchasability_class,
+            purchasability_score_min=purchasability_score_min,
+            purchasability_score_max=purchasability_score_max,
+            purchasability_quality=purchasability_quality,
+        )
+        filters = _filter_payload(
+            date_from=date_from,
+            date_to=date_to,
+            rating_bucket=rating_bucket,
+            selection_key=selection_key,
+            normalized_market=normalized_market,
+            evaluation_status=evaluation_status,
+            league_name=league_name,
+            country_name=country_name,
+            only_current=only_current,
+            purchasability_version=purchasability_version,
+            purchasability_status=purchasability_status,
+            purchasability_class=purchasability_class,
+            purchasability_score_min=purchasability_score_min,
+            purchasability_score_max=purchasability_score_max,
+            purchasability_quality=purchasability_quality,
+        )
+        rows = list(
+            db.scalars(
+                _base_query(
+                    db,
+                    date_from=date_from,
+                    date_to=date_to,
+                    rating_bucket=rating_bucket,
+                    selection_key=selection_key,
+                    normalized_market=normalized_market,
+                    evaluation_status=evaluation_status,
+                    league_name=league_name,
+                    country_name=country_name,
+                    only_current=only_current,
+                    purchasability_version=purchasability_version,
+                    purchasability_status=purchasability_status,
+                    purchasability_class=purchasability_class,
+                    purchasability_score_min=purchasability_score_min,
+                    purchasability_score_max=purchasability_score_max,
+                    purchasability_quality=purchasability_quality,
+                ),
+            ).all(),
+        )
+        prof.set_counter("summary_activations_materialized", len(rows))
+        prof.mark("after_main_query")
+        overall = _profit_metrics(rows)
+
+        by_bucket_map: dict[str, list[CecchinoKpiSignalActivation]] = {b: [] for b in RATING_BUCKETS}
+        by_selection_map: dict[str, list[CecchinoKpiSignalActivation]] = {}
+        for row in rows:
+            by_bucket_map.setdefault(row.rating_bucket, []).append(row)
+            by_selection_map.setdefault(row.selection_label, []).append(row)
+
+        by_rating_bucket = [
+            {"rating_bucket": bucket, **_profit_metrics(by_bucket_map.get(bucket, []))}
+            for bucket in RATING_BUCKETS
+            if by_bucket_map.get(bucket)
+        ]
+        by_selection = [
+            {"selection_label": label, **_profit_metrics(group_rows)}
+            for label, group_rows in sorted(by_selection_map.items(), key=lambda x: x[0])
+        ]
+
+        heatmap_cells: list[dict[str, Any]] = []
+        for selection_label in HEATMAP_SELECTION_ROWS:
+            for bucket in RATING_BUCKETS:
+                cell_rows = [
+                    r
+                    for r in rows
+                    if r.selection_label == selection_label and r.rating_bucket == bucket
+                ]
+                if not cell_rows:
+                    continue
+                metrics = _profit_metrics(cell_rows)
+                heatmap_cells.append(
+                    {
+                        "selection_label": selection_label,
+                        "rating_bucket": bucket,
+                        **metrics,
+                    },
+                )
+
+        ranked = [
+            {
+                "selection_label": r.selection_label,
+                "rating_bucket": r.rating_bucket,
+                "scan_date": r.scan_date.isoformat(),
+                "match": f"{r.home_team_name} vs {r.away_team_name}",
+                "profit_units": _float_odds(r.profit_units),
+                "roi_pct": None,
+                "evaluation_status": r.evaluation_status,
+            }
+            for r in rows
+            if r.evaluation_status in (KPI_EVAL_WON, KPI_EVAL_LOST) and r.profit_units is not None
+        ]
+        best_profit = sorted(ranked, key=lambda x: float(x["profit_units"] or 0), reverse=True)[:10]
+        worst_profit = sorted(ranked, key=lambda x: float(x["profit_units"] or 0))[:10]
+
+        bucket_roi = [
+            {**item, "roi_pct": item.get("roi_pct")}
+            for item in by_rating_bucket
+            if item.get("roi_pct") is not None
+        ]
+        best_roi = sorted(bucket_roi, key=lambda x: float(x.get("roi_pct") or 0), reverse=True)[:5]
+
+        prof.mark("after_python_aggregations")
+
+        payload: dict[str, Any] = {
+            "status": "ok",
+            "filters": filters,
+            "purchasability_filter_options": purchasability_filter_options(),
+            "market_options": list(KPI_SIGNAL_MARKET_OPTIONS),
+            "overall": overall,
+            "by_rating_bucket": by_rating_bucket,
+            "by_selection": by_selection,
+            "heatmap": {
+                "rows": list(HEATMAP_SELECTION_ROWS),
+                "columns": list(RATING_BUCKETS),
+                "cells": heatmap_cells,
+            },
+            "top": {
+                "best_profit": best_profit,
+                "best_roi": best_roi,
+                "worst_profit": worst_profit,
+            },
+        }
+        if include_diagnostics:
+            payload["diagnostics"] = _build_diagnostics(
                 db,
                 date_from=date_from,
                 date_to=date_to,
-                rating_bucket=rating_bucket,
-                selection_key=selection_key,
-                normalized_market=normalized_market,
-                evaluation_status=evaluation_status,
-                league_name=league_name,
-                country_name=country_name,
-                only_current=only_current,
-                purchasability_version=purchasability_version,
-                purchasability_status=purchasability_status,
-                purchasability_class=purchasability_class,
-                purchasability_score_min=purchasability_score_min,
-                purchasability_score_max=purchasability_score_max,
-                purchasability_quality=purchasability_quality,
-            ),
-        ).all(),
-    )
-    overall = _profit_metrics(rows)
-
-    by_bucket_map: dict[str, list[CecchinoKpiSignalActivation]] = {b: [] for b in RATING_BUCKETS}
-    by_selection_map: dict[str, list[CecchinoKpiSignalActivation]] = {}
-    for row in rows:
-        by_bucket_map.setdefault(row.rating_bucket, []).append(row)
-        by_selection_map.setdefault(row.selection_label, []).append(row)
-
-    by_rating_bucket = [
-        {"rating_bucket": bucket, **_profit_metrics(by_bucket_map.get(bucket, []))}
-        for bucket in RATING_BUCKETS
-        if by_bucket_map.get(bucket)
-    ]
-    by_selection = [
-        {"selection_label": label, **_profit_metrics(group_rows)}
-        for label, group_rows in sorted(by_selection_map.items(), key=lambda x: x[0])
-    ]
-
-    heatmap_cells: list[dict[str, Any]] = []
-    for selection_label in HEATMAP_SELECTION_ROWS:
-        for bucket in RATING_BUCKETS:
-            cell_rows = [
-                r
-                for r in rows
-                if r.selection_label == selection_label and r.rating_bucket == bucket
-            ]
-            if not cell_rows:
-                continue
-            metrics = _profit_metrics(cell_rows)
-            heatmap_cells.append(
-                {
-                    "selection_label": selection_label,
-                    "rating_bucket": bucket,
-                    **metrics,
-                },
+                _prof=prof,
             )
-
-    ranked = [
-        {
-            "selection_label": r.selection_label,
-            "rating_bucket": r.rating_bucket,
-            "scan_date": r.scan_date.isoformat(),
-            "match": f"{r.home_team_name} vs {r.away_team_name}",
-            "profit_units": _float_odds(r.profit_units),
-            "roi_pct": None,
-            "evaluation_status": r.evaluation_status,
-        }
-        for r in rows
-        if r.evaluation_status in (KPI_EVAL_WON, KPI_EVAL_LOST) and r.profit_units is not None
-    ]
-    best_profit = sorted(ranked, key=lambda x: float(x["profit_units"] or 0), reverse=True)[:10]
-    worst_profit = sorted(ranked, key=lambda x: float(x["profit_units"] or 0))[:10]
-
-    bucket_roi = [
-        {**item, "roi_pct": item.get("roi_pct")}
-        for item in by_rating_bucket
-        if item.get("roi_pct") is not None
-    ]
-    best_roi = sorted(bucket_roi, key=lambda x: float(x.get("roi_pct") or 0), reverse=True)[:5]
-
-    payload: dict[str, Any] = {
-        "status": "ok",
-        "filters": filters,
-        "purchasability_filter_options": purchasability_filter_options(),
-        "market_options": list(KPI_SIGNAL_MARKET_OPTIONS),
-        "overall": overall,
-        "by_rating_bucket": by_rating_bucket,
-        "by_selection": by_selection,
-        "heatmap": {
-            "rows": list(HEATMAP_SELECTION_ROWS),
-            "columns": list(RATING_BUCKETS),
-            "cells": heatmap_cells,
-        },
-        "top": {
-            "best_profit": best_profit,
-            "best_roi": best_roi,
-            "worst_profit": worst_profit,
-        },
-    }
-    if include_diagnostics:
-        payload["diagnostics"] = _build_diagnostics(db, date_from=date_from, date_to=date_to)
-    return payload
+            prof.mark("after_diagnostics")
+        return payload
 
 
 def serialize_kpi_activation(row: CecchinoKpiSignalActivation) -> dict[str, Any]:
@@ -723,31 +837,38 @@ def list_kpi_signal_activations(
         )
         or 0,
     )
-    rows = list(db.scalars(query.offset(offset).limit(limit)).all())
-    return {
-        "status": "ok",
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "filters": _filter_payload(
-            date_from=date_from,
-            date_to=date_to,
-            rating_bucket=rating_bucket,
-            selection_key=selection_key,
-            normalized_market=normalized_market,
-            evaluation_status=evaluation_status,
-            league_name=league_name,
-            country_name=country_name,
-            only_current=only_current,
-            purchasability_version=purchasability_version,
-            purchasability_status=purchasability_status,
-            purchasability_class=purchasability_class,
-            purchasability_score_min=purchasability_score_min,
-            purchasability_score_max=purchasability_score_max,
-            purchasability_quality=purchasability_quality,
-        ),
-        "activations": [serialize_kpi_activation(r) for r in rows],
-    }
+    engine = db.get_bind() if memory_profile_enabled() else None
+    with profile_kpi_signals_memory("kpi_signals_activations", engine=engine) as prof:
+        rows = list(db.scalars(query.offset(offset).limit(limit)).all())
+        prof.set_counter("activations_page_materialized", len(rows))
+        prof.set_counter("activations_total", total)
+        prof.mark("after_activations_query")
+        payload = {
+            "status": "ok",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filters": _filter_payload(
+                date_from=date_from,
+                date_to=date_to,
+                rating_bucket=rating_bucket,
+                selection_key=selection_key,
+                normalized_market=normalized_market,
+                evaluation_status=evaluation_status,
+                league_name=league_name,
+                country_name=country_name,
+                only_current=only_current,
+                purchasability_version=purchasability_version,
+                purchasability_status=purchasability_status,
+                purchasability_class=purchasability_class,
+                purchasability_score_min=purchasability_score_min,
+                purchasability_score_max=purchasability_score_max,
+                purchasability_quality=purchasability_quality,
+            ),
+            "activations": [serialize_kpi_activation(r) for r in rows],
+        }
+        prof.mark("after_serialize")
+        return payload
 
 
 def export_kpi_signals_csv(

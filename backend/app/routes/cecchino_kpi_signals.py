@@ -23,6 +23,7 @@ from app.services.cecchino.cecchino_kpi_signals import (
     revaluate_kpi_signals_for_range,
 )
 from app.services.cecchino.cecchino_kpi_signals_aggregation import (
+    build_kpi_signals_diagnostics,
     build_kpi_signals_summary,
     export_kpi_signals_csv,
     list_kpi_signal_activations,
@@ -146,6 +147,17 @@ def kpi_signals_summary(
         purchasability_score_max=purchasability_score_max,
         purchasability_quality=purchasability_quality,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/diagnostics")
+def kpi_signals_diagnostics(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Diagnostics leggeri per empty-state Segnali KPI (no summary aggregato)."""
+    payload = build_kpi_signals_diagnostics(db, date_from=date_from, date_to=date_to)
     return JSONResponse(content=jsonable_encoder(payload))
 
 

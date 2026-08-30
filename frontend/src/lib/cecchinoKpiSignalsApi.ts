@@ -108,6 +108,28 @@ export type KpiHeatmapCell = KpiSignalsBucket & {
   rating_bucket: string
 }
 
+export type KpiSignalsDiagnosticsPayload = {
+  today_fixtures_count: number
+  fixtures_with_kpi_panel: number
+  kpi_rows_seen: number
+  kpi_signals_created: number
+  kpi_rows_below_50: number
+  kpi_rows_without_book_odds: number
+  supported_market_definitions?: number
+  kpi_rows_supported?: number
+  kpi_rows_unsupported?: number
+  activations_created_by_market?: Record<string, number>
+  rows_with_v3_snapshot?: number
+  rows_without_v3_snapshot?: number
+  rows_with_v31_snapshot?: number
+  rows_without_v31_snapshot?: number
+  v31_provisional_count?: number
+  v31_definitive_count?: number
+  v3_unsupported_count?: number
+  purchasability_snapshot_extraction_errors?: number
+  v3_supported_markets?: string[]
+}
+
 export type KpiSignalsSummaryResponse = {
   status: string
   filters: Record<string, unknown>
@@ -139,15 +161,13 @@ export type KpiSignalsSummaryResponse = {
     best_roi: Array<Record<string, unknown>>
     worst_profit: Array<Record<string, unknown>>
   }
-  diagnostics?: {
-    today_fixtures_count: number
-    fixtures_with_kpi_panel: number
-    kpi_rows_seen: number
-    kpi_signals_created: number
-    kpi_rows_below_50: number
-    kpi_rows_without_book_odds: number
-    supported_market_definitions?: number
-  }
+  diagnostics?: KpiSignalsDiagnosticsPayload
+}
+
+export type KpiSignalsDiagnosticsResponse = {
+  status: string
+  filters: { date_from: string; date_to: string }
+  diagnostics: KpiSignalsDiagnosticsPayload
 }
 
 export type KpiSignalActivationRow = {
@@ -228,6 +248,18 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
 
 export async function getKpiSignalsSummary(filters: KpiSignalsFilters): Promise<KpiSignalsSummaryResponse> {
   return adminGetJson(`/api/cecchino/kpi-signals/summary${qs(filters)}`)
+}
+
+export async function getKpiSignalsDiagnostics(params: {
+  date_from: string
+  date_to: string
+}): Promise<KpiSignalsDiagnosticsResponse> {
+  return adminGetJson(
+    `/api/cecchino/kpi-signals/diagnostics${qs({
+      date_from: params.date_from,
+      date_to: params.date_to,
+    })}`,
+  )
 }
 
 export async function getKpiSignalsActivations(

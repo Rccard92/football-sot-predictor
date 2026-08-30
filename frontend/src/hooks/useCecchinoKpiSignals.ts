@@ -4,6 +4,7 @@ import {
   backfillKpiSignals,
   buildKpiSignalsExportUrl,
   getKpiSignalsActivations,
+  getKpiSignalsDiagnostics,
   getKpiSignalsSummary,
   revaluateKpiSignals,
   type KpiSignalActivationRow,
@@ -79,7 +80,7 @@ export function useCecchinoKpiSignals() {
       country_name: countryName || undefined,
       league_name: leagueName || undefined,
       only_current: true,
-      include_diagnostics: true,
+      include_diagnostics: false,
     }
     if (!purchasabilityVersion) return base
     return {
@@ -121,7 +122,19 @@ export function useCecchinoKpiSignals() {
         getKpiSignalsSummary(filters),
         getKpiSignalsActivations({ ...filters, limit: 500, offset: 0 }),
       ])
-      setSummary(summaryRes)
+      let nextSummary = summaryRes
+      if ((summaryRes.overall?.activations ?? 0) === 0) {
+        try {
+          const diagRes = await getKpiSignalsDiagnostics({
+            date_from: filters.date_from,
+            date_to: filters.date_to,
+          })
+          nextSummary = { ...summaryRes, diagnostics: diagRes.diagnostics }
+        } catch {
+          // Empty-state degradato senza diagnostics; non bloccare summary/activations.
+        }
+      }
+      setSummary(nextSummary)
       setActivations(activationsRes.activations)
     } catch (err) {
       toast.error(formatFetchError(err))
