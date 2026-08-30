@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { KpiSignalActivationRow } from '../lib/cecchinoKpiSignalsApi'
+import { resolveKpiEmptyVariant } from '../lib/resolveKpiEmptyVariant'
 import { KpiRatingBucketCarousel } from '../components/cecchino-kpi-signals/KpiRatingBucketCarousel'
 import {
   KpiSignalDetailDrawer,
@@ -64,19 +65,10 @@ export function SegnaliKpiPage() {
     setDrawer({ type: 'activation', row })
   }, [])
 
-  const emptyVariant = useMemo(() => {
-    const diag = kpi.summary?.diagnostics
-    if (!kpi.summary) return null
-    if ((diag?.today_fixtures_count ?? 0) === 0) return 'no_fixtures' as const
-    if ((diag?.kpi_signals_created ?? 0) === 0 && (diag?.fixtures_with_kpi_panel ?? 0) > 0) {
-      return 'not_synced' as const
-    }
-    if ((kpi.summary.overall.activations ?? 0) === 0 && (diag?.kpi_rows_below_50 ?? 0) > 0) {
-      return 'no_rating' as const
-    }
-    if ((kpi.summary.overall.activations ?? 0) === 0) return 'not_synced' as const
-    return null
-  }, [kpi.summary])
+  const emptyVariant = useMemo(
+    () => resolveKpiEmptyVariant(kpi.summary),
+    [kpi.summary],
+  )
 
   return (
     <motion.div
