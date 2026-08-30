@@ -2359,226 +2359,310 @@ def update_today_fixture_results(
     timezone: str = DEFAULT_TODAY_TIMEZONE,
     client: ApiFootballClient | None = None,
 ) -> dict[str, Any]:
+    from app.services.cecchino.update_results_memory_profile import (
+        profile_update_results_memory,
+        stage_sample_indices,
+    )
+
     resolved = resolve_scan_date(scan_date, timezone)
     af_client = client or ApiFootballClient()
-    rows = list(
-        db.scalars(
-            select(CecchinoTodayFixture).where(
-                CecchinoTodayFixture.scan_date == resolved,
-            ),
-        ).all(),
-    )
-    if not rows:
+
+    engine = None
+    try:
+        bind = db.get_bind()
+        if bind is not None:
+            engine = bind
+    except Exception:
+        engine = None
+
+    with profile_update_results_memory(db=db, engine=engine) as mem:
+        rows = list(
+            db.scalars(
+                select(CecchinoTodayFixture).where(
+                    CecchinoTodayFixture.scan_date == resolved,
+                ),
+            ).all(),
+        )
+        mem.set_counter("fixtures_total", len(rows))
+        mem.mark("after_rows_query", db=db)
+
+        if not rows:
+            mem.mark("before_return", db=db)
+            return {
+                "status": "ok",
+                "version": CECCHINO_TODAY_VERSION,
+                "date": resolved.isoformat(),
+                "fixtures_checked": 0,
+                "results_updated": 0,
+                "still_upcoming": 0,
+                "live": 0,
+                "failed": [],
+                "warnings": [],
+                "api_calls": 0,
+            }
+
+        warnings: list[str] = []
+        failed: list[dict[str, Any]] = []
+        results_updated = 0
+        still_upcoming = 0
+        live = 0
+        api_calls = 0
+        signals_evaluated = 0
+        signals_pending = 0
+        kpi_revaluated = 0
+        purchasability_evaluated = 0
+        balance_settled = 0
+        profile_errors = 0
+
+        try:
+            api_items = af_client.get_fixtures_by_date(resolved.isoformat(), timezone=timezone)
+            api_calls += 1
+        except ApiFootballError as exc:
+            mem.set_counter("api_calls", api_calls)
+            mem.incr("errors")
+            mem.mark("after_initial_api_fetch", db=db)
+            mem.mark("before_return", db=db)
+            return {
+                "status": "error",
+                "version": CECCHINO_TODAY_VERSION,
+                "date": resolved.isoformat(),
+                "message": str(exc),
+                "fixtures_checked": len(rows),
+                "results_updated": 0,
+                "failed": [],
+                "warnings": [str(exc)],
+                "api_calls": api_calls,
+            }
+
+        mem.set_counter("api_calls", api_calls)
+        mem.mark("after_initial_api_fetch", db=db)
+
+        by_api_id = {
+            int((item.get("fixture") or {}).get("id") or 0): item
+            for item in api_items
+            if (item.get("fixture") or {}).get("id") is not None
+        }
+
+        id_fetched: set[int] = set()
+        rescheduled_today_ids: set[int] = set()
+        now_utc = utc_now()
+
+        # Campione obbligatorio per-stage: indici su rows (prime 3 + centrale + ultima).
+        sample_row_idxs = stage_sample_indices(len(rows))
+        mem.set_sample_indices(sample_row_idxs)
+        fixtures_processed = 0
+
+        for row_idx, row in enumerate(rows):
+            api_item = by_api_id.get(int(row.provider_fixture_id))
+            if api_item is None:
+                try:
+                    api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
+                    api_calls += 1
+                    id_fetched.add(int(row.provider_fixture_id))
+                    mem.set_counter("api_calls", api_calls)
+                except ApiFootballError as exc:
+                    failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
+                    warnings.append(str(exc))
+                    profile_errors += 1
+                    mem.set_counter("errors", profile_errors)
+                    continue
+            if not api_item:
+                failed.append(
+                    {"provider_fixture_id": row.provider_fixture_id, "error": "fixture_not_found"},
+                )
+                profile_errors += 1
+                mem.set_counter("errors", profile_errors)
+                continue
+
+            provider_ko = parse_provider_kickoff(api_item)
+            if provider_ko is not None and provider_kickoff_moved_to_other_day(
+                provider_kickoff=provider_ko,
+                scan_date=resolved,
+                timezone_str=timezone,
+            ):
+                # Vecchia giornata: non assorbire display/score/raw della nuova data.
+                apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
+                rescheduled_today_ids.add(int(row.id))
+                results_updated += 1
+                mem.touch_peak(db=db)
+                continue
+
+            do_stage = row_idx in sample_row_idxs
+            if do_stage:
+                mem.begin_stage_sample(fixture_index=row_idx, fixture_id=int(row.id))
+
+            apply_display_from_api(row, api_item)
+            row.raw_fixture_json = api_item
+            if do_stage:
+                mem.mark_stage("after_apply_result", db=db)
+
+            st = _resolve_row_match_status(row)
+            if st == MATCH_UPCOMING:
+                still_upcoming += 1
+            elif st == MATCH_LIVE:
+                live += 1
+            results_updated += 1
+            eval_counts = evaluate_activations_for_fixture(db, int(row.id))
+            signals_evaluated += eval_counts.get("evaluated", 0)
+            signals_pending += eval_counts.get("pending", 0)
+            mem.set_counter("signals_evaluated", signals_evaluated)
+            if do_stage:
+                mem.mark_stage("after_signals_evaluation", db=db)
+            try:
+                from app.services.cecchino.cecchino_kpi_signals import revaluate_kpi_signals_for_fixture
+
+                revaluate_kpi_signals_for_fixture(db, int(row.id))
+                kpi_revaluated += 1
+                mem.set_counter("kpi_revaluated", kpi_revaluated)
+            except Exception:
+                profile_errors += 1
+                mem.set_counter("errors", profile_errors)
+                logger.exception("KPI signals revaluate skipped fixture_id=%s", row.id)
+            if do_stage:
+                mem.mark_stage("after_kpi_revaluation", db=db)
+            try:
+                from app.services.cecchino.cecchino_purchasability_validation import (
+                    evaluate_purchasability_validation_for_fixture,
+                )
+
+                with db.begin_nested():
+                    evaluate_purchasability_validation_for_fixture(db, int(row.id))
+                purchasability_evaluated += 1
+                mem.set_counter("purchasability_evaluated", purchasability_evaluated)
+            except Exception:
+                profile_errors += 1
+                mem.set_counter("errors", profile_errors)
+                logger.exception(
+                    "purchasability validation evaluate skipped fixture_id=%s", row.id
+                )
+            if do_stage:
+                mem.mark_stage("after_purchasability_validation", db=db)
+            try:
+                from app.services.cecchino.cecchino_balance_v5_empirical import (
+                    settle_balance_empirical_record,
+                )
+
+                with db.begin_nested():
+                    settle_balance_empirical_record(db, fixture=row, commit=False)
+                balance_settled += 1
+                mem.set_counter("balance_settled", balance_settled)
+            except Exception:
+                profile_errors += 1
+                mem.set_counter("errors", profile_errors)
+                logger.exception(
+                    "balance empirical settle skipped fixture_id=%s", row.id
+                )
+            if do_stage:
+                mem.mark_stage("after_balance_settlement", db=db)
+                mem.end_stage_sample()
+            else:
+                mem.touch_peak(db=db)
+
+            fixtures_processed += 1
+            mem.set_counter("fixtures_processed", fixtures_processed)
+
+        mem.mark("before_second_pass", db=db)
+
+        # Passata mirata: unresolved con kickoff trascorso → lookup per provider_fixture_id
+        for row in rows:
+            if int(row.id) in rescheduled_today_ids:
+                continue
+            if not today_row_needs_past_kickoff_id_reconciliation(row, now=now_utc):
+                continue
+            pid = int(row.provider_fixture_id)
+            if pid in id_fetched:
+                continue
+            try:
+                api_item = af_client.get_fixture_by_id(pid)
+                api_calls += 1
+                id_fetched.add(pid)
+                mem.set_counter("api_calls", api_calls)
+            except ApiFootballError as exc:
+                warnings.append(f"past_kickoff_reconcile_failed:{pid}:{exc}")
+                profile_errors += 1
+                mem.set_counter("errors", profile_errors)
+                continue
+            if not api_item:
+                warnings.append(f"past_kickoff_reconcile_not_found:{pid}")
+                continue
+
+            provider_ko = parse_provider_kickoff(api_item)
+            short = parse_provider_status_short(api_item)
+            if provider_ko is not None and provider_kickoff_moved_to_other_day(
+                provider_kickoff=provider_ko,
+                scan_date=resolved,
+                timezone_str=timezone,
+            ):
+                apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
+                rescheduled_today_ids.add(int(row.id))
+                continue
+            if short in {"PST", "SUSP", "INT"}:
+                apply_display_from_api(row, api_item)
+                row.raw_fixture_json = api_item
+            else:
+                apply_display_from_api(row, api_item)
+                row.raw_fixture_json = api_item
+
+        # Ricalcola tally dopo eventuale reconciliation past-kickoff
+        still_upcoming = 0
+        live = 0
+        for row in rows:
+            st = _resolve_row_match_status(row)
+            if st == MATCH_UPCOMING:
+                still_upcoming += 1
+            elif st == MATCH_LIVE:
+                live += 1
+
+        mem.mark("after_second_pass", db=db)
+
+        try:
+            from app.services.cecchino.cecchino_balance_v5_readiness import (
+                BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
+                safe_upsert_balance_readiness_daily_snapshot,
+            )
+
+            readiness_out = safe_upsert_balance_readiness_daily_snapshot(
+                phase="after_update_results",
+                scan_date=resolved,
+            )
+            if readiness_out.get("status") == "skipped":
+                code = str(
+                    readiness_out.get("warning_code")
+                    or BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING
+                )
+                if code not in warnings:
+                    warnings.append(code)
+        except Exception:
+            logger.exception("balance readiness snapshot skipped after update-results")
+
+        try:
+            from app.services.cecchino.cecchino_goal_intensity_v5 import attach_results_for_rows
+
+            rows_for_goal_result_attach = [
+                row for row in rows if int(row.id) not in rescheduled_today_ids
+            ]
+            attach_results_for_rows(db, rows_for_goal_result_attach, commit=False)
+        except Exception:
+            logger.exception("goal intensity v5 attach skipped after update-results")
+
+        mem.mark("after_readiness_goal", db=db)
+        mem.mark("before_commit", db=db)
+        db.commit()
+        mem.mark("before_return", db=db)
         return {
             "status": "ok",
             "version": CECCHINO_TODAY_VERSION,
             "date": resolved.isoformat(),
-            "fixtures_checked": 0,
-            "results_updated": 0,
-            "still_upcoming": 0,
-            "live": 0,
-            "failed": [],
-            "warnings": [],
-            "api_calls": 0,
-        }
-
-    warnings: list[str] = []
-    failed: list[dict[str, Any]] = []
-    results_updated = 0
-    still_upcoming = 0
-    live = 0
-    api_calls = 0
-    signals_evaluated = 0
-    signals_pending = 0
-
-    try:
-        api_items = af_client.get_fixtures_by_date(resolved.isoformat(), timezone=timezone)
-        api_calls += 1
-    except ApiFootballError as exc:
-        return {
-            "status": "error",
-            "version": CECCHINO_TODAY_VERSION,
-            "date": resolved.isoformat(),
-            "message": str(exc),
             "fixtures_checked": len(rows),
-            "results_updated": 0,
-            "failed": [],
-            "warnings": [str(exc)],
+            "results_updated": results_updated,
+            "still_upcoming": still_upcoming,
+            "live": live,
+            "failed": failed,
+            "warnings": warnings,
             "api_calls": api_calls,
+            "signals_evaluated": signals_evaluated,
+            "signals_pending": signals_pending,
         }
-
-    by_api_id = {
-        int((item.get("fixture") or {}).get("id") or 0): item
-        for item in api_items
-        if (item.get("fixture") or {}).get("id") is not None
-    }
-
-    id_fetched: set[int] = set()
-    rescheduled_today_ids: set[int] = set()
-    now_utc = utc_now()
-
-    for row in rows:
-        api_item = by_api_id.get(int(row.provider_fixture_id))
-        if api_item is None:
-            try:
-                api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
-                api_calls += 1
-                id_fetched.add(int(row.provider_fixture_id))
-            except ApiFootballError as exc:
-                failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
-                warnings.append(str(exc))
-                continue
-        if not api_item:
-            failed.append(
-                {"provider_fixture_id": row.provider_fixture_id, "error": "fixture_not_found"},
-            )
-            continue
-
-        provider_ko = parse_provider_kickoff(api_item)
-        if provider_ko is not None and provider_kickoff_moved_to_other_day(
-            provider_kickoff=provider_ko,
-            scan_date=resolved,
-            timezone_str=timezone,
-        ):
-            # Vecchia giornata: non assorbire display/score/raw della nuova data.
-            apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
-            rescheduled_today_ids.add(int(row.id))
-            results_updated += 1
-            continue
-
-        apply_display_from_api(row, api_item)
-        row.raw_fixture_json = api_item
-
-        st = _resolve_row_match_status(row)
-        if st == MATCH_UPCOMING:
-            still_upcoming += 1
-        elif st == MATCH_LIVE:
-            live += 1
-        results_updated += 1
-        eval_counts = evaluate_activations_for_fixture(db, int(row.id))
-        signals_evaluated += eval_counts.get("evaluated", 0)
-        signals_pending += eval_counts.get("pending", 0)
-        try:
-            from app.services.cecchino.cecchino_kpi_signals import revaluate_kpi_signals_for_fixture
-
-            revaluate_kpi_signals_for_fixture(db, int(row.id))
-        except Exception:
-            logger.exception("KPI signals revaluate skipped fixture_id=%s", row.id)
-        try:
-            from app.services.cecchino.cecchino_purchasability_validation import (
-                evaluate_purchasability_validation_for_fixture,
-            )
-
-            with db.begin_nested():
-                evaluate_purchasability_validation_for_fixture(db, int(row.id))
-        except Exception:
-            logger.exception(
-                "purchasability validation evaluate skipped fixture_id=%s", row.id
-            )
-        try:
-            from app.services.cecchino.cecchino_balance_v5_empirical import (
-                settle_balance_empirical_record,
-            )
-
-            with db.begin_nested():
-                settle_balance_empirical_record(db, fixture=row, commit=False)
-        except Exception:
-            logger.exception(
-                "balance empirical settle skipped fixture_id=%s", row.id
-            )
-
-    # Passata mirata: unresolved con kickoff trascorso → lookup per provider_fixture_id
-    for row in rows:
-        if int(row.id) in rescheduled_today_ids:
-            continue
-        if not today_row_needs_past_kickoff_id_reconciliation(row, now=now_utc):
-            continue
-        pid = int(row.provider_fixture_id)
-        if pid in id_fetched:
-            continue
-        try:
-            api_item = af_client.get_fixture_by_id(pid)
-            api_calls += 1
-            id_fetched.add(pid)
-        except ApiFootballError as exc:
-            warnings.append(f"past_kickoff_reconcile_failed:{pid}:{exc}")
-            continue
-        if not api_item:
-            warnings.append(f"past_kickoff_reconcile_not_found:{pid}")
-            continue
-
-        provider_ko = parse_provider_kickoff(api_item)
-        short = parse_provider_status_short(api_item)
-        if provider_ko is not None and provider_kickoff_moved_to_other_day(
-            provider_kickoff=provider_ko,
-            scan_date=resolved,
-            timezone_str=timezone,
-        ):
-            apply_old_today_rescheduled_postponed(row, provider_kickoff=provider_ko)
-            rescheduled_today_ids.add(int(row.id))
-            continue
-        if short in {"PST", "SUSP", "INT"}:
-            apply_display_from_api(row, api_item)
-            row.raw_fixture_json = api_item
-        else:
-            apply_display_from_api(row, api_item)
-            row.raw_fixture_json = api_item
-
-    # Ricalcola tally dopo eventuale reconciliation past-kickoff
-    still_upcoming = 0
-    live = 0
-    for row in rows:
-        st = _resolve_row_match_status(row)
-        if st == MATCH_UPCOMING:
-            still_upcoming += 1
-        elif st == MATCH_LIVE:
-            live += 1
-
-    try:
-        from app.services.cecchino.cecchino_balance_v5_readiness import (
-            BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
-            safe_upsert_balance_readiness_daily_snapshot,
-        )
-
-        readiness_out = safe_upsert_balance_readiness_daily_snapshot(
-            phase="after_update_results",
-            scan_date=resolved,
-        )
-        if readiness_out.get("status") == "skipped":
-            code = str(
-                readiness_out.get("warning_code")
-                or BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING
-            )
-            if code not in warnings:
-                warnings.append(code)
-    except Exception:
-        logger.exception("balance readiness snapshot skipped after update-results")
-
-    try:
-        from app.services.cecchino.cecchino_goal_intensity_v5 import attach_results_for_rows
-
-        rows_for_goal_result_attach = [
-            row for row in rows if int(row.id) not in rescheduled_today_ids
-        ]
-        attach_results_for_rows(db, rows_for_goal_result_attach, commit=False)
-    except Exception:
-        logger.exception("goal intensity v5 attach skipped after update-results")
-
-    db.commit()
-    return {
-        "status": "ok",
-        "version": CECCHINO_TODAY_VERSION,
-        "date": resolved.isoformat(),
-        "fixtures_checked": len(rows),
-        "results_updated": results_updated,
-        "still_upcoming": still_upcoming,
-        "live": live,
-        "failed": failed,
-        "warnings": warnings,
-        "api_calls": api_calls,
-        "signals_evaluated": signals_evaluated,
-        "signals_pending": signals_pending,
-    }
 
 
 def _kpi_panel_needs_rebuild(kpi_panel: dict[str, Any] | None) -> bool:
