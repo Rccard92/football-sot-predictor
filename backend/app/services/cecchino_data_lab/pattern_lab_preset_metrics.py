@@ -19,14 +19,15 @@ from app.services.cecchino_data_lab.pattern_lab_presets import (
     preset_scientific_filters,
     scientific_filters_sha256,
 )
-from app.services.cecchino_data_lab.pattern_lab_service import iter_pattern_lab_rows
 
 
-def _is_real_quote(row: dict[str, Any]) -> bool:
+def is_real_quote(row: dict[str, Any]) -> bool:
+    """True se la riga ha quota Bet365 reale (performance real_only)."""
     return row.get("pre_quote_type") == "real" or row.get("pre_is_real_book_quote") is True
 
 
-def _empty_econ() -> dict[str, Any]:
+def empty_econ_bucket() -> dict[str, Any]:
+    """Bucket mutabile per aggregazione economica real_only."""
     return {
         "selections": 0,
         "real_quote_count": 0,
@@ -39,13 +40,15 @@ def _empty_econ() -> dict[str, Any]:
     }
 
 
-def _bump_pattern(bucket: dict[str, Any], row: dict[str, Any]) -> None:
+def bump_pattern_selection(bucket: dict[str, Any], row: dict[str, Any]) -> None:
+    """Incrementa selections (match pattern, indipendente da quote reale)."""
+    _ = row
     bucket["selections"] += 1
 
 
-def _bump_real(bucket: dict[str, Any], row: dict[str, Any]) -> None:
+def bump_real_only_econ(bucket: dict[str, Any], row: dict[str, Any]) -> None:
     """Metriche economiche solo su quote reali."""
-    if not _is_real_quote(row):
+    if not is_real_quote(row):
         return
     bucket["real_quote_count"] += 1
     if row.get("target_won") is True:
@@ -56,7 +59,7 @@ def _bump_real(bucket: dict[str, Any], row: dict[str, Any]) -> None:
         bucket["void"] += 1
     # Preferisci profit reale dedicato; fallback target_profit_1u se già real.
     profit = row.get("target_profit_1u_real")
-    if profit is None and _is_real_quote(row):
+    if profit is None and is_real_quote(row):
         profit = row.get("target_profit_1u")
     if profit is not None:
         bucket["profit_1u"] += float(profit)
@@ -66,7 +69,10 @@ def _bump_real(bucket: dict[str, Any], row: dict[str, Any]) -> None:
         bucket["quota_n"] += 1
 
 
-def _finalize_econ(bucket: dict[str, Any], *, key: str | None = None) -> dict[str, Any]:
+def finalize_real_only_econ(
+    bucket: dict[str, Any], *, key: str | None = None
+) -> dict[str, Any]:
+    """Finalizza ROI/WR/avg odds su real_quote_count (non su selections)."""
     real_n = int(bucket["real_quote_count"])
     decided = int(bucket["wins"]) + int(bucket["losses"])
     win_rate = (float(bucket["wins"]) / decided) if decided else None
@@ -89,6 +95,14 @@ def _finalize_econ(bucket: dict[str, Any], *, key: str | None = None) -> dict[st
     if key is not None:
         out["key"] = key
     return out
+
+
+# Alias legacy interni (smoke / AI summary): stessa implementazione pubblica.
+_is_real_quote = is_real_quote
+_empty_econ = empty_econ_bucket
+_bump_pattern = bump_pattern_selection
+_bump_real = bump_real_only_econ
+_finalize_econ = finalize_real_only_econ
 
 
 def _preset_meta_export(preset: dict[str, Any]) -> dict[str, Any]:
@@ -139,7 +153,7 @@ def evaluate_preset_on_rows(
     from app.services.cecchino_data_lab.pattern_lab_filters import row_passes_filters
 
     filters = parse_pattern_lab_filters(preset_scientific_filters(preset))
-    total = _empty_econ()
+    total = empty_econ_bucket()
     by_competition: dict[str, dict[str, Any]] = {}
     by_month: dict[str, dict[str, Any]] = {}
     by_quarter: dict[str, dict[str, Any]] = {}
@@ -148,8 +162,8 @@ def evaluate_preset_on_rows(
     for row in rows:
         if not row_passes_filters(row, filters):
             continue
-        _bump_pattern(total, row)
-        _bump_real(total, row)
+        bump_pattern_selection(total, row)
+        bump_real_only_econ(total, row)
 
         for store, key in (
             (by_competition, str(row.get("competition") or "unknown")),
@@ -158,19 +172,23 @@ def evaluate_preset_on_rows(
             (by_season, str(row.get("season") or "unknown")),
         ):
             if key not in store:
-                store[key] = _empty_econ()
-            _bump_pattern(store[key], row)
-            _bump_real(store[key], row)
+                store[key] = empty_econ_bucket()
+            bump_pattern_selection(store[key], row)
+            bump_real_only_econ(store[key], row)
 
     return {
         **_preset_meta_export(preset),
-        **_finalize_econ(total),
+        **finalize_real_only_econ(total),
         "by_competition": [
-            _finalize_econ(b, key=k) for k, b in sorted(by_competition.items())
+            finalize_real_only_econ(b, key=k) for k, b in sorted(by_competition.items())
         ],
-        "by_month": [_finalize_econ(b, key=k) for k, b in sorted(by_month.items())],
-        "by_quarter": [_finalize_econ(b, key=k) for k, b in sorted(by_quarter.items())],
-        "by_season": [_finalize_econ(b, key=k) for k, b in sorted(by_season.items())],
+        "by_month": [finalize_real_only_econ(b, key=k) for k, b in sorted(by_month.items())],
+        "by_quarter": [
+            finalize_real_only_econ(b, key=k) for k, b in sorted(by_quarter.items())
+        ],
+        "by_season": [
+            finalize_real_only_econ(b, key=k) for k, b in sorted(by_season.items())
+        ],
     }
 
 
@@ -182,12 +200,13 @@ def evaluate_all_presets(
 ) -> dict[str, Any]:
     """Una passata sulle righe eligible; applica ogni preset in memoria."""
     from app.services.cecchino_data_lab.pattern_lab_filters import row_passes_filters
+    from app.services.cecchino_data_lab.pattern_lab_service import iter_pattern_lab_rows
 
     preset_list = presets if presets is not None else list(PATTERN_LAB_PRESETS)
     parsed = [
         (p, parse_pattern_lab_filters(preset_scientific_filters(p))) for p in preset_list
     ]
-    totals: dict[str, dict[str, Any]] = {p["id"]: _empty_econ() for p, _ in parsed}
+    totals: dict[str, dict[str, Any]] = {p["id"]: empty_econ_bucket() for p, _ in parsed}
     by_comp: dict[str, dict[str, dict[str, Any]]] = {p["id"]: {} for p, _ in parsed}
     by_month: dict[str, dict[str, dict[str, Any]]] = {p["id"]: {} for p, _ in parsed}
     by_quarter: dict[str, dict[str, dict[str, Any]]] = {p["id"]: {} for p, _ in parsed}
@@ -204,8 +223,8 @@ def evaluate_all_presets(
             if not row_passes_filters(row, filt):
                 continue
             pid = preset["id"]
-            _bump_pattern(totals[pid], row)
-            _bump_real(totals[pid], row)
+            bump_pattern_selection(totals[pid], row)
+            bump_real_only_econ(totals[pid], row)
             for store, key in (
                 (by_comp[pid], str(row.get("competition") or "unknown")),
                 (by_month[pid], _month_key(row)),
@@ -213,9 +232,9 @@ def evaluate_all_presets(
                 (by_season[pid], str(row.get("season") or "unknown")),
             ):
                 if key not in store:
-                    store[key] = _empty_econ()
-                _bump_pattern(store[key], row)
-                _bump_real(store[key], row)
+                    store[key] = empty_econ_bucket()
+                bump_pattern_selection(store[key], row)
+                bump_real_only_econ(store[key], row)
 
     items = []
     for preset, _ in parsed:
@@ -223,18 +242,22 @@ def evaluate_all_presets(
         items.append(
             {
                 **_preset_meta_export(preset),
-                **_finalize_econ(totals[pid]),
+                **finalize_real_only_econ(totals[pid]),
                 "by_competition": [
-                    _finalize_econ(b, key=k) for k, b in sorted(by_comp[pid].items())
+                    finalize_real_only_econ(b, key=k)
+                    for k, b in sorted(by_comp[pid].items())
                 ],
                 "by_month": [
-                    _finalize_econ(b, key=k) for k, b in sorted(by_month[pid].items())
+                    finalize_real_only_econ(b, key=k)
+                    for k, b in sorted(by_month[pid].items())
                 ],
                 "by_quarter": [
-                    _finalize_econ(b, key=k) for k, b in sorted(by_quarter[pid].items())
+                    finalize_real_only_econ(b, key=k)
+                    for k, b in sorted(by_quarter[pid].items())
                 ],
                 "by_season": [
-                    _finalize_econ(b, key=k) for k, b in sorted(by_season[pid].items())
+                    finalize_real_only_econ(b, key=k)
+                    for k, b in sorted(by_season[pid].items())
                 ],
             }
         )

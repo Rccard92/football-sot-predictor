@@ -9,6 +9,7 @@ import { MatchesExplorerTab } from '../components/cecchino-data-lab/MatchesExplo
 import { DataQualityTab } from '../components/cecchino-data-lab/DataQualityTab'
 import { HistoricalScansTab } from '../components/cecchino-data-lab/HistoricalScansTab'
 import { PatternLabTab } from '../components/cecchino-data-lab/PatternLabTab'
+import { LeaguePatternAnalysisTab } from '../components/cecchino-data-lab/league-pattern-analysis/LeaguePatternAnalysisTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
 
 const TABS = [
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'quality', label: 'Qualità dati' },
   { id: 'historical', label: 'Scansioni storiche' },
   { id: 'pattern_lab', label: 'Pattern Lab' },
+  { id: 'league_pattern_analysis', label: 'League Pattern Analysis' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -129,6 +131,7 @@ export function CecchinoLabPage() {
         )}
         {tab === 'historical' && <HistoricalScansTab refreshKey={refreshKey} />}
         {tab === 'pattern_lab' && <PatternLabTab />}
+        {tab === 'league_pattern_analysis' && <LeaguePatternAnalysisTab />}
       </div>
 
       <MatchDetailDrawer matchId={drawerMatchId} onClose={() => setDrawerMatchId(null)} />

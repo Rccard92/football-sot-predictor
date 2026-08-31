@@ -2074,3 +2074,115 @@ def goal_intensity_benchmark_export(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# League Pattern Analysis (snapshot aggregato READ-ONLY)
+# ---------------------------------------------------------------------------
+
+
+def _lpa_latest_or_404(db: Session):
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        get_latest_league_pattern_analysis_snapshot,
+    )
+
+    snap = get_latest_league_pattern_analysis_snapshot(db)
+    if snap is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Snapshot League Pattern Analysis non generato (analysis_version ready assente)",
+        )
+    return snap
+
+
+@router.get("/league-pattern-analysis/latest")
+def league_pattern_analysis_latest(db: Session = Depends(get_db)) -> JSONResponse:
+    """Legge solo lo snapshot ready V1 — non ricalcola."""
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        serialize_latest_payload,
+    )
+
+    snap = _lpa_latest_or_404(db)
+    return JSONResponse(content=jsonable_encoder(serialize_latest_payload(snap)))
+
+
+@router.get("/league-pattern-analysis/leagues/{competition}")
+def league_pattern_analysis_league(
+    competition: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        serialize_league_detail,
+    )
+
+    try:
+        snap = _lpa_latest_or_404(db)
+        return JSONResponse(
+            content=jsonable_encoder(serialize_league_detail(snap, competition))
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/league-pattern-analysis/patterns/{pattern_id}")
+def league_pattern_analysis_pattern(
+    pattern_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        serialize_pattern_detail,
+    )
+
+    try:
+        snap = _lpa_latest_or_404(db)
+        return JSONResponse(
+            content=jsonable_encoder(serialize_pattern_detail(snap, pattern_id))
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/league-pattern-analysis/native/{pattern_id}")
+def league_pattern_analysis_native(
+    pattern_id: str,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        serialize_native_detail,
+    )
+
+    try:
+        snap = _lpa_latest_or_404(db)
+        return JSONResponse(
+            content=jsonable_encoder(serialize_native_detail(snap, pattern_id))
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@admin_router.post("/league-pattern-analysis/rebuild")
+def league_pattern_analysis_rebuild(db: Session = Depends(get_db)) -> JSONResponse:
+    """Rebuild manuale snapshot (append-only). Non usato dalla GET pagina."""
+    from app.services.cecchino_data_lab.league_pattern_analysis import (
+        build_league_pattern_analysis_snapshot,
+        serialize_latest_payload,
+    )
+    from app.services.cecchino_data_lab.league_pattern_analysis_registry import (
+        LOCKED_SOURCE_RUN_IDS,
+    )
+
+    try:
+        snap = build_league_pattern_analysis_snapshot(
+            db, source_run_ids=list(LOCKED_SOURCE_RUN_IDS)
+        )
+        return JSONResponse(
+            content=jsonable_encoder(
+                {
+                    "ok": True,
+                    "snapshot_id": int(snap.id),
+                    "payload": serialize_latest_payload(snap),
+                }
+            )
+        )
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
