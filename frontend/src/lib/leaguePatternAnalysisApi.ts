@@ -2,16 +2,6 @@
 
 import { requestJson } from './api'
 
-function getApiBase(): string {
-  const raw = import.meta.env.VITE_API_BASE_URL
-  if (raw === undefined || raw === null || String(raw).trim() === '') {
-    throw new Error(
-      'VITE_API_BASE_URL non configurata. Aggiungila in .env locale o nelle variabili di build.',
-    )
-  }
-  return String(raw).replace(/\/+$/, '')
-}
-
 export type LpaMetrics = {
   n?: number
   wins?: number
@@ -164,23 +154,21 @@ export type LpaPatternDetail = {
 }
 
 export async function fetchLeaguePatternAnalysisLatest(): Promise<LpaLatestPayload> {
-  return requestJson(`${getApiBase()}/api/cecchino-lab/league-pattern-analysis/latest`)
+  return requestJson('/api/cecchino-lab/league-pattern-analysis/latest')
 }
 
 export async function fetchLeaguePatternAnalysisLeague(
   competition: string,
 ): Promise<LpaLeagueDetail> {
   const enc = encodeURIComponent(competition)
-  return requestJson(
-    `${getApiBase()}/api/cecchino-lab/league-pattern-analysis/leagues/${enc}`,
-  )
+  return requestJson(`/api/cecchino-lab/league-pattern-analysis/leagues/${enc}`)
 }
 
 export async function fetchLeaguePatternAnalysisPattern(
   patternId: string,
 ): Promise<LpaPatternDetail> {
   return requestJson(
-    `${getApiBase()}/api/cecchino-lab/league-pattern-analysis/patterns/${encodeURIComponent(patternId)}`,
+    `/api/cecchino-lab/league-pattern-analysis/patterns/${encodeURIComponent(patternId)}`,
   )
 }
 
@@ -188,7 +176,7 @@ export async function fetchLeaguePatternAnalysisNative(
   patternId: string,
 ): Promise<LpaPatternDetail> {
   return requestJson(
-    `${getApiBase()}/api/cecchino-lab/league-pattern-analysis/native/${encodeURIComponent(patternId)}`,
+    `/api/cecchino-lab/league-pattern-analysis/native/${encodeURIComponent(patternId)}`,
   )
 }
 
