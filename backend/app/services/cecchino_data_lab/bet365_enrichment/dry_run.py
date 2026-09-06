@@ -12,7 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_dataset import CecchinoLabDataset
 from app.models.cecchino_lab_match import CecchinoLabMatch
-from app.services.cecchino_data_lab.bet365_enrichment.constants import BOOKMAKER_BET365
+from app.services.cecchino_data_lab.bet365_enrichment.constants import (
+    BOOKMAKER_BET365,
+    MATCH_STATUS_AMBIGUOUS,
+    MATCH_STATUS_EXACT,
+    MATCH_STATUS_NOT_FOUND,
+    MATCH_STATUS_SAFE_ALIAS,
+)
 from app.services.cecchino_data_lab.bet365_enrichment.matching import (
     CsvMatchRow,
     LabMatchCandidate,
@@ -98,9 +104,43 @@ def iter_csv_dicts(csv_path: Path) -> Iterable[dict[str, str]]:
 def run_matching(
     csv_rows: list[CsvMatchRow],
     candidates: list[LabMatchCandidate],
+    *,
+    fuzzy_suggestions: bool = False,
 ) -> list[MatchResult]:
     index = CandidateIndex.build(candidates)
-    return [match_csv_row(row, candidates, index=index) for row in csv_rows]
+    total = len(csv_rows)
+    results: list[MatchResult] = []
+    exact = safe_alias = ambiguous = not_found = 0
+
+    for i, row in enumerate(csv_rows, start=1):
+        result = match_csv_row(
+            row,
+            candidates,
+            index=index,
+            fuzzy_suggestions=fuzzy_suggestions,
+        )
+        results.append(result)
+        status = result.match_status
+        if status == MATCH_STATUS_EXACT:
+            exact += 1
+        elif status == MATCH_STATUS_SAFE_ALIAS:
+            safe_alias += 1
+        elif status == MATCH_STATUS_AMBIGUOUS:
+            ambiguous += 1
+        elif status == MATCH_STATUS_NOT_FOUND:
+            not_found += 1
+
+        if i % 1000 == 0 or i == total:
+            logger.info(
+                "processed=%d/%d, exact=%d, safe_alias=%d, ambiguous=%d, not_found=%d",
+                i,
+                total,
+                exact,
+                safe_alias,
+                ambiguous,
+                not_found,
+            )
+    return results
 
 
 def run_bet365_enrichment_dry_run(
@@ -108,12 +148,14 @@ def run_bet365_enrichment_dry_run(
     csv_path: str | Path,
     output_dir: str | Path,
     session: Session,
+    fuzzy_suggestions: bool = False,
 ) -> dict[str, Any]:
     """Esegue dry-run completo.
 
     - Solo SELECT sul DB (più SET TRANSACTION READ ONLY su PostgreSQL)
     - Vietati INSERT/UPDATE/DELETE/flush/commit
     - Report su filesystem in output_dir
+    - Fuzzy suggestions diagnostici solo se ``fuzzy_suggestions=True``
     """
     path = Path(csv_path)
     out = Path(output_dir)
@@ -134,7 +176,11 @@ def run_bet365_enrichment_dry_run(
         bet365_rows = [parse_csv_row(r) for r in bet365_raw]
 
         candidates = load_lab_candidates(session)
-        results = run_matching(bet365_rows, candidates)
+        results = run_matching(
+            bet365_rows,
+            candidates,
+            fuzzy_suggestions=fuzzy_suggestions,
+        )
 
         summary = build_summary(
             csv_rows_total=csv_rows_total,
@@ -143,6 +189,7 @@ def run_bet365_enrichment_dry_run(
         )
         summary["read_only_transaction"] = read_only_enabled
         summary["lab_candidates_loaded"] = len(candidates)
+        summary["fuzzy_suggestions"] = fuzzy_suggestions
 
         paths = write_reports(out, summary=summary, results=results)
         summary["output_files"] = paths

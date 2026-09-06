@@ -264,6 +264,7 @@ def test_dry_run_allows_select_but_no_dml_flush_commit(tmp_path: Path):
 
     assert summary["db_writes"] is False
     assert summary["dry_run"] is True
+    assert summary["fuzzy_suggestions"] is False
     assert summary["csv_rows_total"] == 2
     assert summary["bet365_rows"] == 1
     assert summary["SAFE_ALIAS"] == 1
@@ -410,3 +411,115 @@ def test_indexed_matcher_matches_full_scan_semantics():
         indexed = match_csv_row(row, candidates, index=index)
         _assert_match_results_equivalent(legacy, indexed)
         assert legacy.match_status == expected_statuses[row.source_match_id]
+
+
+def _classification_tuple(result):
+    matched_id = result.matched.id if result.matched else None
+    return (
+        result.match_status,
+        result.matching_rule,
+        matched_id,
+        list(result.candidate_ids),
+        result.kickoff_delta_minutes,
+    )
+
+
+def test_fuzzy_on_off_same_match_status():
+    """Fuzzy on/off non deve cambiare classificazione o matched."""
+    candidates = [
+        _candidate(id=1, home_team="Standard", away_team="Genk"),
+        _candidate(
+            id=2,
+            home_team="Standard",
+            away_team="Genk",
+            kickoff_at=_ko(2021, 7, 23, 18, 0),
+        ),
+    ]
+    cases = [
+        parse_csv_row(_csv_row(source_match_id="exact")),
+        parse_csv_row(
+            _csv_row(
+                source_match_id="alias",
+                home_team="Standard Liège",
+                away_team="KRC Genk",
+            )
+        ),
+        parse_csv_row(
+            _csv_row(
+                source_match_id="amb",
+                kickoff_utc="2021-07-23 18:30:00",
+            )
+        ),
+        parse_csv_row(
+            _csv_row(
+                source_match_id="nf",
+                home_team="Unknown FC",
+                away_team="Other FC",
+            )
+        ),
+    ]
+    for row in cases:
+        off = match_csv_row(row, candidates, fuzzy_suggestions=False)
+        on = match_csv_row(row, candidates, fuzzy_suggestions=True)
+        assert _classification_tuple(off) == _classification_tuple(on)
+        if off.match_status in (MATCH_STATUS_AMBIGUOUS, MATCH_STATUS_NOT_FOUND):
+            assert off.matched is None
+            assert on.matched is None
+
+
+def test_fuzzy_off_skips_sequence_matcher_on_not_found(monkeypatch):
+    """Con fuzzy off, NOT_FOUND non deve chiamare SequenceMatcher/_fuzzy_suggestions."""
+    import app.services.cecchino_data_lab.bet365_enrichment.matching as matching_mod
+
+    calls = {"fuzzy": 0, "seq": 0}
+    real_fuzzy = matching_mod._fuzzy_suggestions
+    real_seq = matching_mod.SequenceMatcher
+
+    def spy_fuzzy(*args, **kwargs):
+        calls["fuzzy"] += 1
+        return real_fuzzy(*args, **kwargs)
+
+    def spy_seq(*args, **kwargs):
+        calls["seq"] += 1
+        return real_seq(*args, **kwargs)
+
+    monkeypatch.setattr(matching_mod, "_fuzzy_suggestions", spy_fuzzy)
+    monkeypatch.setattr(matching_mod, "SequenceMatcher", spy_seq)
+
+    row = parse_csv_row(
+        _csv_row(home_team="Unknown FC", away_team="Other FC")
+    )
+    cand = _candidate()
+
+    off = match_csv_row(row, [cand], fuzzy_suggestions=False)
+    assert off.match_status == MATCH_STATUS_NOT_FOUND
+    assert off.matched is None
+    assert calls["fuzzy"] == 0
+    assert calls["seq"] == 0
+
+    on = match_csv_row(row, [cand], fuzzy_suggestions=True)
+    assert on.match_status == MATCH_STATUS_NOT_FOUND
+    assert on.matched is None
+    assert calls["fuzzy"] >= 1
+    assert calls["seq"] >= 1
+
+
+def test_fuzzy_never_auto_assigns_match():
+    """Anche con fuzzy on, AMBIGUOUS/NOT_FOUND restano unmatched."""
+    row_nf = parse_csv_row(
+        _csv_row(home_team="Unknown FC", away_team="Other FC")
+    )
+    row_amb = parse_csv_row(
+        _csv_row(kickoff_utc="2021-07-23 18:30:00")
+    )
+    candidates = [
+        _candidate(id=1, kickoff_at=_ko(2021, 7, 23, 17, 45)),
+        _candidate(id=2, kickoff_at=_ko(2021, 7, 23, 18, 0)),
+    ]
+    nf = match_csv_row(row_nf, candidates, fuzzy_suggestions=True)
+    amb = match_csv_row(row_amb, candidates, fuzzy_suggestions=True)
+    assert nf.match_status == MATCH_STATUS_NOT_FOUND
+    assert nf.matched is None
+    assert amb.match_status == MATCH_STATUS_AMBIGUOUS
+    assert amb.matched is None
+

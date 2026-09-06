@@ -282,12 +282,16 @@ def match_csv_row(
     candidates: list[LabMatchCandidate],
     *,
     index: CandidateIndex | None = None,
+    fuzzy_suggestions: bool = False,
 ) -> MatchResult:
     """Classifica una riga CSV.
 
     Se ``index`` è fornito, lo scan usa il pool ridotto by_date (D±1);
     i filtri e la classificazione restano identici al full-scan.
-    Per i suggerimenti NOT_FOUND si usa sempre la lista completa
+
+    I fuzzy suggestions (``SequenceMatcher``) sono solo diagnostici: non
+    assegnano mai un match e di default sono disabilitati. Con
+    ``fuzzy_suggestions=True``, su NOT_FOUND usano la lista completa
     (``index.all_candidates`` o ``candidates``).
     """
     scan_pool = index.lookup(csv_row) if index is not None else candidates
@@ -319,7 +323,10 @@ def match_csv_row(
             f"ambiguous_count={len(compatible)}",
             *[f"candidate_id={c.id}" for c, _, _ in compatible[:5]],
         ]
-        warnings.extend(_fuzzy_suggestions(csv_row, [c for c, _, _ in compatible]))
+        if fuzzy_suggestions:
+            warnings.extend(
+                _fuzzy_suggestions(csv_row, [c for c, _, _ in compatible])
+            )
         return MatchResult(
             csv_row=csv_row,
             match_status=MATCH_STATUS_AMBIGUOUS,
@@ -329,20 +336,23 @@ def match_csv_row(
             warnings=warnings,
             candidate_ids=[c.id for c, _, _ in compatible],
         )
-    # NOT_FOUND: restringi pool per suggerimenti (stessa stagione se nota)
-    suggestion_pool = suggestion_source
-    if csv_row.season_start_year is not None:
-        suggestion_pool = [
-            c
-            for c in suggestion_source
-            if c.start_year == csv_row.season_start_year
-            or (
-                c.season_label
-                and csv_row.season
-                and normalize_name(c.season_label) == normalize_name(csv_row.season)
-            )
-        ] or suggestion_source
-    warnings = _fuzzy_suggestions(csv_row, suggestion_pool)
+    warnings: list[str] = []
+    if fuzzy_suggestions:
+        # NOT_FOUND: restringi pool per suggerimenti (stessa stagione se nota)
+        suggestion_pool = suggestion_source
+        if csv_row.season_start_year is not None:
+            suggestion_pool = [
+                c
+                for c in suggestion_source
+                if c.start_year == csv_row.season_start_year
+                or (
+                    c.season_label
+                    and csv_row.season
+                    and normalize_name(c.season_label)
+                    == normalize_name(csv_row.season)
+                )
+            ] or suggestion_source
+        warnings = _fuzzy_suggestions(csv_row, suggestion_pool)
     return MatchResult(
         csv_row=csv_row,
         match_status=MATCH_STATUS_NOT_FOUND,

@@ -4,6 +4,10 @@ Uso:
   cd backend
   python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run --output-dir "<dir>"
 
+  # Opzionale: fuzzy suggestions diagnostici (lenti su CSV massivi)
+  python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
+    --output-dir "<dir>" --fuzzy-suggestions
+
 Solo SELECT + report. Nessuna scrittura DB. Nessun --apply in questa fase.
 """
 
@@ -41,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Directory di output per summary/detail/anomalies",
     )
+    parser.add_argument(
+        "--fuzzy-suggestions",
+        action="store_true",
+        default=False,
+        help=(
+            "Abilita suggerimenti fuzzy diagnostici (SequenceMatcher) "
+            "su AMBIGUOUS/NOT_FOUND; non assegna mai un match. Default: off."
+        ),
+    )
     return parser
 
 
@@ -66,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             csv_path=csv_path,
             output_dir=output_dir,
             session=db,
+            fuzzy_suggestions=bool(args.fuzzy_suggestions),
         )
         print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
         return 0
