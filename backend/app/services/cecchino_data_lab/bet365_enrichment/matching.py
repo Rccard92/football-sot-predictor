@@ -253,6 +253,30 @@ def _fuzzy_suggestions(
     return out
 
 
+def find_schedule_candidates(
+    csv_row: CsvMatchRow, candidates: list[LabMatchCandidate]
+) -> list[tuple[LabMatchCandidate, int | None]]:
+    """Candidati compatibili per competition + season + kickoff (±120').
+
+    Non filtra home/away: usato solo dalla discovery alias diagnostica.
+    """
+    out: list[tuple[LabMatchCandidate, int | None]] = []
+    for cand in candidates:
+        if not competition_names_match(
+            csv_row.competition_name,
+            csv_row.competition_api_name,
+            cand.competition_name,
+        ):
+            continue
+        if not _season_compatible(csv_row, cand):
+            continue
+        if not _kickoff_within_tolerance(csv_row.kickoff_utc, cand.kickoff_at):
+            continue
+        delta = _kickoff_delta_minutes(csv_row.kickoff_utc, cand.kickoff_at)
+        out.append((cand, delta))
+    return out
+
+
 def find_compatible_candidates(
     csv_row: CsvMatchRow, candidates: list[LabMatchCandidate]
 ) -> list[tuple[LabMatchCandidate, bool, int | None]]:

@@ -106,8 +106,9 @@ def run_matching(
     candidates: list[LabMatchCandidate],
     *,
     fuzzy_suggestions: bool = False,
-) -> list[MatchResult]:
-    index = CandidateIndex.build(candidates)
+    index: CandidateIndex | None = None,
+) -> tuple[list[MatchResult], CandidateIndex]:
+    idx = index if index is not None else CandidateIndex.build(candidates)
     total = len(csv_rows)
     results: list[MatchResult] = []
     exact = safe_alias = ambiguous = not_found = 0
@@ -116,7 +117,7 @@ def run_matching(
         result = match_csv_row(
             row,
             candidates,
-            index=index,
+            index=idx,
             fuzzy_suggestions=fuzzy_suggestions,
         )
         results.append(result)
@@ -140,7 +141,7 @@ def run_matching(
                 ambiguous,
                 not_found,
             )
-    return results
+    return results, idx
 
 
 def run_bet365_enrichment_dry_run(
@@ -149,6 +150,7 @@ def run_bet365_enrichment_dry_run(
     output_dir: str | Path,
     session: Session,
     fuzzy_suggestions: bool = False,
+    discover_aliases: bool = False,
 ) -> dict[str, Any]:
     """Esegue dry-run completo.
 
@@ -156,6 +158,7 @@ def run_bet365_enrichment_dry_run(
     - Vietati INSERT/UPDATE/DELETE/flush/commit
     - Report su filesystem in output_dir
     - Fuzzy suggestions diagnostici solo se ``fuzzy_suggestions=True``
+    - Alias discovery diagnostica se ``discover_aliases=True`` (non modifica TEAM_ALIASES)
     """
     path = Path(csv_path)
     out = Path(output_dir)
@@ -176,7 +179,7 @@ def run_bet365_enrichment_dry_run(
         bet365_rows = [parse_csv_row(r) for r in bet365_raw]
 
         candidates = load_lab_candidates(session)
-        results = run_matching(
+        results, index = run_matching(
             bet365_rows,
             candidates,
             fuzzy_suggestions=fuzzy_suggestions,
@@ -190,9 +193,21 @@ def run_bet365_enrichment_dry_run(
         summary["read_only_transaction"] = read_only_enabled
         summary["lab_candidates_loaded"] = len(candidates)
         summary["fuzzy_suggestions"] = fuzzy_suggestions
+        summary["discover_aliases"] = discover_aliases
 
         paths = write_reports(out, summary=summary, results=results)
         summary["output_files"] = paths
+
+        if discover_aliases:
+            from app.services.cecchino_data_lab.bet365_enrichment.alias_discovery import (
+                run_alias_discovery,
+                write_alias_discovery_reports,
+            )
+
+            discovery = run_alias_discovery(results, candidates, index=index)
+            alias_paths = write_alias_discovery_reports(out, discovery)
+            summary["alias_discovery"] = discovery.summary
+            summary["output_files"] = {**paths, **alias_paths}
 
         # Rollback esplicito della transazione read-only (nessun commit)
         session.rollback()

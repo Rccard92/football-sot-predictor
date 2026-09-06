@@ -8,6 +8,10 @@ Uso:
   python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
     --output-dir "<dir>" --fuzzy-suggestions
 
+  # Discovery alias schedule-based (diagnostica; non modifica TEAM_ALIASES)
+  python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
+    --discover-aliases --output-dir "<dir>"
+
 Solo SELECT + report. Nessuna scrittura DB. Nessun --apply in questa fase.
 """
 
@@ -54,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
             "su AMBIGUOUS/NOT_FOUND; non assegna mai un match. Default: off."
         ),
     )
+    parser.add_argument(
+        "--discover-aliases",
+        action="store_true",
+        default=False,
+        help=(
+            "Dopo il matching, scopre alias diagnostici da fixture unica "
+            "(competition+season+kickoff). Non modifica TEAM_ALIASES né il DB."
+        ),
+    )
     return parser
 
 
@@ -80,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=output_dir,
             session=db,
             fuzzy_suggestions=bool(args.fuzzy_suggestions),
+            discover_aliases=bool(args.discover_aliases),
         )
         print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
         return 0

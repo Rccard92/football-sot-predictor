@@ -158,7 +158,7 @@ def test_opening_columns_never_mapped_or_read():
 
 
 def test_matched_pct_on_bet365_rows_only():
-    results = run_matching(
+    results, _index = run_matching(
         [
             parse_csv_row(_csv_row(source_match_id="1")),
             parse_csv_row(
