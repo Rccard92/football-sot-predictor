@@ -142,6 +142,7 @@ class AliasDiscoveryV2Result:
     conflict_with_static: list[dict[str, Any]] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
     simulation_summary: dict[str, Any] = field(default_factory=dict)
+    simulated_results: list[MatchResult] = field(default_factory=list)
     bootstrap_iterations: int = 0
 
 
@@ -978,8 +979,11 @@ def simulate_matching_with_temp_aliases(
     *,
     index: CandidateIndex,
     trusted_display: dict[str, str],
-) -> dict[str, Any]:
-    """Riesegue matching in-memory con overlay V2. Non modifica TEAM_ALIASES."""
+) -> tuple[dict[str, Any], list[MatchResult]]:
+    """Riesegue matching in-memory con overlay V2. Non modifica TEAM_ALIASES.
+
+    Restituisce (summary, simulated_results) per audit reporting side-effect-free.
+    """
     from app.services.cecchino_data_lab.bet365_enrichment.dry_run import run_matching
 
     original_matched = sum(1 for r in results if r.match_status in MATCHED_STATUSES)
@@ -1008,7 +1012,7 @@ def simulate_matching_with_temp_aliases(
 
     simulated_matched = exact + safe
     total = len(results) or 1
-    return {
+    summary = {
         "original_matched": original_matched,
         "simulated_matched": simulated_matched,
         "simulated_matched_pct": round(100.0 * simulated_matched / total, 4),
@@ -1023,6 +1027,7 @@ def simulate_matching_with_temp_aliases(
         "team_aliases_modified": False,
         "temp_aliases_applied": len(trusted_display),
     }
+    return summary, sim_results
 
 
 def run_alias_discovery_v2(
@@ -1054,7 +1059,7 @@ def run_alias_discovery_v2(
         unresolved=unresolved,
         identity_anchor_norms=identity_anchor_norms,
     )
-    simulation = simulate_matching_with_temp_aliases(
+    simulation, sim_results = simulate_matching_with_temp_aliases(
         results,
         candidates,
         index=idx,
@@ -1075,6 +1080,7 @@ def run_alias_discovery_v2(
         conflict_with_static=conflict_static,
         summary=summary,
         simulation_summary=simulation,
+        simulated_results=sim_results,
         bootstrap_iterations=iterations,
     )
 
@@ -1158,6 +1164,12 @@ def write_alias_discovery_v2_reports(
         encoding="utf-8",
     )
 
+    from app.services.cecchino_data_lab.bet365_enrichment.team_mapping_audit_v2 import (
+        write_team_mapping_audit_v2_reports,
+    )
+
+    audit_paths = write_team_mapping_audit_v2_reports(out, discovery)
+
     return {
         "kickoff_delta_profiles_csv": str(profiles_path),
         "alias_suggestions_v2_csv": str(suggestions_path),
@@ -1165,4 +1177,6 @@ def write_alias_discovery_v2_reports(
         "schedule_unresolved_v2_csv": str(unresolved_path),
         "alias_audit_summary_v2_json": str(audit_path),
         "alias_v2_simulation_summary_json": str(sim_path),
+        "team_mapping_audit_v2_csv": audit_paths["team_mapping_audit_v2_csv"],
+        "team_mapping_audit_v2_html": audit_paths["team_mapping_audit_v2_html"],
     }
