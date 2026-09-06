@@ -100,6 +100,23 @@ class CecchinoLabMatch(Base, TimestampMixin):
     bet365_closing_ah_home: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     bet365_closing_ah_away: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
 
+    bet365_dc_1x: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_dc_12: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_dc_x2: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    bet365_over_05: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_under_05: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    bet365_over_15: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_under_15: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    bet365_over_35: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_under_35: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    bet365_ht_home: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_ht_draw: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    bet365_ht_away: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+
     result_ft_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     result_ht_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     statistics_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
