@@ -41,15 +41,22 @@ def _alias_lookup(raw: str | None, aliases: dict[str, str]) -> str | None:
     return None
 
 
-def resolve_team_name(raw: str | None) -> tuple[str, bool]:
-    """Restituisce (nome_per_match, used_alias).
+def resolve_team_name(
+    raw: str | None,
+    extra_aliases: dict[str, str] | None = None,
+) -> tuple[str, bool, bool]:
+    """Restituisce (nome_per_match, used_static_alias, used_temp_alias).
 
-    Se esiste alias esplicito, confronta sul target alias; altrimenti sul raw.
+    Precedenza assoluta: TEAM_ALIASES statici, poi ``extra_aliases`` temporanei.
     """
-    alias_target = _alias_lookup(raw, TEAM_ALIASES)
-    if alias_target is not None:
-        return alias_target, True
-    return str(raw or "").strip(), False
+    static_target = _alias_lookup(raw, TEAM_ALIASES)
+    if static_target is not None:
+        return static_target, True, False
+    if extra_aliases:
+        temp_target = _alias_lookup(raw, extra_aliases)
+        if temp_target is not None:
+            return temp_target, False, True
+    return str(raw or "").strip(), False, False
 
 
 def resolve_competition_name(raw: str | None) -> str:
@@ -59,17 +66,26 @@ def resolve_competition_name(raw: str | None) -> str:
     return str(raw or "").strip()
 
 
-def team_names_equal(csv_name: str | None, db_name: str | None) -> tuple[bool, bool]:
+def team_names_equal(
+    csv_name: str | None,
+    db_name: str | None,
+    *,
+    extra_aliases: dict[str, str] | None = None,
+) -> tuple[bool, bool, bool]:
     """Confronta CSV vs DB dopo normalizzazione (+ alias CSV).
 
     Returns:
-        (matched, used_alias)
+        (matched, used_static_alias, used_temp_alias)
     """
-    resolved, used_alias = resolve_team_name(csv_name)
+    resolved, used_static, used_temp = resolve_team_name(
+        csv_name, extra_aliases=extra_aliases
+    )
     matched = normalize_name(resolved) == normalize_name(db_name) and bool(
         normalize_name(resolved)
     )
-    return matched, used_alias if matched else False
+    if not matched:
+        return False, False, False
+    return True, used_static, used_temp
 
 
 def competition_names_match(

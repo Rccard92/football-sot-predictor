@@ -19,6 +19,7 @@ from app.services.cecchino_data_lab.bet365_enrichment.constants import (
     RULE_EXACT_NORMALIZED,
     RULE_NOT_FOUND,
     RULE_SAFE_ALIAS,
+    RULE_TEMP_ALIAS,
 )
 from app.services.cecchino_data_lab.bet365_enrichment.normalize import (
     competition_names_match,
@@ -63,6 +64,7 @@ class MatchResult:
     kickoff_delta_minutes: int | None = None
     warnings: list[str] = field(default_factory=list)
     candidate_ids: list[int] = field(default_factory=list)
+    used_temp_alias: bool = False
 
 
 def parse_kickoff_utc(value: str | None) -> datetime | None:
@@ -170,6 +172,21 @@ def _kickoff_within_tolerance(csv_ko: datetime | None, db_ko: datetime | None) -
     return abs(delta) <= int(KICKOFF_TOLERANCE.total_seconds() // 60)
 
 
+def _kickoff_within_delta_window(
+    csv_ko: datetime | None,
+    db_ko: datetime | None,
+    delta_window: tuple[int, int] | None,
+) -> bool:
+    """Se ``delta_window`` è None usa ±120'; altrimenti [lo, hi] inclusivo sul delta."""
+    if delta_window is None:
+        return _kickoff_within_tolerance(csv_ko, db_ko)
+    delta = _kickoff_delta_minutes(csv_ko, db_ko)
+    if delta is None:
+        return False
+    lo, hi = delta_window
+    return lo <= delta <= hi
+
+
 @dataclass
 class CandidateIndex:
     """Indice in-memory per ridurre il pool candidati (solo by_date UTC).
@@ -219,13 +236,23 @@ def _season_compatible(csv_row: CsvMatchRow, candidate: LabMatchCandidate) -> bo
 
 
 def _team_pair_match(
-    csv_row: CsvMatchRow, candidate: LabMatchCandidate
-) -> tuple[bool, bool]:
-    home_ok, home_alias = team_names_equal(csv_row.home_team, candidate.home_team)
-    away_ok, away_alias = team_names_equal(csv_row.away_team, candidate.away_team)
+    csv_row: CsvMatchRow,
+    candidate: LabMatchCandidate,
+    *,
+    extra_aliases: dict[str, str] | None = None,
+) -> tuple[bool, bool, bool]:
+    """Returns (matched, used_any_alias, used_temp_alias)."""
+    home_ok, home_static, home_temp = team_names_equal(
+        csv_row.home_team, candidate.home_team, extra_aliases=extra_aliases
+    )
+    away_ok, away_static, away_temp = team_names_equal(
+        csv_row.away_team, candidate.away_team, extra_aliases=extra_aliases
+    )
     if home_ok and away_ok:
-        return True, bool(home_alias or away_alias)
-    return False, False
+        used_temp = bool(home_temp or away_temp)
+        used_alias = bool(home_static or away_static or used_temp)
+        return True, used_alias, used_temp
+    return False, False, False
 
 
 def _fuzzy_suggestions(
@@ -254,9 +281,15 @@ def _fuzzy_suggestions(
 
 
 def find_schedule_candidates(
-    csv_row: CsvMatchRow, candidates: list[LabMatchCandidate]
+    csv_row: CsvMatchRow,
+    candidates: list[LabMatchCandidate],
+    *,
+    delta_window: tuple[int, int] | None = None,
 ) -> list[tuple[LabMatchCandidate, int | None]]:
-    """Candidati compatibili per competition + season + kickoff (±120').
+    """Candidati compatibili per competition + season + kickoff.
+
+    ``delta_window`` None → ±120' (default storico).
+    Altrimenti [lo, hi] inclusivo sul delta csv-db in minuti.
 
     Non filtra home/away: usato solo dalla discovery alias diagnostica.
     """
@@ -270,7 +303,9 @@ def find_schedule_candidates(
             continue
         if not _season_compatible(csv_row, cand):
             continue
-        if not _kickoff_within_tolerance(csv_row.kickoff_utc, cand.kickoff_at):
+        if not _kickoff_within_delta_window(
+            csv_row.kickoff_utc, cand.kickoff_at, delta_window
+        ):
             continue
         delta = _kickoff_delta_minutes(csv_row.kickoff_utc, cand.kickoff_at)
         out.append((cand, delta))
@@ -278,10 +313,13 @@ def find_schedule_candidates(
 
 
 def find_compatible_candidates(
-    csv_row: CsvMatchRow, candidates: list[LabMatchCandidate]
-) -> list[tuple[LabMatchCandidate, bool, int | None]]:
-    """Restituisce lista (candidate, used_alias, kickoff_delta_minutes)."""
-    compatible: list[tuple[LabMatchCandidate, bool, int | None]] = []
+    csv_row: CsvMatchRow,
+    candidates: list[LabMatchCandidate],
+    *,
+    extra_aliases: dict[str, str] | None = None,
+) -> list[tuple[LabMatchCandidate, bool, bool, int | None]]:
+    """Restituisce lista (candidate, used_alias, used_temp_alias, kickoff_delta_minutes)."""
+    compatible: list[tuple[LabMatchCandidate, bool, bool, int | None]] = []
     for cand in candidates:
         if not competition_names_match(
             csv_row.competition_name,
@@ -291,13 +329,15 @@ def find_compatible_candidates(
             continue
         if not _season_compatible(csv_row, cand):
             continue
-        teams_ok, used_alias = _team_pair_match(csv_row, cand)
+        teams_ok, used_alias, used_temp = _team_pair_match(
+            csv_row, cand, extra_aliases=extra_aliases
+        )
         if not teams_ok:
             continue
         if not _kickoff_within_tolerance(csv_row.kickoff_utc, cand.kickoff_at):
             continue
         delta = _kickoff_delta_minutes(csv_row.kickoff_utc, cand.kickoff_at)
-        compatible.append((cand, used_alias, delta))
+        compatible.append((cand, used_alias, used_temp, delta))
     return compatible
 
 
@@ -307,11 +347,15 @@ def match_csv_row(
     *,
     index: CandidateIndex | None = None,
     fuzzy_suggestions: bool = False,
+    extra_aliases: dict[str, str] | None = None,
 ) -> MatchResult:
     """Classifica una riga CSV.
 
     Se ``index`` è fornito, lo scan usa il pool ridotto by_date (D±1);
     i filtri e la classificazione restano identici al full-scan.
+
+    ``extra_aliases`` overlay temporaneo V2 (dopo TEAM_ALIASES). Se il match
+    usa solo overlay: status SAFE_ALIAS, matching_rule=temp_alias.
 
     I fuzzy suggestions (``SequenceMatcher``) sono solo diagnostici: non
     assegnano mai un match e di default sono disabilitati. Con
@@ -322,9 +366,21 @@ def match_csv_row(
     suggestion_source = (
         index.all_candidates if index is not None else candidates
     )
-    compatible = find_compatible_candidates(csv_row, scan_pool)
+    compatible = find_compatible_candidates(
+        csv_row, scan_pool, extra_aliases=extra_aliases
+    )
     if len(compatible) == 1:
-        cand, used_alias, delta = compatible[0]
+        cand, used_alias, used_temp, delta = compatible[0]
+        if used_temp:
+            return MatchResult(
+                csv_row=csv_row,
+                match_status=MATCH_STATUS_SAFE_ALIAS,
+                matching_rule=RULE_TEMP_ALIAS,
+                matched=cand,
+                kickoff_delta_minutes=delta,
+                candidate_ids=[cand.id],
+                used_temp_alias=True,
+            )
         if used_alias:
             return MatchResult(
                 csv_row=csv_row,
@@ -345,11 +401,11 @@ def match_csv_row(
     if len(compatible) > 1:
         warnings = [
             f"ambiguous_count={len(compatible)}",
-            *[f"candidate_id={c.id}" for c, _, _ in compatible[:5]],
+            *[f"candidate_id={c.id}" for c, _, _, _ in compatible[:5]],
         ]
         if fuzzy_suggestions:
             warnings.extend(
-                _fuzzy_suggestions(csv_row, [c for c, _, _ in compatible])
+                _fuzzy_suggestions(csv_row, [c for c, _, _, _ in compatible])
             )
         return MatchResult(
             csv_row=csv_row,
@@ -358,7 +414,7 @@ def match_csv_row(
             matched=None,
             kickoff_delta_minutes=None,
             warnings=warnings,
-            candidate_ids=[c.id for c, _, _ in compatible],
+            candidate_ids=[c.id for c, _, _, _ in compatible],
         )
     warnings: list[str] = []
     if fuzzy_suggestions:

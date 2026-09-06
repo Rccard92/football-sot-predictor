@@ -107,6 +107,7 @@ def run_matching(
     *,
     fuzzy_suggestions: bool = False,
     index: CandidateIndex | None = None,
+    extra_aliases: dict[str, str] | None = None,
 ) -> tuple[list[MatchResult], CandidateIndex]:
     idx = index if index is not None else CandidateIndex.build(candidates)
     total = len(csv_rows)
@@ -119,6 +120,7 @@ def run_matching(
             candidates,
             index=idx,
             fuzzy_suggestions=fuzzy_suggestions,
+            extra_aliases=extra_aliases,
         )
         results.append(result)
         status = result.match_status
@@ -199,14 +201,15 @@ def run_bet365_enrichment_dry_run(
         summary["output_files"] = paths
 
         if discover_aliases:
-            from app.services.cecchino_data_lab.bet365_enrichment.alias_discovery import (
-                run_alias_discovery,
-                write_alias_discovery_reports,
+            from app.services.cecchino_data_lab.bet365_enrichment.alias_discovery_v2 import (
+                run_alias_discovery_v2,
+                write_alias_discovery_v2_reports,
             )
 
-            discovery = run_alias_discovery(results, candidates, index=index)
-            alias_paths = write_alias_discovery_reports(out, discovery)
+            discovery = run_alias_discovery_v2(results, candidates, index=index)
+            alias_paths = write_alias_discovery_v2_reports(out, discovery)
             summary["alias_discovery"] = discovery.summary
+            summary["alias_v2_simulation"] = discovery.simulation_summary
             summary["output_files"] = {**paths, **alias_paths}
 
         # Rollback esplicito della transazione read-only (nessun commit)

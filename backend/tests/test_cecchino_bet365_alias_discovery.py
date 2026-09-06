@@ -393,19 +393,26 @@ def test_dry_run_discover_aliases_no_db_write(tmp_path: Path):
     assert session.commit_calls == 0
     assert session.flush_calls == 0
     assert session.rollback_calls >= 1
-    assert (out_dir / "alias_suggestions.csv").is_file()
-    assert (out_dir / "alias_conflicts.csv").is_file()
-    assert (out_dir / "schedule_unresolved.csv").is_file()
-    assert (out_dir / "alias_audit_summary.json").is_file()
-    audit = json.loads((out_dir / "alias_audit_summary.json").read_text(encoding="utf-8"))
+    assert (out_dir / "kickoff_delta_profiles.csv").is_file()
+    assert (out_dir / "alias_suggestions_v2.csv").is_file()
+    assert (out_dir / "alias_conflicts_v2.csv").is_file()
+    assert (out_dir / "schedule_unresolved_v2.csv").is_file()
+    assert (out_dir / "alias_audit_summary_v2.json").is_file()
+    assert (out_dir / "alias_v2_simulation_summary.json").is_file()
+    audit = json.loads(
+        (out_dir / "alias_audit_summary_v2.json").read_text(encoding="utf-8")
+    )
     assert audit["db_writes"] is False
     assert audit["team_aliases_modified"] is False
+    assert audit["alias_discovery_version"] == 2
     assert "IDENTITY_CONFIRMED" in audit
-    assert "HIGH_CONFIDENCE" in audit
+    assert "ANCHORED_HIGH_CONFIDENCE" in audit
+    assert "SCHEDULE_ONLY" in audit
     assert "LOW_EVIDENCE" in audit
     assert "CONFLICT" in audit
     assert "NOT_RESOLVED" in audit
     assert TEAM_ALIASES == aliases_before
+    assert "alias_v2_simulation" in summary
 
 
 def test_normalized_aggregation_merges_display_variants():

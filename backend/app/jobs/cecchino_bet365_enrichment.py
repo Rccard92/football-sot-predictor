@@ -8,7 +8,7 @@ Uso:
   python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
     --output-dir "<dir>" --fuzzy-suggestions
 
-  # Discovery alias schedule-based (diagnostica; non modifica TEAM_ALIASES)
+  # Alias Discovery V2 (kickoff profile + anchor + bootstrap; non modifica TEAM_ALIASES)
   python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
     --discover-aliases --output-dir "<dir>"
 
@@ -63,8 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Dopo il matching, scopre alias diagnostici da fixture unica "
-            "(competition+season+kickoff). Non modifica TEAM_ALIASES né il DB."
+            "Dopo il matching, esegue Alias Discovery V2 (kickoff profile, "
+            "anchor, bootstrap). Non modifica TEAM_ALIASES né il DB."
         ),
     )
     return parser
