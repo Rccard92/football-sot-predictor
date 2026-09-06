@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -140,12 +141,26 @@ def parse_csv_row(row: dict[str, str]) -> CsvMatchRow:
     )
 
 
-def _kickoff_delta_minutes(csv_ko: datetime | None, db_ko: datetime | None) -> int | None:
-    if csv_ko is None or db_ko is None:
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Normalizza un datetime in UTC (assume UTC se naive)."""
+    if dt is None:
         return None
-    db = db_ko if db_ko.tzinfo else db_ko.replace(tzinfo=timezone.utc)
-    db = db.astimezone(timezone.utc)
-    return int(round((csv_ko - db).total_seconds() / 60.0))
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _utc_date(dt: datetime | None) -> date | None:
+    utc = _as_utc(dt)
+    return utc.date() if utc is not None else None
+
+
+def _kickoff_delta_minutes(csv_ko: datetime | None, db_ko: datetime | None) -> int | None:
+    csv_utc = _as_utc(csv_ko)
+    db_utc = _as_utc(db_ko)
+    if csv_utc is None or db_utc is None:
+        return None
+    return int(round((csv_utc - db_utc).total_seconds() / 60.0))
 
 
 def _kickoff_within_tolerance(csv_ko: datetime | None, db_ko: datetime | None) -> bool:
@@ -153,6 +168,37 @@ def _kickoff_within_tolerance(csv_ko: datetime | None, db_ko: datetime | None) -
     if delta is None:
         return False
     return abs(delta) <= int(KICKOFF_TOLERANCE.total_seconds() // 60)
+
+
+@dataclass
+class CandidateIndex:
+    """Indice in-memory per ridurre il pool candidati (solo by_date UTC).
+
+    La stagione NON è pre-filtrata qui: resta esclusiva di ``_season_compatible``.
+    """
+
+    by_date: dict[date, list[LabMatchCandidate]]
+    all_candidates: list[LabMatchCandidate]
+
+    @classmethod
+    def build(cls, candidates: list[LabMatchCandidate]) -> CandidateIndex:
+        by_date: dict[date, list[LabMatchCandidate]] = defaultdict(list)
+        for cand in candidates:
+            d = _utc_date(cand.kickoff_at)
+            if d is not None:
+                by_date[d].append(cand)
+        return cls(by_date=dict(by_date), all_candidates=list(candidates))
+
+    def lookup(self, csv_row: CsvMatchRow) -> list[LabMatchCandidate]:
+        """Pool ridotto: candidati con kickoff UTC su D-1 / D / D+1."""
+        d = _utc_date(csv_row.kickoff_utc)
+        if d is None:
+            return []
+        seen: dict[int, LabMatchCandidate] = {}
+        for offset in (-1, 0, 1):
+            for cand in self.by_date.get(d + timedelta(days=offset), ()):
+                seen[cand.id] = cand
+        return list(seen.values())
 
 
 def _season_compatible(csv_row: CsvMatchRow, candidate: LabMatchCandidate) -> bool:
@@ -232,9 +278,23 @@ def find_compatible_candidates(
 
 
 def match_csv_row(
-    csv_row: CsvMatchRow, candidates: list[LabMatchCandidate]
+    csv_row: CsvMatchRow,
+    candidates: list[LabMatchCandidate],
+    *,
+    index: CandidateIndex | None = None,
 ) -> MatchResult:
-    compatible = find_compatible_candidates(csv_row, candidates)
+    """Classifica una riga CSV.
+
+    Se ``index`` è fornito, lo scan usa il pool ridotto by_date (D±1);
+    i filtri e la classificazione restano identici al full-scan.
+    Per i suggerimenti NOT_FOUND si usa sempre la lista completa
+    (``index.all_candidates`` o ``candidates``).
+    """
+    scan_pool = index.lookup(csv_row) if index is not None else candidates
+    suggestion_source = (
+        index.all_candidates if index is not None else candidates
+    )
+    compatible = find_compatible_candidates(csv_row, scan_pool)
     if len(compatible) == 1:
         cand, used_alias, delta = compatible[0]
         if used_alias:
@@ -270,18 +330,18 @@ def match_csv_row(
             candidate_ids=[c.id for c, _, _ in compatible],
         )
     # NOT_FOUND: restringi pool per suggerimenti (stessa stagione se nota)
-    suggestion_pool = candidates
+    suggestion_pool = suggestion_source
     if csv_row.season_start_year is not None:
         suggestion_pool = [
             c
-            for c in candidates
+            for c in suggestion_source
             if c.start_year == csv_row.season_start_year
             or (
                 c.season_label
                 and csv_row.season
                 and normalize_name(c.season_label) == normalize_name(csv_row.season)
             )
-        ] or candidates
+        ] or suggestion_source
     warnings = _fuzzy_suggestions(csv_row, suggestion_pool)
     return MatchResult(
         csv_row=csv_row,

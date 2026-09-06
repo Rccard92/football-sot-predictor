@@ -17,6 +17,7 @@ from app.services.cecchino_data_lab.bet365_enrichment.matching import (
     CsvMatchRow,
     LabMatchCandidate,
     MatchResult,
+    CandidateIndex,
     match_csv_row,
     parse_csv_row,
 )
@@ -98,7 +99,8 @@ def run_matching(
     csv_rows: list[CsvMatchRow],
     candidates: list[LabMatchCandidate],
 ) -> list[MatchResult]:
-    return [match_csv_row(row, candidates) for row in csv_rows]
+    index = CandidateIndex.build(candidates)
+    return [match_csv_row(row, candidates, index=index) for row in csv_rows]
 
 
 def run_bet365_enrichment_dry_run(

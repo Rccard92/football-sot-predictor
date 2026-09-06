@@ -24,6 +24,7 @@ from app.services.cecchino_data_lab.bet365_enrichment.dry_run import (
     run_matching,
 )
 from app.services.cecchino_data_lab.bet365_enrichment.matching import (
+    CandidateIndex,
     LabMatchCandidate,
     match_csv_row,
     parse_csv_row,
@@ -292,3 +293,120 @@ def test_cli_requires_dry_run():
     with pytest.raises(SystemExit) as exc:
         main(["--csv", "x.csv", "--output-dir", "out"])
     assert exc.value.code != 0
+
+
+def _assert_match_results_equivalent(legacy, indexed) -> None:
+    assert legacy.match_status == indexed.match_status
+    assert legacy.matching_rule == indexed.matching_rule
+    assert legacy.kickoff_delta_minutes == indexed.kickoff_delta_minutes
+    assert legacy.candidate_ids == indexed.candidate_ids
+    legacy_id = legacy.matched.id if legacy.matched else None
+    indexed_id = indexed.matched.id if indexed.matched else None
+    assert legacy_id == indexed_id
+
+
+def test_indexed_matcher_matches_full_scan_semantics():
+    """Regression: CandidateIndex by_date deve produrre gli stessi esiti del full-scan."""
+    candidates = [
+        _candidate(id=1, home_team="Standard", away_team="Genk"),
+        _candidate(
+            id=2,
+            home_team="Standard",
+            away_team="Genk",
+            kickoff_at=_ko(2021, 7, 23, 18, 0),
+        ),
+        _candidate(
+            id=3,
+            home_team="Club Brugge",
+            away_team="Anderlecht",
+            kickoff_at=_ko(2021, 8, 1, 16, 0),
+        ),
+        # Boundary mezzanotte: DB giorno precedente, entro 120'
+        _candidate(
+            id=4,
+            home_team="Antwerp",
+            away_team="Gent",
+            kickoff_at=_ko(2021, 7, 22, 23, 0),
+        ),
+        # Fuori tolleranza (>2h) stesso giorno rispetto a 21:00
+        _candidate(
+            id=5,
+            home_team="Standard",
+            away_team="Genk",
+            kickoff_at=_ko(2021, 7, 23, 12, 0),
+        ),
+        # Decoy altro giorno/stagione
+        _candidate(
+            id=99,
+            home_team="Standard",
+            away_team="Genk",
+            kickoff_at=_ko(2020, 1, 1, 12, 0),
+            start_year=2020,
+            season_label="2020/2021",
+        ),
+    ]
+    index = CandidateIndex.build(candidates)
+
+    cases = [
+        # EXACT: solo id=1 entro ±120' (15:45 vs 17:45=120'; 18:00=135')
+        parse_csv_row(
+            _csv_row(source_match_id="exact", kickoff_utc="2021-07-23 15:45:00")
+        ),
+        # SAFE_ALIAS stesso boundary
+        parse_csv_row(
+            _csv_row(
+                source_match_id="alias",
+                home_team="Standard Liège",
+                away_team="KRC Genk",
+                kickoff_utc="2021-07-23 15:45:00",
+            )
+        ),
+        # AMBIGUOUS (id=1 e id=2 entro tolleranza)
+        parse_csv_row(
+            _csv_row(
+                source_match_id="amb",
+                kickoff_utc="2021-07-23 18:30:00",
+            )
+        ),
+        # NOT_FOUND team
+        parse_csv_row(
+            _csv_row(
+                source_match_id="nf",
+                home_team="Unknown FC",
+                away_team="Other FC",
+            )
+        ),
+        # Kickoff >2h → NOT_FOUND
+        parse_csv_row(
+            _csv_row(
+                source_match_id="ko_far",
+                kickoff_utc="2021-07-23 21:00:00",
+                home_team="Standard",
+                away_team="Genk",
+            )
+        ),
+        # Midnight boundary: CSV 00:30 UTC, DB 23:00 giorno prima (Δ 90')
+        parse_csv_row(
+            _csv_row(
+                source_match_id="midnight",
+                home_team="Antwerp",
+                away_team="Gent",
+                kickoff_utc="2021-07-23 00:30:00",
+            )
+        ),
+    ]
+
+    expected_statuses = {
+        "exact": MATCH_STATUS_EXACT,
+        "alias": MATCH_STATUS_SAFE_ALIAS,
+        "amb": MATCH_STATUS_AMBIGUOUS,
+        "nf": MATCH_STATUS_NOT_FOUND,
+        "ko_far": MATCH_STATUS_NOT_FOUND,
+        "midnight": MATCH_STATUS_EXACT,
+    }
+
+    for row in cases:
+        legacy = match_csv_row(row, candidates)
+        indexed = match_csv_row(row, candidates, index=index)
+        _assert_match_results_equivalent(legacy, indexed)
+        assert legacy.match_status == expected_statuses[row.source_match_id]
