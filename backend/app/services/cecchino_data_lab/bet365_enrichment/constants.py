@@ -96,3 +96,44 @@ APPLY_PLAN_IDENTITY_COLUMNS: tuple[str, ...] = (
 
 APPLY_PLAN_CSV_FILENAME = "bet365_enrichment_apply_plan.csv"
 APPLY_PLAN_SUMMARY_FILENAME = "bet365_enrichment_apply_summary.json"
+PRE_APPLY_STATE_CSV_FILENAME = "bet365_enrichment_pre_apply_state.csv"
+APPLY_RESULT_JSON_FILENAME = "bet365_enrichment_apply_result.json"
+
+# Apply: lock/update chunk size (lab_match_id per SELECT/UPDATE batch)
+APPLY_LOCK_CHUNK_SIZE = 500
+APPLY_UPDATE_CHUNK_SIZE = 500
+
+# Colonne Bet365 legacy: mai scrivibili da apply enrichment
+LEGACY_BET365_COLUMNS: frozenset[str] = frozenset(
+    {
+        "bet365_home",
+        "bet365_draw",
+        "bet365_away",
+        "bet365_over_25",
+        "bet365_under_25",
+        "bet365_ah_home",
+        "bet365_ah_away",
+        "asian_handicap_home_line",
+        "bet365_closing_home",
+        "bet365_closing_draw",
+        "bet365_closing_away",
+        "bet365_closing_over_25",
+        "bet365_closing_under_25",
+        "bet365_closing_ah_home",
+        "bet365_closing_ah_away",
+        "asian_handicap_closing_home_line",
+    }
+)
+
+# Conteggio manifest: ricalcolati dal plan CSV e confrontati col summary
+APPLY_MANIFEST_COUNT_KEYS: tuple[str, ...] = (
+    "plan_rows",
+    "duplicate_source_match_ids",
+    "duplicate_lab_match_ids",
+    "would_update_rows",
+    "would_update_cells",
+    "already_same_cells",
+    "no_source_value_cells",
+    "conflict_cells",
+    "invalid_source_value_cells",
+)
