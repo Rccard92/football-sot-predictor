@@ -60,3 +60,39 @@ CSV_IDENTITY_COLUMNS: tuple[str, ...] = (
 )
 
 BOOKMAKER_BET365 = "bet365"
+
+# Prepare-apply cell actions (auditabili nel plan CSV)
+CELL_ACTION_WOULD_WRITE = "WOULD_WRITE"
+CELL_ACTION_ALREADY_SAME = "ALREADY_SAME"
+CELL_ACTION_CONFLICT = "CONFLICT"
+CELL_ACTION_NO_SOURCE_VALUE = "NO_SOURCE_VALUE"
+CELL_ACTION_INVALID_SOURCE_VALUE = "INVALID_SOURCE_VALUE"
+
+CELL_ACTIONS = frozenset(
+    {
+        CELL_ACTION_WOULD_WRITE,
+        CELL_ACTION_ALREADY_SAME,
+        CELL_ACTION_CONFLICT,
+        CELL_ACTION_NO_SOURCE_VALUE,
+        CELL_ACTION_INVALID_SOURCE_VALUE,
+    }
+)
+
+# Chunk size for SELECT enrichment odds by lab_match_id
+ENRICHMENT_ODDS_SELECT_CHUNK_SIZE = 2000
+
+APPLY_PLAN_IDENTITY_COLUMNS: tuple[str, ...] = (
+    "source_match_id",
+    "lab_match_id",
+    "competition",
+    "season",
+    "csv_home_team",
+    "csv_away_team",
+    "db_home_team",
+    "db_away_team",
+    "matching_status",
+    "matching_rule",
+)
+
+APPLY_PLAN_CSV_FILENAME = "bet365_enrichment_apply_plan.csv"
+APPLY_PLAN_SUMMARY_FILENAME = "bet365_enrichment_apply_summary.json"

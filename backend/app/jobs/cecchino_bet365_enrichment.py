@@ -12,6 +12,10 @@ Uso:
   python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
     --discover-aliases --output-dir "<dir>"
 
+  # Prepare-apply (read-only): plan congelato + summary; nessun --apply in questa fase
+  python -m app.jobs.cecchino_bet365_enrichment --csv "<file>" --dry-run \\
+    --prepare-apply --output-dir "<dir>"
+
 Solo SELECT + report. Nessuna scrittura DB. Nessun --apply in questa fase.
 """
 
@@ -67,6 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
             "anchor, bootstrap). Non modifica TEAM_ALIASES né il DB."
         ),
     )
+    parser.add_argument(
+        "--prepare-apply",
+        action="store_true",
+        default=False,
+        help=(
+            "Genera bet365_enrichment_apply_plan.csv + summary (read-only). "
+            "Forza Alias Discovery V2 e matching simulato. Nessuna scrittura DB. "
+            "Nessun --apply in questa fase."
+        ),
+    )
     return parser
 
 
@@ -94,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             session=db,
             fuzzy_suggestions=bool(args.fuzzy_suggestions),
             discover_aliases=bool(args.discover_aliases),
+            prepare_apply=bool(args.prepare_apply),
         )
         print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
         return 0

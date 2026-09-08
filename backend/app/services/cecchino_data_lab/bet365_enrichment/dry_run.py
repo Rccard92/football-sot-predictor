@@ -153,6 +153,7 @@ def run_bet365_enrichment_dry_run(
     session: Session,
     fuzzy_suggestions: bool = False,
     discover_aliases: bool = False,
+    prepare_apply: bool = False,
 ) -> dict[str, Any]:
     """Esegue dry-run completo.
 
@@ -161,11 +162,15 @@ def run_bet365_enrichment_dry_run(
     - Report su filesystem in output_dir
     - Fuzzy suggestions diagnostici solo se ``fuzzy_suggestions=True``
     - Alias discovery diagnostica se ``discover_aliases=True`` (non modifica TEAM_ALIASES)
+    - ``prepare_apply=True`` forza Alias Discovery V2 e scrive apply plan (read-only)
     """
     path = Path(csv_path)
     out = Path(output_dir)
     if not path.is_file():
         raise FileNotFoundError(f"CSV non trovato: {path}")
+
+    if prepare_apply:
+        discover_aliases = True
 
     # Protezione aggiuntiva: disabilita autoflush per questa sessione
     previous_autoflush = session.autoflush
@@ -196,6 +201,7 @@ def run_bet365_enrichment_dry_run(
         summary["lab_candidates_loaded"] = len(candidates)
         summary["fuzzy_suggestions"] = fuzzy_suggestions
         summary["discover_aliases"] = discover_aliases
+        summary["prepare_apply"] = prepare_apply
 
         paths = write_reports(out, summary=summary, results=results)
         summary["output_files"] = paths
@@ -211,6 +217,26 @@ def run_bet365_enrichment_dry_run(
             summary["alias_discovery"] = discovery.summary
             summary["alias_v2_simulation"] = discovery.simulation_summary
             summary["output_files"] = {**paths, **alias_paths}
+
+            if prepare_apply:
+                from app.services.cecchino_data_lab.bet365_enrichment.prepare_apply import (
+                    run_prepare_apply,
+                )
+
+                apply_summary = run_prepare_apply(
+                    session=session,
+                    csv_path=path,
+                    output_dir=out,
+                    simulated_results=discovery.simulated_results,
+                    csv_rows_total=csv_rows_total,
+                    read_only_transaction=read_only_enabled,
+                )
+                summary["apply_plan"] = apply_summary
+                summary["PLAN_VALID"] = apply_summary.get("PLAN_VALID")
+                summary["output_files"] = {
+                    **summary["output_files"],
+                    **apply_summary.get("output_files", {}),
+                }
 
         # Rollback esplicito della transazione read-only (nessun commit)
         session.rollback()
