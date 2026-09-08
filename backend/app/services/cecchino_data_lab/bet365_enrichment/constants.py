@@ -99,9 +99,9 @@ APPLY_PLAN_SUMMARY_FILENAME = "bet365_enrichment_apply_summary.json"
 PRE_APPLY_STATE_CSV_FILENAME = "bet365_enrichment_pre_apply_state.csv"
 APPLY_RESULT_JSON_FILENAME = "bet365_enrichment_apply_result.json"
 
-# Apply: lock/update chunk size (lab_match_id per SELECT/UPDATE batch)
+# Apply: lock chunk (SELECT FOR UPDATE); update chunk = executemany batch size
 APPLY_LOCK_CHUNK_SIZE = 500
-APPLY_UPDATE_CHUNK_SIZE = 500
+APPLY_UPDATE_CHUNK_SIZE = 1000
 
 # Colonne Bet365 legacy: mai scrivibili da apply enrichment
 LEGACY_BET365_COLUMNS: frozenset[str] = frozenset(

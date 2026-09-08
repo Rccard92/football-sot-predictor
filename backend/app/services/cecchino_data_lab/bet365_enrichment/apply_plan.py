@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import bindparam, select, update
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_match import CecchinoLabMatch
@@ -463,44 +463,68 @@ def apply_would_write_updates(
     *,
     chunk_size: int = APPLY_UPDATE_CHUNK_SIZE,
 ) -> tuple[int, int]:
-    """UPDATE solo celle WOULD_WRITE. Ritorna (rows_updated, cells_updated)."""
+    """UPDATE solo celle WOULD_WRITE via executemany sulla Connection.
+
+    Raggruppa per identico set di colonne WOULD_WRITE; per ogni gruppo usa
+    statement parametrizzato + connection.execute(stmt, params_list).
+    Restano nella stessa transazione Session (nessun commit/begin sulla connection).
+    Ritorna (rows_updated, cells_updated).
+    """
     by_id = {r.lab_match_id: r for r in rows if r.has_action(CELL_ACTION_WOULD_WRITE)}
-    update_ids = sorted(by_id.keys())
+    total = len(by_id)
+    if total == 0:
+        return 0, 0
+
+    # mask (tuple ordinata su ENRICHMENT_MODEL_FIELDS) -> [(lab_id, values)]
+    groups: dict[tuple[str, ...], list[tuple[int, dict[str, Decimal]]]] = {}
+    for lab_id in sorted(by_id.keys()):
+        plan_row = by_id[lab_id]
+        values: dict[str, Decimal] = {}
+        for f in ENRICHMENT_MODEL_FIELDS:
+            if plan_row.field_actions[f] != CELL_ACTION_WOULD_WRITE:
+                continue
+            parsed = _as_decimal(plan_row.field_values.get(f))
+            if parsed is None:
+                raise ApplyAbort(
+                    f"WOULD_WRITE value missing lab={lab_id} field={f}",
+                    code="ABORT_WOULD_WRITE_VALUE",
+                )
+            values[f] = parsed
+        if not values:
+            continue
+        forbidden = set(values) - set(ENRICHMENT_MODEL_FIELDS)
+        if forbidden:
+            raise ApplyAbort(
+                f"tentativo scrittura colonne non autorizzate: {forbidden}",
+                code="ABORT_UNAUTHORIZED_WRITE",
+            )
+        mask = tuple(f for f in ENRICHMENT_MODEL_FIELDS if f in values)
+        groups.setdefault(mask, []).append((lab_id, values))
+
+    size = max(1, int(chunk_size))
     rows_updated = 0
     cells_updated = 0
-    size = max(1, int(chunk_size))
+    # Stessa transazione Session: nessun commit/begin sulla connection
+    connection = session.connection()
 
-    for batch in _chunked(update_ids, size):
-        for lab_id in batch:
-            plan_row = by_id[lab_id]
-            values: dict[str, Decimal] = {}
-            for f in ENRICHMENT_MODEL_FIELDS:
-                if plan_row.field_actions[f] != CELL_ACTION_WOULD_WRITE:
-                    continue
-                parsed = _as_decimal(plan_row.field_values.get(f))
-                if parsed is None:
-                    raise ApplyAbort(
-                        f"WOULD_WRITE value missing lab={lab_id} field={f}",
-                        code="ABORT_WOULD_WRITE_VALUE",
-                    )
-                values[f] = parsed
-            if not values:
-                continue
-            # Solo colonne enrichment autorizzate
-            forbidden = set(values) - set(ENRICHMENT_MODEL_FIELDS)
-            if forbidden:
-                raise ApplyAbort(
-                    f"tentativo scrittura colonne non autorizzate: {forbidden}",
-                    code="ABORT_UNAUTHORIZED_WRITE",
-                )
-            stmt = (
-                update(CecchinoLabMatch)
-                .where(CecchinoLabMatch.id == lab_id)
-                .values(**values)
-            )
-            session.execute(stmt)
-            rows_updated += 1
-            cells_updated += len(values)
+    for mask in sorted(groups.keys()):
+        cols = list(mask)
+        entries = groups[mask]
+        stmt = (
+            update(CecchinoLabMatch)
+            .where(CecchinoLabMatch.id == bindparam("b_id"))
+            .values(**{c: bindparam(f"b_{c}") for c in cols})
+        )
+        for i in range(0, len(entries), size):
+            chunk = entries[i : i + size]
+            params_list = [
+                {"b_id": lab_id, **{f"b_{c}": vals[c] for c in cols}}
+                for lab_id, vals in chunk
+            ]
+            connection.execute(stmt, params_list)
+            rows_updated += len(params_list)
+            cells_updated += len(params_list) * len(cols)
+            logger.info("updated_rows=%s/%s", rows_updated, total)
 
     return rows_updated, cells_updated
 

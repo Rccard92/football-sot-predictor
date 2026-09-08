@@ -105,6 +105,17 @@ def _write_summary(
         json.dump(payload, fh, indent=2)
 
 
+class _FakeConnection:
+    """Connection fake: executemany UPDATE nella stessa 'transazione' della session."""
+
+    def __init__(self, session: "_ApplySession") -> None:
+        self._session = session
+
+    def execute(self, statement: Any, parameters: Any = None, *args: Any, **kwargs: Any) -> Any:
+        self._session.executed_sql.append(str(statement).strip().lower())
+        return self._session._execute_update(statement, parameters)
+
+
 class _ApplySession:
     """Session fake con odds in-memory, SELECT/UPDATE/commit/rollback tracking."""
 
@@ -130,83 +141,98 @@ class _ApplySession:
         self.corrupt_post_verify = corrupt_post_verify
         self._updates_done = 0
         self._bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect))
+        self._connection = _FakeConnection(self)
 
     def get_bind(self) -> Any:
         return self._bind
+
+    def connection(self) -> _FakeConnection:
+        """Stessa 'transazione' Session: nessun commit/begin sulla connection."""
+        return self._connection
+
+    def _apply_one_update(self, lab_id: int, values: dict[str, Any]) -> None:
+        self._updates_done += 1
+        if (
+            self.fail_after_n_updates is not None
+            and self._updates_done > self.fail_after_n_updates
+        ):
+            raise RuntimeError("simulated mid-apply failure")
+
+        if any(f not in ENRICHMENT_MODEL_FIELDS for f in values):
+            raise AssertionError(f"legacy/unauthorized column write: {values}")
+
+        cur = self.odds_by_id.setdefault(lab_id, _empty_odds())
+        for f, v in values.items():
+            if f in ENRICHMENT_MODEL_FIELDS:
+                cur[f] = v if isinstance(v, Decimal) else Decimal(str(v))
+        self.update_events.append({"lab_match_id": lab_id, "values": dict(values)})
+
+    def _params_to_values(self, params: dict[str, Any]) -> tuple[int | None, dict[str, Any]]:
+        lab_id: int | None = None
+        values: dict[str, Any] = {}
+        for k, v in params.items():
+            if k == "b_id" or (k.lower().endswith("id") and "bet365" not in k.lower()):
+                if isinstance(v, int):
+                    lab_id = v
+                continue
+            name = k[2:] if k.startswith("b_") else k
+            if name in ENRICHMENT_MODEL_FIELDS:
+                values[name] = v
+        return lab_id, values
+
+    def _execute_update(self, statement: Any, parameters: Any = None) -> Any:
+        # Executemany: list of param dicts
+        if isinstance(parameters, list):
+            for params in parameters:
+                lab_id, values = self._params_to_values(dict(params))
+                if lab_id is None:
+                    continue
+                self._apply_one_update(lab_id, values)
+            return SimpleNamespace(rowcount=len(parameters))
+
+        # Single-row (legacy / fallback)
+        values: dict[str, Any] = {}
+        lab_id: int | None = None
+        try:
+            if isinstance(parameters, dict):
+                lab_id, values = self._params_to_values(parameters)
+            compiled = statement.compile()
+            params = dict(compiled.params or {})
+            if lab_id is None or not values:
+                lab_id2, values2 = self._params_to_values(params)
+                lab_id = lab_id or lab_id2
+                if not values:
+                    values = values2
+            raw_values = getattr(statement, "_values", None) or {}
+            for col, val in raw_values.items():
+                name = getattr(col, "key", None) or getattr(col, "name", str(col))
+                if hasattr(val, "key") and str(val.key).startswith("b_"):
+                    continue  # bindparam — value from parameters
+                if hasattr(val, "value"):
+                    values[name] = val.value
+                elif name in ENRICHMENT_MODEL_FIELDS and name not in values:
+                    values[name] = val
+            where = getattr(statement, "_where_criteria", ())
+            for crit in where:
+                right = getattr(crit, "right", None)
+                if hasattr(right, "value") and isinstance(right.value, int):
+                    lab_id = right.value
+        except Exception:  # noqa: BLE001
+            pass
+
+        if lab_id is not None and values:
+            self._apply_one_update(lab_id, values)
+            return SimpleNamespace(rowcount=1)
+        return SimpleNamespace(rowcount=0)
 
     def execute(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
         sql = str(statement).strip().lower()
         self.executed_sql.append(sql)
 
-        # Detect UPDATE
+        # Detect UPDATE (legacy path; bulk va su connection.execute)
         if sql.startswith("update ") or "update cecchino" in sql.replace("\n", " "):
-            if self.update_events and not any(
-                e.startswith("select") or "for update" in e
-                for e in self.select_events
-            ):
-                # still ok if selects happened before — checked in tests via order
-                pass
-            if self.select_events and self.update_events == []:
-                # first update after selects — fine
-                pass
-            # Extract values from statement if possible
-            values: dict[str, Any] = {}
-            lab_id = None
-            try:
-                # SQLAlchemy Update: compiled params
-                compiled = statement.compile()
-                params = dict(compiled.params or {})
-                for k, v in list(params.items()):
-                    if k in ENRICHMENT_MODEL_FIELDS or k.endswith("_1"):
-                        # id in where
-                        pass
-                    if "id" in k.lower() and isinstance(v, int) and lab_id is None:
-                        # might be where id
-                        if "bet365" not in k:
-                            lab_id = v
-                # Prefer _values from Update object
-                raw_values = getattr(statement, "_values", None) or {}
-                for col, val in raw_values.items():
-                    name = getattr(col, "key", None) or getattr(col, "name", str(col))
-                    # BindParameter
-                    if hasattr(val, "value"):
-                        values[name] = val.value
-                    else:
-                        values[name] = val
-                where = getattr(statement, "_where_criteria", ())
-                for crit in where:
-                    # BinaryExpression id = N
-                    right = getattr(crit, "right", None)
-                    if hasattr(right, "value") and isinstance(right.value, int):
-                        lab_id = right.value
-            except Exception:  # noqa: BLE001
-                pass
-
-            if lab_id is None:
-                # fallback: last known update target from params
-                for k, v in (getattr(statement.compile(), "params", {}) or {}).items():
-                    if isinstance(v, int) and k.lower().endswith("id"):
-                        lab_id = v
-                        break
-
-            self._updates_done += 1
-            if (
-                self.fail_after_n_updates is not None
-                and self._updates_done > self.fail_after_n_updates
-            ):
-                raise RuntimeError("simulated mid-apply failure")
-
-            if lab_id is not None:
-                cur = self.odds_by_id.setdefault(lab_id, _empty_odds())
-                for f, v in values.items():
-                    if f in ENRICHMENT_MODEL_FIELDS:
-                        cur[f] = v if isinstance(v, Decimal) else Decimal(str(v))
-                self.update_events.append({"lab_match_id": lab_id, "values": values})
-
-            if any(f not in ENRICHMENT_MODEL_FIELDS for f in values):
-                raise AssertionError(f"legacy/unauthorized column write: {values}")
-
-            return SimpleNamespace(rowcount=1)
+            parameters = args[0] if args else kwargs.get("parameters")
+            return self._execute_update(statement, parameters)
 
         # SELECT enrichment
         if "bet365_dc_1x" in sql.replace(" ", "") or "cecchinolabmatch" in sql.replace(
@@ -695,6 +721,122 @@ def test_rerun_after_success_abort_stale(tmp_path: Path):
     )
     assert second["committed"] is False
     assert second["abort_code"] == "ABORT_STALE"
+
+
+def test_bulk_executemany_writes_expected_values(tmp_path: Path):
+    """Bulk connection.execute produce gli stessi valori del plan WOULD_WRITE."""
+    rows = [
+        _plan_row(
+            source_match_id="m1",
+            lab_match_id=1,
+            values={"bet365_dc_1x": "1.50", "bet365_ht_away": "3.10"},
+            actions={
+                "bet365_dc_1x": CELL_ACTION_WOULD_WRITE,
+                "bet365_ht_away": CELL_ACTION_WOULD_WRITE,
+            },
+        ),
+        _plan_row(
+            source_match_id="m2",
+            lab_match_id=2,
+            values={"bet365_dc_1x": "2.05"},
+            actions={"bet365_dc_1x": CELL_ACTION_WOULD_WRITE},
+        ),
+        _plan_row(
+            source_match_id="m3",
+            lab_match_id=3,
+            values={"bet365_over_15": "1.90", "bet365_under_15": "1.95"},
+            actions={
+                "bet365_over_15": CELL_ACTION_WOULD_WRITE,
+                "bet365_under_15": CELL_ACTION_WOULD_WRITE,
+            },
+        ),
+    ]
+    plan_path, summary_path, _, _ = _setup_plan_pair(tmp_path, rows)
+    session = _ApplySession({i: _empty_odds() for i in (1, 2, 3)})
+    result = run_bet365_enrichment_apply(
+        session=session,  # type: ignore[arg-type]
+        plan_path=plan_path,
+        summary_path=summary_path,
+        output_dir=tmp_path / "out",
+        confirm_apply=True,
+        update_chunk_size=2,
+    )
+    assert result["committed"] is True
+    assert result["rows_updated"] == 3
+    assert result["cells_updated"] == 5
+    assert session.odds_by_id[1]["bet365_dc_1x"] == Decimal("1.50")
+    assert session.odds_by_id[1]["bet365_ht_away"] == Decimal("3.10")
+    assert session.odds_by_id[2]["bet365_dc_1x"] == Decimal("2.05")
+    assert session.odds_by_id[3]["bet365_over_15"] == Decimal("1.90")
+    assert session.odds_by_id[3]["bet365_under_15"] == Decimal("1.95")
+    # Colonne non-WOULD_WRITE restano NULL
+    for lid in (1, 2, 3):
+        for f in ENRICHMENT_MODEL_FIELDS:
+            written = {
+                1: {"bet365_dc_1x", "bet365_ht_away"},
+                2: {"bet365_dc_1x"},
+                3: {"bet365_over_15", "bet365_under_15"},
+            }[lid]
+            if f not in written:
+                assert session.odds_by_id[lid][f] is None
+    assert session.commit_calls == 1
+
+
+def test_bulk_different_field_masks_do_not_cross_write(tmp_path: Path):
+    """Mask diverse: nessuna colonna non prevista per quella riga."""
+    rows = [
+        _plan_row(
+            source_match_id="m1",
+            lab_match_id=1,
+            values={
+                "bet365_dc_1x": "1.40",
+                "bet365_ht_home": "2.10",  # ALREADY_SAME — non scrivere
+            },
+            actions={
+                "bet365_dc_1x": CELL_ACTION_WOULD_WRITE,
+                "bet365_ht_home": CELL_ACTION_ALREADY_SAME,
+            },
+        ),
+        _plan_row(
+            source_match_id="m2",
+            lab_match_id=2,
+            values={
+                "bet365_over_35": "2.50",
+                "bet365_dc_12": "",  # NO_SOURCE — non scrivere
+            },
+            actions={
+                "bet365_over_35": CELL_ACTION_WOULD_WRITE,
+                "bet365_dc_12": CELL_ACTION_NO_SOURCE_VALUE,
+            },
+        ),
+    ]
+    odds = {
+        1: {**_empty_odds(), "bet365_ht_home": Decimal("2.10")},
+        2: _empty_odds(),
+    }
+    plan_path, summary_path, _, _ = _setup_plan_pair(tmp_path, rows)
+    session = _ApplySession(odds)
+    result = run_bet365_enrichment_apply(
+        session=session,  # type: ignore[arg-type]
+        plan_path=plan_path,
+        summary_path=summary_path,
+        output_dir=tmp_path / "out",
+        confirm_apply=True,
+    )
+    assert result["committed"] is True
+    assert result["rows_updated"] == 2
+    assert result["cells_updated"] == 2
+
+    by_lab = {e["lab_match_id"]: e["values"] for e in session.update_events}
+    assert set(by_lab[1].keys()) == {"bet365_dc_1x"}
+    assert set(by_lab[2].keys()) == {"bet365_over_35"}
+    assert "bet365_ht_home" not in by_lab[1]
+    assert "bet365_dc_12" not in by_lab[2]
+    assert "bet365_over_35" not in by_lab[1]
+    assert "bet365_dc_1x" not in by_lab[2]
+    # ALREADY_SAME invariata; NO_SOURCE resta NULL
+    assert session.odds_by_id[1]["bet365_ht_home"] == Decimal("2.10")
+    assert session.odds_by_id[2]["bet365_dc_12"] is None
 
 
 def test_cli_apply_requires_both_paths():
