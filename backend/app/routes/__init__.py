@@ -13,6 +13,7 @@ from app.routes import (
     cecchino_today,
     cecchino_bet_builder,
     cecchino_lab,
+    cecchino_run_v2,
     cecchino_home_wins,
     admin,
     admin_betting_picks,
@@ -98,6 +99,8 @@ api_router.include_router(cecchino_today.admin_router)
 api_router.include_router(cecchino_bet_builder.router)
 api_router.include_router(cecchino_lab.router)
 api_router.include_router(cecchino_lab.admin_router)
+api_router.include_router(cecchino_run_v2.router)
+api_router.include_router(cecchino_run_v2.admin_router)
 api_router.include_router(cecchino_home_wins.router)
 api_router.include_router(betting_picks.router)
 api_router.include_router(ingestion.router)

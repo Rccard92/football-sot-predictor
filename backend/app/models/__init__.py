@@ -45,6 +45,11 @@ from app.models.cecchino_lab_goal_intensity_benchmark_row import (
 from app.models.cecchino_lab_league_pattern_analysis_snapshot import (
     CecchinoLabLeaguePatternAnalysisSnapshot,
 )
+from app.models.cecchino_run_v2 import (
+    CecchinoRunV2MarketResult,
+    CecchinoRunV2MatchSnapshot,
+    CecchinoRunV2Run,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -125,6 +130,9 @@ __all__ = [
     "CecchinoLabGoalIntensityBenchmarkJob",
     "CecchinoLabGoalIntensityBenchmarkRow",
     "CecchinoLabLeaguePatternAnalysisSnapshot",
+    "CecchinoRunV2Run",
+    "CecchinoRunV2MatchSnapshot",
+    "CecchinoRunV2MarketResult",
     "Competition",
     "Fixture",
     "FixtureLineup",

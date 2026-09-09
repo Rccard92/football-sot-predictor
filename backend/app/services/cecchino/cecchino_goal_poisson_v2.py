@@ -42,11 +42,13 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY_PT,
     SEL_DRAW_PT,
     SEL_HOME_PT,
+    SEL_OVER_0_5,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
     SEL_OVER_3_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_0_5,
     SEL_UNDER_1_5,
     SEL_UNDER_2_5,
     SEL_UNDER_3_5,
@@ -67,6 +69,8 @@ FAMILY_SUM_TOLERANCE = 1e-9
 
 # Event definitions for debug / Analisi formule
 EVENT_DEFINITIONS: dict[str, str] = {
+    SEL_UNDER_0_5: "FT total goals = 0",
+    SEL_OVER_0_5: "FT total goals >= 1",
     SEL_UNDER_1_5: "FT total goals <= 1",
     SEL_OVER_1_5: "FT total goals >= 2",
     SEL_UNDER_2_5: "FT total goals <= 2",
@@ -89,6 +93,18 @@ _OU_COMPLEMENT_PAIRS: tuple[tuple[str, str, bool], ...] = (
     (SEL_UNDER_3_5, SEL_OVER_3_5, False),
     (SEL_UNDER_PT_0_5, SEL_OVER_PT_0_5, True),
     (SEL_UNDER_PT_1_5, SEL_OVER_PT_1_5, True),
+)
+
+# FT O/U 0.5: coppia opt-in RUN V2. Tenuta fuori da _OU_COMPLEMENT_PAIRS e da
+# _FT_MARKETS perche quelle tuple sono iterate dalle pipeline V1: aggiungervi
+# chiavi cambierebbe il dict goal_markets e quindi l'hash pre-match della V1.
+_OU_COMPLEMENT_PAIRS_V2_OPTIONAL: tuple[tuple[str, str, bool], ...] = (
+    (SEL_UNDER_0_5, SEL_OVER_0_5, False),
+)
+
+_FT_MARKETS_V2_OPTIONAL = (
+    SEL_OVER_0_5,
+    SEL_UNDER_0_5,
 )
 
 _CONTEXT_WEIGHT_MAP: dict[str, float] = {
@@ -126,6 +142,10 @@ def poisson_cumulative(lam: float, max_k: int) -> float:
 
 
 def poisson_market_probability_ft(market_key: str, lambda_ft: float) -> float:
+    if market_key == SEL_OVER_0_5:
+        return 1.0 - poisson_pmf(0, lambda_ft)
+    if market_key == SEL_UNDER_0_5:
+        return poisson_pmf(0, lambda_ft)
     if market_key == SEL_OVER_1_5:
         return 1.0 - poisson_cumulative(lambda_ft, 1)
     if market_key == SEL_UNDER_1_5:
@@ -278,6 +298,10 @@ def weighted_lambda(
 
 def _ft_event_hit(goals_for: int, goals_against: int, market_key: str) -> bool:
     total = goals_for + goals_against
+    if market_key == SEL_OVER_0_5:
+        return total >= 1
+    if market_key == SEL_UNDER_0_5:
+        return total <= 0
     if market_key == SEL_OVER_1_5:
         return total >= 2
     if market_key == SEL_UNDER_1_5:
@@ -888,6 +912,29 @@ def calculate_goal_market_v2(
         market_key,
         warnings=["unknown_goal_market"],
         legacy_slices=legacy_slices,
+    )
+
+
+def calculate_ou_05_pair_v2_optional(
+    contexts: GoalMarketContexts,
+    league_probs: dict[str, float | None],
+    *,
+    legacy_slices=None,
+) -> dict[str, dict[str, Any]]:
+    """Coppia FT O/U 0.5 (capability opt-in RUN V2).
+
+    Stesso modello matematico degli altri O/U: delega a
+    `calculate_goal_market_pair_v2` senza alterare il perimetro dei mercati V1.
+    Nessun chiamante V1 invoca questa funzione.
+    """
+    under_key, over_key, is_ht = _OU_COMPLEMENT_PAIRS_V2_OPTIONAL[0]
+    return calculate_goal_market_pair_v2(
+        under_key,
+        over_key,
+        contexts,
+        league_probs,
+        legacy_slices=legacy_slices,
+        is_ht=is_ht,
     )
 
 
