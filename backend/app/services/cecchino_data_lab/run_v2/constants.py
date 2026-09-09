@@ -34,6 +34,13 @@ RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v1"
 # Commit ogni N gruppi kickoff (il gruppo resta comunque atomico).
 RUN_V2_COMMIT_EVERY_GROUPS = 40
 
+# Heartbeat: `updated_at` viene rinfrescato a ogni flush di progresso, quindi
+# la soglia deve coprire abbondantemente RUN_V2_COMMIT_EVERY_GROUPS gruppi.
+RUN_V2_STALE_HEARTBEAT_SECONDS = 900
+
+# Namespace advisory lock PostgreSQL per l'esclusivita del worker (no schema change).
+RUN_V2_ADVISORY_LOCK_NAMESPACE = 0xCEC62002
+
 # Timing quote.
 QUOTE_SNAPSHOT_PRE_REFERENCE = "pre_closing_reference"
 QUOTE_SNAPSHOT_LAST_SEEN = "last_seen"

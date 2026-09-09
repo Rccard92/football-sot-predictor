@@ -29,6 +29,9 @@ RUN_V2_STATUS_COMPLETED = "completed"
 RUN_V2_STATUS_COMPLETED_WITH_WARNINGS = "completed_with_warnings"
 RUN_V2_STATUS_FAILED = "failed"
 RUN_V2_STATUS_CANCELLED = "cancelled"
+# Stato solo effettivo (nessuna migration): run attiva sul DB rimasta senza
+# worker dopo un restart/crash. Resta riprendibile dal checkpoint.
+RUN_V2_STATUS_INTERRUPTED = "interrupted"
 
 RUN_V2_ACTIVE_STATUSES = frozenset({RUN_V2_STATUS_PENDING, RUN_V2_STATUS_RUNNING})
 RUN_V2_TERMINAL_STATUSES = frozenset(

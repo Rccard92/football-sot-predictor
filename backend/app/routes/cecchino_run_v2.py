@@ -15,15 +15,22 @@ from typing import Any, Iterator
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.cecchino_run_v2 import CecchinoRunV2Run
+from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.run_v2.export import (
     EXPORT_FILES,
     FILE_FULL,
     build_export_bundle,
+)
+from app.services.cecchino_data_lab.run_v2.run_service import (
+    cancel_run_v2,
+    list_runs_v2,
+    resume_run_v2,
+    run_v2_to_dict,
+    start_run_v2,
 )
 
 router = APIRouter(prefix="/cecchino-run-v2", tags=["cecchino-run-v2"])
@@ -34,38 +41,26 @@ STREAM_CHUNK_BYTES = 1024 * 512
 
 
 def _run_to_dict(run: CecchinoRunV2Run) -> dict[str, Any]:
-    return {
-        "run_id": int(run.id),
-        "run_version": run.run_version,
-        "status": run.status,
-        "run_scope": run.run_scope,
-        "max_matches": run.max_matches,
-        "requested_at": run.requested_at,
-        "started_at": run.started_at,
-        "completed_at": run.completed_at,
-        "matches_total": run.matches_total,
-        "matches_processed": run.matches_processed,
-        "matches_error": run.matches_error,
-        "market_rows_written": run.market_rows_written,
-        "leakage_violations": run.leakage_violations,
-        "progress_pct": run.progress_pct,
-        "min_kickoff_at": run.min_kickoff_at,
-        "max_kickoff_at": run.max_kickoff_at,
-        "quote_policy": run.quote_policy_json,
-        "module_policy": run.module_policy_json,
-        "summary": run.summary_json,
-        "leakage_audit": run.leakage_audit_json,
-        "error": run.error_json,
-    }
+    """Serializzazione condivisa con il service (include lo stato effettivo)."""
+    return run_v2_to_dict(run)
+
+
+def _error_response(exc: CecchinoLabImportError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+        },
+    )
 
 
 @router.get("")
 @admin_router.get("")
 def list_runs(db: Session = Depends(get_db)) -> JSONResponse:
-    runs = list(
-        db.scalars(select(CecchinoRunV2Run).order_by(CecchinoRunV2Run.id.desc())).all()
-    )
-    return JSONResponse(content=jsonable_encoder({"items": [_run_to_dict(r) for r in runs]}))
+    return JSONResponse(content=jsonable_encoder({"items": list_runs_v2(db)}))
 
 
 @router.get("/{run_id}")
@@ -75,6 +70,41 @@ def get_run(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
     if run is None:
         raise HTTPException(status_code=404, detail=f"run_v2 {run_id} inesistente")
     return JSONResponse(content=jsonable_encoder(_run_to_dict(run)))
+
+
+@admin_router.post("")
+def start_run(body: dict[str, Any] | None = None, db: Session = Depends(get_db)) -> JSONResponse:
+    """Avvia una RUN V2 in background e risponde subito con run_id e stato."""
+    payload = body or {}
+    try:
+        result = start_run_v2(
+            db,
+            confirm=payload.get("confirm"),
+            max_matches=payload.get("max_matches"),
+            background=True,
+        )
+    except CecchinoLabImportError as exc:
+        return _error_response(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/{run_id}/resume")
+def resume_run(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    """Riprende una RUN V2 dal checkpoint gia persistito sugli snapshot."""
+    try:
+        result = resume_run_v2(db, int(run_id), background=True)
+    except CecchinoLabImportError as exc:
+        return _error_response(exc)
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/{run_id}/cancel")
+def cancel_run(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    try:
+        result = cancel_run_v2(db, int(run_id))
+    except CecchinoLabImportError as exc:
+        return _error_response(exc)
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 @router.get("/{run_id}/export")

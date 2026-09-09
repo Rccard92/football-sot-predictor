@@ -8,6 +8,8 @@ import { DatasetsTab } from '../components/cecchino-data-lab/DatasetsTab'
 import { MatchesExplorerTab } from '../components/cecchino-data-lab/MatchesExplorerTab'
 import { DataQualityTab } from '../components/cecchino-data-lab/DataQualityTab'
 import { HistoricalScansTab } from '../components/cecchino-data-lab/HistoricalScansTab'
+import { CecchinoRunV2Section } from '../components/cecchino-data-lab/run-v2/CecchinoRunV2Section'
+import { CecchinoRunV2AnalysisTab } from '../components/cecchino-data-lab/run-v2/CecchinoRunV2AnalysisTab'
 import { PatternLabTab } from '../components/cecchino-data-lab/PatternLabTab'
 import { LeaguePatternAnalysisTab } from '../components/cecchino-data-lab/league-pattern-analysis/LeaguePatternAnalysisTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
@@ -19,6 +21,7 @@ const TABS = [
   { id: 'matches', label: 'Partite' },
   { id: 'quality', label: 'Qualità dati' },
   { id: 'historical', label: 'Scansioni storiche' },
+  { id: 'run_v2', label: 'Run V2' },
   { id: 'pattern_lab', label: 'Pattern Lab' },
   { id: 'league_pattern_analysis', label: 'League Pattern Analysis' },
 ] as const
@@ -51,6 +54,7 @@ export function CecchinoLabPage() {
     if (id === 'overview') next.delete('tab')
     else next.set('tab', id)
     if (id !== 'pattern_lab') next.delete('run_ids')
+    if (id !== 'run_v2') next.delete('run_v2_id')
     setSearchParams(next, { replace: true })
   }
 
@@ -129,7 +133,13 @@ export function CecchinoLabPage() {
             }}
           />
         )}
-        {tab === 'historical' && <HistoricalScansTab refreshKey={refreshKey} />}
+        {tab === 'historical' && (
+          <>
+            <HistoricalScansTab refreshKey={refreshKey} />
+            <CecchinoRunV2Section refreshKey={refreshKey} />
+          </>
+        )}
+        {tab === 'run_v2' && <CecchinoRunV2AnalysisTab />}
         {tab === 'pattern_lab' && <PatternLabTab />}
         {tab === 'league_pattern_analysis' && <LeaguePatternAnalysisTab />}
       </div>
