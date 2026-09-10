@@ -132,7 +132,37 @@ export type CecchinoRunV2ExportManifest = {
   run_id: number
   run_version: string
   files: Record<string, string>
-  counts: Record<string, number>
+  counts: Record<string, number | null>
+  lightweight?: boolean
+}
+
+export type RunV2AiBundleJobStatus =
+  | 'pending'
+  | 'building'
+  | 'ready'
+  | 'failed'
+  | 'interrupted'
+
+export type CecchinoRunV2AiBundleJob = {
+  job_id: string
+  run_id: number
+  export_schema_version: string
+  status: RunV2AiBundleJobStatus
+  phase: string | null
+  progress_pct: number
+  progress_message: string | null
+  retryable: boolean
+  error_code: string | null
+  error_message: string | null
+  filename: string | null
+  zip_bytes: number | null
+  export_counts?: Record<string, number>
+  poll_after_ms?: number
+  download_ready: boolean
+  created_at?: string
+  updated_at?: string
+  started_at?: string | null
+  completed_at?: string | null
 }
 
 /** Errore API RUN V2 che preserva il codice e i dettagli del backend. */
@@ -243,6 +273,17 @@ export function getRunV2ExportManifest(runId: number): Promise<CecchinoRunV2Expo
   return getRunV2Json(`/api/cecchino-run-v2/${runId}/export/manifest`)
 }
 
+export async function createRunV2AiBundleJob(runId: number): Promise<CecchinoRunV2AiBundleJob> {
+  return postRunV2(`/api/cecchino-run-v2/${runId}/export/ai-bundle/jobs`, {})
+}
+
+export function getRunV2AiBundleJob(
+  runId: number,
+  jobId: string,
+): Promise<CecchinoRunV2AiBundleJob> {
+  return getRunV2Json(`/api/cecchino-run-v2/${runId}/export/ai-bundle/jobs/${jobId}`)
+}
+
 /** Scarica un artefatto rigenerato dal DB al momento della richiesta. */
 export async function downloadRunV2Export(
   runId: number,
@@ -277,17 +318,20 @@ export async function downloadRunV2Export(
   URL.revokeObjectURL(url)
 }
 
-/** Pacchetto AI ZIP lossless (admin login on click come gli altri export). */
-export async function downloadRunV2AiBundle(runId: number): Promise<void> {
+/** Scarica lo ZIP già preparato dal job async (nessuna rigenerazione). */
+export async function downloadRunV2AiBundleReady(runId: number): Promise<void> {
   const base = getApiBase()
-  const res = await fetch(`${base}/api/cecchino-run-v2/${runId}/export/ai-bundle`, {
+  const res = await fetch(`${base}/api/cecchino-run-v2/${runId}/export/ai-bundle/download`, {
     credentials: 'include',
   })
   if (!res.ok) {
-    let message = `Export AI bundle RUN V2 fallito (${res.status})`
+    let message = `Download pacchetto AI fallito (${res.status})`
     try {
-      const body = (await res.json()) as { detail?: string; message?: string }
-      message = body?.detail || body?.message || message
+      const body = (await res.json()) as { detail?: string | { message?: string }; message?: string }
+      if (typeof body?.detail === 'string') message = body.detail
+      else if (body?.detail && typeof body.detail === 'object' && body.detail.message) {
+        message = body.detail.message
+      } else if (body?.message) message = body.message
     } catch {
       /* ignore */
     }
@@ -305,6 +349,11 @@ export async function downloadRunV2AiBundle(runId: number): Promise<void> {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+/** @deprecated sync disabilitato (409) — usare create + download ready. */
+export async function downloadRunV2AiBundle(runId: number): Promise<void> {
+  return downloadRunV2AiBundleReady(runId)
 }
 
 const RUN_V2_STATUS_LABELS: Record<string, string> = {

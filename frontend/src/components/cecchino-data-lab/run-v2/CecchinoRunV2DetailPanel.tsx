@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   RUN_V2_EXPORT_FILES,
-  downloadRunV2AiBundle,
+  createRunV2AiBundleJob,
+  downloadRunV2AiBundleReady,
   downloadRunV2Export,
   formatRunV2Date,
+  getRunV2AiBundleJob,
   getRunV2ExportManifest,
   isRunV2Completed,
   runV2ScopeLabel,
   runV2StatusLabel,
   type CecchinoRunV2,
+  type CecchinoRunV2AiBundleJob,
   type CecchinoRunV2ExportManifest,
   type RunV2ExportFile,
 } from '../../../lib/cecchinoRunV2Api'
@@ -26,7 +29,10 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
   const [manifest, setManifest] = useState<CecchinoRunV2ExportManifest | null>(null)
   const [manifestBusy, setManifestBusy] = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [aiJob, setAiJob] = useState<CecchinoRunV2AiBundleJob | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
   const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null)
+  const pollTimer = useRef<number | null>(null)
 
   const completed = isRunV2Completed(run)
   const summary = run.summary
@@ -40,7 +46,19 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
 
   useEffect(() => {
     setManifest(null)
+    setAiJob(null)
+    setAiBusy(false)
+    if (pollTimer.current != null) {
+      window.clearTimeout(pollTimer.current)
+      pollTimer.current = null
+    }
   }, [run.run_id])
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current != null) window.clearTimeout(pollTimer.current)
+    }
+  }, [])
 
   const handledAsAuthPrompt = (e: unknown, retry: () => Promise<void>): boolean => {
     if (!(e instanceof AdminHttpError) || e.status !== 401) return false
@@ -73,10 +91,55 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
     }
   }
 
+  const pollAiJob = useCallback(
+    async (jobId: string) => {
+      try {
+        const status = await getRunV2AiBundleJob(run.run_id, jobId)
+        setAiJob(status)
+        if (status.status === 'pending' || status.status === 'building') {
+          const wait = status.poll_after_ms ?? 2000
+          pollTimer.current = window.setTimeout(() => {
+            void pollAiJob(jobId)
+          }, wait)
+          return
+        }
+        setAiBusy(false)
+        if (status.status === 'ready') {
+          toast.success('Pacchetto AI pronto')
+        } else if (status.status === 'failed' || status.status === 'interrupted') {
+          toast.error(status.error_message || `Export AI: ${status.status}`)
+        }
+      } catch (e) {
+        setAiBusy(false)
+        if (handledAsAuthPrompt(e, () => pollAiJob(jobId))) return
+        toast.error(e instanceof Error ? e.message : 'Poll export AI fallito')
+      }
+    },
+    [run.run_id],
+  )
+
+  const onPrepareAiBundle = async () => {
+    setAiBusy(true)
+    try {
+      const job = await createRunV2AiBundleJob(run.run_id)
+      setAiJob(job)
+      if (job.status === 'ready') {
+        setAiBusy(false)
+        toast.success('Pacchetto AI già pronto (cache)')
+        return
+      }
+      void pollAiJob(job.job_id)
+    } catch (e) {
+      setAiBusy(false)
+      if (handledAsAuthPrompt(e, () => onPrepareAiBundle())) return
+      toast.error(e instanceof Error ? e.message : 'Preparazione pacchetto AI fallita')
+    }
+  }
+
   const onDownloadAiBundle = async () => {
     setDownloading('ai-bundle')
     try {
-      await downloadRunV2AiBundle(run.run_id)
+      await downloadRunV2AiBundleReady(run.run_id)
       toast.success('Download avviato: pacchetto AI (.zip)')
     } catch (e) {
       if (handledAsAuthPrompt(e, () => onDownloadAiBundle())) return
@@ -85,6 +148,13 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
       setDownloading(null)
     }
   }
+
+  const aiStatusLabel = (() => {
+    if (!aiJob) return null
+    const pct = Number.isFinite(aiJob.progress_pct) ? ` · ${aiJob.progress_pct}%` : ''
+    const phase = aiJob.phase ? ` · ${aiJob.phase}` : ''
+    return `${aiJob.status}${pct}${phase}`
+  })()
 
   return (
     <section className="lab-card rounded-xl p-4" data-testid={`run-v2-detail-${run.run_id}`}>
@@ -277,7 +347,8 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
           </button>
         </div>
         <p className="mt-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-          Gli artefatti sono rigenerati dal DB a ogni richiesta: nessun file resta sul disco.
+          Verifica artefatti usa solo conteggi aggregate (nessuna generazione FULL/LONG/RAW).
+          Il pacchetto AI si prepara in background e resta in cache rigenerabile.
         </p>
         {!completed && (
           <p className="mt-1 text-xs text-amber-200">
@@ -319,12 +390,29 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
             <button
               type="button"
               className="lab-btn rounded-md px-3 py-1 text-xs"
-              data-testid={`run-v2-export-ai-bundle-${run.run_id}`}
-              disabled={!completed || downloading !== null}
-              onClick={() => void onDownloadAiBundle()}
+              data-testid={`run-v2-prepare-ai-bundle-${run.run_id}`}
+              disabled={!completed || aiBusy || downloading !== null}
+              onClick={() => void onPrepareAiBundle()}
             >
-              {downloading === 'ai-bundle' ? 'Download…' : 'Scarica pacchetto AI (.zip)'}
+              {aiBusy ? 'Preparazione…' : 'Prepara pacchetto AI'}
             </button>
+            {aiJob?.status === 'ready' && (
+              <button
+                type="button"
+                className="lab-btn rounded-md px-3 py-1 text-xs"
+                data-testid={`run-v2-export-ai-bundle-${run.run_id}`}
+                disabled={downloading !== null}
+                onClick={() => void onDownloadAiBundle()}
+              >
+                {downloading === 'ai-bundle' ? 'Download…' : 'Scarica pacchetto AI (.zip)'}
+              </button>
+            )}
+            {aiStatusLabel && (
+              <span className="text-xs" style={{ color: 'var(--lab-muted)' }} data-testid={`run-v2-ai-bundle-status-${run.run_id}`}>
+                {aiStatusLabel}
+                {aiJob?.progress_message ? ` — ${aiJob.progress_message}` : ''}
+              </span>
+            )}
           </li>
         </ul>
       </div>

@@ -241,7 +241,7 @@ def test_ai_bundle_zip_members(monkeypatch, tmp_path):
 
     run = SimpleNamespace(
         id=99,
-        season_label="2021/2022",
+        module_policy_json={"season_label": "2021/2022"},
         run_scope="balanced_pilot",
         status="completed",
         run_version="cecchino_run_v2",
@@ -264,11 +264,6 @@ def test_ai_bundle_zip_members(monkeypatch, tmp_path):
         return {"files": files, "counts": {"full_rows": 1}}
 
     monkeypatch.setattr(ai_mod, "build_export_bundle", fake_bundle)
-    monkeypatch.setattr(
-        ai_mod,
-        "CecchinoRunV2Run",
-        SimpleNamespace,  # unused; we patch db.get
-    )
 
     class FakeDb:
         def get(self, model, pk):

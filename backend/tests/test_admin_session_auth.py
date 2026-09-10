@@ -121,6 +121,9 @@ def test_get_export_run_v2_rifiutato_senza_sessione():
     assert client.get("/api/cecchino-run-v2/1/export").status_code == 401
     assert client.get("/api/cecchino-run-v2/1/export/manifest").status_code == 401
     assert client.get("/api/cecchino-run-v2/1/export/ai-bundle").status_code == 401
+    assert client.post("/api/cecchino-run-v2/1/export/ai-bundle/jobs").status_code == 401
+    assert client.get("/api/cecchino-run-v2/1/export/ai-bundle/jobs/x").status_code == 401
+    assert client.get("/api/cecchino-run-v2/1/export/ai-bundle/download").status_code == 401
 
 def test_endpoint_admin_503_se_autenticazione_non_configurata():
     """Fail-closed: senza password configurata non si passa, non si apre."""

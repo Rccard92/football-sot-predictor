@@ -20,7 +20,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, Iterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_match import CecchinoLabMatch
@@ -220,8 +220,9 @@ def _flatten_raw(prefix: str, value: Any, out: dict[str, Any]) -> None:
 def write_source_raw_csv(db: Session, *, run: CecchinoRunV2Run, path: Path) -> tuple[int, list[str]]:
     """Flatten di `raw_json` per i match della run, con colonne dinamiche.
 
-    Le colonne si scoprono dall'unione delle chiavi presenti e vengono ordinate
-    alfabeticamente, cosi due export della stessa run coincidono byte per byte.
+    Due passate a chunk: (1) scoperta chiavi, (2) scrittura CSV.
+    Nessun accumulo dell'intero flatten in RAM. Output deterministico
+    (colonne sorted) e lossless rispetto alla versione monolitica.
     """
     lab_match_ids = [
         int(r[0])
@@ -233,28 +234,85 @@ def write_source_raw_csv(db: Session, *, run: CecchinoRunV2Run, path: Path) -> t
     ]
 
     discovered: set[str] = set()
-    flattened: dict[int, dict[str, Any]] = {}
     for start in range(0, len(lab_match_ids), SNAPSHOT_CHUNK_SIZE):
         chunk = lab_match_ids[start : start + SNAPSHOT_CHUNK_SIZE]
-        for lab_match_id, raw in db.execute(
+        for _lab_match_id, raw in db.execute(
             select(CecchinoLabMatch.id, CecchinoLabMatch.raw_json).where(
                 CecchinoLabMatch.id.in_(chunk)
             )
         ).all():
             flat: dict[str, Any] = {}
             _flatten_raw("", raw if isinstance(raw, dict) else {}, flat)
-            flattened[int(lab_match_id)] = flat
             discovered.update(flat.keys())
+            del flat
 
     columns = sorted(discovered)
+    by_id: dict[int, dict[str, Any]] = {}
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
         writer.writerow(["lab_match_id", *columns])
-        for lab_match_id in lab_match_ids:
-            flat = flattened.get(lab_match_id, {})
-            writer.writerow([lab_match_id, *[_serialize(flat.get(c)) for c in columns]])
+        for start in range(0, len(lab_match_ids), SNAPSHOT_CHUNK_SIZE):
+            chunk = lab_match_ids[start : start + SNAPSHOT_CHUNK_SIZE]
+            by_id.clear()
+            for lab_match_id, raw in db.execute(
+                select(CecchinoLabMatch.id, CecchinoLabMatch.raw_json).where(
+                    CecchinoLabMatch.id.in_(chunk)
+                )
+            ).all():
+                flat = {}
+                _flatten_raw("", raw if isinstance(raw, dict) else {}, flat)
+                by_id[int(lab_match_id)] = flat
+            for lab_match_id in chunk:
+                flat = by_id.get(lab_match_id, {})
+                writer.writerow([lab_match_id, *[_serialize(flat.get(c)) for c in columns]])
 
     return len(lab_match_ids), columns
+
+
+def build_export_manifest_light(db: Session, *, run_id: int) -> dict[str, Any]:
+    """Conteggi aggregate economici: nessuna generazione FULL/LONG/RAW."""
+    run = db.get(CecchinoRunV2Run, int(run_id))
+    if run is None:
+        raise ValueError(f"run_v2 {run_id} inesistente")
+
+    full_rows = int(
+        db.execute(
+            select(func.count())
+            .select_from(CecchinoRunV2MatchSnapshot)
+            .where(CecchinoRunV2MatchSnapshot.run_id == int(run_id))
+        ).scalar_one()
+    )
+    long_rows = int(
+        db.execute(
+            select(func.count())
+            .select_from(CecchinoRunV2MarketResult)
+            .where(CecchinoRunV2MarketResult.run_id == int(run_id))
+        ).scalar_one()
+    )
+
+    cached_raw_cols: int | None = None
+    try:
+        from app.services.cecchino_data_lab.run_v2 import ai_bundle_jobs as jobs_mod
+
+        cached = jobs_mod.read_cached_export_counts(int(run_id))
+        if isinstance(cached, dict) and cached.get("source_raw_columns") is not None:
+            cached_raw_cols = int(cached["source_raw_columns"])
+    except Exception:
+        cached_raw_cols = None
+
+    return {
+        "run_id": int(run_id),
+        "run_version": run.run_version or RUN_V2_VERSION,
+        "lightweight": True,
+        "files": {name: name for name in EXPORT_FILES},
+        "counts": {
+            "full_rows": full_rows,
+            "core_markets_long_rows": long_rows,
+            "source_raw_rows": full_rows,
+            "full_columns": len(full_export_columns()),
+            "source_raw_columns": cached_raw_cols,
+        },
+    }
 
 
 def build_export_bundle(

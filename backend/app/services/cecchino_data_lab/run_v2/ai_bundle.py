@@ -1,4 +1,4 @@
-"""Pacchetto AI ZIP per RUN V2 — lossless, una sola generazione artefatti."""
+"""Pacchetto AI ZIP per RUN V2 — lossless, generazione su disco a chunk."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 import logging
 import tempfile
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator
 
@@ -21,6 +22,7 @@ from app.services.cecchino_data_lab.run_v2.constants import (
     RUN_V2_QUOTE_POLICY_VERSION,
     RUN_V2_VERSION,
 )
+from app.services.cecchino_data_lab.run_v2.executor import season_label_from_run
 from app.services.cecchino_data_lab.run_v2.export import (
     FILE_DATA_DICTIONARY,
     FILE_FULL,
@@ -55,6 +57,8 @@ ZIP_MEMBERS = (
     ZIP_META_DICT,
 )
 
+PhaseCallback = Callable[[str, float, str], None]
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -78,8 +82,19 @@ def _count_csv_shape(path: Path) -> tuple[int, int]:
     return rows, len(header)
 
 
+def _season_label(run: CecchinoRunV2Run) -> str | None:
+    try:
+        label = season_label_from_run(run)
+        if label:
+            return label
+    except Exception:
+        pass
+    # Compat test/fake objects che espongono ancora season_label.
+    return getattr(run, "season_label", None)
+
+
 def _season_slug(run: CecchinoRunV2Run) -> str:
-    raw = (run.season_label or "UNKNOWN").strip().replace("/", "-").replace(" ", "_")
+    raw = (_season_label(run) or "UNKNOWN").strip().replace("/", "-").replace(" ", "_")
     return raw or "UNKNOWN"
 
 
@@ -89,12 +104,13 @@ def _build_readme(run: CecchinoRunV2Run, summary: dict[str, Any]) -> str:
     if eligible is None:
         eligible = sum(int(c.get("eligible_core") or 0) for c in comps if isinstance(c, dict))
     markets = ", ".join(m.export_key for m in CORE_MARKETS)
+    season = _season_label(run) or "n/d"
     return f"""# Cecchino RUN V2 — pacchetto AI
 
 ## Contesto run
 
 - **run_id**: {run.id}
-- **season**: {run.season_label or "n/d"}
+- **season**: {season}
 - **scope**: {run.run_scope or "n/d"}
 - **status**: {run.status}
 - **run_version**: {run.run_version or RUN_V2_VERSION}
@@ -248,16 +264,24 @@ def build_ai_bundle_artifacts(
     *,
     run_id: int,
     work_dir: Path,
+    on_phase: PhaseCallback | None = None,
 ) -> dict[str, Any]:
     """Genera i 5 artefatti una sola volta + README/MANIFEST/PROMPT."""
+
+    def phase(name: str, pct: float, message: str) -> None:
+        if on_phase is not None:
+            on_phase(name, pct, message)
+
     run = db.get(CecchinoRunV2Run, int(run_id))
     if run is None:
         raise ValueError(f"run_v2 {run_id} inesistente")
 
     export_dir = work_dir / "export"
     export_dir.mkdir(parents=True, exist_ok=True)
+    phase("export_bundle", 10.0, "Generazione artefatti CSV/JSON dal DB")
     bundle = build_export_bundle(db, run_id=int(run_id), output_dir=export_dir)
     files = bundle["files"]
+    phase("metadata", 75.0, "README / MANIFEST / prompt")
 
     summary = json.loads(Path(files[FILE_RUN_SUMMARY]).read_text(encoding="utf-8"))
     readme_path = work_dir / ZIP_README
@@ -277,11 +301,11 @@ def build_ai_bundle_artifacts(
     }
 
     inventory = [_file_inventory(p, arcname=name) for name, p in mapped.items()]
-    # Manifest dopo inventory dei data/meta; poi si aggiunge se stesso senza sha ricorsivo.
     leakage = summary.get("leakage_audit") or {}
+    season = _season_label(run)
     manifest_body = {
         "run_id": int(run.id),
-        "season": run.season_label,
+        "season": season,
         "scope": run.run_scope,
         "versions": {
             "run_version": run.run_version or RUN_V2_VERSION,
@@ -311,14 +335,13 @@ def build_ai_bundle_artifacts(
     manifest_body["file_inventory"] = [
         e for e in inventory if e["path"] != ZIP_MANIFEST
     ] + [_file_inventory(manifest_path, arcname=ZIP_MANIFEST)]
-    # Riscrivi con inventory completo incluso il manifest stesso.
     manifest_path.write_text(
         json.dumps(manifest_body, indent=2, ensure_ascii=False, default=str),
         encoding="utf-8",
     )
 
-    season = _season_slug(run)
-    filename = f"CECCHINO_RUN_V2_{season}_RUN_{int(run.id)}_AI_BUNDLE.zip"
+    season_slug = _season_slug(run)
+    filename = f"CECCHINO_RUN_V2_{season_slug}_RUN_{int(run.id)}_AI_BUNDLE.zip"
     return {
         "run": run,
         "filename": filename,
@@ -328,25 +351,59 @@ def build_ai_bundle_artifacts(
     }
 
 
+def write_ai_bundle_zip_to_path(
+    db: Session,
+    run_id: int,
+    zip_path: Path,
+    *,
+    work_dir: Path | None = None,
+    on_phase: PhaseCallback | None = None,
+) -> tuple[str, int, dict[str, Any]]:
+    """Scrive lo ZIP direttamente su disco (nessuno spool RAM dell'intero bundle)."""
+    own_tmp = work_dir is None
+    tmp_ctx = tempfile.TemporaryDirectory(prefix=f"run_v2_ai_{run_id}_") if own_tmp else None
+    try:
+        work = Path(tmp_ctx.name) if tmp_ctx is not None else Path(work_dir)  # type: ignore[arg-type]
+        work.mkdir(parents=True, exist_ok=True)
+        built = build_ai_bundle_artifacts(
+            db, run_id=int(run_id), work_dir=work, on_phase=on_phase
+        )
+        if on_phase is not None:
+            on_phase("zip", 90.0, "Creazione ZIP su disco")
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_zip = zip_path.with_suffix(zip_path.suffix + ".partial")
+        with zipfile.ZipFile(tmp_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for arcname in ZIP_MEMBERS:
+                path = built["mapped"][arcname]
+                zf.write(path, arcname=arcname)
+        tmp_zip.replace(zip_path)
+        size = int(zip_path.stat().st_size)
+        return built["filename"], size, dict(built.get("export_counts") or {})
+    finally:
+        if tmp_ctx is not None:
+            tmp_ctx.cleanup()
+
+
 def write_ai_bundle_zip(
     db: Session,
     run_id: int,
     dest: BinaryIO,
 ) -> tuple[str, int]:
-    with tempfile.TemporaryDirectory(prefix=f"run_v2_ai_{run_id}_") as tmp:
-        work = Path(tmp)
-        built = build_ai_bundle_artifacts(db, run_id=int(run_id), work_dir=work)
-        with zipfile.ZipFile(dest, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for arcname in ZIP_MEMBERS:
-                path = built["mapped"][arcname]
-                zf.write(path, arcname=arcname)
-        dest.seek(0, 2)
-        size = int(dest.tell())
+    """Compat test: scrive ZIP su buffer via file temporaneo su disco."""
+    with tempfile.TemporaryDirectory(prefix=f"run_v2_ai_buf_{run_id}_") as tmp:
+        zip_path = Path(tmp) / "bundle.zip"
+        filename, size, _counts = write_ai_bundle_zip_to_path(
+            db, int(run_id), zip_path, work_dir=Path(tmp) / "work"
+        )
+        with zip_path.open("rb") as fh:
+            while chunk := fh.read(STREAM_CHUNK):
+                dest.write(chunk)
         dest.seek(0)
-        return built["filename"], size
+        return filename, size
 
 
 def build_ai_bundle_response(db: Session, run_id: int) -> StreamingResponse:
+    """Legacy sync — non usare in production; preferire job async."""
     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
     try:
         filename, size = write_ai_bundle_zip(db, int(run_id), spool)

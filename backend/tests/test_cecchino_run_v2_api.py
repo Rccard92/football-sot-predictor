@@ -231,35 +231,44 @@ def test_export_rifiuta_file_fuori_contratto():
 
 def test_export_espone_i_cinque_artefatti(monkeypatch):
     run = _run(run_id=18, status=RUN_V2_STATUS_COMPLETED)
-    monkeypatch.setattr(
-        routes_v2,
-        "build_export_bundle",
-        lambda _db, *, run_id, output_dir: {
+
+    def _light(_db, *, run_id):
+        return {
             "run_id": run_id,
             "run_version": "cecchino_run_v2",
-            "output_dir": str(output_dir),
+            "lightweight": True,
             "files": {
-                "FULL.csv": str(output_dir / "FULL.csv"),
-                "core_markets_long.csv": str(output_dir / "core_markets_long.csv"),
-                "SOURCE_RAW.csv": str(output_dir / "SOURCE_RAW.csv"),
-                "DATA_DICTIONARY.json": str(output_dir / "DATA_DICTIONARY.json"),
-                "run_summary.json": str(output_dir / "run_summary.json"),
+                "FULL.csv": "FULL.csv",
+                "core_markets_long.csv": "core_markets_long.csv",
+                "SOURCE_RAW.csv": "SOURCE_RAW.csv",
+                "DATA_DICTIONARY.json": "DATA_DICTIONARY.json",
+                "run_summary.json": "run_summary.json",
             },
-            "counts": {"full_rows": 1500},
-        },
-    )
+            "counts": {
+                "full_rows": 1500,
+                "core_markets_long_rows": 9000,
+                "source_raw_rows": 1500,
+                "full_columns": 100,
+                "source_raw_columns": None,
+            },
+        }
+
+    monkeypatch.setattr(routes_v2, "build_export_manifest_light", _light)
     client = _client(FakeSession(by_id={18: run}))
 
     res = client.get("/api/cecchino-run-v2/18/export/manifest")
 
     assert res.status_code == 200
-    assert set(res.json()["files"]) == {
+    body = res.json()
+    assert body["lightweight"] is True
+    assert set(body["files"]) == {
         "FULL.csv",
         "core_markets_long.csv",
         "SOURCE_RAW.csv",
         "DATA_DICTIONARY.json",
         "run_summary.json",
     }
+    assert body["counts"]["full_rows"] == 1500
 
 
 def test_ai_bundle_richiede_sessione_admin():
@@ -275,3 +284,22 @@ def test_ai_bundle_richiede_sessione_admin():
     client = TestClient(app)
     res = client.get("/api/cecchino-run-v2/19/export/ai-bundle")
     assert res.status_code in (401, 503)
+
+
+def test_ai_bundle_sync_legacy_409():
+    run = _run(run_id=21, status=RUN_V2_STATUS_COMPLETED)
+    client = _client(FakeSession(by_id={21: run}))
+    res = client.get("/api/cecchino-run-v2/21/export/ai-bundle")
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "ai_bundle_sync_disabled"
+
+
+def test_ai_bundle_job_endpoints_require_admin():
+    run = _run(run_id=22, status=RUN_V2_STATUS_COMPLETED)
+    app = FastAPI()
+    app.include_router(routes_v2.router, prefix="/api")
+    app.dependency_overrides[get_db] = lambda: FakeSession(by_id={22: run})
+    client = TestClient(app)
+    assert client.post("/api/cecchino-run-v2/22/export/ai-bundle/jobs").status_code in (401, 503)
+    assert client.get("/api/cecchino-run-v2/22/export/ai-bundle/jobs/x").status_code in (401, 503)
+    assert client.get("/api/cecchino-run-v2/22/export/ai-bundle/download").status_code in (401, 503)

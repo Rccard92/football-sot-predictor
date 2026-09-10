@@ -1,7 +1,7 @@
 """API RUN V2 Cecchino Lab.
 
-L'export viene sempre rigenerato dal DB al momento della richiesta: i file su
-disco sono effimeri e non fanno parte del contratto.
+Control plane (start/resume/cancel) e export/manifest/AI-bundle: sessione admin.
+Il pacchetto AI si prepara via job async (POST jobs → poll → download).
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ from app.services.cecchino_data_lab.run_v2.export import (
     EXPORT_FILES,
     FILE_FULL,
     build_export_bundle,
+    build_export_manifest_light,
 )
-from app.services.cecchino_data_lab.run_v2.ai_bundle import build_ai_bundle_response
+from app.services.cecchino_data_lab.run_v2 import ai_bundle_jobs
 from app.services.cecchino_data_lab.run_v2.run_service import (
     cancel_run_v2,
     list_runs_v2,
@@ -185,32 +186,90 @@ def export_manifest(
     db: Session = Depends(get_db),
     _admin: AdminSession = Depends(require_admin_session),
 ) -> JSONResponse:
-    """Conteggi dell'export senza trattenere i file generati."""
+    """Manifest leggero: solo COUNT/metadata, nessuna generazione FULL/LONG/RAW."""
+    try:
+        manifest = build_export_manifest_light(db, run_id=int(run_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return JSONResponse(content=jsonable_encoder(manifest))
+
+
+@router.post("/{run_id}/export/ai-bundle/jobs")
+@admin_router.post("/{run_id}/export/ai-bundle/jobs")
+def create_ai_bundle_job(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminSession = Depends(require_admin_session),
+) -> JSONResponse:
+    """Crea o riusa job export AI (idempotente per run_id + export_schema_version)."""
     run = db.get(CecchinoRunV2Run, int(run_id))
     if run is None:
         raise HTTPException(status_code=404, detail=f"run_v2 {run_id} inesistente")
-
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f"cecchino_run_v2_manifest_{run_id}_"))
     try:
-        manifest = build_export_bundle(db, run_id=int(run_id), output_dir=tmp_dir)
-        manifest["files"] = {name: name for name in manifest["files"]}
-        return JSONResponse(content=jsonable_encoder(manifest))
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        job = ai_bundle_jobs.create_or_reuse_job(int(run_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(content=jsonable_encoder(job.to_status_dict()))
+
+
+@router.get("/{run_id}/export/ai-bundle/jobs/{job_id}")
+@admin_router.get("/{run_id}/export/ai-bundle/jobs/{job_id}")
+def get_ai_bundle_job(
+    run_id: int,
+    job_id: str,
+    _admin: AdminSession = Depends(require_admin_session),
+) -> JSONResponse:
+    job = ai_bundle_jobs.get_job(job_id)
+    if job is None or int(job.run_id) != int(run_id):
+        raise HTTPException(status_code=404, detail="ai_bundle_job_not_found")
+    return JSONResponse(content=jsonable_encoder(job.to_status_dict()))
+
+
+@router.get("/{run_id}/export/ai-bundle/download")
+@admin_router.get("/{run_id}/export/ai-bundle/download")
+def download_ai_bundle(
+    run_id: int,
+    _admin: AdminSession = Depends(require_admin_session),
+) -> StreamingResponse:
+    """Serve lo ZIP già costruito (nessuna rigenerazione)."""
+    try:
+        path, filename, size = ai_bundle_jobs.resolve_download(int(run_id))
+    except ValueError as exc:
+        code = str(exc)
+        status = 404 if code in ("ai_bundle_not_ready", "ai_bundle_missing_file") else 400
+        raise HTTPException(status_code=status, detail=code) from exc
+
+    def _iter_file() -> Iterator[bytes]:
+        with path.open("rb") as fh:
+            while chunk := fh.read(STREAM_CHUNK_BYTES):
+                yield chunk
+
+    return StreamingResponse(
+        _iter_file(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-AI-Bundle-Bytes": str(size),
+            "X-AI-Bundle-Cached": "1",
+        },
+    )
 
 
 @router.get("/{run_id}/export/ai-bundle")
 @admin_router.get("/{run_id}/export/ai-bundle")
-def export_ai_bundle(
+def export_ai_bundle_legacy(
     run_id: int,
-    db: Session = Depends(get_db),
     _admin: AdminSession = Depends(require_admin_session),
-) -> StreamingResponse:
-    """Pacchetto AI ZIP lossless: una sola generazione dei 5 artefatti + README/MANIFEST/PROMPT."""
-    run = db.get(CecchinoRunV2Run, int(run_id))
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"run_v2 {run_id} inesistente")
-    try:
-        return build_ai_bundle_response(db, int(run_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+) -> JSONResponse:
+    """Legacy sync disabilitato: usare POST .../jobs + poll + download."""
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "ai_bundle_sync_disabled",
+            "message": (
+                "La generazione sincrona del pacchetto AI e' disabilitata. "
+                "Usa POST /export/ai-bundle/jobs, poi poll status e GET .../download."
+            ),
+            "run_id": int(run_id),
+        },
+    )
