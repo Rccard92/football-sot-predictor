@@ -17,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.database import get_db
 from app.models.cecchino_run_v2 import CecchinoRunV2Run
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
@@ -34,7 +35,13 @@ from app.services.cecchino_data_lab.run_v2.run_service import (
 )
 
 router = APIRouter(prefix="/cecchino-run-v2", tags=["cecchino-run-v2"])
-admin_router = APIRouter(prefix="/admin/cecchino-run-v2", tags=["admin-cecchino-run-v2"])
+# Il control plane (start/resume/cancel) richiede una sessione admin: il token
+# di conferma nel body e' pubblico e non autorizza nulla.
+admin_router = APIRouter(
+    prefix="/admin/cecchino-run-v2",
+    tags=["admin-cecchino-run-v2"],
+    dependencies=[Depends(require_admin_session)],
+)
 logger = logging.getLogger(__name__)
 
 STREAM_CHUNK_BYTES = 1024 * 512

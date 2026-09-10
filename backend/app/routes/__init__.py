@@ -34,6 +34,7 @@ from app.routes import (
     admin_ingest,
     admin_pipeline,
     admin_refresh,
+    admin_session_auth,
     admin_sportapi,
     betting_picks,
     backtest,
@@ -73,6 +74,7 @@ api_router.include_router(admin_features_player_season_profiles.router)
 api_router.include_router(admin_pipeline.router)
 api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
+api_router.include_router(admin_session_auth.router)
 api_router.include_router(admin_sportapi.router)
 api_router.include_router(admin_jobs.router)
 api_router.include_router(admin_referees.router)

@@ -13,6 +13,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/tes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.core.admin_session import AdminSession, require_admin_session
 from app.core.database import get_db
 from app.models.cecchino_run_v2 import (
     RUN_V2_STATUS_COMPLETED,
@@ -87,6 +88,11 @@ def _client(db: FakeSession) -> TestClient:
     app.include_router(routes_v2.router, prefix="/api")
     app.include_router(routes_v2.admin_router, prefix="/api")
     app.dependency_overrides[get_db] = lambda: db
+    # Sessione admin data per valida: qui si verifica il contratto HTTP della
+    # RUN V2, l'autorizzazione ha i suoi test in test_admin_session_auth.py.
+    app.dependency_overrides[require_admin_session] = lambda: AdminSession(
+        expires_at=int(NOW.timestamp()) + 3600
+    )
     return TestClient(app)
 
 

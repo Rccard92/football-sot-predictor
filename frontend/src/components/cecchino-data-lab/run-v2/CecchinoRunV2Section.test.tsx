@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AdminHttpError } from '../../../lib/api'
 import { CecchinoRunV2Section } from './CecchinoRunV2Section'
 
 const apiMock = vi.hoisted(() => ({
@@ -19,6 +20,14 @@ vi.mock('../../../lib/cecchinoRunV2Api', async () => {
   )
   return { ...actual, ...apiMock }
 })
+
+const authMock = vi.hoisted(() => ({
+  getAdminSession: vi.fn(),
+  adminLogin: vi.fn(),
+  adminLogout: vi.fn(),
+}))
+
+vi.mock('../../../lib/adminAuthApi', () => authMock)
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), message: vi.fn() },
@@ -76,6 +85,9 @@ afterEach(() => {
 
 beforeEach(() => {
   apiMock.listRunsV2.mockResolvedValue([makeRun()])
+  authMock.getAdminSession.mockResolvedValue({ authenticated: false, expires_in: 0 })
+  authMock.adminLogin.mockResolvedValue({ authenticated: true })
+  authMock.adminLogout.mockResolvedValue({ authenticated: false })
 })
 
 function renderSection() {
@@ -227,5 +239,54 @@ describe('CecchinoRunV2Section', () => {
     await waitFor(() => expect(screen.getByTestId('run-v2-active-panel')).toBeTruthy())
 
     expect(screen.getByTestId('run-v2-start-full').hasAttribute('disabled')).toBe(true)
+  })
+
+  it("senza sessione admin l'avvio apre il login invece di partire", async () => {
+    apiMock.startRunV2.mockRejectedValue(
+      new AdminHttpError(401, 'Sessione admin assente o scaduta', null),
+    )
+    renderSection()
+    await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('run-v2-start-full'))
+    fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
+
+    await waitFor(() => expect(screen.getByTestId('run-v2-login-dialog')).toBeTruthy())
+    expect(apiMock.startRunV2).toHaveBeenCalledTimes(1)
+  })
+
+  it("dopo il login l'avvio viene ripetuto senza rifare il percorso", async () => {
+    apiMock.startRunV2
+      .mockRejectedValueOnce(new AdminHttpError(401, 'Sessione admin assente o scaduta', null))
+      .mockResolvedValueOnce(makeRun({ run_id: 21, status: 'pending', effective_status: 'pending' }))
+    renderSection()
+    await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('run-v2-start-full'))
+    fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
+    await waitFor(() => expect(screen.getByTestId('run-v2-login-dialog')).toBeTruthy())
+
+    fireEvent.change(screen.getByTestId('run-v2-login-password'), {
+      target: { value: 'password-admin' },
+    })
+    fireEvent.click(screen.getByTestId('run-v2-login-submit'))
+
+    await waitFor(() => expect(apiMock.startRunV2).toHaveBeenCalledTimes(2))
+    expect(authMock.adminLogin).toHaveBeenCalledWith('password-admin')
+    await waitFor(() => expect(screen.queryByTestId('run-v2-login-dialog')).toBeNull())
+  })
+
+  it('la password admin non finisce mai nel bundle o nelle chiamate RUN V2', async () => {
+    renderSection()
+    await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+
+    // Il client RUN V2 riceve solo il token di conferma pubblico: nessun secret.
+    fireEvent.click(screen.getByTestId('run-v2-start-full'))
+    fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
+
+    await waitFor(() => expect(apiMock.startRunV2).toHaveBeenCalled())
+    const args = JSON.stringify(apiMock.startRunV2.mock.calls)
+    expect(args.toLowerCase()).not.toContain('password')
+    expect(args.toLowerCase()).not.toContain('secret')
   })
 })

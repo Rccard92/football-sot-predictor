@@ -16,6 +16,9 @@ import {
   startRunV2,
   type CecchinoRunV2,
 } from '../../../lib/cecchinoRunV2Api'
+import { AdminHttpError } from '../../../lib/api'
+import { adminLogout, getAdminSession } from '../../../lib/adminAuthApi'
+import { AdminLoginDialog } from './AdminLoginDialog'
 import { CecchinoRunV2DetailPanel } from './CecchinoRunV2DetailPanel'
 import { RunV2Stat } from './RunV2Stat'
 
@@ -34,6 +37,24 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
   const [techOpen, setTechOpen] = useState(false)
   const [exportingId, setExportingId] = useState<number | null>(null)
   const [blockedBy, setBlockedBy] = useState<{ runId: number; stale: boolean } | null>(null)
+  const [authenticated, setAuthenticated] = useState(false)
+  // Azione di controllo rifiutata con 401: viene rieseguita dopo il login.
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null)
+
+  useEffect(() => {
+    void getAdminSession()
+      .then((s) => setAuthenticated(s.authenticated))
+      .catch(() => setAuthenticated(false))
+  }, [refreshKey])
+
+  /** True se l'errore e' una sessione admin mancante: apre il login e
+   *  memorizza l'azione da ripetere. */
+  const handledAsAuthPrompt = (e: unknown, retry: () => Promise<void>): boolean => {
+    if (!(e instanceof AdminHttpError) || e.status !== 401) return false
+    setAuthenticated(false)
+    setPendingAction(() => retry)
+    return true
+  }
 
   const loadRuns = useCallback(async () => {
     try {
@@ -94,7 +115,9 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       )
       void loadRuns()
     } catch (e) {
-      if (e instanceof RunV2ApiError && e.code === 'stale_active_run') {
+      if (handledAsAuthPrompt(e, () => onStart(mode))) {
+        setConfirmMode(null)
+      } else if (e instanceof RunV2ApiError && e.code === 'stale_active_run') {
         const runId = Number(e.details.run_id)
         setBlockedBy({ runId, stale: true })
         setConfirmMode(null)
@@ -121,6 +144,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       toast.success(`RUN V2 #${runId} ripresa dal checkpoint`)
       void loadRuns()
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => onResume(runId))) return
       toast.error(e instanceof Error ? e.message : 'Resume fallito')
     }
   }
@@ -132,6 +156,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       toast.message(`RUN V2 #${runId} annullata`)
       void loadRuns()
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => onCancel(runId))) return
       toast.error(e instanceof Error ? e.message : 'Annullamento fallito')
     }
   }
@@ -228,6 +253,26 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
           {activeRun && (
             <span className="text-xs" style={{ color: 'var(--lab-muted)' }}>
               Una RUN V2 è già in corso (#{activeRun.run_id}).
+            </span>
+          )}
+          {authenticated && (
+            <span
+              className="ml-auto flex items-center gap-2 text-xs"
+              style={{ color: 'var(--lab-muted)' }}
+              data-testid="run-v2-admin-session"
+            >
+              Sessione admin attiva
+              <button
+                type="button"
+                className="underline"
+                onClick={() => {
+                  void adminLogout()
+                    .then(() => setAuthenticated(false))
+                    .catch(() => setAuthenticated(false))
+                }}
+              >
+                Esci
+              </button>
             </span>
           )}
         </div>
@@ -431,6 +476,18 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
 
       {openRun && (
         <CecchinoRunV2DetailPanel run={openRun} onClose={() => setOpenRun(null)} />
+      )}
+
+      {pendingAction && (
+        <AdminLoginDialog
+          onClose={() => setPendingAction(null)}
+          onSuccess={() => {
+            const retry = pendingAction
+            setPendingAction(null)
+            setAuthenticated(true)
+            void retry()
+          }}
+        />
       )}
 
       {confirmMode && (

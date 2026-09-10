@@ -135,6 +135,9 @@ async function postRunV2<T>(path: string, payload?: unknown): Promise<T> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: payload === undefined ? undefined : JSON.stringify(payload),
+    // Il control plane richiede la sessione admin: senza il cookie il backend
+    // risponde 401 e la UI apre il login.
+    credentials: 'include',
   })
   let body: unknown = null
   if ((res.headers.get('content-type') ?? '').includes('application/json')) {

@@ -54,6 +54,12 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("CRON_SECRET", "ADMIN_CRON_SECRET"),
     )
+    # Sessione admin RUN V2: password e segreto di firma restano server-side.
+    # Se vuoti, gli endpoint admin protetti rispondono 503 (fail-closed).
+    admin_password: str = ""
+    admin_session_secret: str = ""
+    admin_session_ttl_minutes: int = 720
+
     prematch_refresh_minutes_before: int = 30
     prematch_refresh_window_minutes: int = 10
     prematch_refresh_skip_recent_minutes: int = 8
