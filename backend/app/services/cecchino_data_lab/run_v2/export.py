@@ -34,7 +34,8 @@ from app.services.cecchino_data_lab.run_v2.column_registry import (
     build_data_dictionary,
     full_export_columns,
 )
-from app.services.cecchino_data_lab.run_v2.constants import RUN_V2_VERSION
+from app.services.cecchino_data_lab.run_v2.constants import LAYER_CORE_STRICT, RUN_V2_VERSION
+from app.services.cecchino_data_lab.run_v2.market_rows import _purchasability_by_key
 
 FILE_FULL = "FULL.csv"
 FILE_MARKETS_LONG = "core_markets_long.csv"
@@ -52,6 +53,15 @@ EXPORT_FILES = (
 
 # Lettura a blocchi: 31k snapshot con payload JSONB non stanno in memoria.
 SNAPSHOT_CHUNK_SIZE = 500
+
+# Diagnostici v5 non persistiti su market_results: fallback da purchasability_json.
+_BUYABILITY_DIAGNOSTIC_FIELDS: tuple[tuple[str, str], ...] = (
+    ("buyability_status", "status"),
+    ("buyability_gate_status", "gate_status"),
+    ("buyability_gate_reason_codes", "gate_reason_codes"),
+    ("fair_book_probability", "fair_book_probability"),
+    ("fair_book_probability_source", "fair_book_probability_source"),
+)
 
 
 def _serialize(value: Any) -> Any:
@@ -85,6 +95,62 @@ def _market_rows_by_layer(
             column.name: getattr(row, column.name) for column in row.__table__.columns
         }
     return grouped
+
+
+def _diagnostic_fields_from_purch(
+    purch_entry: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Puro lookup: mappa chiavi compact purchasability → colonne export diagnostiche."""
+    if not isinstance(purch_entry, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for export_field, json_key in _BUYABILITY_DIAGNOSTIC_FIELDS:
+        if json_key in purch_entry:
+            out[export_field] = purch_entry.get(json_key)
+    return out
+
+
+def _apply_purchasability_diagnostic_fallback(
+    row: dict[str, Any],
+    *,
+    market_key: str,
+    observation_layer: str,
+    purch_by_key: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Riempie i 5 diagnostici solo per core_strict se ORM assente (None)."""
+    if str(observation_layer) != LAYER_CORE_STRICT:
+        return row
+    purch = purch_by_key.get(str(market_key))
+    if not purch:
+        return row
+    for export_field, value in _diagnostic_fields_from_purch(purch).items():
+        if row.get(export_field) is None:
+            row[export_field] = value
+    return row
+
+
+def _overlay_core_strict_diagnostics(
+    grouped: dict[str, dict[str, dict[str, Any]]],
+    purchasability_json: dict[str, Any] | None,
+) -> None:
+    """In-place: fallback diagnostici solo su layer core_strict."""
+    core = grouped.get(LAYER_CORE_STRICT)
+    if not isinstance(core, dict) or not core:
+        return
+    purch_by_key = _purchasability_by_key(
+        purchasability_json if isinstance(purchasability_json, dict) else None
+    )
+    if not purch_by_key:
+        return
+    for market_key, row in core.items():
+        if not isinstance(row, dict):
+            continue
+        _apply_purchasability_diagnostic_fallback(
+            row,
+            market_key=str(market_key),
+            observation_layer=LAYER_CORE_STRICT,
+            purch_by_key=purch_by_key,
+        )
 
 
 def _iter_snapshot_contexts(
@@ -126,9 +192,13 @@ def _iter_snapshot_contexts(
             if snapshot is None:
                 continue
             grouped = _market_rows_by_layer(markets.get(snapshot_id, []))
+            snap_dict = _snapshot_to_dict(snapshot)
+            _overlay_core_strict_diagnostics(
+                grouped, snap_dict.get("purchasability_json")
+            )
             yield {
                 "run_version": run_version,
-                "snapshot": _snapshot_to_dict(snapshot),
+                "snapshot": snap_dict,
                 "markets": grouped,
                 "equilibrium_state": _first_market_field(grouped, "equilibrium_state"),
                 "goal_intensity_score": _first_market_field(grouped, "goal_intensity_score"),
@@ -139,7 +209,7 @@ def _iter_snapshot_contexts(
 def _first_market_field(
     grouped: dict[str, dict[str, dict[str, Any]]], field: str
 ) -> Any:
-    for row in (grouped.get("core_strict") or {}).values():
+    for row in (grouped.get(LAYER_CORE_STRICT) or {}).values():
         value = row.get(field)
         if value is not None:
             return value
@@ -184,7 +254,18 @@ def write_core_markets_long_csv(db: Session, *, run: CecchinoRunV2Run, path: Pat
             .execution_options(yield_per=1000)
         )
 
+        cached_snap_id: int | None = None
+        purch_by_key: dict[str, dict[str, Any]] = {}
+
         for result, snapshot in db.execute(query):
+            snap_id = int(snapshot.id)
+            if snap_id != cached_snap_id:
+                cached_snap_id = snap_id
+                purch_by_key = _purchasability_by_key(
+                    snapshot.purchasability_json
+                    if isinstance(snapshot.purchasability_json, dict)
+                    else None
+                )
             row = {
                 "run_id": result.run_id,
                 "lab_match_id": result.lab_match_id,
@@ -200,6 +281,12 @@ def write_core_markets_long_csv(db: Session, *, run: CecchinoRunV2Run, path: Pat
                 if column in row:
                     continue
                 row[column] = getattr(result, column, None)
+            _apply_purchasability_diagnostic_fallback(
+                row,
+                market_key=str(result.market_key),
+                observation_layer=str(result.observation_layer),
+                purch_by_key=purch_by_key,
+            )
             writer.writerow([_serialize(row.get(c)) for c in columns])
             written += 1
 

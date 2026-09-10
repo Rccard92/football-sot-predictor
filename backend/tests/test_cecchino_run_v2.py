@@ -942,6 +942,149 @@ def test_export_row_getters_are_missing_safe():
     assert all(v is None for v in values if v is not None) or True
 
 
+def test_purchasability_diagnostic_fallback_core_strict_only():
+    """Diagnostici v5 da purchasability_json solo su core_strict; score/class intatti."""
+    from app.services.cecchino_data_lab.run_v2.column_registry import full_export_columns
+    from app.services.cecchino_data_lab.run_v2.constants import (
+        LAYER_CORE_STRICT,
+        LAYER_ECONOMIC,
+    )
+    from app.services.cecchino_data_lab.run_v2.export import (
+        _apply_purchasability_diagnostic_fallback,
+        _overlay_core_strict_diagnostics,
+    )
+
+    purch_by_key = {
+        "ONE_X": {
+            "market_key": "ONE_X",
+            "score": 55.0,
+            "class": "Media",
+            "status": "score",
+            "gate_status": "passed",
+            "gate_reason_codes": [],
+            "fair_book_probability": 0.72,
+            "fair_book_probability_source": "run_v2_strict_bet365_1x2_derived_dc",
+        }
+    }
+
+    core_row = {
+        "market_key": "ONE_X",
+        "observation_layer": LAYER_CORE_STRICT,
+        "buyability_score": 55.0,
+        "buyability_class": "Media",
+        "buyability_status": None,
+        "buyability_gate_status": None,
+        "buyability_gate_reason_codes": None,
+        "fair_book_probability": None,
+        "fair_book_probability_source": None,
+    }
+    econ_row = {
+        "market_key": "ONE_X",
+        "observation_layer": LAYER_ECONOMIC,
+        "buyability_score": None,
+        "buyability_class": None,
+        "buyability_status": None,
+        "buyability_gate_status": None,
+        "buyability_gate_reason_codes": None,
+        "fair_book_probability": None,
+        "fair_book_probability_source": None,
+    }
+
+    _apply_purchasability_diagnostic_fallback(
+        core_row,
+        market_key="ONE_X",
+        observation_layer=LAYER_CORE_STRICT,
+        purch_by_key=purch_by_key,
+    )
+    _apply_purchasability_diagnostic_fallback(
+        econ_row,
+        market_key="ONE_X",
+        observation_layer=LAYER_ECONOMIC,
+        purch_by_key=purch_by_key,
+    )
+
+    assert core_row["buyability_score"] == 55.0
+    assert core_row["buyability_class"] == "Media"
+    assert core_row["buyability_status"] == "score"
+    assert core_row["buyability_gate_status"] == "passed"
+    assert core_row["buyability_gate_reason_codes"] == []
+    assert core_row["fair_book_probability"] == 0.72
+    assert (
+        core_row["fair_book_probability_source"]
+        == "run_v2_strict_bet365_1x2_derived_dc"
+    )
+
+    assert econ_row["buyability_status"] is None
+    assert econ_row["buyability_gate_status"] is None
+    assert econ_row["fair_book_probability"] is None
+    assert econ_row["fair_book_probability_source"] is None
+
+    grouped = {
+        LAYER_CORE_STRICT: {
+            "ONE_X": {
+                "buyability_score": 55.0,
+                "buyability_class": "Media",
+                "buyability_status": None,
+                "fair_book_probability": None,
+                "fair_book_probability_source": None,
+            }
+        },
+        LAYER_ECONOMIC: {
+            "ONE_X": {
+                "buyability_status": None,
+                "fair_book_probability": None,
+            }
+        },
+    }
+    _overlay_core_strict_diagnostics(
+        grouped,
+        {"markets": [purch_by_key["ONE_X"]]},
+    )
+    assert grouped[LAYER_CORE_STRICT]["ONE_X"]["buyability_status"] == "score"
+    assert grouped[LAYER_CORE_STRICT]["ONE_X"]["fair_book_probability"] == 0.72
+    assert grouped[LAYER_CORE_STRICT]["ONE_X"]["buyability_score"] == 55.0
+    assert grouped[LAYER_ECONOMIC]["ONE_X"]["buyability_status"] is None
+
+    ctx = {
+        "run_version": "cecchino_run_v2",
+        "snapshot": {},
+        "markets": grouped,
+    }
+    by_col = {c.column: c.getter(ctx) for c in full_export_columns()}
+    assert by_col["core_one_x_buyability_status"] == "score"
+    assert by_col["core_one_x_fair_book_probability"] == 0.72
+    assert (
+        by_col["core_one_x_fair_book_probability_source"]
+        == "run_v2_strict_bet365_1x2_derived_dc"
+    )
+    assert by_col["core_one_x_buyability_score"] == 55.0
+
+
+def test_purchasability_diagnostic_fallback_does_not_override_orm():
+    from app.services.cecchino_data_lab.run_v2.constants import LAYER_CORE_STRICT
+    from app.services.cecchino_data_lab.run_v2.export import (
+        _apply_purchasability_diagnostic_fallback,
+    )
+
+    row = {
+        "buyability_status": "gate_failed",
+        "fair_book_probability": 0.1,
+    }
+    _apply_purchasability_diagnostic_fallback(
+        row,
+        market_key="HOME",
+        observation_layer=LAYER_CORE_STRICT,
+        purch_by_key={
+            "HOME": {
+                "status": "score",
+                "fair_book_probability": 0.9,
+            }
+        },
+    )
+    assert row["buyability_status"] == "gate_failed"
+    assert row["fair_book_probability"] == 0.1
+
+
 def test_statistical_target_lines_are_not_bookmaker_markets():
     from app.services.cecchino_data_lab.run_v2.constants import (
         CORE_MARKET_KEYS,
