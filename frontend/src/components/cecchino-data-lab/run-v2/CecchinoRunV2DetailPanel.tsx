@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   RUN_V2_EXPORT_FILES,
+  downloadRunV2AiBundle,
   downloadRunV2Export,
   formatRunV2Date,
   getRunV2ExportManifest,
@@ -67,6 +68,19 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
     } catch (e) {
       if (handledAsAuthPrompt(e, () => onDownload(file))) return
       toast.error(e instanceof Error ? e.message : 'Download fallito')
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  const onDownloadAiBundle = async () => {
+    setDownloading('ai-bundle')
+    try {
+      await downloadRunV2AiBundle(run.run_id)
+      toast.success('Download avviato: pacchetto AI (.zip)')
+    } catch (e) {
+      if (handledAsAuthPrompt(e, () => onDownloadAiBundle())) return
+      toast.error(e instanceof Error ? e.message : 'Download pacchetto AI fallito')
     } finally {
       setDownloading(null)
     }
@@ -301,6 +315,17 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
               )}
             </li>
           ))}
+          <li className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              className="lab-btn rounded-md px-3 py-1 text-xs"
+              data-testid={`run-v2-export-ai-bundle-${run.run_id}`}
+              disabled={!completed || downloading !== null}
+              onClick={() => void onDownloadAiBundle()}
+            >
+              {downloading === 'ai-bundle' ? 'Download…' : 'Scarica pacchetto AI (.zip)'}
+            </button>
+          </li>
         </ul>
       </div>
 

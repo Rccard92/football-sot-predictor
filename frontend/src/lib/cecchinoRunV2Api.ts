@@ -277,6 +277,36 @@ export async function downloadRunV2Export(
   URL.revokeObjectURL(url)
 }
 
+/** Pacchetto AI ZIP lossless (admin login on click come gli altri export). */
+export async function downloadRunV2AiBundle(runId: number): Promise<void> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/cecchino-run-v2/${runId}/export/ai-bundle`, {
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    let message = `Export AI bundle RUN V2 fallito (${res.status})`
+    try {
+      const body = (await res.json()) as { detail?: string; message?: string }
+      message = body?.detail || body?.message || message
+    } catch {
+      /* ignore */
+    }
+    throw new AdminHttpError(res.status, message, null)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="?([^"]+)"?/i.exec(cd)
+  const filename = match?.[1] || `CECCHINO_RUN_V2_RUN_${runId}_AI_BUNDLE.zip`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 const RUN_V2_STATUS_LABELS: Record<string, string> = {
   pending: 'In attesa',
   running: 'In corso',

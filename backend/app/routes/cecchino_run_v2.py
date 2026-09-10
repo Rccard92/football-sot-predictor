@@ -26,6 +26,7 @@ from app.services.cecchino_data_lab.run_v2.export import (
     FILE_FULL,
     build_export_bundle,
 )
+from app.services.cecchino_data_lab.run_v2.ai_bundle import build_ai_bundle_response
 from app.services.cecchino_data_lab.run_v2.run_service import (
     cancel_run_v2,
     list_runs_v2,
@@ -196,3 +197,20 @@ def export_manifest(
         return JSONResponse(content=jsonable_encoder(manifest))
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.get("/{run_id}/export/ai-bundle")
+@admin_router.get("/{run_id}/export/ai-bundle")
+def export_ai_bundle(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminSession = Depends(require_admin_session),
+) -> StreamingResponse:
+    """Pacchetto AI ZIP lossless: una sola generazione dei 5 artefatti + README/MANIFEST/PROMPT."""
+    run = db.get(CecchinoRunV2Run, int(run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"run_v2 {run_id} inesistente")
+    try:
+        return build_ai_bundle_response(db, int(run_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

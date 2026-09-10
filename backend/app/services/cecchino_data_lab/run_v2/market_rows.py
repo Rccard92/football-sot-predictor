@@ -87,38 +87,78 @@ def _purchasability_by_key(purch: dict[str, Any] | None) -> dict[str, dict[str, 
 
 
 def _equilibrium_state(balance: dict[str, Any] | None) -> str | None:
+    """Estrae lo stato di equilibrio dal payload Balance V5 (top-level)."""
     if not isinstance(balance, dict):
         return None
-    values = balance.get("values")
-    if not isinstance(values, dict):
+
+    def _from_payload(payload: dict[str, Any]) -> str | None:
+        pillars = payload.get("pillars")
+        if isinstance(pillars, dict):
+            f36 = pillars.get("f36")
+            if isinstance(f36, dict):
+                for key in ("class_key", "class_label", "adjusted_class_key", "adjusted_class_label"):
+                    val = f36.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val.strip()
+            dominance = pillars.get("dominance")
+            if isinstance(dominance, dict):
+                for key in ("class_key", "class_label", "class", "label"):
+                    val = dominance.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val.strip()
+        summary = payload.get("structural_summary")
+        if isinstance(summary, str) and summary.strip():
+            # Testo composto: usa la geometria se presente, altrimenti il testo intero.
+            text = summary.strip()
+            if text.lower().startswith("geometria:"):
+                part = text.split(".", 1)[0].replace("Geometria:", "").strip()
+                return part or text
+            return text[:120]
+        if isinstance(summary, dict):
+            for key in ("state", "label", "structural_state", "summary_label", "class_key"):
+                val = summary.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
         return None
-    summary = values.get("structural_summary")
-    if isinstance(summary, dict):
-        for key in ("state", "label", "structural_state", "summary_label"):
-            val = summary.get(key)
-            if isinstance(val, str) and val:
-                return val
-    pillars = values.get("pillars")
-    if isinstance(pillars, dict):
-        dominance = pillars.get("dominance")
-        if isinstance(dominance, dict):
-            val = dominance.get("class") or dominance.get("label")
-            if isinstance(val, str) and val:
-                return val
+
+    direct = _from_payload(balance)
+    if direct:
+        return direct
+    values = balance.get("values")
+    if isinstance(values, dict):
+        return _from_payload(values)
     return None
 
 
 def _goal_intensity_score(gi_payload: dict[str, Any] | None) -> float | None:
     if not isinstance(gi_payload, dict):
         return None
-    for key in ("primary_candidate_score", "score", "intensity_score"):
+    for key in (
+        "composite_gi_a_strict_core",
+        "primary_candidate_score",
+        "score",
+        "intensity_score",
+    ):
         val = _as_float(gi_payload.get(key))
+        if val is not None:
+            return val
+    final_class = gi_payload.get("final_class")
+    if isinstance(final_class, dict):
+        val = _as_float(final_class.get("score"))
         if val is not None:
             return val
     values = gi_payload.get("values")
     if isinstance(values, dict):
-        return _as_float(values.get("primary_candidate_score"))
+        for key in ("composite_gi_a_strict_core", "primary_candidate_score", "score"):
+            val = _as_float(values.get(key))
+            if val is not None:
+                return val
     return None
+
+
+def equilibrium_state_from_balance(balance: dict[str, Any] | None) -> str | None:
+    """API pubblica usata anche dall'export per run gia persistite."""
+    return _equilibrium_state(balance)
 
 
 def _block_values(block: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
@@ -190,12 +230,14 @@ def build_core_strict_market_rows(
     gi_payload: dict[str, Any] | None,
     purchasability: dict[str, Any] | None,
     outcomes: dict[str, dict[str, Any]],
+    signal_index: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Una riga CORE STRICT per ciascuno dei mercati CORE V2."""
     kpi_rows = _kpi_rows_by_key(kpi_panel)
     purch_rows = _purchasability_by_key(purchasability)
     equilibrium = _equilibrium_state(balance)
     gi_score = _goal_intensity_score(gi_payload)
+    signals = signal_index or {}
 
     probabilities: dict[str, float | None] = {}
     quotas: dict[str, float | None] = {}
@@ -220,6 +262,7 @@ def build_core_strict_market_rows(
         quote = strict_by_market.get(market.key) or {}
         purch = purch_rows.get(market.key) or {}
         outcome = outcomes.get(market.key) or {}
+        sig = signals.get(market.key) or {}
 
         quota_book = _as_float(quote.get("value"))
         won = outcome.get("won")
@@ -247,6 +290,8 @@ def build_core_strict_market_rows(
                 "buyability_score": _as_float(purch.get("score")),
                 "buyability_class": purch.get("class"),
                 "buyability_status": purch.get("status"),
+                "signal_active": bool(sig.get("signal_active")),
+                "signal_sources_json": sig.get("signal_sources_json"),
                 "equilibrium_state": equilibrium,
                 "goal_intensity_score": gi_score,
                 "market_available": probabilities.get(market.key) is not None,

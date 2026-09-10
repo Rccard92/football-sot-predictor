@@ -260,3 +260,18 @@ def test_export_espone_i_cinque_artefatti(monkeypatch):
         "DATA_DICTIONARY.json",
         "run_summary.json",
     }
+
+
+def test_ai_bundle_richiede_sessione_admin():
+    """Senza sessione admin: l'endpoint AI bundle e bloccato (401/503 fail-closed)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    run = _run(run_id=19, status=RUN_V2_STATUS_COMPLETED)
+    db = FakeSession(by_id={19: run})
+    app = FastAPI()
+    app.include_router(routes_v2.router, prefix="/api")
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app)
+    res = client.get("/api/cecchino-run-v2/19/export/ai-bundle")
+    assert res.status_code in (401, 503)

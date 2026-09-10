@@ -213,6 +213,13 @@ def build_run_v2_quote_bundle(match: Any) -> dict[str, Any]:
 
     _apply_family_normalization(strict_by_market)
 
+    # Gate V2: O/U REAL only; DC reale obbligatoria se presente.
+    from app.services.cecchino_data_lab.run_v2.quote_provenance import (
+        align_strict_quote_provenance,
+    )
+
+    strict_by_market = align_strict_quote_provenance(strict_by_market)
+
     strict_available = sum(
         1 for e in strict_by_market.values() if e["value"] is not None
     )

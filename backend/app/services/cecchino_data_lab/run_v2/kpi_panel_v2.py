@@ -219,6 +219,11 @@ def build_run_v2_kpi_panel(
         ou_05_markets=ou_05_markets,
         strict_by_market=strict_by_market,
     )
+    from app.services.cecchino_data_lab.run_v2.quote_provenance import (
+        sync_kpi_rows_to_strict,
+    )
+
+    panel = sync_kpi_rows_to_strict(panel, strict_by_market=strict_by_market)
     # Silence unused match (parity con wrapper storico; utile a caller).
     _ = match
     return panel

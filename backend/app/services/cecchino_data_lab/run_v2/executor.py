@@ -114,6 +114,9 @@ from app.services.cecchino_data_lab.run_v2.purchasability_v2 import (
     build_run_v2_purchasability,
 )
 from app.services.cecchino_data_lab.run_v2.quotes import build_run_v2_quote_bundle
+from app.services.cecchino_data_lab.historical_signal_extraction import (
+    build_market_signal_index,
+)
 from app.services.cecchino_data_lab.run_v2.settlement import (
     evaluate_market_outcome_v2,
     match_result_from_lab_match,
@@ -514,6 +517,7 @@ def _process_one_match(
         match=None,
         settle=False,
     )
+    signal_index = build_market_signal_index(signals)
 
     elig = evaluate_historical_eligibility(
         home_team=match.home_team,
@@ -611,6 +615,7 @@ def _process_one_match(
         gi_payload=gi_payload,
         purchasability=purch_payload,
         outcomes=outcomes,
+        signal_index=signal_index,
     )
     # Nessuna riga economic_observation: le 12 enrichment sono STRICT e la
     # stessa quota_book congelata viene riutilizzata per settlement/profit.
@@ -704,7 +709,8 @@ def _core_result_orm(
         kpi_rating=row.get("kpi_rating"),
         edge_pct=row.get("edge_pct"),
         vantaggio_prob=row.get("vantaggio_prob"),
-        signal_active=False,
+        signal_active=bool(row.get("signal_active")),
+        signal_sources_json=row.get("signal_sources_json"),
         buyability_score=row.get("buyability_score"),
         buyability_class=row.get("buyability_class"),
         equilibrium_state=row.get("equilibrium_state"),

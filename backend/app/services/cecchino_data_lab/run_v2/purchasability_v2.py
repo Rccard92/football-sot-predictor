@@ -12,6 +12,8 @@ from typing import Any
 
 from app.services.cecchino.cecchino_market_opposition import PANEL_MARKET_KEYS
 from app.services.cecchino.cecchino_purchasability_fair_book import (
+    SOURCE_TWO_WAY,
+    normalize_exclusive_market,
     resolve_fair_book_for_panel_rows,
 )
 from app.services.cecchino.cecchino_purchasability_features import (
@@ -45,6 +47,68 @@ def _index_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         if mk:
             by_mk[mk] = row
     return by_mk
+
+
+def _quota_book(row: dict[str, Any] | None) -> float | None:
+    if not isinstance(row, dict):
+        return None
+    raw = row.get("quota_book")
+    if raw is None:
+        return None
+    try:
+        f = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f > 1.0 else None
+
+
+def _resolve_ou05_fair_book(
+    by_mk: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Fair book V2-only per O/U 0.5 (two-way), senza toccare il resolver V1."""
+    required = frozenset({SEL_OVER_0_5, SEL_UNDER_0_5})
+    odds: dict[str, float] = {}
+    for mk in required:
+        q = _quota_book(by_mk.get(mk))
+        if q is not None:
+            odds[mk] = q
+    normalized, overround, status = normalize_exclusive_market(odds, required)
+    out: dict[str, dict[str, Any]] = {}
+    if status != "ok" or not normalized:
+        for mk in required:
+            row = by_mk.get(mk) or {}
+            q = _quota_book(row)
+            raw = (1.0 / q) if q else None
+            out[mk] = {
+                "fair_book_probability": raw,
+                "fair_book_probability_source": "raw_implied_secondary_only",
+                "fair_book_probability_verified": False,
+                "normalization_payload": {
+                    "status": "fallback_raw_implied",
+                    "exclusion_reason": status if status != "ok" else "incomplete_market",
+                },
+                "exclusion_reason": status if status != "ok" else "incomplete_market",
+            }
+        return out
+
+    payload = {
+        "status": status,
+        "overround": overround,
+        "period": "FT",
+        "line": 0.5,
+        "normalized_map": {k: round(v, 8) for k, v in normalized.items()},
+        "required": sorted(required),
+        "run_v2_ou05_fair_book": True,
+    }
+    for mk in required:
+        out[mk] = {
+            "fair_book_probability": float(normalized[mk]),
+            "fair_book_probability_source": SOURCE_TWO_WAY,
+            "fair_book_probability_verified": True,
+            "normalization_payload": payload,
+            "exclusion_reason": None,
+        }
+    return out
 
 
 def _probs_map_v2(
@@ -82,6 +146,8 @@ def _score_ou05_items(
         today_fixture_id=fixture_meta.get("today_fixture_id"),
         snapshot_at=fixture_meta.get("snapshot_at"),
     )
+    # Overlay V2-only: FT O/U 0.5 non e nel fair-book V1.
+    fair_by = {**fair_by, **_resolve_ou05_fair_book(by_mk)}
     model_probs = build_model_context_probability_map(rows)
     probs_by_market = _probs_map_v2(
         by_mk,

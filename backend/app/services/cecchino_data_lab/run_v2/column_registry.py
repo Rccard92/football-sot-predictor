@@ -495,6 +495,46 @@ def _economic_output_columns() -> list[ColumnSpec]:
     return cols
 
 
+def _equilibrium_state_getter() -> Callable[[dict[str, Any]], Any]:
+    """Colonna market oppure fallback da balance_v5_json (run gia persistite)."""
+
+    def getter(ctx: dict[str, Any]) -> Any:
+        value = ctx.get("equilibrium_state")
+        if isinstance(value, str) and value.strip():
+            return value
+        from app.services.cecchino_data_lab.run_v2.market_rows import (
+            equilibrium_state_from_balance,
+        )
+
+        snap = ctx.get("snapshot") or {}
+        return equilibrium_state_from_balance(snap.get("balance_v5_json"))
+
+    return getter
+
+
+def _signals_observation_status() -> Callable[[dict[str, Any]], Any]:
+    return _get(("snapshot", "signals_json", "observation_status"))
+
+
+def _signals_default_model_key() -> Callable[[dict[str, Any]], Any]:
+    return _get(("snapshot", "signals_json", "default_model_key"))
+
+
+def _signals_active_count() -> Callable[[dict[str, Any]], Any]:
+    def getter(ctx: dict[str, Any]) -> Any:
+        from app.services.cecchino_data_lab.historical_signal_extraction import (
+            build_market_signal_index,
+        )
+
+        signals = ((ctx.get("snapshot") or {}).get("signals_json")) or {}
+        if not isinstance(signals, dict) or not signals:
+            return 0
+        index = build_market_signal_index(signals)
+        return sum(1 for payload in index.values() if payload.get("signal_active"))
+
+    return getter
+
+
 def _match_level_core_columns() -> list[ColumnSpec]:
     return [
         ColumnSpec(
@@ -504,7 +544,7 @@ def _match_level_core_columns() -> list[ColumnSpec]:
             available_at_prediction_time=AVAILABLE_YES,
             source="balance_v5_json",
             description="Stato di equilibrio/squilibrio strutturale del match",
-            getter=_get(("equilibrium_state",)),
+            getter=_equilibrium_state_getter(),
         ),
         ColumnSpec(
             column="core_goal_intensity_score",
@@ -541,6 +581,33 @@ def _match_level_core_columns() -> list[ColumnSpec]:
             source="purchasability_json",
             description="Stato di esecuzione del modulo Acquistabilita",
             getter=_get(("snapshot", "purchasability_json", "execution_status")),
+        ),
+        ColumnSpec(
+            column="core_signals_observation_status",
+            layer=LAYER_CORE_OUTPUT,
+            allowed_as_prediction_input=False,
+            available_at_prediction_time=AVAILABLE_YES,
+            source="signals_json",
+            description="Stato osservazionale dei modelli Signals A–F",
+            getter=_signals_observation_status(),
+        ),
+        ColumnSpec(
+            column="core_signals_default_model_key",
+            layer=LAYER_CORE_OUTPUT,
+            allowed_as_prediction_input=False,
+            available_at_prediction_time=AVAILABLE_YES,
+            source="signals_json",
+            description="Modello Signals di default (tipicamente F)",
+            getter=_signals_default_model_key(),
+        ),
+        ColumnSpec(
+            column="core_signals_active_count",
+            layer=LAYER_CORE_OUTPUT,
+            allowed_as_prediction_input=False,
+            available_at_prediction_time=AVAILABLE_YES,
+            source="signals_json",
+            description="Numero di mercati con segnale acquisito attivo",
+            getter=_signals_active_count(),
         ),
     ]
 
@@ -641,6 +708,14 @@ CORE_MARKETS_LONG_COLUMNS: tuple[tuple[str, str, bool, Any, str], ...] = (
     ("vantaggio_prob", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Vantaggio in probabilita"),
     ("buyability_score", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Indice di acquistabilita"),
     ("buyability_class", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Classe di acquistabilita"),
+    ("signal_active", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Segnale Cecchino acquisito sul mercato"),
+    (
+        "signal_sources_json",
+        LAYER_CORE_OUTPUT,
+        False,
+        AVAILABLE_YES,
+        "Sorgenti/famiglie segnale per il mercato (JSON)",
+    ),
     ("equilibrium_state", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Stato di equilibrio"),
     ("goal_intensity_score", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Intensita goal"),
     ("market_available", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Prediction disponibile"),
