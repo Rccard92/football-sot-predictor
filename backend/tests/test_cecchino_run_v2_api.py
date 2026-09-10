@@ -51,7 +51,7 @@ def _run(*, run_id: int = 1, status: str = RUN_V2_STATUS_RUNNING, heartbeat_age:
         last_processed_kickoff_at=None,
         cancel_requested=False,
         quote_policy_json={"quote_policy_version": "bet365_dual_track_v2"},
-        module_policy_json=None,
+        module_policy_json={"season_label": "2024/2025", "season_scope": "2024/2025"},
         coverage_json=None,
         summary_json=None,
         leakage_audit_json={"leakage_ok": True},
@@ -101,6 +101,21 @@ def _no_worker(monkeypatch):
     """Nessun thread reale: i test verificano il contratto HTTP, non l'executor."""
     spawned: list[int] = []
     monkeypatch.setattr(run_service, "_spawn_worker", lambda rid: spawned.append(rid))
+    monkeypatch.setattr(
+        run_service,
+        "run_v2_preflight",
+        lambda _db, *, season_label: {
+            "season_label": season_label,
+            "status": "ready",
+            "matches_total": 100,
+            "competitions_count": 1,
+            "competitions": ["E0"],
+            "datasets_count": 1,
+            "date_range": {"start": None, "end": None},
+            "blocking_anomalies": [],
+            "warnings": [],
+        },
+    )
     with run_service._lock:
         run_service._active_threads.clear()
     yield spawned
@@ -110,11 +125,20 @@ def _no_worker(monkeypatch):
 
 def test_start_richiede_token_di_conferma():
     client = _client(FakeSession())
-    res = client.post("/api/admin/cecchino-run-v2", json={})
+    res = client.post("/api/admin/cecchino-run-v2", json={"season": "2024/2025"})
 
     assert res.status_code == 400
     body = res.json()
     assert body["error"] == "confirm_required"
+
+
+def test_start_richiede_stagione(_no_worker):
+    client = _client(FakeSession())
+    res = client.post(
+        "/api/admin/cecchino-run-v2", json={"confirm": RUN_V2_CONFIRM_TOKEN}
+    )
+    assert res.status_code == 400
+    assert res.json()["error"] == "season_required"
 
 
 def test_start_risponde_202_senza_attendere_la_run(monkeypatch, _no_worker):
@@ -126,22 +150,25 @@ def test_start_risponde_202_senza_attendere_la_run(monkeypatch, _no_worker):
     client = _client(FakeSession(by_id={12: created}))
 
     res = client.post(
-        "/api/admin/cecchino-run-v2", json={"confirm": RUN_V2_CONFIRM_TOKEN}
+        "/api/admin/cecchino-run-v2",
+        json={"confirm": RUN_V2_CONFIRM_TOKEN, "season": "2024/2025"},
     )
 
     assert res.status_code == 202
     body = res.json()
     assert body["run_id"] == 12
     assert body["status"] == RUN_V2_STATUS_PENDING
+    assert body["season_label"] == "2024/2025"
     assert _no_worker == [12]
 
 
-def test_start_bloccato_se_una_run_e_gia_in_esecuzione():
+def test_start_bloccato_se_una_run_e_gia_in_esecuzione(_no_worker):
     live = _run(run_id=13)
     client = _client(FakeSession(by_id={13: live}, scalar_first=live))
 
     res = client.post(
-        "/api/admin/cecchino-run-v2", json={"confirm": RUN_V2_CONFIRM_TOKEN}
+        "/api/admin/cecchino-run-v2",
+        json={"confirm": RUN_V2_CONFIRM_TOKEN, "season": "2024/2025"},
     )
 
     assert res.status_code == 409

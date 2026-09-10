@@ -7,14 +7,15 @@ La scrittura sul DB richiede sempre un token di conferma esplicito.
   # Preflight read-only: nessuna riga scritta
   python -m app.jobs.cecchino_run_v2 --preflight
 
-  # Run pilota su un sottoinsieme
-  python -m app.jobs.cecchino_run_v2 --max-matches 500 --confirm RUN_CECCHINO_RUN_V2
+  # Run pilota su una stagione
+  python -m app.jobs.cecchino_run_v2 --season 2024/2025 --max-matches 50 \\
+    --confirm RUN_CECCHINO_RUN_V2
 
-  # Run completa sull'intero dataset
-  python -m app.jobs.cecchino_run_v2 --confirm RUN_CECCHINO_RUN_V2
+  # Run completa su una stagione
+  python -m app.jobs.cecchino_run_v2 --season 2024/2025 --confirm RUN_CECCHINO_RUN_V2
 
-  # Run completa + export dei cinque artefatti
-  python -m app.jobs.cecchino_run_v2 --confirm RUN_CECCHINO_RUN_V2 \\
+  # Run completa stagione + export dei cinque artefatti
+  python -m app.jobs.cecchino_run_v2 --season 2024/2025 --confirm RUN_CECCHINO_RUN_V2 \\
     --export-dir /tmp/run_v2
 """
 
@@ -45,10 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Solo conteggi read-only: dataset, match, copertura quote",
     )
     parser.add_argument(
+        "--season",
+        default=None,
+        help="Stagione Lab obbligatoria (es. 2024/2025). Scope della RUN.",
+    )
+    parser.add_argument(
         "--max-matches",
         type=int,
         default=None,
-        help="Limita la run ai primi N match in ordine cronologico",
+        help="Limita la run ai primi N match della stagione (ordine cronologico)",
     )
     parser.add_argument(
         "--resume-run-id",
@@ -149,8 +155,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.resume_run_id:
             run_id = int(args.resume_run_id)
         else:
+            if not args.season:
+                parser.error("--season e obbligatorio (es. 2024/2025)")
             run = create_run_v2(
                 db,
+                season_label=args.season,
                 max_matches=args.max_matches,
                 source_git_commit=args.git_commit,
                 run_scope="pilot" if args.max_matches else "full",

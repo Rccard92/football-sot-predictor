@@ -81,6 +81,8 @@ export type CecchinoRunV2 = {
   heartbeat_age_seconds: number | null
   stale_heartbeat_seconds: number
   run_scope: string
+  /** Stagione Lab nello scope della RUN (da module_policy_json). */
+  season_label: string | null
   max_matches: number | null
   requested_at: string | null
   started_at: string | null
@@ -108,6 +110,18 @@ export type CecchinoRunV2 = {
   source_git_commit: string | null
   source_git_commit_source: string | null
   source_revision_status: string | null
+}
+
+export type CecchinoRunV2Preflight = {
+  season_label: string
+  status: 'ready' | 'blocked' | string
+  matches_total: number
+  competitions_count: number
+  competitions: string[]
+  datasets_count: number
+  date_range: { start: string | null; end: string | null }
+  blocking_anomalies: Array<{ code?: string; message?: string }>
+  warnings: Array<{ code?: string; message?: string }>
 }
 
 export type CecchinoRunV2ExportManifest = {
@@ -190,9 +204,20 @@ export function getRunV2(runId: number): Promise<CecchinoRunV2> {
   return getRunV2Json(`/api/cecchino-run-v2/${runId}`)
 }
 
-export function startRunV2(options?: { maxMatches?: number | null }): Promise<CecchinoRunV2> {
-  const body: Record<string, unknown> = { confirm: RUN_V2_CONFIRM_TOKEN }
-  if (options?.maxMatches != null) body.max_matches = options.maxMatches
+export function preflightRunV2(season: string): Promise<CecchinoRunV2Preflight> {
+  const q = new URLSearchParams({ season })
+  return getRunV2Json(`/api/cecchino-run-v2/preflight?${q.toString()}`)
+}
+
+export function startRunV2(options: {
+  season: string
+  maxMatches?: number | null
+}): Promise<CecchinoRunV2> {
+  const body: Record<string, unknown> = {
+    confirm: RUN_V2_CONFIRM_TOKEN,
+    season: options.season,
+  }
+  if (options.maxMatches != null) body.max_matches = options.maxMatches
   return postRunV2('/api/admin/cecchino-run-v2', body)
 }
 
@@ -266,11 +291,14 @@ export function isRunV2Completed(run: Pick<CecchinoRunV2, 'status'>): boolean {
   return run.status === 'completed' || run.status === 'completed_with_warnings'
 }
 
-export function runV2ScopeLabel(run: Pick<CecchinoRunV2, 'run_scope' | 'max_matches'>): string {
+export function runV2ScopeLabel(
+  run: Pick<CecchinoRunV2, 'run_scope' | 'max_matches' | 'season_label'>,
+): string {
+  const season = run.season_label ? ` · ${run.season_label}` : ''
   if (run.run_scope === 'pilot') {
-    return `Pilota${run.max_matches ? ` — ${run.max_matches} match` : ''}`
+    return `Pilota${run.max_matches ? ` — ${run.max_matches} match` : ''}${season}`
   }
-  return 'Completa'
+  return `Completa${season}`
 }
 
 export function formatRunV2Date(value: string | null | undefined): string {

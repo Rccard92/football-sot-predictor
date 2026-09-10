@@ -173,13 +173,28 @@ class RunV2Progress:
 # --- creazione run ---------------------------------------------------------
 
 
+def season_label_from_run(run: CecchinoRunV2Run) -> str | None:
+    """Stagione persistita nello scope della RUN (`module_policy_json`)."""
+    policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+    raw = policy.get("season_label") or policy.get("season")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
 def create_run_v2(
     db: Session,
     *,
+    season_label: str,
     max_matches: int | None = None,
     source_git_commit: str | None = None,
     run_scope: str = "full",
 ) -> CecchinoRunV2Run:
+    season = str(season_label or "").strip()
+    if not season:
+        raise ValueError("season_label obbligatorio per creare una RUN V2")
+
     run = CecchinoRunV2Run(
         run_version=RUN_V2_VERSION,
         status=RUN_V2_STATUS_PENDING,
@@ -199,6 +214,10 @@ def create_run_v2(
             "parser_version": PARSER_VERSION,
             "core_formula_freeze": True,
             "rolling_scope": "competition_season",
+            # Scope stagione esplicito: storico, resume ed export restano allineati.
+            "season_label": season,
+            "season_scope": season,
+            "run_scope": run_scope,
             "max_matches": max_matches,
         },
         source_git_commit=source_git_commit,
@@ -208,6 +227,34 @@ def create_run_v2(
     db.commit()
     db.refresh(run)
     return run
+
+
+def select_work_for_run(
+    run: CecchinoRunV2Run,
+    work: list[_WorkItem],
+) -> list[_WorkItem]:
+    """Archivio globale → filtro stagione → ordine cronologico → max_matches (pilot).
+
+    L'ordinamento e' riusato esplicitamente dopo il filtro, cosi' il pilot 50
+    prende i primi N match della stagione selezionata e non dell'archivio globale.
+    """
+    season = season_label_from_run(run)
+    if not season:
+        raise ValueError(
+            f"run_v2 {run.id}: season_label assente in module_policy_json"
+        )
+
+    filtered = [w for w in work if w.season_label == season]
+    filtered.sort(
+        key=lambda w: match_sort_key_v4(
+            w.match,
+            competition_name=w.rolling_key,
+            dataset_id=int(w.dataset.id),
+        )
+    )
+    if run.max_matches:
+        filtered = filtered[: int(run.max_matches)]
+    return filtered
 
 
 # --- preload ---------------------------------------------------------------
@@ -664,8 +711,8 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
 
     try:
         work, proxies_by_key = _load_work(db)
-        if run.max_matches:
-            work = work[: int(run.max_matches)]
+        # Scope: archivio globale → season → cronologico → max_matches (solo pilot).
+        work = select_work_for_run(run, work)
 
         progress.matches_total = len(work)
         run.matches_total = len(work)

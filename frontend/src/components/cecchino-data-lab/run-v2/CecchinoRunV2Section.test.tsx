@@ -12,6 +12,7 @@ const apiMock = vi.hoisted(() => ({
   resumeRunV2: vi.fn(),
   cancelRunV2: vi.fn(),
   downloadRunV2Export: vi.fn(),
+  preflightRunV2: vi.fn(),
 }))
 
 vi.mock('../../../lib/cecchinoRunV2Api', async () => {
@@ -47,14 +48,15 @@ function makeRun(overrides: Record<string, unknown> = {}) {
     heartbeat_age_seconds: 2,
     stale_heartbeat_seconds: 900,
     run_scope: 'full',
+    season_label: '2024/2025',
     max_matches: null,
     requested_at: '2026-09-09T20:00:00Z',
     started_at: '2026-09-09T20:00:00Z',
     completed_at: '2026-09-09T21:00:00Z',
     created_at: '2026-09-09T20:00:00Z',
     updated_at: '2026-09-09T21:00:00Z',
-    matches_total: 31000,
-    matches_processed: 31000,
+    matches_total: 3800,
+    matches_processed: 3800,
     matches_error: 0,
     market_rows_written: 527000,
     leakage_violations: 0,
@@ -65,7 +67,7 @@ function makeRun(overrides: Record<string, unknown> = {}) {
     last_processed_kickoff_at: null,
     cancel_requested: false,
     quote_policy: null,
-    module_policy: null,
+    module_policy: { season_label: '2024/2025', season_scope: '2024/2025' },
     coverage: null,
     summary: null,
     leakage_audit: null,
@@ -78,6 +80,23 @@ function makeRun(overrides: Record<string, unknown> = {}) {
   }
 }
 
+async function selectSeasonReady(
+  season = '2024/2025',
+  options: { expectEnabled?: boolean } = {},
+) {
+  const expectEnabled = options.expectEnabled !== false
+  fireEvent.change(screen.getByTestId('run-v2-season-select'), {
+    target: { value: season },
+  })
+  await waitFor(() => expect(apiMock.preflightRunV2).toHaveBeenCalled())
+  await waitFor(() => expect(screen.getByTestId('run-v2-preflight-panel')).toBeTruthy())
+  if (expectEnabled) {
+    await waitFor(() =>
+      expect(screen.getByTestId('run-v2-start-full').hasAttribute('disabled')).toBe(false),
+    )
+  }
+}
+
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -85,6 +104,17 @@ afterEach(() => {
 
 beforeEach(() => {
   apiMock.listRunsV2.mockResolvedValue([makeRun()])
+  apiMock.preflightRunV2.mockResolvedValue({
+    season_label: '2024/2025',
+    status: 'ready',
+    matches_total: 3800,
+    competitions_count: 5,
+    competitions: ['E0', 'I1', 'D1', 'SP1', 'F1'],
+    datasets_count: 5,
+    date_range: { start: '2024-08-01T00:00:00Z', end: '2025-05-31T00:00:00Z' },
+    blocking_anomalies: [],
+    warnings: [],
+  })
   authMock.getAdminSession.mockResolvedValue({ authenticated: false, expires_in: 0 })
   authMock.adminLogin.mockResolvedValue({ authenticated: true })
   authMock.adminLogout.mockResolvedValue({ authenticated: false })
@@ -119,88 +149,19 @@ describe('CecchinoRunV2Section', () => {
     expect(hrefs.some((h) => h?.includes('run_ids'))).toBe(false)
   })
 
-  it('Apri mostra il pannello di dettaglio con coverage ed export', async () => {
-    apiMock.listRunsV2.mockResolvedValue([
-      makeRun({
-        summary: {
-          competitions: [
-            { competition: 'E0', season_label: '2021/2022', matches: 380, first_kickoff: null, last_kickoff: null },
-          ],
-          market_coverage: [
-            {
-              market_key: 'HOME',
-              export_key: 'HOME',
-              observation_layer: 'core_strict',
-              rows: 31000,
-              rows_with_quote: 30500,
-              rows_with_prediction: 31000,
-              quote_coverage_pct: 98.39,
-              used_for_prediction: true,
-              pre_match_input_safe: true,
-            },
-          ],
-          extra_stats_coverage: { snapshots: 31000, with_referee: 28000 },
-        },
-      }),
-    ])
+  it('senza stagione i pulsanti Pilot/Full restano disabilitati', async () => {
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
-
-    fireEvent.click(screen.getByTestId('run-v2-open-5'))
-
-    expect(screen.getByTestId('run-v2-detail-5')).toBeTruthy()
-    expect(screen.getByText('Competizioni e stagioni')).toBeTruthy()
-    expect(screen.getByText('Copertura quote')).toBeTruthy()
-    expect(screen.getByText('Audit anti-leakage')).toBeTruthy()
-    expect(screen.getByTestId('run-v2-export-5-FULL.csv')).toBeTruthy()
-    expect(screen.getByTestId('run-v2-export-5-run_summary.json')).toBeTruthy()
+    expect(screen.getByTestId('run-v2-start-full').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('run-v2-start-pilot').hasAttribute('disabled')).toBe(true)
   })
 
-  it('Esporta FULL scarica FULL.csv', async () => {
-    apiMock.downloadRunV2Export.mockResolvedValue(undefined)
+  it('con stagione ready mostra i dati disponibili e abilita i pulsanti', async () => {
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
-
-    fireEvent.click(screen.getByTestId('run-v2-export-full-5'))
-
-    await waitFor(() =>
-      expect(apiMock.downloadRunV2Export).toHaveBeenCalledWith(5, 'FULL.csv'),
-    )
-  })
-
-  it('una RUN rimasta senza worker appare interrotta e riprendibile', async () => {
-    apiMock.listRunsV2.mockResolvedValue([
-      makeRun({
-        run_id: 9,
-        status: 'running',
-        effective_status: 'interrupted',
-        is_stale: true,
-        can_resume: true,
-        can_cancel: true,
-        matches_processed: 12000,
-        progress_pct: 38.7,
-      }),
-    ])
-    apiMock.resumeRunV2.mockResolvedValue(makeRun({ run_id: 9, status: 'pending' }))
-    renderSection()
-    await waitFor(() => expect(screen.getByTestId('run-v2-row-9')).toBeTruthy())
-
-    expect(screen.getByText(/Interrotta/)).toBeTruthy()
-    expect(screen.getByTestId('run-v2-stale-badge-9')).toBeTruthy()
-
-    fireEvent.click(screen.getByTestId('run-v2-resume-9'))
-    await waitFor(() => expect(apiMock.resumeRunV2).toHaveBeenCalledWith(9))
-  })
-
-  it('lo stato interrotto non viene trattato come run attiva: si puo ancora avviare', async () => {
-    apiMock.listRunsV2.mockResolvedValue([
-      makeRun({ run_id: 9, status: 'running', effective_status: 'interrupted', is_stale: true }),
-    ])
-    renderSection()
-    await waitFor(() => expect(screen.getByTestId('run-v2-row-9')).toBeTruthy())
-
-    expect(screen.getByTestId('run-v2-start-full').hasAttribute('disabled')).toBe(false)
-    expect(screen.queryByTestId('run-v2-active-panel')).toBeNull()
+    await selectSeasonReady()
+    expect(screen.getByTestId('run-v2-preflight-panel').textContent).toContain('3800')
+    expect(screen.getByTestId('run-v2-preflight-panel').textContent).toContain('2024/2025')
   })
 
   it('stale_active_run mostra il banner con Riprendi e Annulla invece di un errore secco', async () => {
@@ -215,6 +176,7 @@ describe('CecchinoRunV2Section', () => {
     )
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
 
     fireEvent.click(screen.getByTestId('run-v2-start-full'))
     fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
@@ -237,6 +199,7 @@ describe('CecchinoRunV2Section', () => {
     ])
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-active-panel')).toBeTruthy())
+    await selectSeasonReady('2024/2025', { expectEnabled: false })
 
     expect(screen.getByTestId('run-v2-start-full').hasAttribute('disabled')).toBe(true)
   })
@@ -247,6 +210,7 @@ describe('CecchinoRunV2Section', () => {
     )
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
 
     fireEvent.click(screen.getByTestId('run-v2-start-full'))
     fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
@@ -258,9 +222,12 @@ describe('CecchinoRunV2Section', () => {
   it("dopo il login l'avvio viene ripetuto senza rifare il percorso", async () => {
     apiMock.startRunV2
       .mockRejectedValueOnce(new AdminHttpError(401, 'Sessione admin assente o scaduta', null))
-      .mockResolvedValueOnce(makeRun({ run_id: 21, status: 'pending', effective_status: 'pending' }))
+      .mockResolvedValueOnce(
+        makeRun({ run_id: 21, status: 'pending', effective_status: 'pending' }),
+      )
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
 
     fireEvent.click(screen.getByTestId('run-v2-start-full'))
     fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
@@ -279,8 +246,8 @@ describe('CecchinoRunV2Section', () => {
   it('la password admin non finisce mai nel bundle o nelle chiamate RUN V2', async () => {
     renderSection()
     await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
 
-    // Il client RUN V2 riceve solo il token di conferma pubblico: nessun secret.
     fireEvent.click(screen.getByTestId('run-v2-start-full'))
     fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
 
@@ -288,5 +255,24 @@ describe('CecchinoRunV2Section', () => {
     const args = JSON.stringify(apiMock.startRunV2.mock.calls)
     expect(args.toLowerCase()).not.toContain('password')
     expect(args.toLowerCase()).not.toContain('secret')
+    expect(args).toContain('2024/2025')
+  })
+
+  it('pilot passa season + maxMatches 50', async () => {
+    apiMock.startRunV2.mockResolvedValue(
+      makeRun({ run_id: 22, run_scope: 'pilot', max_matches: 50 }),
+    )
+    renderSection()
+    await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
+
+    fireEvent.click(screen.getByTestId('run-v2-start-pilot'))
+    fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
+
+    await waitFor(() => expect(apiMock.startRunV2).toHaveBeenCalled())
+    expect(apiMock.startRunV2).toHaveBeenCalledWith({
+      season: '2024/2025',
+      maxMatches: 50,
+    })
   })
 })

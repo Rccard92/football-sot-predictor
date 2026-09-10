@@ -69,7 +69,7 @@ def _run(
         last_processed_kickoff_at=None,
         cancel_requested=cancel_requested,
         quote_policy_json=None,
-        module_policy_json=None,
+        module_policy_json={"season_label": "2024/2025", "season_scope": "2024/2025"},
         coverage_json=None,
         summary_json=None,
         leakage_audit_json=None,
@@ -179,9 +179,26 @@ def test_start_con_run_stale_segnala_stale_active_run_e_non_duplicate(monkeypatc
     stale = _run(run_id=41, heartbeat_age_seconds=RUN_V2_STALE_HEARTBEAT_SECONDS + 60)
     db = FakeSession(by_id={41: stale}, scalar_first=stale)
     monkeypatch.setattr(run_service, "_spawn_worker", lambda _rid: None)
+    monkeypatch.setattr(
+        run_service,
+        "run_v2_preflight",
+        lambda _db, *, season_label: {
+            "season_label": season_label,
+            "status": "ready",
+            "matches_total": 100,
+            "competitions_count": 1,
+            "competitions": ["E0"],
+            "datasets_count": 1,
+            "date_range": {"start": None, "end": None},
+            "blocking_anomalies": [],
+            "warnings": [],
+        },
+    )
 
     with pytest.raises(CecchinoLabImportError) as exc:
-        run_service.start_run_v2(db, confirm=RUN_V2_CONFIRM_TOKEN)
+        run_service.start_run_v2(
+            db, confirm=RUN_V2_CONFIRM_TOKEN, season="2024/2025"
+        )
 
     assert exc.value.code == "stale_active_run"
     assert exc.value.status_code == 409
@@ -195,9 +212,26 @@ def test_start_con_run_realmente_attiva_resta_duplicate_active_run(monkeypatch):
     live = _run(run_id=42, heartbeat_age_seconds=3)
     db = FakeSession(by_id={42: live}, scalar_first=live)
     monkeypatch.setattr(run_service, "_spawn_worker", lambda _rid: None)
+    monkeypatch.setattr(
+        run_service,
+        "run_v2_preflight",
+        lambda _db, *, season_label: {
+            "season_label": season_label,
+            "status": "ready",
+            "matches_total": 100,
+            "competitions_count": 1,
+            "competitions": ["E0"],
+            "datasets_count": 1,
+            "date_range": {"start": None, "end": None},
+            "blocking_anomalies": [],
+            "warnings": [],
+        },
+    )
 
     with pytest.raises(CecchinoLabImportError) as exc:
-        run_service.start_run_v2(db, confirm=RUN_V2_CONFIRM_TOKEN)
+        run_service.start_run_v2(
+            db, confirm=RUN_V2_CONFIRM_TOKEN, season="2024/2025"
+        )
 
     assert exc.value.code == "duplicate_active_run"
     assert exc.value.status_code == 409
@@ -206,7 +240,7 @@ def test_start_con_run_realmente_attiva_resta_duplicate_active_run(monkeypatch):
 def test_start_senza_token_rifiutato():
     db = FakeSession()
     with pytest.raises(CecchinoLabImportError) as exc:
-        run_service.start_run_v2(db, confirm="nope")
+        run_service.start_run_v2(db, confirm="nope", season="2024/2025")
     assert exc.value.code == "confirm_required"
     assert exc.value.status_code == 400
 
@@ -219,12 +253,30 @@ def test_start_torna_subito_run_id_e_stato(monkeypatch):
         "app.services.cecchino_data_lab.run_v2.executor.create_run_v2",
         lambda _db, **_kw: created,
     )
+    monkeypatch.setattr(
+        run_service,
+        "run_v2_preflight",
+        lambda _db, *, season_label: {
+            "season_label": season_label,
+            "status": "ready",
+            "matches_total": 100,
+            "competitions_count": 1,
+            "competitions": ["E0"],
+            "datasets_count": 1,
+            "date_range": {"start": None, "end": None},
+            "blocking_anomalies": [],
+            "warnings": [],
+        },
+    )
     db = FakeSession(by_id={99: created}, scalar_first=None)
 
-    result = run_service.start_run_v2(db, confirm=RUN_V2_CONFIRM_TOKEN)
+    result = run_service.start_run_v2(
+        db, confirm=RUN_V2_CONFIRM_TOKEN, season="2024/2025"
+    )
 
     assert result["run_id"] == 99
     assert result["status"] == RUN_V2_STATUS_PENDING
+    assert result["season_label"] == "2024/2025"
     assert spawned == [99]
 
 

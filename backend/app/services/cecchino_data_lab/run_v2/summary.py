@@ -24,6 +24,15 @@ from app.services.cecchino_data_lab.run_v2.constants import (
 )
 
 
+def _season_label_from_run(run: CecchinoRunV2Run) -> str | None:
+    policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+    raw = policy.get("season_label") or policy.get("season")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
 def _market_coverage(db: Session, run_id: int) -> list[dict[str, Any]]:
     rows = db.execute(
         select(
@@ -172,6 +181,9 @@ def build_run_summary(
         "quote_policy_version": RUN_V2_QUOTE_POLICY_VERSION,
         "extra_stats_version": RUN_V2_EXTRA_STATS_VERSION,
         "core_formula_freeze": True,
+        "season_label": _season_label_from_run(run),
+        "run_scope": run.run_scope,
+        "max_matches": run.max_matches,
         "matches": matches,
         "date_range": {
             "start": run.min_kickoff_at.isoformat() if run.min_kickoff_at else None,

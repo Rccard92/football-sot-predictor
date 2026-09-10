@@ -10,12 +10,18 @@ import {
   isRunV2Active,
   isRunV2Completed,
   listRunsV2,
+  preflightRunV2,
   resumeRunV2,
   runV2ScopeLabel,
   runV2StatusLabel,
   startRunV2,
   type CecchinoRunV2,
+  type CecchinoRunV2Preflight,
 } from '../../../lib/cecchinoRunV2Api'
+import {
+  DEFAULT_HISTORICAL_SEASON,
+  LAB_SEASON_OPTIONS,
+} from '../../../lib/cecchinoLabApi'
 import { AdminHttpError } from '../../../lib/api'
 import { adminLogout, getAdminSession } from '../../../lib/adminAuthApi'
 import { AdminLoginDialog } from './AdminLoginDialog'
@@ -28,13 +34,22 @@ type ConfirmMode = 'full' | 'pilot' | null
 const POLL_MS = 2000
 const PILOT_MAX_MATCHES = 50
 
+function formatDateRange(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start && !end) return '—'
+  const a = start ? formatRunV2Date(start) : '—'
+  const b = end ? formatRunV2Date(end) : '—'
+  return `${a} → ${b}`
+}
+
 export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
+  const [season, setSeason] = useState('')
+  const [preflight, setPreflight] = useState<CecchinoRunV2Preflight | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [runs, setRuns] = useState<CecchinoRunV2[]>([])
   const [activeRun, setActiveRun] = useState<CecchinoRunV2 | null>(null)
   const [openRun, setOpenRun] = useState<CecchinoRunV2 | null>(null)
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null)
   const [busy, setBusy] = useState(false)
-  const [techOpen, setTechOpen] = useState(false)
   const [exportingId, setExportingId] = useState<number | null>(null)
   const [blockedBy, setBlockedBy] = useState<{ runId: number; stale: boolean } | null>(null)
   const [authenticated, setAuthenticated] = useState(false)
@@ -71,9 +86,31 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
     }
   }, [])
 
+  const loadPreflight = useCallback(async (seasonLabel: string) => {
+    if (!seasonLabel) {
+      setPreflight(null)
+      return
+    }
+    setPreflightLoading(true)
+    try {
+      const pf = await preflightRunV2(seasonLabel)
+      setPreflight(pf)
+    } catch (e) {
+      if (handledAsAuthPrompt(e, () => loadPreflight(seasonLabel))) return
+      setPreflight(null)
+      toast.error(e instanceof Error ? e.message : 'Preflight stagione fallito')
+    } finally {
+      setPreflightLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadRuns()
   }, [loadRuns, refreshKey])
+
+  useEffect(() => {
+    void loadPreflight(season)
+  }, [season, loadPreflight])
 
   useEffect(() => {
     if (!activeRun || !isRunV2Active(activeRun)) return
@@ -99,20 +136,30 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
     return () => window.clearInterval(id)
   }, [activeRun, loadRuns])
 
+  const seasonReady =
+    Boolean(season) &&
+    preflight?.status === 'ready' &&
+    (preflight.matches_total ?? 0) > 0 &&
+    !preflightLoading
+  const canStart = seasonReady && !busy && !activeRun
+
   const onStart = async (mode: Exclude<ConfirmMode, null>) => {
+    if (!season) {
+      toast.error('Seleziona una stagione')
+      return
+    }
     setBusy(true)
     try {
       const run = await startRunV2(
-        mode === 'pilot' ? { maxMatches: PILOT_MAX_MATCHES } : undefined,
+        mode === 'pilot' ? { season, maxMatches: PILOT_MAX_MATCHES } : { season },
       )
       setActiveRun(run)
       setBlockedBy(null)
       setConfirmMode(null)
-      setTechOpen(false)
       toast.success(
         mode === 'pilot'
-          ? `RUN V2 pilota avviata (#${run.run_id})`
-          : `RUN V2 completa avviata (#${run.run_id})`,
+          ? `RUN V2 pilota avviata (#${run.run_id}) — ${season}`
+          : `RUN V2 completa avviata (#${run.run_id}) — ${season}`,
       )
       void loadRuns()
     } catch (e) {
@@ -189,10 +236,10 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             >
               Cecchino RUN V2
             </div>
-            <h3 className="mt-1 text-lg font-semibold">Run completa sull&apos;archivio</h3>
+            <h3 className="mt-1 text-lg font-semibold">Run per stagione</h3>
             <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--lab-muted)' }}>
-              Motore V2 con doppio binario quote e audit anti-leakage, indipendente dalle
-              Scansioni storiche V1 qui sopra. Le analisi V1 non vengono toccate.
+              Seleziona una stagione, verifica i dati, poi lancia pilota o run completa. Motore
+              V2 indipendente dalle Scansioni storiche V1. Pattern Lab V1 non collegato.
             </p>
           </div>
           <div
@@ -200,7 +247,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             style={{ borderColor: 'var(--lab-border)' }}
           >
             <div>
-              <span className="font-semibold">Perimetro:</span> intero archivio Cecchino Lab
+              <span className="font-semibold">Perimetro:</span> stagione selezionata
             </div>
             <div>
               <span className="font-semibold">Pattern Lab V1:</span> non collegato
@@ -208,50 +255,54 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="text-sm" data-testid="run-v2-season-label">
+            Stagione
+            <select
+              className="lab-input mt-1 block min-w-[10rem] rounded-md px-3 py-2"
+              value={season}
+              data-testid="run-v2-season-select"
+              onChange={(e) => {
+                setSeason(e.target.value)
+                setPreflight(null)
+              }}
+            >
+              <option value="">Seleziona stagione…</option>
+              {LAB_SEASON_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            data-testid="run-v2-preflight"
+            disabled={!season || preflightLoading}
+            onClick={() => void loadPreflight(season)}
+          >
+            {preflightLoading ? 'Verifica…' : 'Verifica dati'}
+          </button>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            data-testid="run-v2-start-pilot"
+            disabled={!canStart}
+            onClick={() => setConfirmMode('pilot')}
+          >
+            Run pilota — {PILOT_MAX_MATCHES} match
+          </button>
           <button
             type="button"
             className="lab-btn rounded-md px-4 py-2 text-sm font-semibold"
             style={{ outline: '1px solid var(--lab-cyan)' }}
             data-testid="run-v2-start-full"
-            disabled={busy || Boolean(activeRun)}
+            disabled={!canStart}
             onClick={() => setConfirmMode('full')}
           >
             Avvia RUN V2 completa
           </button>
-          <div className="relative">
-            <button
-              type="button"
-              className="lab-btn rounded-md px-4 py-2 text-sm font-medium opacity-80"
-              disabled={busy || Boolean(activeRun)}
-              onClick={() => setTechOpen((v) => !v)}
-            >
-              Opzioni tecniche
-            </button>
-            {techOpen && (
-              <div
-                className="absolute left-0 z-20 mt-1 min-w-[16rem] rounded-md border p-2 shadow-lg"
-                style={{
-                  background: 'var(--lab-card, #0f172a)',
-                  borderColor: 'var(--lab-border)',
-                }}
-              >
-                <p className="mb-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
-                  Solo diagnostica: stessa logica della run completa, su meno match.
-                </p>
-                <button
-                  type="button"
-                  className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/10"
-                  onClick={() => {
-                    setTechOpen(false)
-                    setConfirmMode('pilot')
-                  }}
-                >
-                  Run pilota — primi {PILOT_MAX_MATCHES} match
-                </button>
-              </div>
-            )}
-          </div>
           {activeRun && (
             <span className="text-xs" style={{ color: 'var(--lab-muted)' }}>
               Una RUN V2 è già in corso (#{activeRun.run_id}).
@@ -278,6 +329,57 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             </span>
           )}
         </div>
+
+        {season && (
+          <div
+            className="mt-4 rounded-lg border p-3 text-sm"
+            style={{ borderColor: 'var(--lab-border)' }}
+            data-testid="run-v2-preflight-panel"
+          >
+            {preflightLoading && !preflight ? (
+              <p style={{ color: 'var(--lab-muted)' }}>Verifica dati stagione…</p>
+            ) : preflight ? (
+              <div className="grid gap-1 sm:grid-cols-2">
+                <div>
+                  <span className="font-semibold">Stagione:</span> {preflight.season_label}
+                </div>
+                <div>
+                  <span className="font-semibold">Match disponibili:</span>{' '}
+                  {preflight.matches_total}
+                </div>
+                <div>
+                  <span className="font-semibold">Competizioni:</span>{' '}
+                  {preflight.competitions_count}
+                  {preflight.competitions.length
+                    ? ` (${preflight.competitions.slice(0, 8).join(', ')}${
+                        preflight.competitions.length > 8 ? '…' : ''
+                      })`
+                    : ''}
+                </div>
+                <div>
+                  <span className="font-semibold">Intervallo date:</span>{' '}
+                  {formatDateRange(preflight.date_range?.start, preflight.date_range?.end)}
+                </div>
+                <div>
+                  <span className="font-semibold">Dataset:</span> {preflight.datasets_count}
+                </div>
+                <div>
+                  <span className="font-semibold">Stato:</span> {preflight.status}
+                </div>
+                {preflight.status !== 'ready' && (
+                  <p className="sm:col-span-2 text-amber-200">
+                    {preflight.blocking_anomalies?.[0]?.message ||
+                      'Stagione non pronta per una RUN V2.'}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--lab-muted)' }}>
+                Seleziona una stagione e verifica i dati prima di avviare.
+              </p>
+            )}
+          </div>
+        )}
 
         {blockedBy && (
           <div
@@ -336,7 +438,13 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             </span>
           </h4>
           <p className="mt-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            {activeRun.run_version} · creata il {formatRunV2Date(activeRun.created_at)}
+            {activeRun.run_version}
+            {activeRun.season_label ? ` · ${activeRun.season_label}` : ''} · creata il{' '}
+            {formatRunV2Date(activeRun.created_at)}
+            {activeRun.heartbeat_at
+              ? ` · heartbeat ${formatRunV2Date(activeRun.heartbeat_at)}`
+              : ''}
+            {activeRun.worker_alive ? ' · worker attivo' : ' · worker non attivo'}
           </p>
           <div className="mt-3 h-2 w-full overflow-hidden rounded bg-black/30">
             <div
@@ -345,22 +453,40 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             />
           </div>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <RunV2Stat label="Stagione" value={activeRun.season_label || '—'} />
             <RunV2Stat
               label="Processati"
               value={`${activeRun.matches_processed}/${activeRun.matches_total}`}
             />
             <RunV2Stat label="Progresso" value={`${activeRun.progress_pct ?? 0}%`} />
-            <RunV2Stat label="Errori" value={String(activeRun.matches_error)} />
             <RunV2Stat
               label="Leakage violations"
               value={String(activeRun.leakage_violations)}
               tone={activeRun.leakage_violations > 0 ? 'danger' : 'ok'}
+            />
+            <RunV2Stat label="Market rows" value={String(activeRun.market_rows_written)} />
+            <RunV2Stat label="Errori" value={String(activeRun.matches_error)} />
+            <RunV2Stat
+              label="Heartbeat age"
+              value={
+                activeRun.heartbeat_age_seconds != null
+                  ? `${activeRun.heartbeat_age_seconds}s`
+                  : '—'
+              }
+            />
+            <RunV2Stat
+              label="Worker"
+              value={activeRun.worker_alive ? 'vivo' : 'assente'}
+              tone={activeRun.worker_alive ? 'ok' : 'danger'}
             />
           </div>
           {activeRun.current_competition && (
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
               Competizione corrente: {activeRun.current_competition}
             </p>
+          )}
+          {Array.isArray(activeRun.warnings) && activeRun.warnings.length > 0 && (
+            <p className="mt-2 text-xs text-amber-200">Warning: {activeRun.warnings.length}</p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             {activeRun.can_cancel && (
@@ -383,8 +509,8 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             <thead>
               <tr>
                 <th>Run ID</th>
+                <th>Stagione</th>
                 <th>Creata</th>
-                <th>Versione</th>
                 <th>Scope</th>
                 <th>Stato</th>
                 <th>Progresso</th>
@@ -396,8 +522,8 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
               {runs.map((r) => (
                 <tr key={r.run_id} data-testid={`run-v2-row-${r.run_id}`}>
                   <td>{r.run_id}</td>
+                  <td>{r.season_label || '—'}</td>
                   <td>{formatRunV2Date(r.created_at)}</td>
-                  <td>{r.run_version}</td>
                   <td>{runV2ScopeLabel(r)}</td>
                   <td>
                     {runV2StatusLabel(r.effective_status)}
@@ -505,14 +631,18 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
               {confirmMode === 'pilot' ? (
                 <>
-                  Avviare la run pilota sui primi <strong>{PILOT_MAX_MATCHES}</strong> match?
-                  Serve solo come prova tecnica.
+                  Avviare la run pilota sui primi <strong>{PILOT_MAX_MATCHES}</strong> match
+                  della stagione <strong>{season || DEFAULT_HISTORICAL_SEASON}</strong>? Serve
+                  solo come prova tecnica.
                 </>
               ) : (
                 <>
-                  Avviare la RUN V2 sull&apos;intero archivio? L&apos;elaborazione gira in
-                  background: la pagina mostra lo stato aggiornato e può essere chiusa senza
-                  interrompere la run.
+                  Avviare la RUN V2 completa sulla stagione{' '}
+                  <strong>{season || DEFAULT_HISTORICAL_SEASON}</strong>
+                  {preflight?.matches_total != null
+                    ? ` (${preflight.matches_total} match)`
+                    : ''}
+                  ? L&apos;elaborazione gira in background.
                 </>
               )}
             </p>
@@ -528,7 +658,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
                 type="button"
                 className="lab-btn rounded-md px-3 py-2 text-sm font-semibold"
                 data-testid="run-v2-confirm-start"
-                disabled={busy}
+                disabled={busy || !season}
                 onClick={() => void onStart(confirmMode)}
               >
                 Conferma avvio

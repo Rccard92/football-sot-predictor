@@ -72,7 +72,9 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
             </span>
           </h4>
           <p className="mt-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            {run.run_version} · creata il {formatRunV2Date(run.created_at)}
+            {run.run_version}
+            {run.season_label ? ` · ${run.season_label}` : ''} · creata il{' '}
+            {formatRunV2Date(run.created_at)}
           </p>
         </div>
         <button

@@ -33,6 +33,7 @@ from app.services.cecchino_data_lab.run_v2.run_service import (
     run_v2_to_dict,
     start_run_v2,
 )
+from app.services.cecchino_data_lab.run_v2.preflight import run_v2_preflight
 
 # List/detail/export espongono dati RUN V2: stessa sessione admin del control
 # plane. Il token di conferma nel body e' pubblico e non autorizza nulla.
@@ -74,6 +75,16 @@ def list_runs(db: Session = Depends(get_db)) -> JSONResponse:
     return JSONResponse(content=jsonable_encoder({"items": list_runs_v2(db)}))
 
 
+@router.get("/preflight")
+@admin_router.get("/preflight")
+def preflight_run(
+    season: str = Query(..., min_length=1, description="Stagione Lab, es. 2024/2025"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Read-only: match/competizioni disponibili per la stagione selezionata."""
+    return JSONResponse(content=jsonable_encoder(run_v2_preflight(db, season_label=season)))
+
+
 @router.get("/{run_id}")
 @admin_router.get("/{run_id}")
 def get_run(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
@@ -91,6 +102,8 @@ def start_run(body: dict[str, Any] | None = None, db: Session = Depends(get_db))
         result = start_run_v2(
             db,
             confirm=payload.get("confirm"),
+            season=payload.get("season"),
+            season_label=payload.get("season_label"),
             max_matches=payload.get("max_matches"),
             background=True,
         )

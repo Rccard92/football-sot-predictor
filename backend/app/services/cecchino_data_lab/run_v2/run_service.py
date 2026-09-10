@@ -38,6 +38,8 @@ from app.services.cecchino_data_lab.run_v2.constants import (
     RUN_V2_CONFIRM_TOKEN,
     RUN_V2_STALE_HEARTBEAT_SECONDS,
 )
+from app.services.cecchino_data_lab.run_v2.executor import season_label_from_run
+from app.services.cecchino_data_lab.run_v2.preflight import run_v2_preflight
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +264,7 @@ def run_v2_to_dict(run: CecchinoRunV2Run) -> dict[str, Any]:
         ),
         "stale_heartbeat_seconds": RUN_V2_STALE_HEARTBEAT_SECONDS,
         "run_scope": run.run_scope,
+        "season_label": season_label_from_run(run),
         "max_matches": run.max_matches,
         "requested_at": run.requested_at,
         "started_at": run.started_at,
@@ -411,10 +414,23 @@ def _guard_no_concurrent_run(db: Session) -> None:
     )
 
 
+def _normalize_season_label(season: Any) -> str:
+    text = str(season or "").strip()
+    if not text:
+        raise CecchinoLabImportError(
+            "season_required",
+            "Parametro season obbligatorio (es. 2024/2025)",
+            status_code=400,
+        )
+    return text
+
+
 def start_run_v2(
     db: Session,
     *,
     confirm: Any = None,
+    season: Any = None,
+    season_label: Any = None,
     max_matches: int | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
@@ -426,6 +442,11 @@ def start_run_v2(
             f"Token di conferma richiesto: {RUN_V2_CONFIRM_TOKEN}",
             status_code=400,
         )
+
+    # Accetta `season` (contratto UI) oppure `season_label` (alias V1).
+    normalized_season = _normalize_season_label(
+        season if season is not None and str(season).strip() else season_label
+    )
 
     normalized_max: int | None = None
     if max_matches is not None:
@@ -440,11 +461,27 @@ def start_run_v2(
                 "invalid_max_matches", "max_matches deve essere positivo", status_code=400
             )
 
+    preflight = run_v2_preflight(db, season_label=normalized_season)
+    if preflight.get("status") != "ready":
+        anomalies = preflight.get("blocking_anomalies") or []
+        message = (
+            anomalies[0].get("message")
+            if anomalies and isinstance(anomalies[0], dict)
+            else f"Stagione {normalized_season} non disponibile"
+        )
+        raise CecchinoLabImportError(
+            "season_unavailable",
+            str(message),
+            status_code=400,
+            details={"preflight": preflight},
+        )
+
     _guard_no_concurrent_run(db)
 
     revision = _resolve_revision()
     run = create_run_v2(
         db,
+        season_label=normalized_season,
         max_matches=normalized_max,
         source_git_commit=revision.get("source_git_commit"),
         run_scope="pilot" if normalized_max else "full",
@@ -553,6 +590,7 @@ __all__ = [
     "is_worker_alive",
     "list_runs_v2",
     "resume_run_v2",
+    "run_v2_preflight",
     "run_v2_to_dict",
     "start_run_v2",
 ]
