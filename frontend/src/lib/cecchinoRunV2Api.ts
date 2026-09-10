@@ -351,11 +351,6 @@ export async function downloadRunV2AiBundleReady(runId: number): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
-/** @deprecated sync disabilitato (409) — usare create + download ready. */
-export async function downloadRunV2AiBundle(runId: number): Promise<void> {
-  return downloadRunV2AiBundleReady(runId)
-}
-
 const RUN_V2_STATUS_LABELS: Record<string, string> = {
   pending: 'In attesa',
   running: 'In corso',

@@ -107,7 +107,10 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
         if (status.status === 'ready') {
           toast.success('Pacchetto AI pronto')
         } else if (status.status === 'failed' || status.status === 'interrupted') {
-          toast.error(status.error_message || `Export AI: ${status.status}`)
+          const retryHint = status.retryable ? ' Puoi riprovare con Prepara.' : ''
+          toast.error(
+            (status.error_message || `Export AI: ${status.status}`) + retryHint,
+          )
         }
       } catch (e) {
         setAiBusy(false)
@@ -151,9 +154,16 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
 
   const aiStatusLabel = (() => {
     if (!aiJob) return null
+    if (aiJob.status === 'ready') return 'Pacchetto pronto'
+    if (aiJob.status === 'failed' || aiJob.status === 'interrupted') {
+      const base =
+        aiJob.status === 'interrupted' ? 'Preparazione interrotta' : 'Preparazione fallita'
+      const retry = aiJob.retryable ? ' · ripremi Prepara' : ''
+      return `${base}${retry}`
+    }
     const pct = Number.isFinite(aiJob.progress_pct) ? ` · ${aiJob.progress_pct}%` : ''
-    const phase = aiJob.phase ? ` · ${aiJob.phase}` : ''
-    return `${aiJob.status}${pct}${phase}`
+    const phase = aiJob.phase ? ` · fase: ${aiJob.phase}` : ''
+    return `Preparazione…${pct}${phase}`
   })()
 
   return (
@@ -408,9 +418,22 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
               </button>
             )}
             {aiStatusLabel && (
-              <span className="text-xs" style={{ color: 'var(--lab-muted)' }} data-testid={`run-v2-ai-bundle-status-${run.run_id}`}>
+              <span
+                className="text-xs"
+                style={{ color: 'var(--lab-muted)' }}
+                data-testid={`run-v2-ai-bundle-status-${run.run_id}`}
+              >
                 {aiStatusLabel}
-                {aiJob?.progress_message ? ` — ${aiJob.progress_message}` : ''}
+                {aiJob &&
+                (aiJob.status === 'pending' || aiJob.status === 'building') &&
+                aiJob.progress_message
+                  ? ` — ${aiJob.progress_message}`
+                  : ''}
+                {aiJob &&
+                (aiJob.status === 'failed' || aiJob.status === 'interrupted') &&
+                aiJob.error_message
+                  ? ` — ${aiJob.error_message}`
+                  : ''}
               </span>
             )}
           </li>
