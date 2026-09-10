@@ -15,6 +15,13 @@ backend/.runtime/
 frontend/dist
 frontend/node_modules
 
+# Recovery / shadow artifacts (never commit)
+.tmp_shadow_dc_purchasability_run4/
+.tmp_recovery_dc_run4/
+.tmp_alias_v2_demo/
+.tmp_stats_raw_reconciliation/
+.tmp_team_mapping_audit_demo/
+
 # Cache scan catalogo API-Football (generato da POST scan)
 backend/app/data/cache/*.json
 !backend/app/data/cache/.gitkeep

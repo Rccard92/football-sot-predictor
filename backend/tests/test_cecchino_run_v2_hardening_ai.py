@@ -11,6 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.cecchino.cecchino_selection_keys import (
+    SEL_AWAY,
+    SEL_DRAW,
+    SEL_HOME,
+    SEL_ONE_TWO,
     SEL_ONE_X,
     SEL_OVER_0_5,
     SEL_OVER_1_5,
@@ -25,8 +29,12 @@ from app.services.cecchino.cecchino_selection_keys import (
 from app.services.cecchino_data_lab.run_v2.constants import CORE_MARKETS
 from app.services.cecchino_data_lab.run_v2.market_rows import _equilibrium_state
 from app.services.cecchino_data_lab.run_v2.purchasability_v2 import (
+    SOURCE_DC_FAIR_V2,
+    _resolve_dc_fair_book_v2,
     _resolve_ou05_fair_book,
+    _score_dc_items,
     _score_ou05_items,
+    build_run_v2_purchasability,
 )
 from app.services.cecchino_data_lab.run_v2.quote_provenance import (
     OU_REAL_ONLY_KEYS,
@@ -194,6 +202,337 @@ def test_ou05_purchasability_not_missing_fair_book():
         # Accetta score o altri fail di gate V35, ma non missing_fair_book.
         assert "missing_fair_book_probability" not in reasons
         assert it.get("status") is not None
+
+
+def _strict_1x2_complete() -> dict:
+    return {
+        SEL_HOME: {
+            "value": 2.10,
+            "is_real_quote": True,
+            "is_derived": False,
+            "quote_source": "bet365_enrichment_closing_pre_kickoff",
+            "source_column": "bet365_home",
+        },
+        SEL_DRAW: {
+            "value": 3.40,
+            "is_real_quote": True,
+            "is_derived": False,
+            "quote_source": "bet365_enrichment_closing_pre_kickoff",
+            "source_column": "bet365_draw",
+        },
+        SEL_AWAY: {
+            "value": 3.50,
+            "is_real_quote": True,
+            "is_derived": False,
+            "quote_source": "bet365_enrichment_closing_pre_kickoff",
+            "source_column": "bet365_away",
+        },
+    }
+
+
+def _dc_fixture_meta() -> dict:
+    return {
+        "today_fixture_id": 1,
+        "kickoff": "2021-08-15T15:00:00+00:00",
+        "snapshot_at": "2021-08-15T14:00:00+00:00",
+    }
+
+
+def _dc_real_row(
+    mk: str,
+    *,
+    quota: float,
+    prob: float,
+    rating: float = 72,
+    **extra,
+) -> dict:
+    row = {
+        "market_key": mk,
+        "quota_book": quota,
+        "prob_cecchino": prob,
+        "rating": rating,
+        "book_source": "bet365_enrichment_closing_pre_kickoff",
+        "book_quote_class": "real_bet365",
+        "derived_quote": False,
+        "is_real_quote": True,
+        "real_dc_quote": True,
+        "edge_pct": 10.0,
+    }
+    row.update(extra)
+    return row
+
+
+def _gate_reasons(item: dict) -> list[str]:
+    gate = item.get("gate") if isinstance(item.get("gate"), dict) else {}
+    reasons = list(gate.get("gate_reason_codes") or [])
+    reasons += list(item.get("gate_reason_codes") or [])
+    return reasons
+
+
+def test_dc_fair_v2_a_real_plus_strict_trio_scores():
+    """A) DC REAL + STRICT 1X2 completo + model/gate ok → score."""
+    strict = _strict_1x2_complete()
+    fair = _resolve_dc_fair_book_v2(strict)
+    assert fair[SEL_ONE_X]["fair_book_probability_verified"] is True
+    assert fair[SEL_ONE_X]["fair_book_probability_source"] == SOURCE_DC_FAIR_V2
+    p_fair = float(fair[SEL_ONE_X]["fair_book_probability"])
+    # Model sopra fair e EV>0 con quota 1.45.
+    panel = {
+        "rows": [
+            _dc_real_row(SEL_ONE_X, quota=1.45, prob=max(0.85, p_fair + 0.12)),
+            _dc_real_row(SEL_ONE_TWO, quota=1.50, prob=0.55, rating=55),
+            _dc_real_row(SEL_X_TWO, quota=1.60, prob=0.40, rating=40),
+        ]
+    }
+    items, _ = _score_dc_items(
+        kpi_panel=panel,
+        fixture_meta=_dc_fixture_meta(),
+        strict_by_market=strict,
+    )
+    by_mk = {it["market_key"]: it for it in items}
+    one_x = by_mk[SEL_ONE_X]
+    assert one_x["status"] == "score"
+    assert one_x["reference"]["score"] is not None
+    assert one_x["reference"]["class"] is not None
+    assert "missing_fair_book_probability" not in _gate_reasons(one_x)
+    assert one_x["input"]["execution_quote_real"] is True
+    assert one_x["input"]["fair_book_probability"] == pytest.approx(p_fair, rel=1e-6)
+
+
+def test_dc_fair_v2_b_gate_failed_not_not_calculable():
+    """B) DC REAL + fair ok ma rating insufficiente → gate_failed."""
+    strict = _strict_1x2_complete()
+    panel = {
+        "rows": [
+            _dc_real_row(SEL_ONE_X, quota=1.45, prob=0.90, rating=40),
+            _dc_real_row(SEL_ONE_TWO, quota=1.50, prob=0.55, rating=40),
+            _dc_real_row(SEL_X_TWO, quota=1.60, prob=0.40, rating=40),
+        ]
+    }
+    items, _ = _score_dc_items(
+        kpi_panel=panel,
+        fixture_meta=_dc_fixture_meta(),
+        strict_by_market=strict,
+    )
+    one_x = next(it for it in items if it["market_key"] == SEL_ONE_X)
+    assert one_x["status"] == "gate_failed"
+    assert one_x["status"] != "not_calculable"
+    assert "missing_fair_book_probability" not in _gate_reasons(one_x)
+    assert "rating_below_50" in _gate_reasons(one_x)
+
+
+def test_dc_fair_v2_c_derived_execution_not_calculable():
+    """C) DC derived → not_calculable + execution_quote_not_real."""
+    strict = _strict_1x2_complete()
+    panel = {
+        "rows": [
+            {
+                "market_key": SEL_ONE_X,
+                "quota_book": 1.45,
+                "prob_cecchino": 0.90,
+                "rating": 72,
+                "book_source": "derived_from_bet365_1x2",
+                "derived_quote": True,
+                "is_real_quote": False,
+                "force_derived_quote": True,
+            },
+            _dc_real_row(SEL_ONE_TWO, quota=1.50, prob=0.55),
+            _dc_real_row(SEL_X_TWO, quota=1.60, prob=0.40),
+        ]
+    }
+    items, _ = _score_dc_items(
+        kpi_panel=panel,
+        fixture_meta=_dc_fixture_meta(),
+        strict_by_market=strict,
+    )
+    one_x = next(it for it in items if it["market_key"] == SEL_ONE_X)
+    assert one_x["status"] == "not_calculable"
+    assert "execution_quote_not_real" in _gate_reasons(one_x)
+
+
+def test_dc_fair_v2_d_incomplete_strict_trio_missing_fair():
+    """D) DC REAL ma trio STRICT incompleto → missing_fair_book_probability."""
+    strict = {
+        SEL_HOME: {
+            "value": 2.10,
+            "is_real_quote": True,
+            "is_derived": False,
+            "quote_source": "bet365_enrichment_closing_pre_kickoff",
+        },
+        # DRAW/AWAY mancanti
+    }
+    fair = _resolve_dc_fair_book_v2(strict)
+    assert fair[SEL_ONE_X]["fair_book_probability_verified"] is False
+    assert fair[SEL_ONE_X]["fair_book_probability"] is None
+    assert fair[SEL_ONE_X]["exclusion_reason"] == "incomplete_market"
+
+    panel = {
+        "rows": [
+            _dc_real_row(SEL_ONE_X, quota=1.45, prob=0.90),
+            # KPI 1X2 presenti (V1 potrebbe risolvere) ma VIETATO usarli.
+            {
+                "market_key": SEL_HOME,
+                "quota_book": 2.10,
+                "prob_cecchino": 0.45,
+                "rating": 60,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-1",
+            },
+            {
+                "market_key": SEL_DRAW,
+                "quota_book": 3.40,
+                "prob_cecchino": 0.28,
+                "rating": 55,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-1",
+            },
+            {
+                "market_key": SEL_AWAY,
+                "quota_book": 3.50,
+                "prob_cecchino": 0.27,
+                "rating": 55,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-1",
+            },
+        ]
+    }
+    items, _ = _score_dc_items(
+        kpi_panel=panel,
+        fixture_meta=_dc_fixture_meta(),
+        strict_by_market=strict,
+    )
+    one_x = next(it for it in items if it["market_key"] == SEL_ONE_X)
+    assert one_x["status"] == "not_calculable"
+    assert "missing_fair_book_probability" in _gate_reasons(one_x)
+
+
+def test_dc_fair_v2_e_kpi_provider_mismatch_does_not_block_strict_fair():
+    """E) KPI 1X2 con bookmaker/provider diversi: fair da STRICT, execution REAL invariata."""
+    strict = _strict_1x2_complete()
+    panel = {
+        "rows": [
+            _dc_real_row(
+                SEL_ONE_X,
+                quota=1.45,
+                prob=0.90,
+                bookmaker_name="Bet365",
+                bookmaker_provider_id="b365",
+            ),
+            {
+                "market_key": SEL_HOME,
+                "quota_book": 9.99,
+                "prob_cecchino": 0.10,
+                "rating": 50,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-other",
+            },
+            {
+                "market_key": SEL_DRAW,
+                "quota_book": 9.99,
+                "prob_cecchino": 0.10,
+                "rating": 50,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-other",
+            },
+            {
+                "market_key": SEL_AWAY,
+                "quota_book": 9.99,
+                "prob_cecchino": 0.10,
+                "rating": 50,
+                "book_source": "betfair_raw_match_winner",
+                "bookmaker_name": "Betfair",
+                "bookmaker_provider_id": "bf-other",
+            },
+        ]
+    }
+    # Snapshot pre-score execution flags.
+    dc_row = panel["rows"][0]
+    before = {
+        "is_real_quote": dc_row["is_real_quote"],
+        "derived_quote": dc_row["derived_quote"],
+        "quota_book": dc_row["quota_book"],
+        "book_source": dc_row["book_source"],
+    }
+    expected_fair = _resolve_dc_fair_book_v2(strict)[SEL_ONE_X]["fair_book_probability"]
+    items, dc_fair = _score_dc_items(
+        kpi_panel=panel,
+        fixture_meta=_dc_fixture_meta(),
+        strict_by_market=strict,
+    )
+    one_x = next(it for it in items if it["market_key"] == SEL_ONE_X)
+    assert dc_fair[SEL_ONE_X]["fair_book_probability_verified"] is True
+    assert dc_fair[SEL_ONE_X]["fair_book_probability_source"] == SOURCE_DC_FAIR_V2
+    assert one_x["input"]["fair_book_probability"] == pytest.approx(
+        float(expected_fair), rel=1e-6
+    )
+    assert "missing_fair_book_probability" not in _gate_reasons(one_x)
+    # Fair non ha mutato execution sulla riga KPI.
+    assert dc_row["is_real_quote"] is before["is_real_quote"]
+    assert dc_row["derived_quote"] is before["derived_quote"]
+    assert dc_row["quota_book"] == before["quota_book"]
+    assert dc_row["book_source"] == before["book_source"]
+    assert one_x["input"]["execution_quote_real"] is True
+
+
+def test_dc_fair_v2_build_payload_exports_diagnostics():
+    """Compact markets espongono status/gate/fair provenance."""
+    match = SimpleNamespace(
+        id=42,
+        kickoff_at=__import__("datetime").datetime(2021, 8, 15, 15, 0, tzinfo=__import__("datetime").timezone.utc),
+        home_team="A",
+        away_team="B",
+    )
+    strict = _strict_1x2_complete()
+    panel = {
+        "rows": [
+            _dc_real_row(SEL_ONE_X, quota=1.45, prob=0.90),
+            _dc_real_row(SEL_ONE_TWO, quota=1.50, prob=0.55, rating=55),
+            _dc_real_row(SEL_X_TWO, quota=1.60, prob=0.40, rating=40),
+            {
+                "market_key": SEL_HOME,
+                "quota_book": 2.10,
+                "prob_cecchino": 0.45,
+                "rating": 60,
+                "book_source": "betfair_raw_match_winner",
+            },
+            {
+                "market_key": SEL_DRAW,
+                "quota_book": 3.40,
+                "prob_cecchino": 0.28,
+                "rating": 55,
+                "book_source": "betfair_raw_match_winner",
+            },
+            {
+                "market_key": SEL_AWAY,
+                "quota_book": 3.50,
+                "prob_cecchino": 0.27,
+                "rating": 55,
+                "book_source": "betfair_raw_match_winner",
+            },
+        ]
+    }
+    payload = build_run_v2_purchasability(
+        kpi_panel=panel,
+        match=match,
+        season_label="2021-2022",
+        competition_name="EPL",
+        strict_by_market=strict,
+    )
+    assert payload.get("run_v2_dc_fair_strict_overlay") is True
+    assert payload.get("dc_fair_probability_source") == SOURCE_DC_FAIR_V2
+    by_mk = {m["market_key"]: m for m in payload["markets"] if isinstance(m, dict)}
+    one_x = by_mk[SEL_ONE_X]
+    assert one_x.get("v2_only_dc_fair_strict") is True
+    assert one_x.get("status") == "score"
+    assert one_x.get("gate_status") is not None
+    assert isinstance(one_x.get("gate_reason_codes"), list)
+    assert one_x.get("fair_book_probability") is not None
+    assert one_x.get("fair_book_probability_source") == SOURCE_DC_FAIR_V2
 
 
 def test_equilibrium_state_from_balance_v5_payload():

@@ -508,6 +508,7 @@ def _process_one_match(
         match=match,
         season_label=item.season_label,
         competition_name=item.competition,
+        strict_by_market=quote_bundle["strict_by_market"],
     )
     signals = build_historical_signal_models(
         cecchino_output=cecchino_output,
