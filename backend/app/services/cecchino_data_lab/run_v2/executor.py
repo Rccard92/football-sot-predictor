@@ -3,8 +3,8 @@
 Riusa senza modificarli i moduli V1 (contesti, Cecchino, KPI, Signals,
 Balance, Goal Intensity, Acquistabilita) e vi affianca:
 
-- i mercati CORE che la V1 non copriva (FT O/U 0.5);
-- il layer ECONOMIC BENCHMARK sulle quote near-closing;
+- i mercati CORE che la V1 non copriva (FT O/U 0.5) con KPI V2-only;
+- 17 quote STRICT pre-match (legacy + enrichment closing/pre-kickoff);
 - il layer BLOCCO 2 di statistiche extra;
 - l'audit anti-leakage esplicito per ogni match.
 
@@ -61,15 +61,9 @@ from app.services.cecchino_data_lab.historical_goal_intensity import (
     build_historical_goal_intensity,
 )
 from app.services.cecchino_data_lab.historical_kickoff_group import group_work_by_kickoff
-from app.services.cecchino_data_lab.historical_kpi_bet365_wrapper import (
-    build_historical_kpi_panel_bet365,
-)
 from app.services.cecchino_data_lab.historical_modules_compat import (
     build_historical_balance_v5,
     rebuild_signals_with_under,
-)
-from app.services.cecchino_data_lab.historical_purchasability_v36_adapter import (
-    build_historical_purchasability_v36,
 )
 from app.services.cecchino_data_lab.historical_rolling_state import (
     GlobalRollingStateRegistry,
@@ -90,10 +84,7 @@ from app.services.cecchino_data_lab.run_v2.constants import (
     RUN_V2_FEATURE_CONTRACT_VERSION,
     RUN_V2_QUOTE_POLICY_VERSION,
     RUN_V2_VERSION,
-)
-from app.services.cecchino_data_lab.run_v2.economic_observation import (
-    build_economic_benchmark_rows,
-    summarize_economic_benchmark,
+    TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF,
 )
 from app.services.cecchino_data_lab.run_v2.extra_stats import (
     ExtraStatsRegistry,
@@ -103,6 +94,7 @@ from app.services.cecchino_data_lab.run_v2.goal_markets_ext import (
     compute_ht_1x2_markets,
     compute_ou_05_markets,
 )
+from app.services.cecchino_data_lab.run_v2.kpi_panel_v2 import build_run_v2_kpi_panel
 from app.services.cecchino_data_lab.run_v2.leakage_audit import (
     RunLeakageAuditor,
     audit_history_window,
@@ -110,7 +102,9 @@ from app.services.cecchino_data_lab.run_v2.leakage_audit import (
 )
 from app.services.cecchino_data_lab.run_v2.market_rows import (
     build_core_strict_market_rows,
-    frozen_probabilities,
+)
+from app.services.cecchino_data_lab.run_v2.purchasability_v2 import (
+    build_run_v2_purchasability,
 )
 from app.services.cecchino_data_lab.run_v2.quotes import build_run_v2_quote_bundle
 from app.services.cecchino_data_lab.run_v2.settlement import (
@@ -204,9 +198,19 @@ def create_run_v2(
         quote_policy_json={
             "quote_policy_version": RUN_V2_QUOTE_POLICY_VERSION,
             "strict_policy_version": HISTORICAL_QUOTE_POLICY_VERSION_V4,
-            "strict_layer": "bet365 pre-closing reference, unico input ammesso",
-            "economic_layer": "bet365 *_last_seen, mai input, solo benchmark",
+            "strict_layer": (
+                "17 mercati CORE: legacy pre-closing reference + enrichment "
+                "closing/pre-kickoff STRICT"
+            ),
+            "enrichment_temporal_classification": (
+                TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF
+            ),
+            "economic_layer": (
+                "deprecato per nuove RUN: nessuna riga economic_observation "
+                "duplicata sulle 12 enrichment"
+            ),
             "no_closing_fallback": True,
+            "dc_policy": "real_bet365_dc_or_derived_1x2_fallback",
         },
         module_policy_json={
             "feature_contract_version": RUN_V2_FEATURE_CONTRACT_VERSION,
@@ -334,7 +338,7 @@ def _process_one_match(
     extra_stats: ExtraStatsRegistry,
     auditor: RunLeakageAuditor,
 ) -> tuple[int, int]:
-    """Un match: prediction congelata, benchmark economico, label reali."""
+    """Un match: prediction congelata, settlement su quota STRICT, label reali."""
     match = item.match
     comp_state = rolling.get_competition(item.rolling_key)
     if comp_state is None:
@@ -374,16 +378,18 @@ def _process_one_match(
     ou_05_markets = compute_ou_05_markets(contexts, priors)
     ht_1x2_markets = compute_ht_1x2_markets(contexts, priors)
 
-    # 4. Quote: STRICT (input ammesso) ed ECONOMIC (mai input).
+    # 4. Quote STRICT (17 mercati CORE, enrichment closing/pre-kickoff incluse).
     quote_bundle = build_run_v2_quote_bundle(match)
     strict_v1_bundle = quote_bundle["strict_v1_bundle"]
 
     final = cecchino_output.get("final") or {}
-    kpi = build_historical_kpi_panel_bet365(
+    kpi = build_run_v2_kpi_panel(
         final_odds=final,
         match=match,
         goal_markets=goal_markets,
-        quote_bundle=strict_v1_bundle,
+        ou_05_markets=ou_05_markets,
+        ht_1x2_markets=ht_1x2_markets,
+        quote_bundle=quote_bundle,
     )
     balance = build_historical_balance_v5(
         cecchino_final=final,
@@ -408,7 +414,7 @@ def _process_one_match(
         prior_feature_rows=prior_gi_rows,
         prefitted_ecdfs=prefitted,
     )
-    purch_payload = build_historical_purchasability_v36(
+    purch_payload = build_run_v2_purchasability(
         kpi_panel=kpi,
         match=match,
         season_label=item.season_label,
@@ -472,6 +478,12 @@ def _process_one_match(
                 "quote_source": q.get("quote_source"),
                 "is_real_quote": q.get("is_real_quote"),
                 "is_derived": q.get("is_derived"),
+                "source_column": q.get("source_column"),
+                "quote_snapshot_type": q.get("quote_snapshot_type"),
+                "temporal_classification": q.get("temporal_classification"),
+                "pre_match_input_safe": q.get("pre_match_input_safe"),
+                "used_for_prediction": q.get("used_for_prediction"),
+                "economic_observation_only": q.get("economic_observation_only"),
             }
             for mk, q in quote_bundle["strict_by_market"].items()
         },
@@ -514,11 +526,8 @@ def _process_one_match(
         purchasability=purch_payload,
         outcomes=outcomes,
     )
-    economic_rows = build_economic_benchmark_rows(
-        economic_bundle=quote_bundle["economic"],
-        frozen_probabilities=frozen_probabilities(core_rows),
-        outcomes=outcomes,
-    )
+    # Nessuna riga economic_observation: le 12 enrichment sono STRICT e la
+    # stessa quota_book congelata viene riutilizzata per settlement/profit.
 
     snapshot = CecchinoRunV2MatchSnapshot(
         run_id=int(run.id),
@@ -573,9 +582,6 @@ def _process_one_match(
     rows_written = 0
     for row in core_rows:
         db.add(_core_result_orm(run.id, snapshot_id, match.id, row))
-        rows_written += 1
-    for row in economic_rows:
-        db.add(_economic_result_orm(run.id, snapshot_id, match.id, row))
         rows_written += 1
 
     # 8. Aggiornamento GI differito: applicato solo a fine gruppo kickoff.

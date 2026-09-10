@@ -26,10 +26,10 @@ from app.services.cecchino.cecchino_selection_keys import (
 
 RUN_V2_VERSION = "cecchino_run_v2"
 RUN_V2_CONFIRM_TOKEN = "RUN_CECCHINO_RUN_V2"
-RUN_V2_QUOTE_POLICY_VERSION = "bet365_dual_track_v2"
+RUN_V2_QUOTE_POLICY_VERSION = "bet365_closing_pre_kickoff_strict_v1"
 RUN_V2_FEATURE_CONTRACT_VERSION = "cecchino_run_v2_feature_contract_v1"
 RUN_V2_EXTRA_STATS_VERSION = "cecchino_run_v2_extra_stats_v1"
-RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v1"
+RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v2"
 
 # Commit ogni N gruppi kickoff (il gruppo resta comunque atomico).
 RUN_V2_COMMIT_EVERY_GROUPS = 40
@@ -44,9 +44,14 @@ RUN_V2_ADVISORY_LOCK_NAMESPACE = 0xCEC62002
 # Timing quote.
 QUOTE_SNAPSHOT_PRE_REFERENCE = "pre_closing_reference"
 QUOTE_SNAPSHOT_LAST_SEEN = "last_seen"
+# Provenienza enrichment: campo source `*_last_seen`, timing closing/pre-kickoff.
+QUOTE_SNAPSHOT_CLOSING_PRE_KICKOFF = "closing_pre_kickoff"
+TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF = "closing_pre_kickoff"
 
 # Layer di osservazione.
 LAYER_CORE_STRICT = "core_strict"
+# Layer legacy: preservato per RUN storiche gia materializzate; le nuove RUN
+# non scrivono piu righe economic_observation per le 12 quote enrichment.
 LAYER_ECONOMIC = "economic_observation"
 
 # Famiglie mercato.
@@ -63,9 +68,13 @@ PERIOD_HT = "HT"
 class MarketDef:
     """Definizione di un mercato CORE della RUN V2.
 
-    `strict_quote_columns` elenca le colonne pre-closing reference ammesse come
-    input del Cecchino. `economic_quote_column` e la colonna near-closing
-    (`*_last_seen`), utilizzabile solo dal layer di benchmark economico.
+    `strict_quote_columns` elenca le colonne Bet365 ammesse come input pre-match
+    del Cecchino (legacy Football-Data oppure enrichment `*_last_seen` con
+    temporal_classification=closing_pre_kickoff).
+
+    `economic_quote_column` e deprecato per le nuove RUN (sempre None): le 12
+    enrichment sono STRICT. Il campo resta solo per compatibilita di lettura
+    di RUN storiche gia materializzate.
     """
 
     key: str
@@ -77,7 +86,7 @@ class MarketDef:
     strict_quote_columns: tuple[str, ...] = ()
     strict_quote_derived_from_1x2: bool = False
     economic_quote_column: str | None = None
-    # Il mercato entra nel pannello KPI / Acquistabilita CORE della V1.
+    # Il mercato entra nel pannello KPI RUN V2 (V1 + append V2-only OU 0.5).
     in_core_kpi_panel: bool = False
 
     @property
@@ -118,15 +127,15 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         strict_quote_columns=("bet365_away",),
         in_core_kpi_panel=True,
     ),
-    # --- Double Chance: STRICT derivata da 1X2 (come V1), reale solo economica ---
+    # --- Double Chance: STRICT reale enrichment; fallback derivata 1X2 ---
     MarketDef(
         key=SEL_ONE_X,
         export_key="ONE_X",
         label="Doppia Chance 1X",
         family=FAMILY_DC,
         period=PERIOD_FT,
+        strict_quote_columns=("bet365_dc_1x",),
         strict_quote_derived_from_1x2=True,
-        economic_quote_column="bet365_dc_1x",
         in_core_kpi_panel=True,
     ),
     MarketDef(
@@ -135,8 +144,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         label="Doppia Chance 12",
         family=FAMILY_DC,
         period=PERIOD_FT,
+        strict_quote_columns=("bet365_dc_12",),
         strict_quote_derived_from_1x2=True,
-        economic_quote_column="bet365_dc_12",
         in_core_kpi_panel=True,
     ),
     MarketDef(
@@ -145,18 +154,19 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         label="Doppia Chance X2",
         family=FAMILY_DC,
         period=PERIOD_FT,
+        strict_quote_columns=("bet365_dc_x2",),
         strict_quote_derived_from_1x2=True,
-        economic_quote_column="bet365_dc_x2",
         in_core_kpi_panel=True,
     ),
-    # --- HT 1X2: nessuna quota pre-match safe, solo benchmark economico ---
+    # --- HT 1X2: enrichment closing/pre-kickoff STRICT ---
     MarketDef(
         key=SEL_HOME_PT,
         export_key="HT_HOME",
         label="Primo Tempo 1",
         family=FAMILY_HT_1X2,
         period=PERIOD_HT,
-        economic_quote_column="bet365_ht_home",
+        strict_quote_columns=("bet365_ht_home",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_DRAW_PT,
@@ -164,7 +174,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         label="Primo Tempo X",
         family=FAMILY_HT_1X2,
         period=PERIOD_HT,
-        economic_quote_column="bet365_ht_draw",
+        strict_quote_columns=("bet365_ht_draw",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_AWAY_PT,
@@ -172,7 +183,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         label="Primo Tempo 2",
         family=FAMILY_HT_1X2,
         period=PERIOD_HT,
-        economic_quote_column="bet365_ht_away",
+        strict_quote_columns=("bet365_ht_away",),
+        in_core_kpi_panel=True,
     ),
     # --- FT Over/Under ---
     MarketDef(
@@ -182,7 +194,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="0.5",
-        economic_quote_column="bet365_over_05",
+        strict_quote_columns=("bet365_over_05",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_UNDER_0_5,
@@ -191,7 +204,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="0.5",
-        economic_quote_column="bet365_under_05",
+        strict_quote_columns=("bet365_under_05",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_OVER_1_5,
@@ -200,7 +214,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="1.5",
-        economic_quote_column="bet365_over_15",
+        strict_quote_columns=("bet365_over_15",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_UNDER_1_5,
@@ -209,7 +224,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="1.5",
-        economic_quote_column="bet365_under_15",
+        strict_quote_columns=("bet365_under_15",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_OVER_2_5,
@@ -238,7 +254,8 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="3.5",
-        economic_quote_column="bet365_over_35",
+        strict_quote_columns=("bet365_over_35",),
+        in_core_kpi_panel=True,
     ),
     MarketDef(
         key=SEL_UNDER_3_5,
@@ -247,20 +264,39 @@ CORE_MARKETS: tuple[MarketDef, ...] = (
         family=FAMILY_OU,
         period=PERIOD_FT,
         line="3.5",
-        economic_quote_column="bet365_under_35",
+        strict_quote_columns=("bet365_under_35",),
+        in_core_kpi_panel=True,
     ),
 )
 
 CORE_MARKET_BY_KEY: dict[str, MarketDef] = {m.key: m for m in CORE_MARKETS}
 CORE_MARKET_KEYS: tuple[str, ...] = tuple(m.key for m in CORE_MARKETS)
 
-# Colonne near-closing: mai ammesse come input del Cecchino.
+# Vuoto per le nuove RUN: le enrichment sono STRICT. Mantenuto per API/test.
 ECONOMIC_QUOTE_COLUMNS: tuple[str, ...] = tuple(
     m.economic_quote_column for m in CORE_MARKETS if m.economic_quote_column
 )
-# Colonne pre-closing reference: le uniche ammesse come input.
+# Colonne STRICT ammesse come input (legacy + enrichment closing/pre-kickoff).
 STRICT_QUOTE_COLUMNS: tuple[str, ...] = tuple(
     col for m in CORE_MARKETS for col in m.strict_quote_columns
+)
+
+# Colonne enrichment (source field `*_last_seen`) promosse a STRICT pre-match.
+ENRICHMENT_STRICT_QUOTE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "bet365_dc_1x",
+        "bet365_dc_12",
+        "bet365_dc_x2",
+        "bet365_ht_home",
+        "bet365_ht_draw",
+        "bet365_ht_away",
+        "bet365_over_05",
+        "bet365_under_05",
+        "bet365_over_15",
+        "bet365_under_15",
+        "bet365_over_35",
+        "bet365_under_35",
+    }
 )
 
 

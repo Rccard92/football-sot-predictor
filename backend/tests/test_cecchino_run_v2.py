@@ -385,7 +385,7 @@ def test_run_fails_when_leakage_violations_exist():
 
 
 # ---------------------------------------------------------------------------
-# Doppio binario: STRICT vs ECONOMIC BENCHMARK
+# Quote STRICT: legacy + enrichment closing/pre-kickoff
 # ---------------------------------------------------------------------------
 
 
@@ -437,38 +437,56 @@ def _lab_match(**overrides):
     return SimpleNamespace(**base)
 
 
-def test_economic_quotes_are_never_prediction_input():
+def test_enrichment_quotes_are_strict_pre_match_input():
+    from app.services.cecchino.cecchino_selection_keys import (
+        SEL_OVER_0_5,
+        SEL_OVER_1_5,
+        SEL_ONE_X,
+        SEL_HOME_PT,
+    )
+    from app.services.cecchino_data_lab.run_v2.constants import (
+        QUOTE_SNAPSHOT_CLOSING_PRE_KICKOFF,
+        TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF,
+    )
     from app.services.cecchino_data_lab.run_v2.quotes import build_run_v2_quote_bundle
 
     bundle = build_run_v2_quote_bundle(_lab_match())
-    economic = bundle["economic"]
+    strict = bundle["strict_by_market"]
 
-    assert economic["pre_match_input_safe"] is False
-    assert economic["used_for_prediction"] is False
-    assert economic["available_at_prediction_time"] == "not_certified"
+    for mk in (SEL_ONE_X, SEL_HOME_PT, SEL_OVER_0_5, SEL_OVER_1_5):
+        quote = strict[mk]
+        assert quote["pre_match_input_safe"] is True, mk
+        assert quote["used_for_prediction"] is True, mk
+        assert quote["available_at_prediction_time"] is True, mk
+        assert quote["economic_observation_only"] is False, mk
+        assert quote["quote_snapshot_type"] == QUOTE_SNAPSHOT_CLOSING_PRE_KICKOFF, mk
+        assert quote["temporal_classification"] == TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF
+        assert quote["is_real_quote"] is True, mk
+        assert quote["is_derived"] is False, mk
 
-    for market_key, quote in economic["quotes"].items():
-        assert quote["pre_match_input_safe"] is False, market_key
-        assert quote["used_for_prediction"] is False, market_key
-        assert quote["quote_snapshot_type"] == "last_seen", market_key
-        # Il layer economico non deriva mai nulla: legge solo colonne reali.
-        assert quote["is_derived"] is False, market_key
+    assert bundle["economic"]["counts"]["markets_with_real_quote"] == 0
+    assert bundle["counts"]["economic_markets_with_quote"] == 0
 
 
-def test_strict_and_economic_use_distinct_columns():
+def test_strict_columns_include_enrichment_and_no_economic_columns():
     from app.services.cecchino_data_lab.run_v2.constants import (
         ECONOMIC_QUOTE_COLUMNS,
+        ENRICHMENT_STRICT_QUOTE_COLUMNS,
         STRICT_QUOTE_COLUMNS,
     )
 
-    assert set(STRICT_QUOTE_COLUMNS).isdisjoint(set(ECONOMIC_QUOTE_COLUMNS))
-    assert all(c.endswith(("_05", "_15", "_35", "_1x", "_12", "_x2", "home", "draw", "away"))
-               for c in ECONOMIC_QUOTE_COLUMNS)
+    assert ECONOMIC_QUOTE_COLUMNS == ()
+    assert ENRICHMENT_STRICT_QUOTE_COLUMNS.issubset(set(STRICT_QUOTE_COLUMNS))
+    assert len(ENRICHMENT_STRICT_QUOTE_COLUMNS) == 12
 
 
 def test_real_quote_is_never_replaced_by_a_derived_one():
     from app.services.cecchino_data_lab.run_v2.quotes import build_run_v2_quote_bundle
-    from app.services.cecchino.cecchino_selection_keys import SEL_HOME, SEL_OVER_2_5
+    from app.services.cecchino.cecchino_selection_keys import (
+        SEL_HOME,
+        SEL_ONE_X,
+        SEL_OVER_2_5,
+    )
 
     bundle = build_run_v2_quote_bundle(_lab_match())
     strict = bundle["strict_by_market"]
@@ -478,6 +496,26 @@ def test_real_quote_is_never_replaced_by_a_derived_one():
     assert strict[SEL_HOME]["is_derived"] is False
     assert strict[SEL_OVER_2_5]["value"] == pytest.approx(1.90)
     assert strict[SEL_OVER_2_5]["is_derived"] is False
+    # DC reale preferita alla derivata.
+    assert strict[SEL_ONE_X]["value"] == pytest.approx(1.30)
+    assert strict[SEL_ONE_X]["is_real_quote"] is True
+    assert strict[SEL_ONE_X]["is_derived"] is False
+    assert strict[SEL_ONE_X]["source_column"] == "bet365_dc_1x"
+
+
+def test_dc_falls_back_to_derived_when_real_missing():
+    from app.services.cecchino.cecchino_selection_keys import SEL_ONE_X, SEL_ONE_TWO, SEL_X_TWO
+    from app.services.cecchino_data_lab.run_v2.quotes import build_run_v2_quote_bundle
+
+    match = _lab_match(bet365_dc_1x=None, bet365_dc_12=None, bet365_dc_x2=None)
+    bundle = build_run_v2_quote_bundle(match)
+    strict = bundle["strict_by_market"]
+
+    for mk in (SEL_ONE_X, SEL_ONE_TWO, SEL_X_TWO):
+        assert strict[mk]["value"] is not None, mk
+        assert strict[mk]["is_derived"] is True, mk
+        assert strict[mk]["is_real_quote"] is False, mk
+        assert "dc_real_quote_missing_fallback_derived_1x2" in (strict[mk].get("warnings") or [])
 
 
 def test_null_quotes_do_not_drop_the_market():
@@ -499,16 +537,18 @@ def test_null_quotes_do_not_drop_the_market():
 
     assert len(bundle["strict_by_market"]) == len(CORE_MARKETS)
     for market in CORE_MARKETS:
-        if not market.has_economic_quote:
-            continue
-        quote = bundle["economic"]["quotes"][market.key]
-        assert quote["value"] is None
-        assert quote["market_quote_available"] is False
+        quote = bundle["strict_by_market"][market.key]
+        if market.has_strict_real_quote and not market.strict_quote_derived_from_1x2:
+            # Senza colonne valorizzate la quota STRICT e assente, il mercato resta.
+            assert quote["value"] is None
+            assert quote["market_quote_available"] is False
 
 
-def test_economic_benchmark_naming_and_flags():
+def test_economic_benchmark_helpers_remain_for_legacy_runs():
+    """Helper legacy restano importabili; non usati dalle nuove RUN."""
     from app.services.cecchino_data_lab.run_v2.economic_observation import (
         build_economic_benchmark_row,
+        summarize_economic_benchmark,
     )
 
     row = build_economic_benchmark_row(
@@ -522,36 +562,8 @@ def test_economic_benchmark_naming_and_flags():
         },
         outcome={"outcome": "WIN", "won": True},
     )
-
-    assert row["economic_benchmark_value"] == pytest.approx(0.8 * 1.30 - 1.0)
-    assert row["economic_benchmark_profit"] == pytest.approx(0.30)
-    assert row["pre_match_input_safe"] is False
-    assert row["used_for_prediction"] is False
     assert row["economic_observation_only"] is True
-
-    forbidden = ("strict_", "deployable_")
-    for key in row:
-        assert not key.startswith(forbidden), key
-    # `roi` nudo non e ammesso: deve essere sempre qualificato.
-    assert "roi" not in row
-    assert "economic_benchmark_roi" in row
-
-
-def test_economic_benchmark_summary_is_labelled_as_observation():
-    from app.services.cecchino_data_lab.run_v2.economic_observation import (
-        summarize_economic_benchmark,
-    )
-
-    summary = summarize_economic_benchmark(
-        [
-            {"economic_benchmark_profit": 0.5, "won": True, "market_quote_available": True},
-            {"economic_benchmark_profit": -1.0, "won": False, "market_quote_available": True},
-            {"economic_benchmark_profit": None, "won": None, "market_quote_available": False},
-        ]
-    )
-    assert summary["rows_settled"] == 2
-    assert summary["economic_benchmark_profit_total"] == pytest.approx(-0.5)
-    assert summary["used_for_prediction"] is False
+    summary = summarize_economic_benchmark([row])
     assert summary["economic_observation_only"] is True
 
 
@@ -710,7 +722,7 @@ def test_core_market_registry_shape():
     assert len({m.export_key for m in CORE_MARKETS}) == 17
 
 
-def test_market_rows_cardinality_is_one_per_market_and_layer():
+def test_market_rows_cardinality_is_one_per_market_strict_only():
     from app.services.cecchino_data_lab.run_v2.constants import CORE_MARKETS
     from app.services.cecchino_data_lab.run_v2.economic_observation import (
         build_economic_benchmark_rows,
@@ -748,11 +760,14 @@ def test_market_rows_cardinality_is_one_per_market_and_layer():
     )
 
     assert len(core_rows) == 17
-    # 12 = le colonne `*_last_seen` disponibili (3 DC + 3 HT 1X2 + 6 O/U).
-    assert len(economic_rows) == 12
+    assert len(economic_rows) == 0
     assert len({r["market_key"] for r in core_rows}) == 17
     assert all(r["observation_layer"] == "core_strict" for r in core_rows)
-    assert all(r["observation_layer"] == "economic_observation" for r in economic_rows)
+    assert all(r["economic_observation_only"] is False for r in core_rows)
+    # Settlement riusa quota STRICT congelata.
+    over05 = next(r for r in core_rows if r["market_key"] == "OVER_0_5")
+    assert over05["quota_book"] == pytest.approx(1.06)
+    assert over05["pre_match_input_safe"] is True
 
 
 def test_core_and_economic_rows_coexist_for_the_same_market():
@@ -801,19 +816,88 @@ def test_data_dictionary_matches_csv_columns_exactly():
     assert raw_documented == {"lab_match_id", *raw_columns}
 
 
-def test_last_seen_columns_are_flagged_as_not_input():
+def test_enrichment_strict_columns_are_prediction_input():
     from app.services.cecchino_data_lab.run_v2.column_registry import (
-        AVAILABLE_NOT_CERTIFIED,
+        LAYER_CORE_STRICT_QUOTE,
         LAYER_ECONOMIC_QUOTE,
         full_export_columns,
     )
 
     economic = [c for c in full_export_columns() if c.layer == LAYER_ECONOMIC_QUOTE]
-    assert economic, "nessuna colonna economica nel registry"
-    for column in economic:
-        assert column.allowed_as_prediction_input is False, column.column
-        assert column.available_at_prediction_time == AVAILABLE_NOT_CERTIFIED
-        assert "last_seen" in column.column
+    assert economic == []
+
+    enrichment_cols = [
+        c
+        for c in full_export_columns()
+        if c.layer == LAYER_CORE_STRICT_QUOTE
+        and any(
+            token in c.column
+            for token in (
+                "over_0_5",
+                "under_0_5",
+                "over_1_5",
+                "ht_home",
+                "one_x",
+                "over_3_5",
+            )
+        )
+        and c.column.endswith("_value")
+    ]
+    assert enrichment_cols
+    for column in enrichment_cols:
+        assert column.allowed_as_prediction_input is True, column.column
+        assert column.available_at_prediction_time is True, column.column
+
+
+def test_ou05_kpi_append_reuses_v1_metrics_row_and_keeps_v1_rows():
+    from app.services.cecchino.cecchino_kpi_panel_v2_betfair import _build_metrics_row
+    from app.services.cecchino.cecchino_selection_keys import SEL_OVER_0_5, SEL_UNDER_0_5
+    from app.services.cecchino_data_lab.run_v2.kpi_ou05_ext import append_ou05_kpi_rows
+
+    v1_panel = {
+        "rows": [
+            {"market_key": "HOME", "quota_book": 2.1, "quota_cecchino": 2.0, "rating": 70},
+            {"market_key": "OVER_2_5", "quota_book": 1.9, "quota_cecchino": 1.85, "rating": 65},
+        ]
+    }
+    ou05 = {
+        SEL_OVER_0_5: {"final_odd": 1.05},
+        SEL_UNDER_0_5: {"final_odd": 10.0},
+    }
+    strict = {
+        SEL_OVER_0_5: {"value": 1.06, "quote_source": "bet365_enrichment_closing_pre_kickoff"},
+        SEL_UNDER_0_5: {"value": 9.5, "quote_source": "bet365_enrichment_closing_pre_kickoff"},
+    }
+    out = append_ou05_kpi_rows(v1_panel, ou_05_markets=ou05, strict_by_market=strict)
+    assert out["v1_row_count"] == 2
+    assert out["rows"][:2] == v1_panel["rows"]
+    keys = [r["market_key"] for r in out["rows"]]
+    assert keys[-2:] == [SEL_OVER_0_5, SEL_UNDER_0_5]
+
+    expected = _build_metrics_row(
+        market_key=SEL_OVER_0_5,
+        segno="Over 0.5",
+        quota_book=1.06,
+        quota_cecchino=1.05,
+        book_source="bet365_enrichment_closing_pre_kickoff",
+        cecchino_source="goal_markets_ou_05_v2",
+        bookmaker_name="Bet365",
+        provider_bookmaker_id=0,
+        book_fallback_used=False,
+    )
+    got = out["rows"][-2]
+    for field in ("edge_pct", "vantaggio_prob", "rating", "score_acquisto", "prob_book", "prob_cecchino"):
+        assert got.get(field) == expected.get(field), field
+
+
+def test_v1_kpi_row_defs_unchanged_no_ou05():
+    from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS
+    from app.services.cecchino.cecchino_selection_keys import SEL_OVER_0_5, SEL_UNDER_0_5
+
+    keys = {k for k, _ in KPI_V2_ROW_DEFS}
+    assert SEL_OVER_0_5 not in keys
+    assert SEL_UNDER_0_5 not in keys
+    assert len(KPI_V2_ROW_DEFS) == 19
 
 
 def test_actual_columns_are_never_prediction_input():

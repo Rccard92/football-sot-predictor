@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from app.services.cecchino_data_lab.run_v2.constants import (
     CORE_MARKETS,
+    ENRICHMENT_STRICT_QUOTE_COLUMNS,
     EXTRA_STAT_NAMES,
     EXTRA_STATS_RECENT_WINDOWS,
     LAYER_CORE_STRICT,
@@ -323,12 +324,41 @@ def _quote_columns() -> list[ColumnSpec]:
     cols: list[ColumnSpec] = []
     for market in CORE_MARKETS:
         base = f"bet365_strict_{market.export_key.lower()}"
+        is_enrichment = bool(
+            market.strict_quote_columns
+            and market.strict_quote_columns[0] in ENRICHMENT_STRICT_QUOTE_COLUMNS
+        )
+        source_note = (
+            "Bet365 closing/pre-kickoff enrichment (source field *_last_seen)"
+            if is_enrichment
+            else "Bet365 legacy Football-Data pre-closing reference"
+        )
         strict_fields = (
-            ("value", "Quota pre-closing reference"),
+            ("value", f"Quota STRICT pre-match — {source_note}"),
             ("is_real_quote", "True se quota reale di book, non derivata"),
-            ("is_derived", "True se derivata dall'1X2"),
+            ("is_derived", "True se derivata dall'1X2 (solo fallback DC)"),
             ("quote_source", "Tipo sorgente della quota"),
-            ("source_column", "Colonna DB di provenienza"),
+            ("source_column", "Colonna DB di provenienza (anche *_last_seen)"),
+            (
+                "temporal_classification",
+                "closing_pre_kickoff (enrichment) oppure pre_closing_reference (legacy)",
+            ),
+            (
+                "quote_snapshot_type",
+                "closing_pre_kickoff / pre_closing_reference",
+            ),
+            (
+                "pre_match_input_safe",
+                "True: ammessa come input prediction",
+            ),
+            (
+                "used_for_prediction",
+                "True: usata nella pipeline prediction/KPI",
+            ),
+            (
+                "economic_observation_only",
+                "Sempre False per le nuove RUN STRICT",
+            ),
         )
         for field, description in strict_fields:
             cols.append(
@@ -338,19 +368,20 @@ def _quote_columns() -> list[ColumnSpec]:
                     allowed_as_prediction_input=True,
                     available_at_prediction_time=AVAILABLE_YES,
                     source="quote_bundle_json.strict_by_market",
-                    description=f"{description} per {market.label}",
+                    description=f"{description} — {market.label}",
                     getter=_get(
                         ("snapshot", "quote_bundle_json", "strict_by_market", market.key, field)
                     ),
                 )
             )
-
+        # Compatibilità lettura RUN storiche: colonne economic solo se ancora
+        # dichiarate su MarketDef (oggi nessuna).
         if not market.has_economic_quote:
             continue
 
         econ_base = f"bet365_last_seen_{market.export_key.lower()}"
         econ_fields = (
-            ("value", "Quota near-closing"),
+            ("value", "Quota near-closing (legacy RUN)"),
             ("is_real_quote", "True se la colonna last_seen e valorizzata"),
             ("prob_fair", "Probabilita implicita depurata dall'overround"),
         )
@@ -363,8 +394,8 @@ def _quote_columns() -> list[ColumnSpec]:
                     available_at_prediction_time=AVAILABLE_NOT_CERTIFIED,
                     source="quote_bundle_json.economic.quotes",
                     description=(
-                        f"{description} per {market.label}. Quota near-closing: non "
-                        "certificabile come disponibile a T-1, quindi mai input di prediction"
+                        f"{description} per {market.label}. Legacy: nuove RUN "
+                        "non popolano economic_observation"
                     ),
                     getter=_get(
                         (
@@ -587,7 +618,7 @@ CORE_MARKETS_LONG_COLUMNS: tuple[tuple[str, str, bool, Any, str], ...] = (
         LAYER_IDENTITY,
         False,
         AVAILABLE_YES,
-        "core_strict oppure economic_observation",
+        "core_strict (nuove RUN); economic_observation solo su RUN storiche",
     ),
     ("prediction", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Selezione predetta nella famiglia"),
     ("probability", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Probabilita Cecchino"),
@@ -602,34 +633,34 @@ CORE_MARKETS_LONG_COLUMNS: tuple[tuple[str, str, bool, Any, str], ...] = (
     ("goal_intensity_score", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Intensita goal"),
     ("market_available", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Prediction disponibile"),
     ("market_quote_available", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Quota disponibile"),
-    ("quota_book", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Quota di book del layer"),
-    ("prob_book_raw", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Probabilita implicita"),
-    ("prob_book_fair", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Probabilita depurata"),
-    ("is_real_quote", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Quota reale"),
-    ("is_derived_quote", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Quota derivata"),
-    ("derivation_method", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Metodo di derivazione"),
-    ("quote_source", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Sorgente quota"),
-    ("source_column", LAYER_CORE_STRICT_QUOTE, False, AVAILABLE_YES, "Colonna DB di origine"),
+    ("quota_book", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Quota STRICT congelata pre-match"),
+    ("prob_book_raw", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Probabilita implicita"),
+    ("prob_book_fair", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Probabilita depurata"),
+    ("is_real_quote", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Quota reale"),
+    ("is_derived_quote", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Quota derivata"),
+    ("derivation_method", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Metodo di derivazione"),
+    ("quote_source", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Sorgente quota"),
+    ("source_column", LAYER_CORE_STRICT_QUOTE, True, AVAILABLE_YES, "Colonna DB di origine"),
     (
         "quote_snapshot_type",
         LAYER_CORE_STRICT_QUOTE,
-        False,
+        True,
         AVAILABLE_YES,
-        "pre_closing_reference oppure last_seen",
+        "closing_pre_kickoff (enrichment) oppure pre_closing_reference (legacy)",
     ),
     (
         "pre_match_input_safe",
         LAYER_AUDIT,
-        False,
+        True,
         AVAILABLE_YES,
-        "True solo per le quote ammesse come input",
+        "True per le quote STRICT ammesse come input",
     ),
     (
         "used_for_prediction",
         LAYER_AUDIT,
-        False,
+        True,
         AVAILABLE_YES,
-        "True solo se la quota ha alimentato la prediction",
+        "True se la quota ha alimentato prediction/KPI",
     ),
     ("outcome", LAYER_POST_MATCH_LABEL, False, AVAILABLE_NO, "Esito reale"),
     ("won", LAYER_POST_MATCH_LABEL, False, AVAILABLE_NO, "Selezione vincente"),
@@ -639,21 +670,21 @@ CORE_MARKETS_LONG_COLUMNS: tuple[tuple[str, str, bool, Any, str], ...] = (
         LAYER_ECONOMIC_OUTPUT,
         False,
         AVAILABLE_NO,
-        "Valore atteso nel benchmark economico",
+        "Legacy RUN: valore atteso nel benchmark economico",
     ),
     (
         "economic_benchmark_profit",
         LAYER_ECONOMIC_OUTPUT,
         False,
         AVAILABLE_NO,
-        "Profitto nel benchmark economico",
+        "Legacy RUN: profitto nel benchmark economico",
     ),
     (
         "economic_benchmark_roi",
         LAYER_ECONOMIC_OUTPUT,
         False,
         AVAILABLE_NO,
-        "ROI nel benchmark economico",
+        "Legacy RUN: ROI nel benchmark economico",
     ),
 )
 
@@ -702,10 +733,17 @@ def build_data_dictionary(
             LAYER_AUDIT: "Tracce dell'audit anti-leakage",
             LAYER_PRE_MATCH_FEATURE: "Feature CORE note prima del kickoff",
             LAYER_EXTRA_PRE_MATCH_FEATURE: "Feature BLOCCO 2 note prima del kickoff",
-            LAYER_CORE_STRICT_QUOTE: "Quote pre-closing reference, unico input ammesso",
-            LAYER_ECONOMIC_QUOTE: "Quote near-closing, mai input",
+            LAYER_CORE_STRICT_QUOTE: (
+                "Quote STRICT pre-match (legacy + enrichment closing/pre-kickoff), "
+                "input ammesso"
+            ),
+            LAYER_ECONOMIC_QUOTE: (
+                "Legacy: quote economic_observation (non popolate nelle nuove RUN)"
+            ),
             LAYER_CORE_OUTPUT: "Output dei moduli CORE a prediction congelata",
-            LAYER_ECONOMIC_OUTPUT: "Benchmark economico, mai una prediction",
+            LAYER_ECONOMIC_OUTPUT: (
+                "Legacy: benchmark economico (non scritto nelle nuove RUN)"
+            ),
             LAYER_POST_MATCH_LABEL: "Dati noti solo a partita conclusa",
             LAYER_RAW_SOURCE: "Colonne grezze della sorgente Football-Data",
         },
