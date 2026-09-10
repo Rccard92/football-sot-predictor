@@ -29,8 +29,8 @@ RUN_V2_CONFIRM_TOKEN = "RUN_CECCHINO_RUN_V2"
 RUN_V2_QUOTE_POLICY_VERSION = "bet365_closing_pre_kickoff_strict_v1"
 RUN_V2_FEATURE_CONTRACT_VERSION = "cecchino_run_v2_feature_contract_v1"
 RUN_V2_EXTRA_STATS_VERSION = "cecchino_run_v2_extra_stats_v1"
-# v4: colonne Signals in FULL / core_markets_long + provenance O/U gate.
-RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v4"
+# v5: buyability_gate_status/reason_codes + fair_book_probability(+source).
+RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v5"
 
 # Scope / strategie pilot (policy JSON; nessuna modifica alle formule).
 RUN_V2_SCOPE_FULL = "full"

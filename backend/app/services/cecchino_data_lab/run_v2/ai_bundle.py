@@ -300,6 +300,8 @@ def build_ai_bundle_artifacts(
         ZIP_PROMPT: prompt_path,
     }
 
+    # Inventory SHA solo dei 7 membri non-manifest (self-hash del manifest
+    # sarebbe non verificabile perche' il file cambia includendo se stesso).
     inventory = [_file_inventory(p, arcname=name) for name, p in mapped.items()]
     leakage = summary.get("leakage_audit") or {}
     season = _season_label(run)
@@ -325,20 +327,17 @@ def build_ai_bundle_artifacts(
         "formula_freeze": True,
         "quote_policy": RUN_V2_QUOTE_POLICY_VERSION,
         "file_inventory": inventory,
+        "manifest_sha256": None,
+        "manifest_sha256_note": (
+            "Omitted: self-referential hash of 01_MANIFEST.json is not verifiable. "
+            "Verify the 7 non-manifest members listed in file_inventory."
+        ),
     }
     manifest_path.write_text(
         json.dumps(manifest_body, indent=2, ensure_ascii=False, default=str),
         encoding="utf-8",
     )
     mapped[ZIP_MANIFEST] = manifest_path
-    inventory.append(_file_inventory(manifest_path, arcname=ZIP_MANIFEST))
-    manifest_body["file_inventory"] = [
-        e for e in inventory if e["path"] != ZIP_MANIFEST
-    ] + [_file_inventory(manifest_path, arcname=ZIP_MANIFEST)]
-    manifest_path.write_text(
-        json.dumps(manifest_body, indent=2, ensure_ascii=False, default=str),
-        encoding="utf-8",
-    )
 
     season_slug = _season_slug(run)
     filename = f"CECCHINO_RUN_V2_{season_slug}_RUN_{int(run.id)}_AI_BUNDLE.zip"

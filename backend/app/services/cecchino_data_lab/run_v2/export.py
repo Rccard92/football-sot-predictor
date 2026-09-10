@@ -345,13 +345,16 @@ def build_export_bundle(
         encoding="utf-8",
     )
 
+    # Header CSV reale = lab_match_id + colonne raw scoperte.
+    source_raw_header_columns = 1 + len(raw_columns)
+
     summary = dict(run.summary_json or {})
     summary["export"] = {
         "prefix": prefix,
         "full_rows": full_rows,
         "core_markets_long_rows": long_rows,
         "source_raw_rows": raw_rows,
-        "source_raw_columns": len(raw_columns),
+        "source_raw_columns": source_raw_header_columns,
         "full_columns": len(full_export_columns()),
     }
     summary_path.write_text(
@@ -375,7 +378,7 @@ def build_export_bundle(
             "core_markets_long_rows": long_rows,
             "source_raw_rows": raw_rows,
             "full_columns": len(full_export_columns()),
-            "source_raw_columns": len(raw_columns),
+            "source_raw_columns": source_raw_header_columns,
         },
     }
 
