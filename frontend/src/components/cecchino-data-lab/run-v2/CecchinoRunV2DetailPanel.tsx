@@ -12,6 +12,8 @@ import {
   type CecchinoRunV2ExportManifest,
   type RunV2ExportFile,
 } from '../../../lib/cecchinoRunV2Api'
+import { AdminHttpError } from '../../../lib/api'
+import { AdminLoginDialog } from './AdminLoginDialog'
 import { RunV2Stat } from './RunV2Stat'
 
 type Props = {
@@ -23,6 +25,7 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
   const [manifest, setManifest] = useState<CecchinoRunV2ExportManifest | null>(null)
   const [manifestBusy, setManifestBusy] = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null)
 
   const completed = isRunV2Completed(run)
   const summary = run.summary
@@ -38,11 +41,18 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
     setManifest(null)
   }, [run.run_id])
 
+  const handledAsAuthPrompt = (e: unknown, retry: () => Promise<void>): boolean => {
+    if (!(e instanceof AdminHttpError) || e.status !== 401) return false
+    setPendingAction(() => retry)
+    return true
+  }
+
   const loadManifest = useCallback(async () => {
     setManifestBusy(true)
     try {
       setManifest(await getRunV2ExportManifest(run.run_id))
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => loadManifest())) return
       toast.error(e instanceof Error ? e.message : 'Manifest export non disponibile')
     } finally {
       setManifestBusy(false)
@@ -55,6 +65,7 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
       await downloadRunV2Export(run.run_id, file)
       toast.success(`Download avviato: ${file}`)
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => onDownload(file))) return
       toast.error(e instanceof Error ? e.message : 'Download fallito')
     } finally {
       setDownloading(null)
@@ -287,6 +298,17 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
           ))}
         </ul>
       </div>
+
+      {pendingAction && (
+        <AdminLoginDialog
+          onClose={() => setPendingAction(null)}
+          onSuccess={() => {
+            const retry = pendingAction
+            setPendingAction(null)
+            void retry()
+          }}
+        />
+      )}
     </section>
   )
 }

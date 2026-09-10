@@ -133,13 +133,13 @@ export function CecchinoLabPage() {
             }}
           />
         )}
-        {tab === 'historical' && (
+        {tab === 'historical' && <HistoricalScansTab refreshKey={refreshKey} />}
+        {tab === 'run_v2' && (
           <>
-            <HistoricalScansTab refreshKey={refreshKey} />
             <CecchinoRunV2Section refreshKey={refreshKey} />
+            <CecchinoRunV2AnalysisTab />
           </>
         )}
-        {tab === 'run_v2' && <CecchinoRunV2AnalysisTab />}
         {tab === 'pattern_lab' && <PatternLabTab />}
         {tab === 'league_pattern_analysis' && <LeaguePatternAnalysisTab />}
       </div>

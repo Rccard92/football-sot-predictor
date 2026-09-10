@@ -92,7 +92,7 @@ export function CecchinoRunV2AnalysisTab() {
         </label>
         {!loading && !selectable.length && (
           <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-            Nessuna RUN V2 completata: avviane una dalla sezione Scansioni storiche.
+            Nessuna RUN V2 completata: avviane una dalla sezione di controllo sopra.
           </p>
         )}
       </section>

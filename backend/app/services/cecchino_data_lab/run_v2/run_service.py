@@ -243,8 +243,10 @@ def _acquire_process_lock(
 
 
 def run_v2_to_dict(run: CecchinoRunV2Run) -> dict[str, Any]:
-    """Payload comune a list e detail.
+    """Payload comune a list e detail (consultazione pubblica).
 
+    Solo metadata/aggregati per la UI: stato, progress, coverage, summary,
+    audit. Nessuna riga raw, CSV export o secret.
     `status` resta il valore sul DB; `effective_status` e la lettura operativa
     che distingue una run realmente in corso da una rimasta appesa.
     """

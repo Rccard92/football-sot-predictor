@@ -170,8 +170,8 @@ async function getRunV2Json<T>(path: string): Promise<T> {
   const base = getApiBase()
   const res = await fetch(`${base}${path}`, {
     method: 'GET',
-    // List/detail/export richiedono la sessione admin: senza cookie il
-    // backend risponde 401 e la UI apre il login.
+    // List/detail/preflight sono pubblici (metadata). Export/manifest e i
+    // POST admin richiedono il cookie di sessione.
     credentials: 'include',
   })
   const body = await parseRunV2Body(res)

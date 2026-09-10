@@ -62,8 +62,8 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       .catch(() => setAuthenticated(false))
   }, [refreshKey])
 
-  /** True se l'errore e' una sessione admin mancante: apre il login e
-   *  memorizza l'azione da ripetere. */
+  /** True se l'errore e' una sessione admin mancante su un'azione protetta:
+   *  apre il login e memorizza l'azione da ripetere. Non usare su list/preflight. */
   const handledAsAuthPrompt = (e: unknown, retry: () => Promise<void>): boolean => {
     if (!(e instanceof AdminHttpError) || e.status !== 401) return false
     setAuthenticated(false)
@@ -81,7 +81,6 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
         prev ? (items.find((r) => r.run_id === prev.run_id) ?? prev) : prev,
       )
     } catch (e) {
-      if (handledAsAuthPrompt(e, () => loadRuns())) return
       toast.error(e instanceof Error ? e.message : 'Errore caricamento RUN V2')
     }
   }, [])
@@ -96,7 +95,6 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       const pf = await preflightRunV2(seasonLabel)
       setPreflight(pf)
     } catch (e) {
-      if (handledAsAuthPrompt(e, () => loadPreflight(seasonLabel))) return
       setPreflight(null)
       toast.error(e instanceof Error ? e.message : 'Preflight stagione fallito')
     } finally {
@@ -226,7 +224,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
   const pct = Math.min(100, Math.max(0, Number(activeRun?.progress_pct ?? 0)))
 
   return (
-    <div className="space-y-4 border-t px-4 pb-6 pt-6 sm:px-6" style={{ borderColor: 'var(--lab-border)' }}>
+    <div className="space-y-4 px-4 pb-6 pt-6 sm:px-6">
       <section className="lab-card rounded-xl p-4" data-testid="run-v2-section">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

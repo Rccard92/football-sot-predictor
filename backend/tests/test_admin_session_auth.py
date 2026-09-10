@@ -60,10 +60,59 @@ def test_endpoint_admin_rifiutato_senza_sessione():
     assert res.status_code == 401
 
 
-def test_get_list_run_v2_rifiutato_senza_sessione():
-    res = _client(_settings()).get("/api/cecchino-run-v2")
+def test_get_list_detail_preflight_run_v2_pubblici_senza_sessione(monkeypatch):
+    """Consultazione read-only: metadata senza cookie admin."""
+    monkeypatch.setattr(routes_v2, "list_runs_v2", lambda db: [])
+    monkeypatch.setattr(
+        routes_v2,
+        "run_v2_preflight",
+        lambda db, season_label: {
+            "season_label": season_label,
+            "status": "ready",
+            "matches_total": 0,
+            "competitions_count": 0,
+            "competitions": [],
+            "datasets_count": 0,
+            "date_range": {"start": None, "end": None},
+            "blocking_anomalies": [],
+            "warnings": [],
+        },
+    )
+    monkeypatch.setattr(
+        routes_v2,
+        "_run_to_dict",
+        lambda run: {
+            "run_id": int(run.id),
+            "status": "completed",
+            "summary": {"competitions": [], "market_coverage": []},
+        },
+    )
 
-    assert res.status_code == 401
+    class _FakeRun:
+        id = 1
+
+    class _FakeDb:
+        def get(self, model, pk):  # noqa: ARG002
+            return _FakeRun() if int(pk) == 1 else None
+
+    client = _client(_settings())
+    client.app.dependency_overrides[get_db] = lambda: _FakeDb()
+
+    listed = client.get("/api/cecchino-run-v2")
+    assert listed.status_code == 200
+    assert listed.json() == {"items": []}
+
+    preflight = client.get("/api/cecchino-run-v2/preflight", params={"season": "2024/2025"})
+    assert preflight.status_code == 200
+    assert preflight.json()["season_label"] == "2024/2025"
+
+    detail = client.get("/api/cecchino-run-v2/1")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["run_id"] == 1
+    # Nessun campo export/raw nel payload di consultazione.
+    assert "FULL.csv" not in body
+    assert "export_files" not in body
 
 
 def test_get_export_run_v2_rifiutato_senza_sessione():

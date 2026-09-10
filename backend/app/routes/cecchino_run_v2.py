@@ -17,7 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.admin_session import require_admin_session
+from app.core.admin_session import AdminSession, require_admin_session
 from app.core.database import get_db
 from app.models.cecchino_run_v2 import CecchinoRunV2Run
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
@@ -35,12 +35,13 @@ from app.services.cecchino_data_lab.run_v2.run_service import (
 )
 from app.services.cecchino_data_lab.run_v2.preflight import run_v2_preflight
 
-# List/detail/export espongono dati RUN V2: stessa sessione admin del control
-# plane. Il token di conferma nel body e' pubblico e non autorizza nulla.
+# Consultazione read-only (list/detail/preflight): pubblica — solo metadata
+# aggregati (stato, progress, coverage, summary), nessuna riga raw/export.
+# Control plane (start/resume/cancel) e download export/manifest: sessione admin.
+# Il token di conferma nel body e' pubblico e non autorizza nulla.
 router = APIRouter(
     prefix="/cecchino-run-v2",
     tags=["cecchino-run-v2"],
-    dependencies=[Depends(require_admin_session)],
 )
 admin_router = APIRouter(
     prefix="/admin/cecchino-run-v2",
@@ -137,6 +138,7 @@ def export_run(
     run_id: int,
     file: str = Query(FILE_FULL, description=f"Uno fra: {', '.join(EXPORT_FILES)}"),
     db: Session = Depends(get_db),
+    _admin: AdminSession = Depends(require_admin_session),
 ) -> StreamingResponse:
     """Rigenera gli artefatti dal DB e streamma il file richiesto."""
     if file not in EXPORT_FILES:
@@ -175,7 +177,11 @@ def export_run(
 
 @router.get("/{run_id}/export/manifest")
 @admin_router.get("/{run_id}/export/manifest")
-def export_manifest(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+def export_manifest(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminSession = Depends(require_admin_session),
+) -> JSONResponse:
     """Conteggi dell'export senza trattenere i file generati."""
     run = db.get(CecchinoRunV2Run, int(run_id))
     if run is None:
