@@ -44,6 +44,7 @@ def _clean_throttle():
 def _client(settings: Settings) -> TestClient:
     app = FastAPI()
     app.include_router(admin_session_auth.router, prefix="/api")
+    app.include_router(routes_v2.router, prefix="/api")
     app.include_router(routes_v2.admin_router, prefix="/api")
     app.dependency_overrides[get_db] = lambda: None
     app.dependency_overrides[admin_session.get_settings] = lambda: settings
@@ -58,6 +59,18 @@ def test_endpoint_admin_rifiutato_senza_sessione():
 
     assert res.status_code == 401
 
+
+def test_get_list_run_v2_rifiutato_senza_sessione():
+    res = _client(_settings()).get("/api/cecchino-run-v2")
+
+    assert res.status_code == 401
+
+
+def test_get_export_run_v2_rifiutato_senza_sessione():
+    client = _client(_settings())
+
+    assert client.get("/api/cecchino-run-v2/1/export").status_code == 401
+    assert client.get("/api/cecchino-run-v2/1/export/manifest").status_code == 401
 
 def test_endpoint_admin_503_se_autenticazione_non_configurata():
     """Fail-closed: senza password configurata non si passa, non si apre."""

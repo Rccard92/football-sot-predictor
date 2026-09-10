@@ -66,6 +66,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
         prev ? (items.find((r) => r.run_id === prev.run_id) ?? prev) : prev,
       )
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => loadRuns())) return
       toast.error(e instanceof Error ? e.message : 'Errore caricamento RUN V2')
     }
   }, [])
@@ -167,6 +168,7 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
       await downloadRunV2Export(runId, 'FULL.csv')
       toast.success(`Export FULL avviato (RUN V2 #${runId})`)
     } catch (e) {
+      if (handledAsAuthPrompt(e, () => onExportFull(runId))) return
       toast.error(e instanceof Error ? e.message : 'Export FULL fallito')
     } finally {
       setExportingId(null)

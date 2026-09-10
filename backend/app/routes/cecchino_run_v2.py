@@ -34,9 +34,13 @@ from app.services.cecchino_data_lab.run_v2.run_service import (
     start_run_v2,
 )
 
-router = APIRouter(prefix="/cecchino-run-v2", tags=["cecchino-run-v2"])
-# Il control plane (start/resume/cancel) richiede una sessione admin: il token
-# di conferma nel body e' pubblico e non autorizza nulla.
+# List/detail/export espongono dati RUN V2: stessa sessione admin del control
+# plane. Il token di conferma nel body e' pubblico e non autorizza nulla.
+router = APIRouter(
+    prefix="/cecchino-run-v2",
+    tags=["cecchino-run-v2"],
+    dependencies=[Depends(require_admin_session)],
+)
 admin_router = APIRouter(
     prefix="/admin/cecchino-run-v2",
     tags=["admin-cecchino-run-v2"],

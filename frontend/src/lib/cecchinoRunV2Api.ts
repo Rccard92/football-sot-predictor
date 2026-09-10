@@ -1,6 +1,6 @@
 /** Client API Cecchino RUN V2 — namespace separato dalla Scansione storica V1. */
 
-import { AdminHttpError, requestJson } from './api'
+import { AdminHttpError } from './api'
 
 export const RUN_V2_CONFIRM_TOKEN = 'RUN_CECCHINO_RUN_V2'
 
@@ -129,6 +129,42 @@ export class RunV2ApiError extends AdminHttpError {
   }
 }
 
+async function parseRunV2Body(res: Response): Promise<Record<string, unknown>> {
+  if (!(res.headers.get('content-type') ?? '').includes('application/json')) {
+    return {}
+  }
+  try {
+    return ((await res.json()) ?? {}) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function raiseIfRunV2Error(res: Response, body: Record<string, unknown>): void {
+  if (!res.ok || body.status === 'error') {
+    const detail = typeof body.detail === 'string' ? body.detail : null
+    throw new RunV2ApiError(
+      res.status,
+      typeof body.message === 'string' ? body.message : detail || res.statusText,
+      typeof body.error === 'string' ? body.error : 'run_v2_error',
+      (body.details as Record<string, unknown>) ?? {},
+    )
+  }
+}
+
+async function getRunV2Json<T>(path: string): Promise<T> {
+  const base = getApiBase()
+  const res = await fetch(`${base}${path}`, {
+    method: 'GET',
+    // List/detail/export richiedono la sessione admin: senza cookie il
+    // backend risponde 401 e la UI apre il login.
+    credentials: 'include',
+  })
+  const body = await parseRunV2Body(res)
+  raiseIfRunV2Error(res, body)
+  return body as T
+}
+
 async function postRunV2<T>(path: string, payload?: unknown): Promise<T> {
   const base = getApiBase()
   const res = await fetch(`${base}${path}`, {
@@ -139,34 +175,19 @@ async function postRunV2<T>(path: string, payload?: unknown): Promise<T> {
     // risponde 401 e la UI apre il login.
     credentials: 'include',
   })
-  let body: unknown = null
-  if ((res.headers.get('content-type') ?? '').includes('application/json')) {
-    try {
-      body = await res.json()
-    } catch {
-      body = null
-    }
-  }
-  const o = (body ?? {}) as Record<string, unknown>
-  if (!res.ok || o.status === 'error') {
-    throw new RunV2ApiError(
-      res.status,
-      typeof o.message === 'string' ? o.message : res.statusText,
-      typeof o.error === 'string' ? o.error : 'run_v2_error',
-      (o.details as Record<string, unknown>) ?? {},
-    )
-  }
+  const body = await parseRunV2Body(res)
+  raiseIfRunV2Error(res, body)
   return body as T
 }
 
 export function listRunsV2(): Promise<CecchinoRunV2[]> {
-  return requestJson<{ items: CecchinoRunV2[] }>('/api/cecchino-run-v2').then(
+  return getRunV2Json<{ items: CecchinoRunV2[] }>('/api/cecchino-run-v2').then(
     (r) => r.items ?? [],
   )
 }
 
 export function getRunV2(runId: number): Promise<CecchinoRunV2> {
-  return requestJson(`/api/cecchino-run-v2/${runId}`)
+  return getRunV2Json(`/api/cecchino-run-v2/${runId}`)
 }
 
 export function startRunV2(options?: { maxMatches?: number | null }): Promise<CecchinoRunV2> {
@@ -184,7 +205,7 @@ export function cancelRunV2(runId: number): Promise<CecchinoRunV2> {
 }
 
 export function getRunV2ExportManifest(runId: number): Promise<CecchinoRunV2ExportManifest> {
-  return requestJson(`/api/cecchino-run-v2/${runId}/export/manifest`)
+  return getRunV2Json(`/api/cecchino-run-v2/${runId}/export/manifest`)
 }
 
 /** Scarica un artefatto rigenerato dal DB al momento della richiesta. */
@@ -194,7 +215,9 @@ export async function downloadRunV2Export(
 ): Promise<void> {
   const base = getApiBase()
   const params = new URLSearchParams({ file })
-  const res = await fetch(`${base}/api/cecchino-run-v2/${runId}/export?${params.toString()}`)
+  const res = await fetch(`${base}/api/cecchino-run-v2/${runId}/export?${params.toString()}`, {
+    credentials: 'include',
+  })
   if (!res.ok) {
     let message = `Export RUN V2 fallito (${res.status})`
     try {
