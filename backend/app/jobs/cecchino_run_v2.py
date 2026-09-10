@@ -57,6 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limita la run ai primi N match della stagione (ordine cronologico)",
     )
     parser.add_argument(
+        "--pilot-strategy",
+        default=None,
+        choices=["max_matches", "eligible_per_competition"],
+        help="Strategia pilot: max_matches (smoke) oppure eligible_per_competition (maturo bilanciato)",
+    )
+    parser.add_argument(
+        "--eligible-per-competition",
+        type=int,
+        default=None,
+        help="Target eligible_core per competizione (default 3 in modalita bilanciata)",
+    )
+    parser.add_argument(
         "--resume-run-id",
         type=int,
         default=None,
@@ -162,7 +174,13 @@ def main(argv: list[str] | None = None) -> int:
                 season_label=args.season,
                 max_matches=args.max_matches,
                 source_git_commit=args.git_commit,
-                run_scope="pilot" if args.max_matches else "full",
+                run_scope=(
+                    "balanced_pilot"
+                    if args.pilot_strategy == "eligible_per_competition"
+                    else ("pilot" if args.max_matches else "full")
+                ),
+                pilot_strategy=args.pilot_strategy,
+                eligible_per_competition=args.eligible_per_competition,
             )
             run_id = int(run.id)
     finally:

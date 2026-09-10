@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -54,6 +54,7 @@ from app.services.cecchino_data_lab.historical_context_builder import (
     sort_proxies,
 )
 from app.services.cecchino_data_lab.historical_eligibility import (
+    ELIGIBLE_CORE,
     evaluate_historical_eligibility,
 )
 from app.services.cecchino_data_lab.historical_goal_intensity import (
@@ -79,10 +80,16 @@ from app.services.cecchino_data_lab.run_v2.constants import (
     CORE_MARKETS,
     LAYER_CORE_STRICT,
     LAYER_ECONOMIC,
+    RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION,
     RUN_V2_COMMIT_EVERY_GROUPS,
     RUN_V2_EXTRA_STATS_VERSION,
     RUN_V2_FEATURE_CONTRACT_VERSION,
+    RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+    RUN_V2_PILOT_STRATEGY_MAX_MATCHES,
     RUN_V2_QUOTE_POLICY_VERSION,
+    RUN_V2_SCOPE_BALANCED_PILOT,
+    RUN_V2_SCOPE_FULL,
+    RUN_V2_SCOPE_PILOT,
     RUN_V2_VERSION,
     TEMPORAL_CLASSIFICATION_CLOSING_PRE_KICKOFF,
 )
@@ -177,22 +184,78 @@ def season_label_from_run(run: CecchinoRunV2Run) -> str | None:
     return text or None
 
 
+def _policy_dict(run: CecchinoRunV2Run) -> dict[str, Any]:
+    return run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+
+
+def is_balanced_pilot_run(run: CecchinoRunV2Run) -> bool:
+    """True se la RUN e' un pilot maturo bilanciato (eligible_per_competition)."""
+    if str(run.run_scope or "") == RUN_V2_SCOPE_BALANCED_PILOT:
+        return True
+    policy = _policy_dict(run)
+    return policy.get("pilot_strategy") == RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+
+
+def eligible_per_competition_target(run: CecchinoRunV2Run) -> int | None:
+    """Target eligible_core per competizione; None se non in modalita bilanciata."""
+    if not is_balanced_pilot_run(run):
+        return None
+    policy = _policy_dict(run)
+    raw = policy.get("eligible_per_competition")
+    if raw is None:
+        raw = policy.get("target_eligible_per_competition")
+    if raw is None:
+        return RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+    return value if value > 0 else RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+
+
 def create_run_v2(
     db: Session,
     *,
     season_label: str,
     max_matches: int | None = None,
     source_git_commit: str | None = None,
-    run_scope: str = "full",
+    run_scope: str = RUN_V2_SCOPE_FULL,
+    pilot_strategy: str | None = None,
+    eligible_per_competition: int | None = None,
 ) -> CecchinoRunV2Run:
     season = str(season_label or "").strip()
     if not season:
         raise ValueError("season_label obbligatorio per creare una RUN V2")
 
+    normalized_scope = str(run_scope or RUN_V2_SCOPE_FULL).strip() or RUN_V2_SCOPE_FULL
+    strategy = str(pilot_strategy or "").strip() or None
+    epc: int | None = None
+    if eligible_per_competition is not None:
+        epc = int(eligible_per_competition)
+        if epc <= 0:
+            raise ValueError("eligible_per_competition deve essere positivo")
+
+    if normalized_scope == RUN_V2_SCOPE_BALANCED_PILOT or (
+        strategy == RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+    ):
+        normalized_scope = RUN_V2_SCOPE_BALANCED_PILOT
+        strategy = RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+        if epc is None:
+            epc = RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+        # Il bilanciato non usa lo slice max_matches: lo storico serve da warm-up.
+        max_matches = None
+    elif max_matches is not None:
+        normalized_scope = RUN_V2_SCOPE_PILOT
+        strategy = strategy or RUN_V2_PILOT_STRATEGY_MAX_MATCHES
+    else:
+        normalized_scope = RUN_V2_SCOPE_FULL
+        strategy = None
+        epc = None
+
     run = CecchinoRunV2Run(
         run_version=RUN_V2_VERSION,
         status=RUN_V2_STATUS_PENDING,
-        run_scope=run_scope,
+        run_scope=normalized_scope,
         max_matches=max_matches,
         requested_at=_utcnow(),
         quote_policy_json={
@@ -221,8 +284,15 @@ def create_run_v2(
             # Scope stagione esplicito: storico, resume ed export restano allineati.
             "season_label": season,
             "season_scope": season,
-            "run_scope": run_scope,
+            "run_scope": normalized_scope,
             "max_matches": max_matches,
+            "pilot_strategy": strategy,
+            "eligible_per_competition": epc,
+            "target_eligible_per_competition": epc,
+            "is_partial_run": normalized_scope
+            in {RUN_V2_SCOPE_PILOT, RUN_V2_SCOPE_BALANCED_PILOT},
+            "not_full_season_report": normalized_scope
+            in {RUN_V2_SCOPE_PILOT, RUN_V2_SCOPE_BALANCED_PILOT},
         },
         source_git_commit=source_git_commit,
         source_git_commit_source="cli" if source_git_commit else None,
@@ -237,10 +307,11 @@ def select_work_for_run(
     run: CecchinoRunV2Run,
     work: list[_WorkItem],
 ) -> list[_WorkItem]:
-    """Archivio globale → filtro stagione → ordine cronologico → max_matches (pilot).
+    """Archivio globale → filtro stagione → ordine cronologico.
 
-    L'ordinamento e' riusato esplicitamente dopo il filtro, cosi' il pilot 50
-    prende i primi N match della stagione selezionata e non dell'archivio globale.
+    - pilot max_matches: primi N della stagione (smoke test).
+    - balanced_pilot: tutta la stagione (warm-up + stop per competition in loop).
+    - full: tutta la stagione.
     """
     season = season_label_from_run(run)
     if not season:
@@ -256,9 +327,24 @@ def select_work_for_run(
             dataset_id=int(w.dataset.id),
         )
     )
-    if run.max_matches:
+    if run.max_matches and not is_balanced_pilot_run(run):
         filtered = filtered[: int(run.max_matches)]
     return filtered
+
+
+def _eligible_counts_from_snapshots(db: Session, *, run_id: int) -> dict[str, int]:
+    rows = db.execute(
+        select(
+            CecchinoRunV2MatchSnapshot.competition_name,
+            func.count(),
+        )
+        .where(
+            CecchinoRunV2MatchSnapshot.run_id == run_id,
+            CecchinoRunV2MatchSnapshot.eligibility_status == ELIGIBLE_CORE,
+        )
+        .group_by(CecchinoRunV2MatchSnapshot.competition_name)
+    ).all()
+    return {str(comp): int(count or 0) for comp, count in rows}
 
 
 # --- preload ---------------------------------------------------------------
@@ -587,10 +673,11 @@ def _process_one_match(
     # 8. Aggiornamento GI differito: applicato solo a fine gruppo kickoff.
     gi_row = gi_payload.get("feature_row_for_profile")
     deferred_gi = gi_row if isinstance(gi_row, dict) else None
-    if deferred_gi is not None and bool(elig.get("core_eligible")):
+    core_eligible = bool(elig.get("core_eligible"))
+    if deferred_gi is not None and core_eligible:
         item.__dict__["_deferred_gi"] = (deferred_gi, kpi)
 
-    return snapshot_id, rows_written
+    return snapshot_id, rows_written, core_eligible
 
 
 def _core_result_orm(
@@ -610,6 +697,7 @@ def _core_result_orm(
         line=row.get("line"),
         observation_layer=LAYER_CORE_STRICT,
         prediction=row.get("prediction"),
+        is_predicted_selection=bool(row.get("is_predicted_selection")),
         probability=row.get("probability"),
         confidence=row.get("confidence"),
         quota_cecchino=row.get("quota_cecchino"),
@@ -665,6 +753,7 @@ def _economic_result_orm(
         # Nessuna prediction in questo layer: la probabilita e solo quella
         # congelata dal CORE, riportata per rendere leggibile il confronto.
         prediction=None,
+        is_predicted_selection=False,
         probability=row.get("frozen_probability"),
         market_available=True,
         market_quote_available=bool(row.get("market_quote_available")),
@@ -717,7 +806,8 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
 
     try:
         work, proxies_by_key = _load_work(db)
-        # Scope: archivio globale → season → cronologico → max_matches (solo pilot).
+        # Scope: archivio globale → season → cronologico
+        # (max_matches solo per pilot smoke; balanced_pilot tiene tutta la stagione).
         work = select_work_for_run(run, work)
 
         progress.matches_total = len(work)
@@ -730,6 +820,16 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
         # Run ripartibile: si riparte dai soli gruppi kickoff gia completi.
         done_ids = _already_processed_ids(db, run_id=int(run.id))
 
+        is_balanced = is_balanced_pilot_run(run)
+        epc_target = eligible_per_competition_target(run)
+        competitions_in_scope = sorted({w.competition for w in work})
+        eligible_per_comp_counts: dict[str, int] = {
+            c: 0 for c in competitions_in_scope
+        }
+        eligible_per_comp_counts.update(
+            _eligible_counts_from_snapshots(db, run_id=int(run.id))
+        )
+
         rolling = GlobalRollingStateRegistry()
         for key, proxies in proxies_by_key.items():
             rolling.register_competition(key, proxies)
@@ -737,6 +837,7 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
 
         groups = group_work_by_kickoff(work, kickoff_at_getter=lambda w: w.match.kickoff_at)
         chronological_order = 0
+        balanced_warnings: list[dict[str, Any]] = []
 
         for group_index, group in enumerate(groups):
             if group_index % CANCEL_CHECK_INTERVAL_GROUPS == 0 and _is_cancelled(db, int(run.id)):
@@ -745,12 +846,32 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
                 db.commit()
                 return {"status": RUN_V2_STATUS_CANCELLED, **progress.to_dict()}
 
+            if (
+                is_balanced
+                and epc_target is not None
+                and competitions_in_scope
+                and all(
+                    eligible_per_comp_counts.get(c, 0) >= epc_target
+                    for c in competitions_in_scope
+                )
+            ):
+                # Tutte le competizioni hanno raggiunto il target: stop globale.
+                break
+
+            processed_in_group: list[_WorkItem] = []
             for item in group:
                 chronological_order += 1
                 if int(item.match.id) in done_ids:
                     continue
+                if (
+                    is_balanced
+                    and epc_target is not None
+                    and eligible_per_comp_counts.get(item.competition, 0) >= epc_target
+                ):
+                    # Competition piena: skip (warm-up precedente gia processato).
+                    continue
                 try:
-                    _, rows = _process_one_match(
+                    _, rows, core_eligible = _process_one_match(
                         db,
                         run=run,
                         item=item,
@@ -761,6 +882,15 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
                     )
                     progress.matches_processed += 1
                     progress.market_rows_written += rows
+                    processed_in_group.append(item)
+                    if core_eligible:
+                        eligible_per_comp_counts[item.competition] = (
+                            eligible_per_comp_counts.get(item.competition, 0) + 1
+                        )
+                    run.current_competition = item.competition
+                    run.current_lab_match_id = int(item.match.id)
+                    if item.match.kickoff_at is not None:
+                        run.last_processed_kickoff_at = item.match.kickoff_at
                 except Exception as exc:  # noqa: BLE001 - un match rotto non ferma la run
                     progress.matches_error += 1
                     logger.exception(
@@ -768,8 +898,9 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
                     )
                     db.rollback()
                     _persist_error_snapshot(db, run=run, item=item, exc=exc)
+                    processed_in_group.append(item)
 
-            _commit_group_state(group, rolling=rolling, extra_stats=extra_stats)
+            _commit_group_state(processed_in_group, rolling=rolling, extra_stats=extra_stats)
             progress.groups_processed += 1
 
             if progress.groups_processed % RUN_V2_COMMIT_EVERY_GROUPS == 0:
@@ -781,10 +912,49 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
         _flush_progress(db, run, progress, auditor)
         summary = _build_summary(db, run=run, progress=progress, auditor=auditor)
 
+        if is_balanced and epc_target is not None:
+            under_target = []
+            for comp in competitions_in_scope:
+                got = int(eligible_per_comp_counts.get(comp, 0))
+                if got < epc_target:
+                    under_target.append(
+                        {
+                            "competition": comp,
+                            "eligible_core": got,
+                            "target_eligible_per_competition": epc_target,
+                        }
+                    )
+            if under_target:
+                balanced_warnings.append(
+                    {
+                        "code": "balanced_pilot_under_target",
+                        "message": (
+                            f"{len(under_target)} competizioni sotto target "
+                            f"({epc_target} eligible_core/comp)"
+                        ),
+                        "competitions": under_target,
+                    }
+                )
+            summary["balanced_pilot"] = {
+                "pilot_strategy": RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+                "target_eligible_per_competition": epc_target,
+                "competitions_in_scope": len(competitions_in_scope),
+                "eligible_per_competition": {
+                    c: int(eligible_per_comp_counts.get(c, 0))
+                    for c in competitions_in_scope
+                },
+                "under_target_competitions": under_target,
+                "all_targets_reached": not under_target,
+            }
+
         run.summary_json = summary
         run.leakage_audit_json = auditor.to_dict()
         run.leakage_violations = auditor.violations_count
         run.completed_at = _utcnow()
+        if balanced_warnings:
+            existing = list(run.warnings_json or [])
+            existing.extend(balanced_warnings)
+            run.warnings_json = existing
 
         if not auditor.ok:
             # Violazione anti-leakage: la run non e utilizzabile.
@@ -794,7 +964,7 @@ def _execute_body(db: Session, run_id: int) -> dict[str, Any]:
                 "leakage_violations": auditor.violations_count,
                 "matches_with_violation": auditor.matches_with_violation,
             }
-        elif progress.matches_error:
+        elif progress.matches_error or balanced_warnings:
             run.status = RUN_V2_STATUS_COMPLETED_WITH_WARNINGS
         else:
             run.status = RUN_V2_STATUS_COMPLETED

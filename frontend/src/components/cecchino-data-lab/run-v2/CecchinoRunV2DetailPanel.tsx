@@ -126,6 +126,7 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
                       <th>Competizione</th>
                       <th>Stagione</th>
                       <th>Match</th>
+                      <th>Eleggibili</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -134,6 +135,10 @@ export function CecchinoRunV2DetailPanel({ run, onClose }: Props) {
                         <td>{c.competition}</td>
                         <td>{c.season_label}</td>
                         <td>{c.matches}</td>
+                        <td>
+                          {c.eligible_vs_target ??
+                            (c.eligible_core != null ? String(c.eligible_core) : '—')}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

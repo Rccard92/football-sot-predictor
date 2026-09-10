@@ -238,6 +238,11 @@ class CecchinoRunV2MarketResult(Base, TimestampMixin):
 
     # CORE STRICT: prediction e moduli, calcolati solo su input pre-match safe.
     prediction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # True solo sulla riga la cui market_key e' la selezione predetta di famiglia
+    # (predicted_key == market_key). Distingue settlement teorico da pick Cecchino.
+    is_predicted_selection: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     probability: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     quota_cecchino: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)

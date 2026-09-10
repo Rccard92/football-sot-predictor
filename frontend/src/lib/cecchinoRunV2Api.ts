@@ -28,6 +28,10 @@ export type CecchinoRunV2Competition = {
   competition: string
   season_label: string
   matches: number
+  eligible_core?: number
+  target_eligible_per_competition?: number
+  target_reached?: boolean
+  eligible_vs_target?: string
   first_kickoff: string | null
   last_kickoff: string | null
 }
@@ -212,12 +216,18 @@ export function preflightRunV2(season: string): Promise<CecchinoRunV2Preflight> 
 export function startRunV2(options: {
   season: string
   maxMatches?: number | null
+  pilotStrategy?: 'max_matches' | 'eligible_per_competition' | null
+  eligiblePerCompetition?: number | null
 }): Promise<CecchinoRunV2> {
   const body: Record<string, unknown> = {
     confirm: RUN_V2_CONFIRM_TOKEN,
     season: options.season,
   }
   if (options.maxMatches != null) body.max_matches = options.maxMatches
+  if (options.pilotStrategy) body.pilot_strategy = options.pilotStrategy
+  if (options.eligiblePerCompetition != null) {
+    body.eligible_per_competition = options.eligiblePerCompetition
+  }
   return postRunV2('/api/admin/cecchino-run-v2', body)
 }
 
@@ -292,9 +302,16 @@ export function isRunV2Completed(run: Pick<CecchinoRunV2, 'status'>): boolean {
 }
 
 export function runV2ScopeLabel(
-  run: Pick<CecchinoRunV2, 'run_scope' | 'max_matches' | 'season_label'>,
+  run: Pick<CecchinoRunV2, 'run_scope' | 'max_matches' | 'season_label' | 'module_policy'>,
 ): string {
   const season = run.season_label ? ` · ${run.season_label}` : ''
+  if (run.run_scope === 'balanced_pilot') {
+    const epc =
+      (run.module_policy?.eligible_per_competition as number | undefined) ??
+      (run.module_policy?.target_eligible_per_competition as number | undefined) ??
+      3
+    return `Pilota maturo — ${epc} eleggibili/comp${season}`
+  }
   if (run.run_scope === 'pilot') {
     return `Pilota${run.max_matches ? ` — ${run.max_matches} match` : ''}${season}`
   }

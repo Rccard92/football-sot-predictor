@@ -416,6 +416,10 @@ def _core_output_columns() -> list[ColumnSpec]:
     cols: list[ColumnSpec] = []
     core_fields = (
         ("prediction", "Selezione a probabilita massima nella famiglia"),
+        (
+            "is_predicted_selection",
+            "True solo se market_key == prediction di famiglia (pick Cecchino reale)",
+        ),
         ("probability", "Probabilita Cecchino della selezione"),
         ("quota_cecchino", "Quota Cecchino della selezione"),
         ("confidence", "Reliability complessiva del modello sulla selezione"),
@@ -621,6 +625,14 @@ CORE_MARKETS_LONG_COLUMNS: tuple[tuple[str, str, bool, Any, str], ...] = (
         "core_strict (nuove RUN); economic_observation solo su RUN storiche",
     ),
     ("prediction", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Selezione predetta nella famiglia"),
+    (
+        "is_predicted_selection",
+        LAYER_CORE_OUTPUT,
+        False,
+        AVAILABLE_YES,
+        "True solo se market_key == prediction (pick Cecchino; non confondere con "
+        "outcome/flat_stake_profit teorici della riga)",
+    ),
     ("probability", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Probabilita Cecchino"),
     ("quota_cecchino", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Quota Cecchino"),
     ("confidence", LAYER_CORE_OUTPUT, False, AVAILABLE_YES, "Reliability"),

@@ -29,7 +29,17 @@ RUN_V2_CONFIRM_TOKEN = "RUN_CECCHINO_RUN_V2"
 RUN_V2_QUOTE_POLICY_VERSION = "bet365_closing_pre_kickoff_strict_v1"
 RUN_V2_FEATURE_CONTRACT_VERSION = "cecchino_run_v2_feature_contract_v1"
 RUN_V2_EXTRA_STATS_VERSION = "cecchino_run_v2_extra_stats_v1"
-RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v2"
+# v3: colonna is_predicted_selection in core_markets_long / FULL.
+RUN_V2_EXPORT_SCHEMA_VERSION = "cecchino_run_v2_export_v3"
+
+# Scope / strategie pilot (policy JSON; nessuna modifica alle formule).
+RUN_V2_SCOPE_FULL = "full"
+RUN_V2_SCOPE_PILOT = "pilot"
+RUN_V2_SCOPE_BALANCED_PILOT = "balanced_pilot"
+RUN_V2_PILOT_STRATEGY_MAX_MATCHES = "max_matches"
+RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP = "eligible_per_competition"
+# Pilot maturo V2: N eligible_core per competizione nella stagione selezionata.
+RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION = 3
 
 # Commit ogni N gruppi kickoff (il gruppo resta comunque atomico).
 RUN_V2_COMMIT_EVERY_GROUPS = 40

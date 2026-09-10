@@ -106,6 +106,8 @@ def start_run(body: dict[str, Any] | None = None, db: Session = Depends(get_db))
             season=payload.get("season"),
             season_label=payload.get("season_label"),
             max_matches=payload.get("max_matches"),
+            pilot_strategy=payload.get("pilot_strategy"),
+            eligible_per_competition=payload.get("eligible_per_competition"),
             background=True,
         )
     except CecchinoLabImportError as exc:

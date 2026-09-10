@@ -29,10 +29,11 @@ import { CecchinoRunV2DetailPanel } from './CecchinoRunV2DetailPanel'
 import { RunV2Stat } from './RunV2Stat'
 
 type Props = { refreshKey?: number }
-type ConfirmMode = 'full' | 'pilot' | null
+type ConfirmMode = 'full' | 'pilot' | 'balanced_pilot' | null
 
 const POLL_MS = 2000
 const PILOT_MAX_MATCHES = 50
+const BALANCED_PILOT_ELIGIBLE_PER_COMP = 3
 
 function formatDateRange(start: string | null | undefined, end: string | null | undefined): string {
   if (!start && !end) return '—'
@@ -148,16 +149,26 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
     }
     setBusy(true)
     try {
-      const run = await startRunV2(
-        mode === 'pilot' ? { season, maxMatches: PILOT_MAX_MATCHES } : { season },
-      )
+      const payload =
+        mode === 'pilot'
+          ? { season, maxMatches: PILOT_MAX_MATCHES }
+          : mode === 'balanced_pilot'
+            ? {
+                season,
+                pilotStrategy: 'eligible_per_competition' as const,
+                eligiblePerCompetition: BALANCED_PILOT_ELIGIBLE_PER_COMP,
+              }
+            : { season }
+      const run = await startRunV2(payload)
       setActiveRun(run)
       setBlockedBy(null)
       setConfirmMode(null)
       toast.success(
         mode === 'pilot'
           ? `RUN V2 pilota avviata (#${run.run_id}) — ${season}`
-          : `RUN V2 completa avviata (#${run.run_id}) — ${season}`,
+          : mode === 'balanced_pilot'
+            ? `RUN V2 pilota maturo avviata (#${run.run_id}) — ${season}`
+            : `RUN V2 completa avviata (#${run.run_id}) — ${season}`,
       )
       void loadRuns()
     } catch (e) {
@@ -290,6 +301,15 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
             onClick={() => setConfirmMode('pilot')}
           >
             Run pilota — {PILOT_MAX_MATCHES} match
+          </button>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            data-testid="run-v2-start-balanced-pilot"
+            disabled={!canStart}
+            onClick={() => setConfirmMode('balanced_pilot')}
+          >
+            Run pilota maturo — {BALANCED_PILOT_ELIGIBLE_PER_COMP} eleggibili/comp
           </button>
           <button
             type="button"
@@ -624,7 +644,11 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
         >
           <div className="lab-card max-w-md rounded-xl p-5">
             <h3 className="text-lg font-semibold">
-              {confirmMode === 'pilot' ? 'Conferma RUN V2 pilota' : 'Conferma RUN V2 completa'}
+              {confirmMode === 'pilot'
+                ? 'Conferma RUN V2 pilota'
+                : confirmMode === 'balanced_pilot'
+                  ? 'Conferma RUN V2 pilota maturo'
+                  : 'Conferma RUN V2 completa'}
             </h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
               {confirmMode === 'pilot' ? (
@@ -632,6 +656,14 @@ export function CecchinoRunV2Section({ refreshKey = 0 }: Props) {
                   Avviare la run pilota sui primi <strong>{PILOT_MAX_MATCHES}</strong> match
                   della stagione <strong>{season || DEFAULT_HISTORICAL_SEASON}</strong>? Serve
                   solo come prova tecnica.
+                </>
+              ) : confirmMode === 'balanced_pilot' ? (
+                <>
+                  Avviare il pilota maturo bilanciato sulla stagione{' '}
+                  <strong>{season || DEFAULT_HISTORICAL_SEASON}</strong>? Processa lo storico
+                  come warm-up e valuta fino a{' '}
+                  <strong>{BALANCED_PILOT_ELIGIBLE_PER_COMP} eleggibili</strong> per
+                  competizione (senza tagliare lo storico precedente).
                 </>
               ) : (
                 <>

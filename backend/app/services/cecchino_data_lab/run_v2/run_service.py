@@ -434,8 +434,17 @@ def start_run_v2(
     season: Any = None,
     season_label: Any = None,
     max_matches: int | None = None,
+    pilot_strategy: str | None = None,
+    eligible_per_competition: int | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
+    from app.services.cecchino_data_lab.run_v2.constants import (
+        RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION,
+        RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+        RUN_V2_SCOPE_BALANCED_PILOT,
+        RUN_V2_SCOPE_FULL,
+        RUN_V2_SCOPE_PILOT,
+    )
     from app.services.cecchino_data_lab.run_v2.executor import create_run_v2
 
     if confirm != RUN_V2_CONFIRM_TOKEN:
@@ -450,6 +459,24 @@ def start_run_v2(
         season if season is not None and str(season).strip() else season_label
     )
 
+    strategy = str(pilot_strategy or "").strip() or None
+    epc: int | None = None
+    if eligible_per_competition is not None:
+        try:
+            epc = int(eligible_per_competition)
+        except (TypeError, ValueError) as exc:
+            raise CecchinoLabImportError(
+                "invalid_eligible_per_competition",
+                "eligible_per_competition deve essere un intero",
+                status_code=400,
+            ) from exc
+        if epc <= 0:
+            raise CecchinoLabImportError(
+                "invalid_eligible_per_competition",
+                "eligible_per_competition deve essere positivo",
+                status_code=400,
+            )
+
     normalized_max: int | None = None
     if max_matches is not None:
         try:
@@ -462,6 +489,20 @@ def start_run_v2(
             raise CecchinoLabImportError(
                 "invalid_max_matches", "max_matches deve essere positivo", status_code=400
             )
+
+    if strategy == RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP or (
+        epc is not None and strategy is None and normalized_max is None
+    ):
+        # Pilot maturo bilanciato: 3 eligible_core/comp di default.
+        strategy = RUN_V2_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+        if epc is None:
+            epc = RUN_V2_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+        run_scope = RUN_V2_SCOPE_BALANCED_PILOT
+        normalized_max = None
+    elif normalized_max is not None:
+        run_scope = RUN_V2_SCOPE_PILOT
+    else:
+        run_scope = RUN_V2_SCOPE_FULL
 
     preflight = run_v2_preflight(db, season_label=normalized_season)
     if preflight.get("status") != "ready":
@@ -486,7 +527,9 @@ def start_run_v2(
         season_label=normalized_season,
         max_matches=normalized_max,
         source_git_commit=revision.get("source_git_commit"),
-        run_scope="pilot" if normalized_max else "full",
+        run_scope=run_scope,
+        pilot_strategy=strategy,
+        eligible_per_competition=epc,
     )
     run.source_git_commit_source = revision.get("source_git_commit_source")
     run.source_revision_status = revision.get("source_revision_status")

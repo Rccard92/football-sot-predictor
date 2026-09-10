@@ -275,4 +275,31 @@ describe('CecchinoRunV2Section', () => {
       maxMatches: 50,
     })
   })
+
+  it('pilota maturo passa eligible_per_competition=3', async () => {
+    apiMock.startRunV2.mockResolvedValue(
+      makeRun({
+        run_id: 23,
+        run_scope: 'balanced_pilot',
+        max_matches: null,
+        module_policy: {
+          pilot_strategy: 'eligible_per_competition',
+          eligible_per_competition: 3,
+        },
+      }),
+    )
+    renderSection()
+    await waitFor(() => expect(screen.getByTestId('run-v2-row-5')).toBeTruthy())
+    await selectSeasonReady()
+
+    fireEvent.click(screen.getByTestId('run-v2-start-balanced-pilot'))
+    fireEvent.click(screen.getByTestId('run-v2-confirm-start'))
+
+    await waitFor(() => expect(apiMock.startRunV2).toHaveBeenCalled())
+    expect(apiMock.startRunV2).toHaveBeenCalledWith({
+      season: '2024/2025',
+      pilotStrategy: 'eligible_per_competition',
+      eligiblePerCompetition: 3,
+    })
+  })
 })
