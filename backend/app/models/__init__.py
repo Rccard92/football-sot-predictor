@@ -50,6 +50,8 @@ from app.models.cecchino_run_v2 import (
     CecchinoRunV2MatchSnapshot,
     CecchinoRunV2Run,
 )
+from app.models.cecchino_pattern_discovery_run import CecchinoPatternDiscoveryRun
+from app.models.cecchino_discovered_pattern import CecchinoDiscoveredPattern
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -122,6 +124,8 @@ __all__ = [
     "CecchinoRunV2Run",
     "CecchinoRunV2MatchSnapshot",
     "CecchinoRunV2MarketResult",
+    "CecchinoPatternDiscoveryRun",
+    "CecchinoDiscoveredPattern",
     "Competition",
     "Fixture",
     "FixtureLineup",

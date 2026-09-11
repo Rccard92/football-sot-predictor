@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.schemas.cecchino_pattern_discovery import CecchinoPatternDiscoveryStartBody
+from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityAuditBody,
     CecchinoDrawCredibilityDatasetBody,
@@ -1180,3 +1182,66 @@ def get_purchasability_residual_export(
         bootstrap_iterations=bootstrap_iterations,
         seed=seed,
     )
+
+
+@router.post("/pattern-discovery/runs")
+def post_pattern_discovery_run(
+    body: CecchinoPatternDiscoveryStartBody,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia (in background) la scoperta Pattern walk-forward per un market_key.
+
+    Albero decisionale poco profondo per fold di training (finestra
+    espandibile sulle stagioni indicate da run_ids), validato out-of-sample
+    sulla stagione successiva. Nessuna formula esistente viene letta o
+    modificata: produce esclusivamente righe candidate persistite.
+    """
+    from app.services.cecchino_data_lab.pattern_discovery_service import start_pattern_discovery
+
+    try:
+        out = start_pattern_discovery(db, market_key=body.market_key, run_ids=body.run_ids)
+        return JSONResponse(status_code=202, content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/pattern-discovery/runs/{run_id}")
+def get_pattern_discovery_run_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_discovery_service import get_pattern_discovery_run
+
+    try:
+        out = get_pattern_discovery_run(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/pattern-discovery/runs/{run_id}/patterns")
+def get_pattern_discovery_run_patterns(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_discovery_service import list_discovered_patterns
+
+    try:
+        out = list_discovered_patterns(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/pattern-discovery/runs/{run_id}/cancel")
+def post_pattern_discovery_run_cancel(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_discovery_service import cancel_pattern_discovery
+
+    try:
+        out = cancel_pattern_discovery(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
