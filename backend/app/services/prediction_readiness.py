@@ -24,7 +24,6 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
-from app.services.predictions_v21.v21_model_status import ensure_user_visible_models_in_list
 from app.services.sot_model_registry import get_model_display, is_user_visible_model, user_visible_model_versions
 from app.models import (
     Competition,
@@ -78,6 +77,8 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     Stesso contratto della GET /predictions/sot/serie-a/{season}/model-status.
     Ritorna (payload_dict, http_status).
     """
+    from app.services.predictions_v21.v21_model_status import ensure_user_visible_models_in_list
+
     preferred = preferred_model_versions()
     warnings: list[str] = []
 
@@ -374,6 +375,8 @@ def build_model_status_for_competition(
     selected_model_version: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Model-status scoped per competition. Serie A IT delega al payload legacy."""
+    from app.services.predictions_v21.v21_model_status import ensure_user_visible_models_in_list
+
     settings = get_settings()
     is_legacy_serie_a = (
         int(getattr(comp, "provider_league_id", 0)) == int(settings.default_league_id)

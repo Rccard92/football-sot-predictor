@@ -44,7 +44,6 @@ class Team(Base, TimestampMixin):
         back_populates="team",
     )
     team_sot_predictions = relationship("TeamSotPrediction", back_populates="team")
-    prediction_backtests = relationship("PredictionBacktest", back_populates="team")
     player_sot_profiles = relationship("PlayerSotProfile", back_populates="team")
     player_team_seasons = relationship("PlayerTeamSeason", back_populates="team")
     availability_events = relationship("PlayerAvailabilityEvent", back_populates="team")

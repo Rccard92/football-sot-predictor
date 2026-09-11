@@ -2,7 +2,6 @@ from fastapi import APIRouter
 
 from app.routes import (
     api_usage,
-    backtest_v31,
     cecchino,
     cecchino_admin,
     cecchino_kpi_signals,
@@ -37,10 +36,6 @@ from app.routes import (
     admin_session_auth,
     admin_sportapi,
     betting_picks,
-    backtest,
-    backtest_debug,
-    backtest_round_analysis,
-    backtest_runs,
     competition_scoped,
     competitions,
     data_catalog,
@@ -53,9 +48,6 @@ from app.routes import (
     match_analysis,
     match_context,
     model,
-    player_sot_profiles,
-    predictive_simulator,
-    predictions,
     standings,
 )
 
@@ -108,14 +100,6 @@ api_router.include_router(betting_picks.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(features.router)
-api_router.include_router(predictions.router)
-api_router.include_router(backtest.router)
-api_router.include_router(backtest_runs.router)
-api_router.include_router(backtest_debug.router)
-api_router.include_router(backtest_round_analysis.router)
-api_router.include_router(backtest_v31.router)
-api_router.include_router(predictive_simulator.router)
-api_router.include_router(player_sot_profiles.router)
 api_router.include_router(h2h.router)
 api_router.include_router(standings.router)
 api_router.include_router(match_context.router)

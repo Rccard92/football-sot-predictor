@@ -18,7 +18,7 @@ from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
 from app.services.ingestion_service import IngestionService
 from app.services.player_data.squads import sync_team_squads
 from app.services.sot_feature_service import SotFeatureService
-from app.services.sot_prediction_service import _fixture_round_display
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_lineup_status import lineup_row_for_fixture
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService

@@ -31,7 +31,7 @@ from app.services.sot_betting_advice_service import (
     build_fixture_betting_advice,
 )
 from app.services.sot_feature_service import SotFeatureService
-from app.services.sot_prediction_service import _fixture_round_display
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 from app.services.sportapi.sportapi_lineup_status import formation_status_from_lineup, lineup_row_for_fixture
 from app.services.tracked_betting_pick_service import (
     MARKET_MATCH_TOTAL,

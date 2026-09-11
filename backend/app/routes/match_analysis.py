@@ -17,7 +17,7 @@ from app.schemas.match_analysis import (
     MatchVariablesAuditResponse,
 )
 from app.services.match_variable_audit_service import MatchVariableAuditService
-from app.services.sot_prediction_service import _fixture_round_display
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 
 logger = logging.getLogger(__name__)
 

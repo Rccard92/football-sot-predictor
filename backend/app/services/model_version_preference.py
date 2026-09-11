@@ -25,8 +25,11 @@ from app.services.sot_model_registry import is_user_visible_model, user_visible_
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
-from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
-from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
+
+# Chiavi componente v1.1 (storicamente da predictions_v11.*_feature_sources, ora inline
+# perche' quel modulo e' stato rimosso insieme al motore di predizione SOT).
+COMPONENT_KEY_PLAYER = "player_layer_component"
+COMPONENT_KEY_XG = "xg_chance_quality_component"
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
