@@ -58,10 +58,7 @@ from app.services.model_version_preference import (
 )
 from app.services.sot_feature_service import SotFeatureService
 from app.core.model_limitations import model_limitations_for_version
-from app.services.sot_prediction_service import (  # type: ignore[attr-defined]
-    SotPredictionService,
-    _fixture_round_display,
-)
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 
 logger = logging.getLogger(__name__)
 
@@ -696,6 +693,8 @@ def build_upcoming_active_payload(
             )
             upcoming = selection.fixtures
         else:
+            from app.services.sot_prediction_service import SotPredictionService  # type: ignore[attr-defined]
+
             svc = SotPredictionService()
             _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
             feat_svc = SotFeatureService()

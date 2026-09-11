@@ -39,12 +39,12 @@ from app.services.datetime_utils import (
     utc_now,
     ensure_datetime_utc,
 )
-from app.services.predictions_v10.v10_prior_context import (
-    _prior_fixtures_for_team,
-    _resolve_fixture_season_id,
+from app.services.fixture_shared import (
+    last_n,
+    prior_fixtures_for_team as _prior_fixtures_for_team,
+    resolve_fixture_season_id as _resolve_fixture_season_id,
+    team_split_fixtures,
 )
-from app.services.predictions_v11.split_fixtures import team_split_fixtures
-from app.services.predictions_v11.v11_shared import last_n
 
 logger = logging.getLogger(__name__)
 

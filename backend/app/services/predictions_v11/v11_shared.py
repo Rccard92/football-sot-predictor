@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.models import Fixture
+from app.services.fixture_shared import last_n
 from app.services.sot_feature_registry import (
     V11_ARCHITECTURE,
     V11_FORMULA_DEFENSIVE_WEIGHT,
@@ -52,11 +53,6 @@ def round4(x: float) -> float:
 
 def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, float(x)))
-
-
-def last_n(fixtures: list[Fixture], n: int) -> list[Fixture]:
-    xs = sorted(fixtures, key=lambda f: (f.kickoff_at, f.id), reverse=True)[:n]
-    return sorted(xs, key=lambda f: (f.kickoff_at, f.id))
 
 
 def missing_field(

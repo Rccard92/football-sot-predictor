@@ -8,7 +8,7 @@ from typing import Any
 
 from app.core.constants import fixture_eligible_for_upcoming_sot
 from app.models import Fixture
-from app.services.sot_prediction_service import _fixture_round_display
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 
 FALLBACK_ROUND_WARNING = (
     "Fallback next round: round iniziale senza fixture future, usata prima data futura disponibile."

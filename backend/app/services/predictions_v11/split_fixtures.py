@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 from app.models import Fixture
+from app.services.fixture_shared import team_split_fixtures
 
-
-def team_split_fixtures(
-    fixtures: list[Fixture],
-    team_id: int,
-    *,
-    is_home_context: bool,
-) -> list[Fixture]:
-    tid = int(team_id)
-    if is_home_context:
-        return [f for f in fixtures if int(f.home_team_id) == tid]
-    return [f for f in fixtures if int(f.away_team_id) == tid]
+__all__ = [
+    "team_split_fixtures",
+    "opponent_split_fixtures",
+    "split_context_label",
+    "opponent_split_context_label",
+]
 
 
 def opponent_split_fixtures(

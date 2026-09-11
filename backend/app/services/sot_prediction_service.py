@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, FINISHED_STATUSES
 from app.core.model_limitations import default_model_limitations_dict
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
+from app.services.fixture_shared import fixture_round_display as _fixture_round_display
 from app.services.model_applied_variable_manifest import manifest_for_model
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
@@ -138,21 +139,6 @@ def prediction_affidability_from_data_quality(
     if s >= 60:
         return s, "Media"
     return s, "Bassa"
-
-
-def _fixture_round_display(fx: Fixture) -> str | None:
-    if fx.round and str(fx.round).strip():
-        return str(fx.round).strip()[:64]
-    raw = fx.raw_json if isinstance(fx.raw_json, dict) else None
-    if not raw:
-        return None
-    fr = (raw.get("fixture") or {}).get("round")
-    if fr is not None and str(fr).strip():
-        return str(fr).strip()[:64]
-    lr = (raw.get("league") or {}).get("round")
-    if lr is not None and str(lr).strip():
-        return str(lr).strip()[:64]
-    return None
 
 
 def _breakdown_any_fallback(bd: dict[str, Any] | None) -> bool:

@@ -21,7 +21,7 @@ from app.services.fixture_team_stats_mapping import (
     backfill_shot_columns_from_raw_json_if_null,
     statistics_list_to_fields,
 )
-from app.services.predictions_v10.v10_prior_context import _team_stats_map
+from app.services.fixture_shared import team_stats_map as _team_stats_map
 
 logger = logging.getLogger(__name__)
 
