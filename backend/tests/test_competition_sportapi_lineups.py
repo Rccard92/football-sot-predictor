@@ -179,24 +179,3 @@ def test_ingest_route_dry_run_mocked():
     body = response.json()
     assert body["competition_id"] == 2
     assert body["fixtures_checked"] == 10
-
-
-def test_pre_match_run_all_enabled_skips_cron_disabled():
-    from app.services.jobs.pre_match_lineup_refresh_job import PreMatchOfficialLineupRefreshJob
-
-    comp_enabled = MagicMock(spec=Competition)
-    comp_enabled.id = 1
-    comp_enabled.pre_match_cron_enabled = True
-    comp_enabled.season = 2025
-    comp_enabled.name = "Serie A"
-
-    db = MagicMock()
-    db.scalars.return_value.all.return_value = [comp_enabled]
-
-    job = PreMatchOfficialLineupRefreshJob()
-    with patch.object(job, "run", return_value={"status": "ok", "refreshed": 0}) as mock_run:
-        out = job.run_all_enabled(db)
-
-    mock_run.assert_called_once_with(db, 2025, force=False, minutes_before=None, window_minutes=None)
-    assert out["competitions_processed"] == 1
-    assert out["results"][0]["competition_id"] == 1

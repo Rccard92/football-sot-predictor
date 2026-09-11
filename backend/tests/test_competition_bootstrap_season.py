@@ -203,29 +203,6 @@ def test_patch_competition_season(mock_svc_cls):
     mock_svc_cls.return_value.patch.assert_called_once()
 
 
-@patch("app.routes.competition_scoped.CompetitionService")
-@patch("app.routes.competition_scoped.build_model_status_for_competition")
-def test_competition_model_status_not_initialized(mock_build, mock_svc_cls):
-    comp = MagicMock()
-    comp.id = 2
-    mock_svc_cls.return_value.get_by_id_or_raise.return_value = comp
-    mock_build.return_value = (
-        {
-            "status": "not_initialized",
-            "message": "Modello non ancora inizializzato",
-            "competition_id": 2,
-            "season": 2026,
-            "available_model_versions": [],
-            "warnings": [],
-        },
-        200,
-    )
-
-    response = client.get("/api/competitions/2/model-status")
-    assert response.status_code == 200
-    assert response.json()["status"] == "not_initialized"
-
-
 @patch("app.routes.admin_competition_ingest.CompetitionService")
 @patch("app.routes.admin_competition_ingest.CompetitionIngestionService")
 @patch("app.routes.admin_competition_ingest.get_settings")

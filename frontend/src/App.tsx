@@ -12,7 +12,6 @@ import { MatchVariableAudit } from './pages/MatchVariableAudit'
 import { ModelDebug } from './pages/ModelDebug'
 import { ModelLegend } from './pages/ModelLegend'
 import { Changelog } from './pages/Changelog'
-import { BetMonitoring } from './pages/BetMonitoring'
 import { Bookmakers } from './pages/Bookmakers'
 import { CecchinoPage } from './pages/CecchinoPage'
 import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoringPage'
@@ -76,7 +75,6 @@ export default function App() {
             path="/cecchino/ricerca-intensita-goal"
             element={<LegacyLabRedirect module="goal-intensity-v5" view="overview" />}
           />
-          <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />
           <Route path="/dashboard" element={<Dashboard />} />

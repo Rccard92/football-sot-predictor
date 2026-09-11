@@ -38,7 +38,6 @@ export const NAV_CECCHINO: NavItem[] = [
 export const NAV_MAIN: NavItem[] = [
   { to: '/match-analysis-framework', label: 'Framework Analisi', icon: 'activity', section: 'main' },
   { to: '/match-variable-audit', label: 'Spiegazione previsione', icon: 'file-text', section: 'main' },
-  { to: '/monitoraggio-giocate', label: 'Monitoraggio Giocate', icon: 'target', section: 'main' },
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },
 ]
