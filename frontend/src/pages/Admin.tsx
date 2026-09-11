@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   AdminHttpError,
@@ -7,35 +7,15 @@ import {
   adminIngestPlayerStats,
   adminIngestStandings,
   adminIngestTeamStats,
-  adminRefreshPostMatchday,
-  adminRegenerateUpcomingPredictions,
-  buildPlayerSotProfiles,
-  buildUpcomingSotFeatures,
-  generateUpcomingSotPredictions,
   getIngestionRuns,
   getTeamShotStatsSummary,
   getPlayerMatchDbSummary,
-  getNextRoundQuickReportForCompetition,
-  getPlayerSotProfilesSummary,
-  postGenerateV04OffensiveCoreSotUpcoming,
-  postGenerateV10SotUpcoming,
-  postGenerateV11SotUpcoming,
   bootstrapCompetition,
   buildCompetitionPlayerProfiles,
   getCompetitionDataHealth,
-  getModelStatusForCompetition,
   ingestCompetitionPlayerStats,
   ingestCompetitionTeamStats,
-  refreshCompetitionNextRound,
-  postRefreshNextRoundSportApiLineups,
-  postSyncNextRoundApiSquadsBatch,
-  postRefreshUpcomingV04Pipeline,
-  runBuildSotFeatures,
-  runGenerateSotPredictions,
-  runSotBacktest,
   type AdminRequestOpts,
-  type ModelStatusResponse,
-  type UpcomingActiveResponse,
 } from '../lib/api'
 
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
@@ -43,17 +23,6 @@ import { ContextBanner } from '../components/ContextBanner'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
-import {
-  V04_MODEL,
-  V10_MODEL,
-  V20_MODEL,
-  V21_MODEL,
-  filterVersionsForUi,
-  formatInputsAvailable,
-  labelForModelVersion,
-  labelForOperatingMode,
-  resolveDisplayedModelFromStatus,
-} from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
 
@@ -118,23 +87,6 @@ function pickMessage(payload: unknown, okFallback: string): string {
     if (typeof o.status === 'string' && o.status === 'skipped' && typeof o.reason === 'string') {
       return `Operazione saltata: ${o.reason}`
     }
-    if (typeof o.status === 'string' && o.status === 'success') {
-      if (
-        o.architecture === 'explicit_terms_from_v04_plus_xg' ||
-        o.architecture === 'explicit_terms_from_v04' ||
-        o.xg_applied_count != null
-      ) {
-        return [
-          `Formula esplicita v0.4 + xG`,
-          `architecture: ${String(o.architecture ?? '')}`,
-          `create/update: ${String(o.predictions_created_or_updated ?? '')}`,
-          `xg applicati: ${String(o.xg_applied_count ?? '')}`,
-          `xg fallback: ${String(o.xg_fallback_count ?? '')}`,
-          `base allineata: ${String(o.aligned_base_terms_count ?? '')}`,
-          `da revisionare: ${String(o.needs_review ?? '')}`,
-        ].join(' · ')
-      }
-    }
   }
   return okFallback
 }
@@ -194,147 +146,75 @@ function ActionButton({
 
 export function Admin() {
   const { selectedCompetitionId } = useCompetition()
-  const { selectedModelVersion, selectedModelLabel } = useModelSelection()
+  const { selectedModelVersion } = useModelSelection()
   const [searchParams] = useSearchParams()
   const sportapiFixtureRef = searchParams.get('sportapi_fixture') ?? undefined
   const sportapiSectionRef = useRef<HTMLDivElement | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<OpResult | null>(null)
-  const [legacyOpen, setLegacyOpen] = useState(false)
-  const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
-  const [upcomingActive, setUpcomingActive] = useState<UpcomingActiveResponse | null>(null)
-  const [cardsError, setCardsError] = useState<string | null>(null)
 
-  const loadCards = useCallback(async () => {
-    setCardsError(null)
+  const runAction = useCallback(async (action: AdminAction) => {
+    const t0 = performance.now()
+    setPendingId(action.id)
     try {
-      if (selectedCompetitionId == null) {
-        setModelStatus(null)
-        setUpcomingActive(null)
-        setCardsError('Seleziona un campionato per lo stato modello.')
-        return
-      }
-      const s = await getModelStatusForCompetition(selectedCompetitionId, {
-        modelVersion: selectedModelVersion,
+      const data = await action.run()
+      const ms = Math.round(performance.now() - t0)
+      const dataStatus =
+        data && typeof data === 'object' && 'status' in data
+          ? String((data as Record<string, unknown>).status)
+          : 'success'
+      const okish =
+        dataStatus === 'success' ||
+        dataStatus === 'partial_success' ||
+        dataStatus === 'partial_error'
+      setLastResult({
+        endpoint: action.endpoint,
+        httpStatus: 200,
+        durationMs: ms,
+        ok: okish,
+        message: pickMessage(data, 'Operazione completata.'),
+        body: data,
       })
-      setModelStatus(s)
-      const u = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
-        limit: 20,
-        onlyNextRound: true,
-        modelVersion: selectedModelVersion,
-      })
-      setUpcomingActive(u)
-    } catch (e) {
-      setModelStatus(null)
-      setUpcomingActive(null)
-      setCardsError(e instanceof Error ? e.message : String(e))
-    }
-  }, [selectedCompetitionId, selectedModelVersion])
-
-  useEffect(() => {
-    void loadCards()
-  }, [loadCards])
-
-  useEffect(() => {
-    if (sportapiFixtureRef && sportapiSectionRef.current) {
-      sportapiSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [sportapiFixtureRef])
-
-  const runAction = useCallback(
-    async (action: AdminAction) => {
-      const t0 = performance.now()
-      setPendingId(action.id)
-      try {
-        const data = await action.run()
-        const ms = Math.round(performance.now() - t0)
-        const dataStatus =
-          data && typeof data === 'object' && 'status' in data
-            ? String((data as Record<string, unknown>).status)
-            : 'success'
-        const okish =
-          dataStatus === 'success' ||
-          dataStatus === 'partial_success' ||
-          dataStatus === 'partial_error'
+    } catch (err) {
+      const ms = Math.round(performance.now() - t0)
+      if (err instanceof AdminHttpError) {
+        const body = err.body
+        const bodyStatus =
+          body && typeof body === 'object' && 'status' in body
+            ? String((body as Record<string, unknown>).status)
+            : null
+        const partial =
+          bodyStatus === 'error' ||
+          bodyStatus === 'partial_error' ||
+          bodyStatus === 'partial_success'
         setLastResult({
           endpoint: action.endpoint,
-          httpStatus: 200,
+          httpStatus: err.status,
           durationMs: ms,
-          ok: okish,
-          message: pickMessage(data, 'Operazione completata.'),
-          body: data,
+          ok: partial,
+          message: partial && body ? pickMessage(body, err.message) : err.message,
+          body: err.body,
         })
-        if (
-          [
-            'refresh-v04-pipeline',
-            'gen-v04',
-            'gen-v10',
-            'gen-v11',
-            'gen-v20',
-            'gen-v21',
-            'refresh-next-round',
-            'refresh-cards',
-          ].includes(action.id)
-        ) {
-          void loadCards()
-        }
-        if (
-          action.id === 'refresh-v04-pipeline' ||
-          action.id === 'gen-v04' ||
-          action.id === 'gen-v10' ||
-          action.id === 'gen-v11' ||
-          action.id === 'gen-v20' ||
-          action.id === 'gen-v21' ||
-          action.id === 'refresh-next-round'
-        ) {
-          try {
-            sessionStorage.setItem('sot_admin_refresh_upcoming', String(Date.now()))
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch (err) {
-        const ms = Math.round(performance.now() - t0)
-        if (err instanceof AdminHttpError) {
-          const body = err.body
-          const bodyStatus =
-            body && typeof body === 'object' && 'status' in body
-              ? String((body as Record<string, unknown>).status)
-              : null
-          const partial =
-            bodyStatus === 'error' ||
-            bodyStatus === 'partial_error' ||
-            bodyStatus === 'partial_success'
-          setLastResult({
-            endpoint: action.endpoint,
-            httpStatus: err.status,
-            durationMs: ms,
-            ok: partial,
-            message: partial && body ? pickMessage(body, err.message) : err.message,
-            body: err.body,
-          })
-        } else {
-          const raw = err instanceof Error ? err.message : String(err)
-          const isNetwork =
-            raw === 'Failed to fetch' ||
-            /network|abort|fetch/i.test(raw) ||
-            err instanceof TypeError
-          setLastResult({
-            endpoint: action.endpoint,
-            httpStatus: '—',
-            durationMs: ms,
-            ok: false,
-            message: isNetwork
-              ? 'Errore di rete o backend non raggiungibile. Controlla /api/health e Railway logs.'
-              : raw,
-          })
-        }
-      } finally {
-        setPendingId(null)
+      } else {
+        const raw = err instanceof Error ? err.message : String(err)
+        const isNetwork =
+          raw === 'Failed to fetch' ||
+          /network|abort|fetch/i.test(raw) ||
+          err instanceof TypeError
+        setLastResult({
+          endpoint: action.endpoint,
+          httpStatus: '—',
+          durationMs: ms,
+          ok: false,
+          message: isNetwork
+            ? 'Errore di rete o backend non raggiungibile. Controlla /api/health e Railway logs.'
+            : raw,
+        })
       }
-    },
-    [loadCards, modelStatus],
-  )
+    } finally {
+      setPendingId(null)
+    }
+  }, [])
 
   const requireCompetition = () => {
     if (selectedCompetitionId == null) {
@@ -354,8 +234,7 @@ export function Admin() {
     {
       id: 'official-lineups',
       label: 'Aggiorna formazioni ufficiali',
-      description:
-        'Recupera fixtures/lineups per le partite vicine (48h) o in corso. Non modifica la formula v1.1.',
+      description: 'Recupera fixtures/lineups per le partite vicine (48h) o in corso.',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/lineups`,
       run: () => adminIngestLineups(SEASON),
     },
@@ -396,12 +275,6 @@ export function Admin() {
       },
     },
     {
-      id: 'profiles',
-      label: 'Ricalcola profili giocatori',
-      endpoint: `POST /api/features/player-sot-profiles/serie-a/${SEASON}/build`,
-      run: () => buildPlayerSotProfiles(SEASON),
-    },
-    {
       id: 'dataset-base',
       label: 'Aggiorna tutto il dataset base',
       description: 'Squadra finite + giocatori + formazioni in sequenza.',
@@ -415,110 +288,6 @@ export function Admin() {
   ]
 
   const section2: AdminAction[] = [
-    {
-      id: 'refresh-next-round',
-      label: 'Prossima giornata (modello selezionato)',
-      description: `Genera prediction per ${selectedModelLabel}.`,
-      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
-      run: () =>
-        refreshCompetitionNextRound(requireCompetition(), false, {
-          modelVersion: selectedModelVersion,
-        }),
-    },
-    {
-      id: 'gen-comparison',
-      label: 'Genera confronto v2.0 / v2.1',
-      description:
-        'Genera prediction v2.0 e v2.1 sul prossimo turno del campionato selezionato (senza altri campionati).',
-      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
-      run: () =>
-        refreshCompetitionNextRound(requireCompetition(), false, {
-          generateMode: 'v20_v21_comparison',
-        }),
-    },
-    {
-      id: 'gen-v21',
-      label: 'Genera previsioni v2.1 Weighted Components',
-      description: `Engine autonomo macro/micro. Modello: ${V21_MODEL}.`,
-      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
-      run: () =>
-        refreshCompetitionNextRound(requireCompetition(), false, {
-          modelVersion: V21_MODEL,
-        }),
-    },
-    {
-      id: 'gen-v20',
-      label: 'Genera previsioni v2.0 Lineup Impact',
-      description: `Richiede v1.1 e lineups SportAPI. Modello: ${V20_MODEL}.`,
-      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
-      run: () =>
-        refreshCompetitionNextRound(requireCompetition(), false, {
-          modelVersion: V20_MODEL,
-        }),
-    },
-    {
-      id: 'sportapi-lineups-batch',
-      label: 'SportAPI: aggiorna formazioni prossimo turno',
-      description: 'Mapping AUTO_SAFE (se serve) + fetch lineups. Conferma mostra chiamate stimate.',
-      endpoint: `POST /api/admin/sportapi/serie-a/${SEASON}/refresh-next-round-lineups`,
-      run: async () => {
-        const fixtures = modelStatus?.upcoming_fixtures_total ?? 10
-        const est = fixtures
-        if (!window.confirm(`Stima ~${est} chiamate SportAPI (lineups + eventuale mapping). Continuare?`)) {
-          return { skipped: true }
-        }
-        return postRefreshNextRoundSportApiLineups(SEASON)
-      },
-    },
-    {
-      id: 'sportapi-squads-batch',
-      label: 'Aggiorna rose attuali prossimo turno',
-      description: 'Sync API-Sports per tutte le squadre del turno (nessuna chiamata SportAPI).',
-      endpoint: `POST /api/admin/sportapi/serie-a/${SEASON}/sync-api-squads-batch`,
-      run: () => postSyncNextRoundApiSquadsBatch(SEASON),
-    },
-    {
-      id: 'gen-v10',
-      label: 'Genera modello v1.0 SOT',
-      description: `Formula esplicita v0.4 + xG. Richiede ${V04_MODEL} già generato. Modello: ${V10_MODEL}.`,
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v10-sot`,
-      run: () => postGenerateV10SotUpcoming(SEASON),
-    },
-    {
-      id: 'verify-model',
-      label: 'Verifica stato modello',
-      endpoint: `GET /api/competitions/{id}/model-status`,
-      run: async () => {
-        const s = await getModelStatusForCompetition(requireCompetition())
-        setModelStatus(s)
-        return s
-      },
-    },
-    {
-      id: 'verify-upcoming',
-      label: 'Verifica prossima giornata attiva',
-      endpoint: `GET /api/competitions/{id}/next-round/quick-report`,
-      run: async () => {
-        const u = await getNextRoundQuickReportForCompetition(requireCompetition(), {
-          limit: 20,
-          onlyNextRound: true,
-          modelVersion: selectedModelVersion,
-        })
-        setUpcomingActive(u)
-        return u
-      },
-    },
-    {
-      id: 'refresh-v04-pipeline',
-      label: 'Aggiorna prossima giornata completa',
-      description:
-        'Pipeline: fixture, stats squadra, classifica, giocatori, formazioni, profili, previsioni v0.4, stato modello.',
-      endpoint: `POST /api/admin/pipeline/serie-a/${SEASON}/refresh-upcoming-v04`,
-      run: () => postRefreshUpcomingV04Pipeline(SEASON),
-    },
-  ]
-
-  const section3: AdminAction[] = [
     {
       id: 'player-db-summary',
       label: 'Riepilogo Player DB',
@@ -546,227 +315,22 @@ export function Admin() {
       endpoint: `GET /api/admin/debug/serie-a/${SEASON}/team-shot-stats-summary`,
       run: () => getTeamShotStatsSummary(SEASON),
     },
-    {
-      id: 'profiles-summary',
-      label: 'Riepilogo profili giocatori (GET)',
-      endpoint: `GET /api/features/player-sot-profiles/serie-a/${SEASON}/summary`,
-      run: () => getPlayerSotProfilesSummary(SEASON),
-    },
   ]
-
-  const legacyActions: AdminAction[] = [
-    {
-      id: 'gen-v04',
-      label: 'Legacy: Genera previsioni v0.4',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v04-offensive-core-sot`,
-      run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
-    },
-    {
-      id: 'gen-v11',
-      label: 'Legacy: Genera modello v1.1 SOT',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v11-sot`,
-      run: () => postGenerateV11SotUpcoming(SEASON),
-    },
-    {
-      id: 'legacy-post-matchday',
-      label: 'Legacy: pipeline post-giornata v0.1 (+ backtest)',
-      description: 'Lungo: include feature/predizioni completate v0.1, backtest e upcoming v0.1.',
-      endpoint: `POST /api/admin/refresh/serie-a/${SEASON}/post-matchday`,
-      run: () => adminRefreshPostMatchday(SEASON),
-    },
-    {
-      id: 'legacy-regen-upcoming',
-      label: 'Legacy: rigenera feature + upcoming v0.1',
-      endpoint: `POST build-upcoming + generate-upcoming`,
-      run: () => adminRegenerateUpcomingPredictions(SEASON),
-    },
-    {
-      id: 'legacy-build-features',
-      label: 'Legacy: costruisci feature complete v0.1',
-      endpoint: `POST /api/features/sot/serie-a/${SEASON}/build`,
-      run: () => runBuildSotFeatures(SEASON),
-    },
-    {
-      id: 'legacy-gen-predictions',
-      label: 'Legacy: genera previsioni complete v0.1',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate`,
-      run: () => runGenerateSotPredictions(SEASON),
-    },
-    {
-      id: 'legacy-backtest',
-      label: 'Legacy: esegui backtest',
-      endpoint: `POST /api/backtest/sot/serie-a/${SEASON}/run`,
-      run: () => runSotBacktest(SEASON),
-    },
-    {
-      id: 'legacy-build-upcoming-feat',
-      label: 'Legacy: costruisci feature partite future',
-      endpoint: `POST /api/features/sot/serie-a/${SEASON}/build-upcoming`,
-      run: () => buildUpcomingSotFeatures(SEASON),
-    },
-    {
-      id: 'legacy-gen-upcoming',
-      label: 'Legacy: genera previsioni partite future v0.1',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-upcoming`,
-      run: () => generateUpcomingSotPredictions(SEASON),
-    },
-  ]
-
-  const refreshCardsAction: AdminAction = {
-    id: 'refresh-cards',
-    label: 'Aggiorna stato modello',
-    endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/model-status + upcoming-active`,
-    run: async () => {
-      await loadCards()
-      return { refreshed: true }
-    },
-  }
 
   return (
     <div className="space-y-6 pb-8">
         <header className="pt-4">
           <h1 className="text-2xl font-semibold text-slate-900">Admin / Strumenti tecnici</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Operazioni sul campionato e modello selezionati. Ogni pulsante ha timeout lato client.
+            Operazioni sul campionato selezionato. Ogni pulsante ha timeout lato client.
           </p>
           <ContextBanner showModelSelector={false} />
         </header>
 
         <CompetitionsAdminPanel />
 
-        {cardsError ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-            Card stato: {cardsError}
-          </div>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Stato modello attivo</h2>
-            <dl className="mt-2 space-y-1 text-xs text-slate-700">
-              <div>
-                <dt className="text-slate-500">Modello selezionato</dt>
-                <dd className="font-semibold text-indigo-900">
-                  {resolveDisplayedModelFromStatus(modelStatus, selectedModelVersion).label}
-                  {selectedModelVersion === V20_MODEL && modelStatus?.operating_mode ? (
-                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-700">
-                      {labelForOperatingMode(modelStatus.operating_mode)}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-              {modelStatus?.competition_name ? (
-                <div>
-                  <dt className="text-slate-500">Campionato</dt>
-                  <dd>{modelStatus.competition_name}</dd>
-                </div>
-              ) : null}
-              {modelStatus?.inputs_available ? (
-                <div>
-                  <dt className="text-slate-500">Input disponibili</dt>
-                  <dd>{formatInputsAvailable(modelStatus.inputs_available)}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt className="text-slate-500">Raccomandato</dt>
-                <dd className="font-mono text-[11px] font-semibold text-indigo-900">
-                  {modelStatus?.recommended_model_version ?? '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Attivo</dt>
-                <dd className="font-mono text-[11px]">
-                  {modelStatus?.active_model_version ?? '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Fixture upcoming (totali)</dt>
-                <dd>{modelStatus?.upcoming_fixtures_total ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Versioni in DB</dt>
-                <dd className="max-h-24 overflow-y-auto font-mono text-[10px]">
-                  {filterVersionsForUi(modelStatus?.available_model_versions ?? [])
-                    .map((v) => labelForModelVersion(v.model_version))
-                    .join(', ') || '—'}
-                </dd>
-              </div>
-              {(modelStatus?.warnings?.length ?? 0) > 0 ? (
-                <div>
-                  <dt className="text-amber-700">Warning</dt>
-                  <dd className="text-amber-900">{(modelStatus?.warnings ?? []).join(' · ')}</dd>
-                </div>
-              ) : null}
-            </dl>
-            <ActionButton action={refreshCardsAction} pendingId={pendingId} onRun={runAction} />
-          </div>
-
-          <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Prossima giornata attiva</h2>
-            <dl className="mt-2 space-y-1 text-xs text-slate-700">
-              <div>
-                <dt className="text-slate-500">Modello in uso</dt>
-                <dd className="font-mono text-[11px]">{upcomingActive?.model_version_used ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Partite / predictions (squadre)</dt>
-                <dd>
-                  {upcomingActive?.matches_count ?? 0} partite ·{' '}
-                  {(upcomingActive?.matches ?? []).reduce((acc, m) => {
-                    const h = m.home_prediction ? 1 : 0
-                    const a = m.away_prediction ? 1 : 0
-                    return acc + h + a
-                  }, 0)}{' '}
-                  lati con prediction
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Prima / ultima partita</dt>
-                <dd className="font-mono text-[10px]">
-                  {upcomingActive?.matches?.[0]?.kickoff_at
-                    ? String(upcomingActive.matches[0].kickoff_at)
-                    : '—'}{' '}
-                  →{' '}
-                  {upcomingActive?.matches?.length
-                    ? String(upcomingActive.matches[upcomingActive.matches.length - 1]!.kickoff_at)
-                    : '—'}
-                </dd>
-              </div>
-              {(upcomingActive?.warnings?.length ?? 0) > 0 ? (
-                <div>
-                  <dt className="text-amber-700">Warning</dt>
-                  <dd className="text-amber-900">{(upcomingActive?.warnings ?? []).join(' · ')}</dd>
-                </div>
-              ) : null}
-            </dl>
-            <button
-              type="button"
-              disabled={pendingId !== null}
-              className="mt-3 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-medium text-emerald-950 hover:bg-emerald-100/80 disabled:opacity-50"
-              onClick={() =>
-                void runAction({
-                  id: 'verify-upcoming-header',
-                  label: '',
-                  endpoint: `GET …/upcoming-active`,
-                  run: async () => {
-                    const u = await getNextRoundQuickReportForCompetition(requireCompetition(), {
-                      limit: 20,
-                      onlyNextRound: true,
-                      modelVersion: selectedModelVersion,
-                    })
-                    setUpcomingActive(u)
-                    return u
-                  },
-                })
-              }
-            >
-              {pendingId === 'verify-upcoming-header' ? 'In corso…' : 'Verifica prossima giornata'}
-            </button>
-          </div>
-        </div>
-
         <Section
-          title="1 — Aggiornamento dati Serie A"
+          title="1 — Aggiornamento dati campionato"
           subtitle="Ingestion da API-Football dove richiesto."
         >
           <div className="flex flex-col gap-3">
@@ -776,29 +340,9 @@ export function Admin() {
           </div>
         </Section>
 
-        <Section
-          title="2 — Modello attivo v0.4"
-          subtitle="Flusso consigliato per la dashboard e Prossima giornata."
-        >
+        <Section title="2 — Diagnostica" subtitle="Letture e controlli, nessuna scrittura.">
           <div className="flex flex-col gap-3">
-            <div className="rounded-xl border-2 border-indigo-400 bg-indigo-50/80 p-1">
-              <ActionButton
-                action={section2.find((x) => x.id === 'refresh-v04-pipeline')!}
-                pendingId={pendingId}
-                onRun={runAction}
-              />
-            </div>
-            {section2
-              .filter((x) => x.id !== 'refresh-v04-pipeline')
-              .map((a) => (
-                <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
-              ))}
-          </div>
-        </Section>
-
-        <Section title="3 — Diagnostica" subtitle="Letture e controlli senza modificare il modello v0.4.">
-          <div className="flex flex-col gap-3">
-            {section3.map((a) => (
+            {section2.map((a) => (
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
             ))}
           </div>
@@ -806,29 +350,11 @@ export function Admin() {
 
         <div ref={sportapiSectionRef}>
           <Section
-            title="5 — SportAPI Debug"
-            subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers. Non usata nel modello."
+            title="3 — SportAPI Debug"
+            subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers."
           >
             <SportApiDebugPanel initialFixtureRef={sportapiFixtureRef} />
           </Section>
-        </div>
-
-        <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-800"
-            onClick={() => setLegacyOpen((o) => !o)}
-          >
-            <span>4 — Legacy / storico (v0.1 e strumenti non usati nel flusso principale)</span>
-            <span className="text-slate-500">{legacyOpen ? '▾' : '▸'}</span>
-          </button>
-          {legacyOpen ? (
-            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4">
-              {legacyActions.map((a) => (
-                <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
-              ))}
-            </div>
-          ) : null}
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
