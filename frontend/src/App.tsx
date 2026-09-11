@@ -7,12 +7,10 @@ import { Backtest } from './pages/Backtest'
 import { PredictiveSimulatorPage } from './pages/PredictiveSimulatorPage'
 import { Dashboard } from './pages/Dashboard'
 import { DataHealth } from './pages/DataHealth'
-import { MatchPrediction } from './pages/MatchPrediction'
 import { MatchAnalysisFramework } from './pages/MatchAnalysisFramework'
 import { MatchVariableAudit } from './pages/MatchVariableAudit'
 import { ModelDebug } from './pages/ModelDebug'
 import { ModelLegend } from './pages/ModelLegend'
-import { Teams } from './pages/Teams'
 import { Changelog } from './pages/Changelog'
 import { BetMonitoring } from './pages/BetMonitoring'
 import { Bookmakers } from './pages/Bookmakers'
@@ -26,7 +24,6 @@ import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoLabPatternLabPage } from './pages/CecchinoLabPatternLabPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
-import { UpcomingMatches } from './pages/UpcomingMatches'
 
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
@@ -41,7 +38,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route path="/" element={<UpcomingMatches />} />
+          <Route path="/" element={<CecchinoTodayPage />} />
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/bet-builder" element={<BetBuilderPage />} />
@@ -84,8 +81,6 @@ export default function App() {
           <Route path="/changelog" element={<Changelog />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data-health" element={<DataHealth />} />
-          <Route path="/teams" element={<Teams />} />
-          <Route path="/match-prediction" element={<MatchPrediction />} />
           <Route path="/backtest" element={<Backtest />} />
           <Route path="/predictive-simulator" element={<PredictiveSimulatorPage />} />
           <Route path="/model-legend" element={<ModelLegend />} />
