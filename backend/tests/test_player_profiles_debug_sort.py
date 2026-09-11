@@ -25,10 +25,3 @@ def test_profile_sort_key_null_impact_is_inf():
     k_null = profile_sort_key({"shooting_impact_score": None, "shots_on_per90": 1.0, "minutes_total": 100})
     k_val = profile_sort_key({"shooting_impact_score": 10.0, "shots_on_per90": 1.0, "minutes_total": 100})
     assert k_null > k_val
-
-
-def test_debug_sot_player_profiles_route_registered():
-    from app.routes.debug_sot import router
-
-    paths = [getattr(r, "path", "") for r in router.routes]
-    assert any("player-profiles" in p for p in paths)

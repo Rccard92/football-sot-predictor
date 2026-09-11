@@ -2,15 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import { Layout } from './components/Layout'
 import { LegacyLabRedirect } from './components/module-monitoring/LegacyLabRedirect'
 import { Admin } from './pages/Admin'
-import { ApiDataCatalog } from './pages/ApiDataCatalog'
-import { Backtest } from './pages/Backtest'
-import { PredictiveSimulatorPage } from './pages/PredictiveSimulatorPage'
-import { Dashboard } from './pages/Dashboard'
 import { DataHealth } from './pages/DataHealth'
-import { MatchAnalysisFramework } from './pages/MatchAnalysisFramework'
-import { MatchVariableAudit } from './pages/MatchVariableAudit'
-import { ModelDebug } from './pages/ModelDebug'
-import { ModelLegend } from './pages/ModelLegend'
 import { Changelog } from './pages/Changelog'
 import { Bookmakers } from './pages/Bookmakers'
 import { CecchinoPage } from './pages/CecchinoPage'
@@ -77,15 +69,7 @@ export default function App() {
           />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />
-          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data-health" element={<DataHealth />} />
-          <Route path="/backtest" element={<Backtest />} />
-          <Route path="/predictive-simulator" element={<PredictiveSimulatorPage />} />
-          <Route path="/model-legend" element={<ModelLegend />} />
-          <Route path="/api-data-catalog" element={<ApiDataCatalog />} />
-          <Route path="/model-debug" element={<ModelDebug />} />
-          <Route path="/match-analysis-framework" element={<MatchAnalysisFramework />} />
-          <Route path="/match-variable-audit" element={<MatchVariableAudit />} />
           <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>

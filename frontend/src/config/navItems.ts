@@ -36,20 +36,12 @@ export const NAV_CECCHINO: NavItem[] = [
 ]
 
 export const NAV_MAIN: NavItem[] = [
-  { to: '/match-analysis-framework', label: 'Framework Analisi', icon: 'activity', section: 'main' },
-  { to: '/match-variable-audit', label: 'Spiegazione previsione', icon: 'file-text', section: 'main' },
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },
 ]
 
 export const NAV_TECH: NavItem[] = [
-  { to: '/model-debug', label: 'Debug Modello', icon: 'bug', section: 'tech' },
-  { to: '/api-data-catalog', label: 'Catalogo dati API', icon: 'database', section: 'tech' },
-  { to: '/dashboard', label: 'Dashboard modello', icon: 'bar-chart', section: 'tech' },
   { to: '/data-health', label: 'Data Health', icon: 'heart-pulse', section: 'tech' },
-  { to: '/backtest', label: 'Backtest', icon: 'rotate-ccw', section: 'tech' },
-  { to: '/predictive-simulator', label: 'Simulatore Predittivo', icon: 'flask', section: 'tech' },
-  { to: '/model-legend', label: 'Legenda Modello', icon: 'book-open', section: 'tech' },
   { to: '/admin', label: 'Admin', icon: 'settings', section: 'tech' },
 ]
 
