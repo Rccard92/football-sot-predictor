@@ -12,6 +12,7 @@ import { CecchinoRunV2Section } from '../components/cecchino-data-lab/run-v2/Cec
 import { CecchinoRunV2AnalysisTab } from '../components/cecchino-data-lab/run-v2/CecchinoRunV2AnalysisTab'
 import { PatternLabTab } from '../components/cecchino-data-lab/PatternLabTab'
 import { LeaguePatternAnalysisTab } from '../components/cecchino-data-lab/league-pattern-analysis/LeaguePatternAnalysisTab'
+import { PatternGridTab } from '../components/cecchino-data-lab/pattern-grid/PatternGridTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
 
 const TABS = [
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'run_v2', label: 'Run V2' },
   { id: 'pattern_lab', label: 'Pattern Lab' },
   { id: 'league_pattern_analysis', label: 'League Pattern Analysis' },
+  { id: 'pattern_grid', label: 'Pattern Grid' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -142,6 +144,7 @@ export function CecchinoLabPage() {
         )}
         {tab === 'pattern_lab' && <PatternLabTab />}
         {tab === 'league_pattern_analysis' && <LeaguePatternAnalysisTab />}
+        {tab === 'pattern_grid' && <PatternGridTab />}
       </div>
 
       <MatchDetailDrawer matchId={drawerMatchId} onClose={() => setDrawerMatchId(null)} />
