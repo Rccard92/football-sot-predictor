@@ -37,7 +37,7 @@ function StageCell({ result }: { result?: { status: string; roi_pct: number | nu
   if (result.status === 'insufficient_sample') {
     return (
       <span style={{ color: 'var(--lab-muted)' }} title={`N=${result.n}, campione insufficiente`}>
-        camp. insuff. (N={result.n})
+        insuff. (N={result.n})
       </span>
     )
   }
@@ -65,11 +65,11 @@ function CandidateRow({ c }: { c: PatternGridCandidate }) {
       </td>
       <td className="whitespace-nowrap text-xs">Stadio {c.born_stage}</td>
       {[1, 2, 3, 4].map((stage) => (
-        <td key={stage} className="whitespace-nowrap">
+        <td key={stage} className="text-xs" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
           <StageCell result={c.per_stage[String(stage)]} />
         </td>
       ))}
-      <td className="whitespace-nowrap text-xs">
+      <td className="text-xs" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
         <div>
           N {c.total_n ?? '—'} (V{c.total_wins ?? '—'}/P{c.total_losses ?? '—'})
         </div>
@@ -80,7 +80,7 @@ function CandidateRow({ c }: { c: PatternGridCandidate }) {
           Quota media {c.total_avg_quota != null ? c.total_avg_quota.toFixed(2) : '—'}
         </div>
       </td>
-      <td className="whitespace-nowrap">
+      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
         <span className={`${verdictBadgeClass(c.final_verdict)} rounded px-2 py-1 text-xs`}>
           {verdictLabel(c.final_verdict)}
         </span>
