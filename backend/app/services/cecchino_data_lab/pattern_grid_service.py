@@ -74,16 +74,23 @@ def run_to_dict(run: CecchinoPatternGridRun) -> dict[str, Any]:
 
 
 def candidate_row_to_dict(row: CecchinoPatternGridCandidate) -> dict[str, Any]:
+    from app.services.cecchino_data_lab.pattern_grid_labels import market_label
+
     return {
         "id": int(row.id),
         "grid_run_id": int(row.grid_run_id),
         "market_key": row.market_key,
+        "market_label": market_label(row.market_key),
         "competition": row.competition,
         "filters_json": row.filters_json,
         "filters_text": row.filters_text,
+        "filters_text_human": row.filters_text_human,
         "born_stage": row.born_stage,
         "refined_from_text": row.refined_from_text,
         "per_stage": row.per_stage_json,
+        "total_n": row.total_n,
+        "total_win_rate_pct": float(row.total_win_rate_pct) if row.total_win_rate_pct is not None else None,
+        "total_roi_pct": float(row.total_roi_pct) if row.total_roi_pct is not None else None,
         "final_verdict": row.final_verdict,
     }
 
@@ -163,6 +170,44 @@ def list_pattern_grid_candidates(db: Session, run_id: int) -> list[dict[str, Any
     return [candidate_row_to_dict(r) for r in rows]
 
 
+def get_leaderboard(db: Session, *, min_total_n: int = 20) -> dict[str, Any]:
+    """Vista consolidata su tutti i mercati (scope globale): per ognuno,
+    l'ultimo run completato, e tutti i candidati con profitto totale sui 4
+    anni positivo (non filtrato per un singolo segno)."""
+    runs_by_market: dict[str, CecchinoPatternGridRun] = {}
+    for mk in KNOWN_MARKET_KEYS:
+        run = db.scalars(
+            select(CecchinoPatternGridRun)
+            .where(
+                CecchinoPatternGridRun.market_key == mk,
+                CecchinoPatternGridRun.competition.is_(None),
+                CecchinoPatternGridRun.status == STATUS_COMPLETED,
+            )
+            .order_by(CecchinoPatternGridRun.completed_at.desc())
+        ).first()
+        if run:
+            runs_by_market[mk] = run
+
+    if not runs_by_market:
+        return {"runs": {}, "candidates": []}
+
+    run_ids = [r.id for r in runs_by_market.values()]
+    rows = db.scalars(
+        select(CecchinoPatternGridCandidate)
+        .where(
+            CecchinoPatternGridCandidate.grid_run_id.in_(run_ids),
+            CecchinoPatternGridCandidate.total_roi_pct > 0,
+            CecchinoPatternGridCandidate.total_n >= min_total_n,
+        )
+        .order_by(CecchinoPatternGridCandidate.total_roi_pct.desc())
+    ).all()
+
+    return {
+        "runs": {mk: run_to_dict(r) for mk, r in runs_by_market.items()},
+        "candidates": [candidate_row_to_dict(r) for r in rows],
+    }
+
+
 def cancel_pattern_grid(db: Session, run_id: int) -> dict[str, Any]:
     run = db.get(CecchinoPatternGridRun, run_id)
     if not run:
@@ -215,6 +260,7 @@ def _execute_pattern_grid_run(run_id: int) -> None:
 
             for c in candidates:
                 summary = candidate_to_summary(c, total_stages=len(rows_by_stage))
+                total = summary.get("total") or {}
                 db.add(
                     CecchinoPatternGridCandidate(
                         grid_run_id=run.id,
@@ -222,9 +268,13 @@ def _execute_pattern_grid_run(run_id: int) -> None:
                         competition=run.competition,
                         filters_json=summary["filters_json"],
                         filters_text=summary["filters_text"],
+                        filters_text_human=summary["filters_text_human"],
                         born_stage=summary["born_stage"],
                         refined_from_text=summary["refined_from_text"],
                         per_stage_json=summary["per_stage"],
+                        total_n=total.get("n"),
+                        total_win_rate_pct=_d(total.get("win_rate_pct")),
+                        total_roi_pct=_d(total.get("roi_pct")),
                         final_verdict=summary["final_verdict"],
                     )
                 )
@@ -232,12 +282,17 @@ def _execute_pattern_grid_run(run_id: int) -> None:
             run = db.get(CecchinoPatternGridRun, run_id)
             if run is not None:
                 verdict_counts: dict[str, int] = {}
+                positive_total_count = 0
                 for c in candidates:
-                    v = candidate_to_summary(c, total_stages=len(rows_by_stage))["final_verdict"]
-                    verdict_counts[v] = verdict_counts.get(v, 0) + 1
+                    s = candidate_to_summary(c, total_stages=len(rows_by_stage))
+                    verdict_counts[s["final_verdict"]] = verdict_counts.get(s["final_verdict"], 0) + 1
+                    total_roi = (s.get("total") or {}).get("roi_pct")
+                    if total_roi is not None and total_roi > 0:
+                        positive_total_count += 1
                 run.summary_json = {
                     "seasons": seasons_sorted,
                     "candidates_total": len(candidates),
+                    "candidates_total_positive": positive_total_count,
                     "verdict_counts": verdict_counts,
                 }
                 run.stages_processed = len(rows_by_stage)

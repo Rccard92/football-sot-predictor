@@ -1,4 +1,4 @@
-/** Client API Pattern Grid — ricerca esaustiva sequenziale a 4 stadi (job + polling). */
+/** Client API Pattern Grid — ricerca esaustiva sequenziale a 4 stadi (job + polling + classifica). */
 
 import { requestJson } from './api'
 
@@ -19,6 +19,7 @@ export type PatternGridRun = {
   summary: {
     seasons?: string[]
     candidates_total?: number
+    candidates_total_positive?: number
     verdict_counts?: Record<string, number>
   } | null
   error: { message?: string } | null
@@ -33,23 +34,35 @@ export type PatternGridStageResult = {
   status: 'confirmed' | 'rejected' | 'insufficient_sample'
 }
 
+export type PatternGridVerdict =
+  | 'stable'
+  | 'confirmed_once'
+  | 'weakening'
+  | 'decaying'
+  | 'rejected'
+  | 'pending_first_oos'
+
 export type PatternGridCandidate = {
   id: number
   grid_run_id: number
   market_key: string
+  market_label: string
   competition: string | null
   filters_json: Array<{ column: string; value: string }>
   filters_text: string
+  filters_text_human: string
   born_stage: number
   refined_from_text: string | null
   per_stage: Record<string, PatternGridStageResult>
-  final_verdict:
-    | 'stable'
-    | 'confirmed_once'
-    | 'weakening'
-    | 'decaying'
-    | 'rejected'
-    | 'pending_first_oos'
+  total_n: number | null
+  total_win_rate_pct: number | null
+  total_roi_pct: number | null
+  final_verdict: PatternGridVerdict
+}
+
+export type PatternGridLeaderboard = {
+  runs: Record<string, PatternGridRun>
+  candidates: PatternGridCandidate[]
 }
 
 export const PATTERN_GRID_MARKET_KEYS = [
@@ -65,6 +78,10 @@ export const PATTERN_GRID_MARKET_KEYS = [
 
 export function isPatternGridActive(run: PatternGridRun): boolean {
   return run.status === 'pending' || run.status === 'running'
+}
+
+export async function getPatternGridLeaderboard(): Promise<PatternGridLeaderboard> {
+  return requestJson('/api/admin/cecchino/research/pattern-grid/leaderboard')
 }
 
 export async function startPatternGridRun(
@@ -99,7 +116,7 @@ export function formatRoiPct(v: number | null | undefined): string {
   return `${sign}${v.toFixed(1)}%`
 }
 
-const VERDICT_LABELS: Record<PatternGridCandidate['final_verdict'], string> = {
+const VERDICT_LABELS: Record<PatternGridVerdict, string> = {
   stable: 'Stabile',
   confirmed_once: 'Confermato 1 volta',
   weakening: 'In indebolimento',
@@ -108,11 +125,11 @@ const VERDICT_LABELS: Record<PatternGridCandidate['final_verdict'], string> = {
   pending_first_oos: 'In attesa di 1ª verifica',
 }
 
-export function verdictLabel(v: PatternGridCandidate['final_verdict']): string {
+export function verdictLabel(v: PatternGridVerdict): string {
   return VERDICT_LABELS[v] ?? v
 }
 
-export function verdictBadgeClass(v: PatternGridCandidate['final_verdict']): string {
+export function verdictBadgeClass(v: PatternGridVerdict): string {
   if (v === 'stable' || v === 'confirmed_once') return 'lab-badge-ok'
   if (v === 'weakening' || v === 'pending_first_oos') return 'lab-badge-warn'
   return 'lab-badge-err'

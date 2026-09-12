@@ -1252,6 +1252,17 @@ def post_pattern_discovery_run_cancel(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+@router.get("/pattern-grid/leaderboard")
+def get_pattern_grid_leaderboard_route(db: Session = Depends(get_db)) -> JSONResponse:
+    """Vista consolidata: ultimo run completato per ciascun mercato (scope
+    globale), con tutti i candidati a profitto totale positivo sui 4 anni —
+    mercati mischiati in un'unica lista, non filtrata per singolo segno."""
+    from app.services.cecchino_data_lab.pattern_grid_service import get_leaderboard
+
+    out = get_leaderboard(db)
+    return JSONResponse(content=jsonable_encoder(out))
+
+
 @router.post("/pattern-grid/runs")
 def post_pattern_grid_run(
     body: CecchinoPatternGridStartBody,

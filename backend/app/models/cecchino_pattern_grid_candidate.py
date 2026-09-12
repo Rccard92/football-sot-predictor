@@ -3,9 +3,10 @@ filtri, con lo storico completo stadio per stadio (lignaggio)."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,8 +32,12 @@ class CecchinoPatternGridCandidate(Base, TimestampMixin):
 
     filters_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     filters_text: Mapped[str] = mapped_column(Text, nullable=False)
+    filters_text_human: Mapped[str] = mapped_column(Text, nullable=False)
     born_stage: Mapped[int] = mapped_column(Integer, nullable=False)
     refined_from_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     per_stage_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    total_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    total_roi_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True, index=True)
     final_verdict: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

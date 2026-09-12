@@ -4,13 +4,14 @@ import {
   PATTERN_GRID_MARKET_KEYS,
   cancelPatternGridRun,
   formatRoiPct,
-  getPatternGridCandidates,
+  getPatternGridLeaderboard,
   getPatternGridRun,
   isPatternGridActive,
   startPatternGridRun,
   verdictBadgeClass,
   verdictLabel,
   type PatternGridCandidate,
+  type PatternGridLeaderboard,
   type PatternGridRun,
 } from '../../../lib/cecchinoPatternGridApi'
 import { roiColor } from '../overview/overviewTheme'
@@ -26,40 +27,78 @@ function StageCell({ result }: { result?: { status: string; roi_pct: number | nu
   if (result.status === 'insufficient_sample') {
     return (
       <span style={{ color: 'var(--lab-muted)' }} title={`N=${result.n}, campione insufficiente`}>
-        campione insuff. (N={result.n})
+        camp. insuff. (N={result.n})
       </span>
     )
   }
   const ok = result.status === 'confirmed'
   return (
-    <span
-      className={`lab-badge-${ok ? 'ok' : 'err'} rounded px-1.5 py-0.5 text-xs`}
-      title={`N=${result.n}`}
-    >
-      {ok ? '✓' : '✗'} <span style={{ color: roiColor(result.roi_pct ?? 0) }}>{formatRoiPct(result.roi_pct)}</span>
+    <span className="whitespace-nowrap text-xs" title={`N=${result.n}`}>
+      <span className={`lab-badge-${ok ? 'ok' : 'err'} rounded px-1.5 py-0.5`}>{ok ? '✓' : '✗'}</span>{' '}
+      <span style={{ color: roiColor(result.roi_pct ?? 0) }}>{formatRoiPct(result.roi_pct)}</span>
     </span>
   )
 }
 
+function CandidateRow({ c }: { c: PatternGridCandidate }) {
+  return (
+    <tr>
+      <td className="whitespace-nowrap text-xs font-semibold">{c.market_label}</td>
+      <td className="min-w-[260px] max-w-[380px] whitespace-normal break-words text-xs">
+        {c.filters_text_human}
+        {c.competition && (
+          <div style={{ color: 'var(--lab-cyan)' }}>· {c.competition}</div>
+        )}
+      </td>
+      <td className="whitespace-nowrap text-xs">Stadio {c.born_stage}</td>
+      {[1, 2, 3, 4].map((stage) => (
+        <td key={stage} className="whitespace-nowrap">
+          <StageCell result={c.per_stage[String(stage)]} />
+        </td>
+      ))}
+      <td className="whitespace-nowrap text-xs">
+        <div>N {c.total_n ?? '—'}</div>
+        <div style={{ color: roiColor(c.total_roi_pct ?? 0) }} className="font-semibold">
+          ROI {formatRoiPct(c.total_roi_pct)}
+        </div>
+      </td>
+      <td className="whitespace-nowrap">
+        <span className={`${verdictBadgeClass(c.final_verdict)} rounded px-2 py-1 text-xs`}>
+          {verdictLabel(c.final_verdict)}
+        </span>
+      </td>
+    </tr>
+  )
+}
+
 export function PatternGridTab() {
+  const [data, setData] = useState<PatternGridLeaderboard | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  // Sezione avanzata: avvio manuale di un singolo mercato/campionato (facoltativo).
   const [marketKey, setMarketKey] = useState<string>('DRAW')
   const [competition, setCompetition] = useState('')
   const [activeRun, setActiveRun] = useState<PatternGridRun | null>(null)
-  const [candidates, setCandidates] = useState<PatternGridCandidate[]>([])
-  const [loadingCandidates, setLoadingCandidates] = useState(false)
   const [starting, setStarting] = useState(false)
 
-  const loadCandidates = useCallback(async (runId: number) => {
-    setLoadingCandidates(true)
+  const loadLeaderboard = useCallback(async () => {
+    setLoading(true)
+    setError(null)
     try {
-      const items = await getPatternGridCandidates(runId)
-      setCandidates(items)
+      const payload = await getPatternGridLeaderboard()
+      setData(payload)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Errore caricamento candidati')
+      setError(e instanceof Error ? e.message : 'Errore caricamento classifica Pattern Grid')
     } finally {
-      setLoadingCandidates(false)
+      setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void loadLeaderboard()
+  }, [loadLeaderboard])
 
   useEffect(() => {
     if (!activeRun || !isPatternGridActive(activeRun)) return
@@ -69,8 +108,8 @@ export function PatternGridTab() {
         setActiveRun(fresh)
         if (!isPatternGridActive(fresh)) {
           if (fresh.status === 'completed') {
-            toast.success(`Pattern Grid #${fresh.id} completato`)
-            void loadCandidates(fresh.id)
+            toast.success(`Pattern Grid #${fresh.id} completato — aggiorno la classifica`)
+            void loadLeaderboard()
           } else if (fresh.status === 'failed') {
             toast.error(`Pattern Grid #${fresh.id} fallito: ${fresh.error?.message ?? ''}`)
           }
@@ -80,15 +119,14 @@ export function PatternGridTab() {
       }
     }, POLL_MS)
     return () => window.clearInterval(id)
-  }, [activeRun, loadCandidates])
+  }, [activeRun, loadLeaderboard])
 
   const handleStart = async () => {
     setStarting(true)
     try {
       const run = await startPatternGridRun(marketKey, DEFAULT_RUN_IDS, competition.trim() || null)
       setActiveRun(run)
-      setCandidates([])
-      toast.success(`Pattern Grid #${run.id} avviato su ${marketKey}${competition ? ' / ' + competition : ' (globale)'}`)
+      toast.success(`Analisi avviata su ${marketKey}${competition ? ' / ' + competition : ' (globale)'}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Avvio Pattern Grid fallito')
     } finally {
@@ -106,83 +144,64 @@ export function PatternGridTab() {
     }
   }
 
+  const candidates = data?.candidates ?? []
+  const marketsCovered = data ? Object.keys(data.runs).length : 0
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="lab-card p-4">
-        <h2 className="text-lg font-semibold">Pattern Grid — ricerca esaustiva sequenziale</h2>
+        <h2 className="text-lg font-semibold">Pattern Grid — pattern profittevoli su 4 anni, tutti i mercati</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--lab-muted)' }}>
-          Ricerca alla cieca (non parte dai pattern già noti in League Pattern Analysis) su tutte le
-          combinazioni di 1-2 filtri per mercato, eseguita in sequenza sui 4 pacchetti stagionali
-          2021/22→2024/25. Ogni candidato porta lo storico completo: nato a quale stadio, confermato o
-          decaduto negli stadi successivi.
+          Ricerca cieca (non parte dai pattern già noti in League Pattern Analysis): prova sistematicamente
+          combinazioni di 1-3 caratteristiche della partita, mercato per mercato, in sequenza sulle 4 stagioni
+          2021/22→2024/25. Qui sotto solo i pattern con <strong>profitto totale positivo sui 4 anni combinati</strong>,
+          di tutti i mercati insieme — non filtrati per un singolo segno.
         </p>
-
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            Mercato
-            <select
-              className="lab-input"
-              value={marketKey}
-              onChange={(e) => setMarketKey(e.target.value)}
-            >
-              {PATTERN_GRID_MARKET_KEYS.map((mk) => (
-                <option key={mk} value={mk}>
-                  {mk}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            Campionato (vuoto = globale)
-            <input
-              className="lab-input"
-              placeholder="es. Serie A"
-              value={competition}
-              onChange={(e) => setCompetition(e.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="lab-btn"
-            disabled={starting || (activeRun ? isPatternGridActive(activeRun) : false)}
-            onClick={() => void handleStart()}
-          >
-            {starting ? 'Avvio…' : 'Avvia ricerca'}
-          </button>
-          {activeRun && isPatternGridActive(activeRun) && (
-            <button type="button" className="lab-btn-ghost" onClick={() => void handleCancel()}>
-              Annulla
-            </button>
-          )}
-        </div>
-
-        {activeRun && (
-          <div className="mt-3 text-sm" style={{ color: 'var(--lab-muted)' }}>
-            Run #{activeRun.id} — {activeRun.market_key}
-            {activeRun.competition ? ` / ${activeRun.competition}` : ' (globale)'} — stato:{' '}
-            <strong>{activeRun.status}</strong>
-            {isPatternGridActive(activeRun) && (
-              <> — stadio {activeRun.stages_processed}/{activeRun.stages_total || '?'}</>
-            )}
-            {activeRun.summary?.verdict_counts && (
-              <span className="ml-2">
-                {Object.entries(activeRun.summary.verdict_counts)
-                  .map(([k, v]) => `${verdictLabel(k as PatternGridCandidate['final_verdict'])}: ${v}`)
-                  .join(' · ')}
-              </span>
-            )}
-          </div>
+        <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
+          <strong>Come leggere le colonne Stadio 1-4</strong>: ogni pattern nasce in uno stadio (una stagione, o il
+          cumulato fino a quel punto) e viene ri-testato sulle stagioni successive mai viste prima — ✓ verde
+          significa che in quell'anno, da solo, il pattern è stato profittevole; ✗ rosso che non lo è stato. Un
+          pattern "— non nato" in uno stadio semplicemente non era ancora stato scoperto a quel punto. Se vedi un
+          pattern con dati solo nell'ultimo stadio, non è sospetto: significa che serviva tutto il campione di 4
+          anni insieme perché quella combinazione raggiungesse una numerosità sufficiente per essere considerata —
+          va quindi ancora verificato sulla prima stagione futura disponibile (2025/26) prima di fidarsene.
+        </p>
+        {data && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
+            Mercati coperti: {marketsCovered}/{PATTERN_GRID_MARKET_KEYS.length} · Pattern a profitto positivo:{' '}
+            {candidates.length}
+          </p>
         )}
       </div>
 
-      {loadingCandidates && <div style={{ color: 'var(--lab-muted)' }}>Caricamento candidati…</div>}
+      {loading && <div style={{ color: 'var(--lab-muted)' }}>Caricamento classifica…</div>}
+      {error && <div style={{ color: 'var(--lab-err)' }}>{error}</div>}
+
+      {!loading && !error && candidates.length === 0 && (
+        <div style={{ color: 'var(--lab-muted)' }}>
+          Nessun risultato ancora disponibile. Avvia l'analisi dalla sezione "Avanzate" qui sotto per i mercati
+          che non hai ancora coperto.
+        </div>
+      )}
 
       {candidates.length > 0 && (
         <div className="lab-card p-0">
           <div className="lab-table-wrap">
-            <table className="lab-table w-full min-w-[900px]">
+            <table className="lab-table w-full min-w-[1000px] table-fixed">
+              <colgroup>
+                <col style={{ width: '70px' }} />
+                <col style={{ width: '300px' }} />
+                <col style={{ width: '80px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '150px' }} />
+              </colgroup>
               <thead>
                 <tr>
+                  <th className="text-left">Mercato</th>
                   <th className="text-left">Pattern</th>
                   <th className="text-left">Nato a</th>
                   {STAGE_SEASON_LABELS.map((label, i) => (
@@ -190,45 +209,81 @@ export function PatternGridTab() {
                       Stadio {i + 1} ({label})
                     </th>
                   ))}
+                  <th className="text-left">Totale 4 anni</th>
                   <th className="text-left">Verdetto</th>
                 </tr>
               </thead>
               <tbody>
-                {candidates
-                  .slice()
-                  .sort((a, b) => a.born_stage - b.born_stage)
-                  .map((c) => (
-                    <tr key={c.id}>
-                      <td className="max-w-[320px] text-xs">
-                        {c.filters_text}
-                        {c.refined_from_text && (
-                          <div style={{ color: 'var(--lab-muted)' }}>
-                            raffinamento di: {c.refined_from_text}
-                          </div>
-                        )}
-                      </td>
-                      <td>Stadio {c.born_stage}</td>
-                      {[1, 2, 3, 4].map((stage) => (
-                        <td key={stage}>
-                          <StageCell result={c.per_stage[String(stage)]} />
-                        </td>
-                      ))}
-                      <td>
-                        <span className={`${verdictBadgeClass(c.final_verdict)} rounded px-2 py-1 text-xs`}>
-                          {verdictLabel(c.final_verdict)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                {candidates.map((c) => (
+                  <CandidateRow key={c.id} c={c} />
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {!loadingCandidates && candidates.length === 0 && activeRun?.status === 'completed' && (
-        <div style={{ color: 'var(--lab-muted)' }}>Nessun candidato trovato per questa combinazione.</div>
-      )}
+      <div className="lab-card p-4">
+        <button
+          type="button"
+          className="lab-btn-ghost"
+          onClick={() => setAdvancedOpen((v) => !v)}
+        >
+          {advancedOpen ? '▾' : '▸'} Avanzate — avvia/ri-avvia un'analisi (per mercato o campionato)
+        </button>
+        {advancedOpen && (
+          <div className="mt-4">
+            <p className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+              Usa questa sezione solo per rilanciare un mercato specifico o restringere a un campionato (pattern
+              "league-native"). La classifica sopra si aggiorna da sola quando l'analisi finisce.
+            </p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Mercato
+                <select className="lab-input" value={marketKey} onChange={(e) => setMarketKey(e.target.value)}>
+                  {PATTERN_GRID_MARKET_KEYS.map((mk) => (
+                    <option key={mk} value={mk}>
+                      {mk}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Campionato (vuoto = globale)
+                <input
+                  className="lab-input"
+                  placeholder="es. Serie A"
+                  value={competition}
+                  onChange={(e) => setCompetition(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="lab-btn"
+                disabled={starting || (activeRun ? isPatternGridActive(activeRun) : false)}
+                onClick={() => void handleStart()}
+              >
+                {starting ? 'Avvio…' : 'Avvia ricerca'}
+              </button>
+              {activeRun && isPatternGridActive(activeRun) && (
+                <button type="button" className="lab-btn-ghost" onClick={() => void handleCancel()}>
+                  Annulla
+                </button>
+              )}
+            </div>
+            {activeRun && (
+              <div className="mt-3 text-sm" style={{ color: 'var(--lab-muted)' }}>
+                Run #{activeRun.id} — {activeRun.market_key}
+                {activeRun.competition ? ` / ${activeRun.competition}` : ' (globale)'} — stato:{' '}
+                <strong>{activeRun.status}</strong>
+                {isPatternGridActive(activeRun) && (
+                  <> — stadio {activeRun.stages_processed}/{activeRun.stages_total || '?'}</>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

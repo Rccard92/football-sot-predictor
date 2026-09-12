@@ -69,6 +69,14 @@ class Candidate:
     born_stage: int
     refined_from: tuple[Atom, ...] | None = None
     per_stage: dict[int, dict[str, Any]] = field(default_factory=dict)
+    total: dict[str, Any] | None = None
+
+
+def _latest_roi(candidate: Candidate) -> float:
+    if not candidate.per_stage:
+        return 0.0
+    latest_stage = max(candidate.per_stage)
+    return candidate.per_stage[latest_stage].get("roi_pct") or 0.0
 
 
 def discover_candidates(
@@ -76,10 +84,19 @@ def discover_candidates(
     *,
     born_stage: int,
     existing_keys: set[frozenset[tuple[str, str]]],
+    known_two_atom_bases: list[Candidate],
 ) -> list[Candidate]:
     """Ricerca esaustiva 1-2 atomi su `rows` (già cumulate fino allo stadio
-    corrente), poi raffinamento a 3 atomi sui migliori a 2. Esclude
-    combinazioni già note (`existing_keys`) — non le riscopre come nuove."""
+    corrente), poi raffinamento a 3 atomi. Esclude combinazioni già note
+    (`existing_keys`) — non le riscopre come nuove.
+
+    Il raffinamento riprova ad ogni stadio su TUTTE le combinazioni a 2 atomi
+    note fino a questo momento (non solo quelle appena scoperte in questo
+    stadio): altrimenti un pattern a 2 atomi trovato allo stadio 1 non verrebbe
+    mai raffinato a 3 negli stadi successivi, e molti raffinamenti buoni
+    comparirebbero solo all'ultimo stadio per un limite dell'algoritmo, non
+    per un motivo statistico.
+    """
     vocab = build_atom_vocabulary(rows)
     found: list[Candidate] = []
 
@@ -95,10 +112,10 @@ def discover_candidates(
                 found.append(c)
                 existing_keys.add(key)
 
-    # Raffinamento a 3 atomi: solo sopra i migliori candidati a 2 atomi appena trovati
-    two_atom_bases = [c for c in found if len(c.combo) == 2]
-    two_atom_bases.sort(key=lambda c: (c.per_stage[born_stage]["roi_pct"] or 0), reverse=True)
-    for base in two_atom_bases[:15]:
+    # Raffinamento a 3 atomi: su tutte le basi a 2 atomi note (vecchie + nuove di questo stadio)
+    all_two_atom_bases = known_two_atom_bases + [c for c in found if len(c.combo) == 2]
+    all_two_atom_bases.sort(key=_latest_roi, reverse=True)
+    for base in all_two_atom_bases[:15]:
         used_cols = {a.column for a in base.combo}
         for atom in vocab:
             if atom.column in used_cols:
@@ -132,8 +149,17 @@ def run_pattern_grid(rows_by_stage: list[list[GridRow]]) -> list[Candidate]:
 
         # 2) scoperta fresca sul cumulato fino a questo stadio incluso
         cumulative = cumulative + stage_rows
-        new_candidates = discover_candidates(cumulative, born_stage=stage_idx, existing_keys=existing_keys)
+        known_two_atom = [c for c in candidates if len(c.combo) == 2]
+        new_candidates = discover_candidates(
+            cumulative,
+            born_stage=stage_idx,
+            existing_keys=existing_keys,
+            known_two_atom_bases=known_two_atom,
+        )
         candidates.extend(new_candidates)
+
+    for c in candidates:
+        c.total = _stats(cumulative, c.combo)
 
     return candidates
 
@@ -164,11 +190,15 @@ def final_verdict(candidate: Candidate, total_stages: int) -> str:
 
 
 def candidate_to_summary(candidate: Candidate, total_stages: int) -> dict[str, Any]:
+    from app.services.cecchino_data_lab.pattern_grid_labels import humanize_combo
+
     return {
         "filters_json": combo_to_json(candidate.combo),
         "filters_text": combo_text(candidate.combo),
+        "filters_text_human": humanize_combo(combo_to_json(candidate.combo)),
         "born_stage": candidate.born_stage,
         "refined_from_text": combo_text(candidate.refined_from) if candidate.refined_from else None,
         "per_stage": {str(k): v for k, v in candidate.per_stage.items()},
+        "total": candidate.total,
         "final_verdict": final_verdict(candidate, total_stages),
     }
