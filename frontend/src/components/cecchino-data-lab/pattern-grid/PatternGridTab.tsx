@@ -13,12 +13,22 @@ import {
   type PatternGridCandidate,
   type PatternGridLeaderboard,
   type PatternGridRun,
+  type PatternGridVerdict,
 } from '../../../lib/cecchinoPatternGridApi'
 import { roiColor } from '../overview/overviewTheme'
 
 const POLL_MS = 3000
 const DEFAULT_RUN_IDS = [17, 19, 20, 21]
 const STAGE_SEASON_LABELS = ['2021/22', '2022/23', '2023/24', '2024/25']
+
+const ALL_VERDICTS: PatternGridVerdict[] = [
+  'stable',
+  'confirmed_once',
+  'weakening',
+  'decaying',
+  'pending_first_oos',
+  'rejected',
+]
 
 function StageCell({ result }: { result?: { status: string; roi_pct: number | null; n: number } }) {
   if (!result) {
@@ -86,6 +96,22 @@ export function PatternGridTab() {
   const [activeRun, setActiveRun] = useState<PatternGridRun | null>(null)
   const [starting, setStarting] = useState(false)
 
+  const [selectedVerdicts, setSelectedVerdicts] = useState<Set<PatternGridVerdict>>(
+    () => new Set(ALL_VERDICTS),
+  )
+
+  const toggleVerdict = (v: PatternGridVerdict) => {
+    setSelectedVerdicts((prev) => {
+      const next = new Set(prev)
+      if (next.has(v)) {
+        next.delete(v)
+      } else {
+        next.add(v)
+      }
+      return next
+    })
+  }
+
   const loadLeaderboard = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -149,6 +175,11 @@ export function PatternGridTab() {
 
   const candidates = data?.candidates ?? []
   const marketsCovered = data ? Object.keys(data.runs).length : 0
+  const verdictCounts = candidates.reduce<Record<string, number>>((acc, c) => {
+    acc[c.final_verdict] = (acc[c.final_verdict] ?? 0) + 1
+    return acc
+  }, {})
+  const filteredCandidates = candidates.filter((c) => selectedVerdicts.has(c.final_verdict))
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -173,6 +204,9 @@ export function PatternGridTab() {
           <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
             Mercati coperti: {marketsCovered}/{PATTERN_GRID_MARKET_KEYS.length} · Pattern a profitto positivo:{' '}
             {candidates.length}
+            {filteredCandidates.length !== candidates.length && (
+              <> · mostrati con i filtri attuali: {filteredCandidates.length}</>
+            )}
           </p>
         )}
       </div>
@@ -188,6 +222,55 @@ export function PatternGridTab() {
       )}
 
       {candidates.length > 0 && (
+        <div className="lab-card flex flex-wrap items-center gap-2 p-4">
+          <span className="text-xs font-semibold" style={{ color: 'var(--lab-muted)' }}>
+            Filtra per verdetto:
+          </span>
+          {ALL_VERDICTS.map((v) => {
+            const active = selectedVerdicts.has(v)
+            const count = verdictCounts[v] ?? 0
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => toggleVerdict(v)}
+                title={active ? 'Clicca per nascondere questo verdetto' : 'Clicca per mostrare questo verdetto'}
+                className={`${verdictBadgeClass(v)} rounded px-2 py-1 text-xs`}
+                style={{
+                  opacity: active ? 1 : 0.3,
+                  cursor: 'pointer',
+                  border: 'none',
+                  filter: active ? 'none' : 'grayscale(60%)',
+                }}
+              >
+                {verdictLabel(v)} ({count})
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className="lab-btn-ghost text-xs"
+            onClick={() => setSelectedVerdicts(new Set(ALL_VERDICTS))}
+          >
+            Tutti
+          </button>
+          <button
+            type="button"
+            className="lab-btn-ghost text-xs"
+            onClick={() => setSelectedVerdicts(new Set())}
+          >
+            Nessuno
+          </button>
+        </div>
+      )}
+
+      {candidates.length > 0 && filteredCandidates.length === 0 && (
+        <div style={{ color: 'var(--lab-muted)' }}>
+          Nessun pattern corrisponde ai verdetti selezionati. Attiva almeno un verdetto qui sopra.
+        </div>
+      )}
+
+      {filteredCandidates.length > 0 && (
         <div className="lab-card p-0">
           <div className="lab-table-wrap">
             <table className="lab-table w-full min-w-[1000px] table-fixed">
@@ -217,7 +300,7 @@ export function PatternGridTab() {
                 </tr>
               </thead>
               <tbody>
-                {candidates.map((c) => (
+                {filteredCandidates.map((c) => (
                   <CandidateRow key={c.id} c={c} />
                 ))}
               </tbody>
