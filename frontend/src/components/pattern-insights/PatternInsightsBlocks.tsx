@@ -165,7 +165,7 @@ export function AnatomyBlock({
             <div key={c.atoms} className="pi-tile">
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold">
-                  {c.atoms} condizione{c.atoms > 1 ? 'i combinate' : ''}
+                  {c.atoms === 1 ? '1 condizione singola' : `${c.atoms} condizioni combinate`}
                 </span>
                 <span className="text-xs tabular-nums" style={{ color: 'var(--pi-muted)' }}>
                   {c.pattern_count.toLocaleString('it-IT')} pattern
@@ -275,9 +275,9 @@ export function SignalNoiseBlock({
             </div>
           ))}
           <div className="pi-tile text-[11px] leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
-            La fascia piu&apos; bassa e&apos; evidenziata in rosso perche&apos; con 20-49 partite in
-            quattro stagioni bastano due o tre esiti fortunati per produrre un ROI apparentemente
-            eccezionale.
+            {buckets.some((b) => b.bucket === '20-49')
+              ? 'La fascia piu’ bassa e’ in rosso perche’ con 20-49 partite bastano due o tre esiti fortunati per produrre un ROI apparentemente eccezionale.'
+              : 'Nota come il ROI medio scenda man mano che il campione cresce: e’ il segno che gran parte del vantaggio apparente sulle fasce basse e’ varianza, non valore.'}
           </div>
         </div>
       </div>
