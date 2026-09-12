@@ -89,8 +89,11 @@ def candidate_row_to_dict(row: CecchinoPatternGridCandidate) -> dict[str, Any]:
         "refined_from_text": row.refined_from_text,
         "per_stage": row.per_stage_json,
         "total_n": row.total_n,
+        "total_wins": row.total_wins,
+        "total_losses": (row.total_n - row.total_wins) if row.total_n is not None and row.total_wins is not None else None,
         "total_win_rate_pct": float(row.total_win_rate_pct) if row.total_win_rate_pct is not None else None,
         "total_roi_pct": float(row.total_roi_pct) if row.total_roi_pct is not None else None,
+        "total_avg_quota": float(row.total_avg_quota) if row.total_avg_quota is not None else None,
         "final_verdict": row.final_verdict,
     }
 
@@ -273,8 +276,10 @@ def _execute_pattern_grid_run(run_id: int) -> None:
                         refined_from_text=summary["refined_from_text"],
                         per_stage_json=summary["per_stage"],
                         total_n=total.get("n"),
+                        total_wins=total.get("wins"),
                         total_win_rate_pct=_d(total.get("win_rate_pct")),
                         total_roi_pct=_d(total.get("roi_pct")),
+                        total_avg_quota=_d(total.get("avg_quota")),
                         final_verdict=summary["final_verdict"],
                     )
                 )

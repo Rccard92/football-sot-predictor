@@ -38,6 +38,8 @@ class CecchinoPatternGridCandidate(Base, TimestampMixin):
 
     per_stage_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     total_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     total_roi_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True, index=True)
+    total_avg_quota: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     final_verdict: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

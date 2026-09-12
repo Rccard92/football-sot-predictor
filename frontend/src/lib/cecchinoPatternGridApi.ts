@@ -55,8 +55,11 @@ export type PatternGridCandidate = {
   refined_from_text: string | null
   per_stage: Record<string, PatternGridStageResult>
   total_n: number | null
+  total_wins: number | null
+  total_losses: number | null
   total_win_rate_pct: number | null
   total_roi_pct: number | null
+  total_avg_quota: number | null
   final_verdict: PatternGridVerdict
 }
 

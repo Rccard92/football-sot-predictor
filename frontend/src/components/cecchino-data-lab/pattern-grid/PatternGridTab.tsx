@@ -70,9 +70,14 @@ function CandidateRow({ c }: { c: PatternGridCandidate }) {
         </td>
       ))}
       <td className="whitespace-nowrap text-xs">
-        <div>N {c.total_n ?? '—'}</div>
+        <div>
+          N {c.total_n ?? '—'} (V{c.total_wins ?? '—'}/P{c.total_losses ?? '—'})
+        </div>
         <div style={{ color: roiColor(c.total_roi_pct ?? 0) }} className="font-semibold">
           ROI {formatRoiPct(c.total_roi_pct)}
+        </div>
+        <div style={{ color: 'var(--lab-muted)' }}>
+          Quota media {c.total_avg_quota != null ? c.total_avg_quota.toFixed(2) : '—'}
         </div>
       </td>
       <td className="whitespace-nowrap">
@@ -273,7 +278,7 @@ export function PatternGridTab() {
       {filteredCandidates.length > 0 && (
         <div className="lab-card p-0">
           <div className="lab-table-wrap">
-            <table className="lab-table w-full min-w-[1000px] table-fixed">
+            <table className="lab-table w-full min-w-[1180px] table-fixed">
               <colgroup>
                 <col style={{ width: '70px' }} />
                 <col style={{ width: '300px' }} />
@@ -282,7 +287,7 @@ export function PatternGridTab() {
                 <col style={{ width: '110px' }} />
                 <col style={{ width: '110px' }} />
                 <col style={{ width: '110px' }} />
-                <col style={{ width: '100px' }} />
+                <col style={{ width: '150px' }} />
                 <col style={{ width: '150px' }} />
               </colgroup>
               <thead>

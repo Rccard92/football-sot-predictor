@@ -46,10 +46,20 @@ def _stats(rows: list[GridRow], combo: tuple[Atom, ...]) -> dict[str, Any]:
     matched = [r for r in rows if combo_holds(r, combo)]
     n = len(matched)
     wins = sum(1 for r in matched if r.won)
+    losses = n - wins
     profits = [r.profit_1u for r in matched if r.profit_1u is not None]
+    quotes = [r.quota_book for r in matched if r.quota_book is not None]
     win_rate_pct = round(wins / n * 100.0, 3) if n else None
     roi_pct = round(statistics.fmean(profits) * 100.0, 3) if profits else None
-    return {"n": n, "wins": wins, "win_rate_pct": win_rate_pct, "roi_pct": roi_pct}
+    avg_quota = round(statistics.fmean(quotes), 3) if quotes else None
+    return {
+        "n": n,
+        "wins": wins,
+        "losses": losses,
+        "win_rate_pct": win_rate_pct,
+        "roi_pct": roi_pct,
+        "avg_quota": avg_quota,
+    }
 
 
 def _validate(rows: list[GridRow], combo: tuple[Atom, ...]) -> dict[str, Any]:
