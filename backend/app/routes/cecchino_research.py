@@ -1199,7 +1199,9 @@ def post_pattern_discovery_run(
     from app.services.cecchino_data_lab.pattern_discovery_service import start_pattern_discovery
 
     try:
-        out = start_pattern_discovery(db, market_key=body.market_key, run_ids=body.run_ids)
+        out = start_pattern_discovery(
+            db, market_key=body.market_key, run_ids=body.run_ids, competition=body.competition
+        )
         return JSONResponse(status_code=202, content=jsonable_encoder(out))
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

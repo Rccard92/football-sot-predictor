@@ -80,15 +80,22 @@ def load_market_rows_by_season(
     *,
     run_ids: list[int],
     market_key: str,
+    competition: str | None = None,
 ) -> dict[str, list[MarketRow]]:
     """Righe eligible_core, non void, del market_key richiesto — raggruppate per stagione.
 
     Esclude righe senza esito definitivo (target_won is None) o marcate void:
     non portano segnale utilizzabile per la scoperta o la validazione.
+
+    Se `competition` è indicato, la scoperta è ristretta a quel solo campionato
+    (pattern "league-native": un pattern reale ma specifico di un campionato
+    sparisce se impastato con gli altri 15 in una ricerca globale).
     """
     by_season: dict[str, list[MarketRow]] = {}
     for row in iter_pattern_lab_rows(db, run_ids, filters={}, apply_filters=True):
         if row.get("market_key") != market_key:
+            continue
+        if competition and row.get("competition") != competition:
             continue
         if row.get("eligibility_status") != "eligible_core":
             continue

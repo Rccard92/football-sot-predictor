@@ -47,6 +47,7 @@ class CecchinoPatternDiscoveryRun(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     market_key: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    competition: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     run_ids_json: Mapped[list[int]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=STATUS_PENDING, index=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

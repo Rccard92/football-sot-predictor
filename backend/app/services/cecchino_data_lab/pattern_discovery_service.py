@@ -82,6 +82,7 @@ def run_to_dict(run: CecchinoPatternDiscoveryRun) -> dict[str, Any]:
     return {
         "id": int(run.id),
         "market_key": run.market_key,
+        "competition": run.competition,
         "run_ids": run.run_ids_json,
         "status": run.status,
         "requested_at": run.requested_at.isoformat() if run.requested_at else None,
@@ -138,6 +139,7 @@ def start_pattern_discovery(
     *,
     market_key: str,
     run_ids: list[int],
+    competition: str | None = None,
 ) -> dict[str, Any]:
     normalized_key = (market_key or "").strip().upper()
     if normalized_key not in KNOWN_MARKET_KEYS:
@@ -153,17 +155,20 @@ def start_pattern_discovery(
             "Servono almeno 2 run/stagioni per costruire un fold walk-forward",
             status_code=400,
         )
+    normalized_competition = (competition or "").strip() or None
 
     active = db.scalars(
         select(CecchinoPatternDiscoveryRun).where(
             CecchinoPatternDiscoveryRun.market_key == normalized_key,
+            CecchinoPatternDiscoveryRun.competition == normalized_competition,
             CecchinoPatternDiscoveryRun.status.in_(tuple(ACTIVE_STATUSES)),
         )
     ).first()
     if active:
         raise CecchinoLabImportError(
             "duplicate_active_run",
-            f"Esiste già un run attivo (id={active.id}) per {normalized_key}",
+            f"Esiste già un run attivo (id={active.id}) per {normalized_key}"
+            + (f" / {normalized_competition}" if normalized_competition else ""),
             status_code=409,
             details={"active_run_id": int(active.id)},
         )
@@ -171,6 +176,7 @@ def start_pattern_discovery(
     revision = revision_as_source_fields()
     run = CecchinoPatternDiscoveryRun(
         market_key=normalized_key,
+        competition=normalized_competition,
         run_ids_json=clean_run_ids,
         status=STATUS_PENDING,
         requested_at=_utcnow(),
@@ -281,7 +287,10 @@ def _execute_pattern_discovery_run(run_id: int) -> None:
 
         try:
             by_season = load_market_rows_by_season(
-                db, run_ids=list(run.run_ids_json or []), market_key=run.market_key
+                db,
+                run_ids=list(run.run_ids_json or []),
+                market_key=run.market_key,
+                competition=run.competition,
             )
             seasons_sorted = sorted(by_season.keys())
             folds = build_walk_forward_folds(seasons_sorted)
