@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Section } from './PatternInsightsShell'
+import { PatternDetailPanel } from './PatternDetailPanel'
 import {
   getPatternInsightCandidates,
   type PatternInsightCandidate,
@@ -27,10 +28,10 @@ function RiskChip({ n }: { n: number }) {
   )
 }
 
-function Row({ c }: { c: PatternInsightCandidate }) {
+function Row({ c, onOpen }: { c: PatternInsightCandidate; onOpen: () => void }) {
   const isMarket = c.target_type === 'market'
   return (
-    <tr>
+    <tr onClick={onOpen} style={{ cursor: 'pointer' }} title="Apri dettaglio: campionati e partite">
       <td className="whitespace-nowrap font-semibold">{c.target_label}</td>
       <td style={{ maxWidth: 420 }}>
         <div className="leading-snug">{c.filters_text_human}</div>
@@ -83,6 +84,7 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
   const [total, setTotal] = useState(0)
   const [items, setItems] = useState<PatternInsightCandidate[]>([])
   const [loading, setLoading] = useState(false)
+  const [detailId, setDetailId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -112,7 +114,7 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
   return (
     <Section
       title="Esplora i pattern"
-      note={`${total.toLocaleString('it-IT')} pattern con i filtri attuali`}
+      note={`${total.toLocaleString('it-IT')} pattern con i filtri attuali · clicca una riga per il dettaglio`}
     >
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
@@ -166,7 +168,7 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
           </thead>
           <tbody>
             {items.map((c) => (
-              <Row key={c.id} c={c} />
+              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} />
             ))}
           </tbody>
         </table>
@@ -204,6 +206,10 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
           Successivi →
         </button>
       </div>
+
+      {detailId != null && (
+        <PatternDetailPanel candidateId={detailId} onClose={() => setDetailId(null)} />
+      )}
     </Section>
   )
 }

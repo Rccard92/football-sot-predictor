@@ -154,6 +154,70 @@ export type PatternInsightAnalytics = {
   source_coverage?: SourceCoverage
 }
 
+export type LeagueBreakdown = {
+  competition: string
+  n: number
+  wins: number
+  losses: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+  profit_units: number | null
+  avg_quota: number | null
+  deviation_pct: number | null
+  enough_sample: boolean
+}
+
+export type TriggeringMatch = {
+  lab_match_id: number
+  kickoff_at: string | null
+  competition: string
+  home_team: string | null
+  away_team: string | null
+  won: boolean | null
+  quota_book: number | null
+  profit_1u: number | null
+  actual_value: number | null
+}
+
+export type PatternDetail = {
+  candidate: {
+    id: number
+    target_type: PatternInsightTargetType
+    target_key: string
+    target_label: string
+    threshold: number | null
+    filters_text_human: string
+    refined_from_text: string | null
+    baseline_win_rate_pct: number | null
+  }
+  overall: {
+    n: number
+    wins: number
+    losses: number
+    win_rate_pct: number | null
+    roi_pct: number | null
+    profit_units: number | null
+    avg_quota: number | null
+  }
+  by_competition: LeagueBreakdown[]
+  concentration: {
+    leagues_total: number
+    leagues_with_sample: number
+    leagues_favourable: number
+    top_league_profit_share_pct: number | null
+    min_league_sample: number
+  }
+  matches: TriggeringMatch[]
+  matches_total: number
+  matches_truncated: boolean
+}
+
+export async function getPatternDetail(candidateId: number): Promise<PatternDetail> {
+  return requestJson(
+    `/api/admin/cecchino/research/run-v2-pattern-insight/candidates/${candidateId}/detail`,
+  )
+}
+
 export async function getPatternInsightAnalytics(minN = 50): Promise<PatternInsightAnalytics> {
   return requestJson(`/api/admin/cecchino/research/run-v2-pattern-insight/analytics?min_n=${minN}`)
 }
