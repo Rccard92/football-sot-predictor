@@ -44,7 +44,10 @@ function CandidateRow({ c }: { c: PatternGridCandidate }) {
   return (
     <tr>
       <td className="whitespace-nowrap text-xs font-semibold">{c.market_label}</td>
-      <td className="min-w-[260px] max-w-[380px] whitespace-normal break-words text-xs">
+      <td
+        className="min-w-[260px] max-w-[380px] text-xs"
+        style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}
+      >
         {c.filters_text_human}
         {c.competition && (
           <div style={{ color: 'var(--lab-cyan)' }}>· {c.competition}</div>
