@@ -237,6 +237,29 @@ def get_summary(db: Session, *, min_n: int = 20) -> dict[str, Any]:
     return {"run": run_to_dict(run), "targets": targets, "totals": totals}
 
 
+def get_analytics(db: Session, *, min_n: int = 50) -> dict[str, Any]:
+    """Tutti gli aggregati della dashboard in una sola chiamata: ogni blocco
+    risponde a una domanda diversa sugli stessi dati."""
+    from app.services.cecchino_data_lab import run_v2_pattern_insight_analytics as an
+
+    run = _latest_completed_run(db)
+    if not run:
+        return {"run": None}
+
+    rid = int(run.id)
+    return {
+        "run": run_to_dict(run),
+        "min_n": min_n,
+        "by_market": an.by_market(db, insight_run_id=rid, min_n=min_n),
+        "factor_frequency": an.factor_frequency(db, insight_run_id=rid, min_n=min_n),
+        "by_complexity": an.by_complexity(db, insight_run_id=rid, min_n=min_n),
+        "quality_scatter": an.quality_scatter(db, insight_run_id=rid, min_n=min_n),
+        "synthetic_directions": an.synthetic_directions(db, insight_run_id=rid, min_n=min_n),
+        "sample_buckets": an.sample_buckets(db, insight_run_id=rid, min_n=min_n),
+        "source_coverage": an.source_coverage(db, run_v2_run_id=int(run.run_v2_run_id)),
+    }
+
+
 def list_candidates(
     db: Session,
     *,

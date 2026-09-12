@@ -1342,6 +1342,21 @@ def get_run_v2_pattern_insight_summary(
     return JSONResponse(content=jsonable_encoder(out))
 
 
+@router.get("/run-v2-pattern-insight/analytics")
+def get_run_v2_pattern_insight_analytics(
+    min_n: int = Query(default=50, ge=1),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Tutti gli aggregati della dashboard Pattern Insights in una chiamata:
+    valore per mercato, peso dei fattori pre-partita, complessita' dei
+    pattern, distribuzione qualita' (campione vs ROI), situazioni senza
+    quota e qualita' della base dati Run V2 sottostante."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import get_analytics
+
+    out = get_analytics(db, min_n=min_n)
+    return JSONResponse(content=jsonable_encoder(out))
+
+
 @router.get("/run-v2-pattern-insight/candidates")
 def get_run_v2_pattern_insight_candidates(
     target_type: str | None = Query(default=None),
