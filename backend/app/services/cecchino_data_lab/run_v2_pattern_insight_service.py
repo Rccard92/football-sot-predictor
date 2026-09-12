@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -176,30 +176,119 @@ def cancel_pattern_insight_run(db: Session, run_id: int) -> dict[str, Any]:
     return run_to_dict(run)
 
 
-def get_dashboard(db: Session, *, min_n: int = 20) -> dict[str, Any]:
-    """Ultimo run completato + tutti i suoi candidati, per la nuova pagina
-    Pattern Insights. A differenza del Pattern Grid non c'e' (ancora) un
-    filtro per verdetto/stadio: e' scoperta su una sola stagione."""
-    run = db.scalars(
+def _latest_completed_run(db: Session) -> CecchinoRunV2PatternInsightRun | None:
+    return db.scalars(
         select(CecchinoRunV2PatternInsightRun)
         .where(CecchinoRunV2PatternInsightRun.status == STATUS_COMPLETED)
         .order_by(CecchinoRunV2PatternInsightRun.completed_at.desc())
     ).first()
-    if not run:
-        return {"run": None, "candidates": []}
 
-    rows = db.scalars(
-        select(CecchinoRunV2PatternInsightCandidate)
+
+def get_summary(db: Session, *, min_n: int = 20) -> dict[str, Any]:
+    """Aggregato leggero per la dashboard (conteggi/migliori per bersaglio),
+    calcolato in SQL — mai l'intera lista di candidati (puo' superare le
+    decine di migliaia di righe con un vocabolario cosi' ampio)."""
+    run = _latest_completed_run(db)
+    if not run:
+        return {"run": None, "targets": [], "totals": {"market": 0, "synthetic": 0}}
+
+    rows = db.execute(
+        select(
+            CecchinoRunV2PatternInsightCandidate.target_type,
+            CecchinoRunV2PatternInsightCandidate.target_key,
+            CecchinoRunV2PatternInsightCandidate.target_label,
+            CecchinoRunV2PatternInsightCandidate.threshold,
+            func.count().label("count"),
+            func.max(CecchinoRunV2PatternInsightCandidate.roi_pct).label("best_roi_pct"),
+            func.max(func.abs(CecchinoRunV2PatternInsightCandidate.deviation_pct)).label(
+                "best_abs_deviation_pct"
+            ),
+        )
         .where(
             CecchinoRunV2PatternInsightCandidate.insight_run_id == run.id,
             CecchinoRunV2PatternInsightCandidate.n >= min_n,
         )
-        .order_by(CecchinoRunV2PatternInsightCandidate.id)
+        .group_by(
+            CecchinoRunV2PatternInsightCandidate.target_type,
+            CecchinoRunV2PatternInsightCandidate.target_key,
+            CecchinoRunV2PatternInsightCandidate.target_label,
+            CecchinoRunV2PatternInsightCandidate.threshold,
+        )
     ).all()
+
+    targets = [
+        {
+            "target_type": r.target_type,
+            "target_key": r.target_key,
+            "target_label": r.target_label,
+            "threshold": float(r.threshold) if r.threshold is not None else None,
+            "count": int(r.count),
+            "best_roi_pct": float(r.best_roi_pct) if r.best_roi_pct is not None else None,
+            "best_abs_deviation_pct": (
+                float(r.best_abs_deviation_pct) if r.best_abs_deviation_pct is not None else None
+            ),
+        }
+        for r in rows
+    ]
+    totals = {
+        "market": sum(t["count"] for t in targets if t["target_type"] == TARGET_TYPE_MARKET),
+        "synthetic": sum(t["count"] for t in targets if t["target_type"] == TARGET_TYPE_SYNTHETIC),
+    }
+    return {"run": run_to_dict(run), "targets": targets, "totals": totals}
+
+
+def list_candidates(
+    db: Session,
+    *,
+    target_type: str | None = None,
+    target_key: str | None = None,
+    min_n: int = 20,
+    sort: str = "best",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Candidati paginati/filtrati per la tabella della dashboard. `sort`:
+    'best' = ROI decrescente per i mercati, |scarto| decrescente per i
+    bersagli sintetici (l'ordine naturale per ciascun tipo)."""
+    run = _latest_completed_run(db)
+    if not run:
+        return {"run": None, "total": 0, "items": []}
+
+    base_filters = [
+        CecchinoRunV2PatternInsightCandidate.insight_run_id == run.id,
+        CecchinoRunV2PatternInsightCandidate.n >= min_n,
+    ]
+    if target_type:
+        base_filters.append(CecchinoRunV2PatternInsightCandidate.target_type == target_type)
+    if target_key:
+        base_filters.append(CecchinoRunV2PatternInsightCandidate.target_key == target_key)
+
+    total = int(
+        db.scalar(
+            select(func.count()).select_from(CecchinoRunV2PatternInsightCandidate).where(*base_filters)
+        )
+        or 0
+    )
+
+    query = select(CecchinoRunV2PatternInsightCandidate).where(*base_filters)
+    if sort == "roi_desc":
+        query = query.order_by(CecchinoRunV2PatternInsightCandidate.roi_pct.desc().nulls_last())
+    elif sort == "deviation_desc":
+        query = query.order_by(
+            func.abs(CecchinoRunV2PatternInsightCandidate.deviation_pct).desc().nulls_last()
+        )
+    else:
+        query = query.order_by(
+            CecchinoRunV2PatternInsightCandidate.roi_pct.desc().nulls_last(),
+            func.abs(CecchinoRunV2PatternInsightCandidate.deviation_pct).desc().nulls_last(),
+        )
+    query = query.limit(limit).offset(offset)
+    rows = db.scalars(query).all()
 
     return {
         "run": run_to_dict(run),
-        "candidates": [candidate_row_to_dict(r) for r in rows],
+        "total": total,
+        "items": [candidate_row_to_dict(r) for r in rows],
     }
 
 

@@ -1328,14 +1328,43 @@ def post_pattern_grid_run_cancel(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
-@router.get("/run-v2-pattern-insight/dashboard")
-def get_run_v2_pattern_insight_dashboard(db: Session = Depends(get_db)) -> JSONResponse:
-    """Ultimo run Pattern Insights completato + tutti i suoi candidati, per
-    la pagina Pattern Insights (dati Run V2: vocabolario esteso con
-    tiri/corner/cartellini/arbitro, mercati primo tempo e O/U 0.5/1.5/3.5)."""
-    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import get_dashboard
+@router.get("/run-v2-pattern-insight/summary")
+def get_run_v2_pattern_insight_summary(
+    min_n: int = Query(default=20, ge=1),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Aggregato leggero (conteggi + migliore per bersaglio) per i grafici
+    della dashboard Pattern Insights — mai la lista intera dei candidati,
+    che con questo vocabolario esteso puo' superare le 25mila righe."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import get_summary
 
-    out = get_dashboard(db)
+    out = get_summary(db, min_n=min_n)
+    return JSONResponse(content=jsonable_encoder(out))
+
+
+@router.get("/run-v2-pattern-insight/candidates")
+def get_run_v2_pattern_insight_candidates(
+    target_type: str | None = Query(default=None),
+    target_key: str | None = Query(default=None),
+    min_n: int = Query(default=20, ge=1),
+    sort: str = Query(default="best"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Candidati paginati/filtrati per la tabella della dashboard Pattern
+    Insights."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import list_candidates
+
+    out = list_candidates(
+        db,
+        target_type=target_type,
+        target_key=target_key,
+        min_n=min_n,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
     return JSONResponse(content=jsonable_encoder(out))
 
 
