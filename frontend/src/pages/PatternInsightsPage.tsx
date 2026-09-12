@@ -46,17 +46,17 @@ function TopMarketsChart({ targets }: { targets: PatternInsightSummaryTarget[] }
       targets
         .filter((t) => t.target_type === 'market' && t.best_roi_pct != null)
         .sort((a, b) => (b.best_roi_pct ?? 0) - (a.best_roi_pct ?? 0))
-        .slice(0, 10)
+        .slice(0, 12)
         .map((t) => ({ name: t.target_label, roi: t.best_roi_pct ?? 0 })),
     [targets],
   )
   if (data.length === 0) return <div className="text-sm text-slate-400">Nessun dato disponibile.</div>
   return (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={data} layout="vertical" margin={{ left: 24, right: 24 }}>
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 40 }}>
         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
-        <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
+        <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 11 }} />
         <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, 'Miglior ROI']} />
         <Bar dataKey="roi" fill={ROI_COLOR} radius={[0, 4, 4, 0]} />
       </BarChart>
@@ -70,17 +70,17 @@ function TopSyntheticChart({ targets }: { targets: PatternInsightSummaryTarget[]
       targets
         .filter((t) => t.target_type === 'synthetic' && t.best_abs_deviation_pct != null)
         .sort((a, b) => (b.best_abs_deviation_pct ?? 0) - (a.best_abs_deviation_pct ?? 0))
-        .slice(0, 10)
+        .slice(0, 14)
         .map((t) => ({ name: t.target_label, deviation: t.best_abs_deviation_pct ?? 0 })),
     [targets],
   )
   if (data.length === 0) return <div className="text-sm text-slate-400">Nessun dato disponibile.</div>
   return (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={data} layout="vertical" margin={{ left: 24, right: 24 }}>
+    <ResponsiveContainer width="100%" height={420}>
+      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 40 }}>
         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" unit=" pt" tick={{ fontSize: 11 }} />
-        <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 11 }} />
+        <YAxis type="category" dataKey="name" width={260} tick={{ fontSize: 11 }} />
         <Tooltip
           formatter={(v) => [`${Number(v).toFixed(1)} punti percentuali`, 'Scarto max dalla base']}
         />
@@ -255,15 +255,25 @@ export function PatternInsightsPage() {
       )}
 
       {summary && summary.targets.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <Card title="Top 10 mercati per ROI" className="lg:col-span-1">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <Card title="Miglior ROI per mercato" className="xl:col-span-2">
+            <p className="mb-2 text-xs text-slate-400">
+              Il pattern piu&apos; redditizio trovato per ciascun mercato con quota storica.
+            </p>
             <TopMarketsChart targets={summary.targets} />
           </Card>
-          <Card title="Top 10 situazioni (tiri/corner/cartellini) per scarto dalla media" className="lg:col-span-1">
-            <TopSyntheticChart targets={summary.targets} />
-          </Card>
-          <Card title="Mercati vs bersagli senza quota" className="lg:col-span-1">
+          <Card title="Composizione">
+            <p className="mb-2 text-xs text-slate-400">
+              Quanti pattern per tipo di bersaglio.
+            </p>
             <TotalsPie totals={summary.totals} />
+          </Card>
+          <Card title="Situazioni piu' prevedibili (tiri, corner, cartellini)" className="xl:col-span-3">
+            <p className="mb-2 text-xs text-slate-400">
+              Quanto il profilo della partita sposta la probabilita&apos; rispetto alla media generale —
+              piu&apos; la barra e&apos; lunga, piu&apos; quella situazione e&apos; prevedibile in anticipo.
+            </p>
+            <TopSyntheticChart targets={summary.targets} />
           </Card>
         </div>
       )}
