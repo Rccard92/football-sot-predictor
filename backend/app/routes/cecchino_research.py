@@ -1346,6 +1346,7 @@ def get_run_v2_pattern_insight_summary(
 def get_run_v2_pattern_insight_candidates(
     target_type: str | None = Query(default=None),
     target_key: str | None = Query(default=None),
+    threshold: float | None = Query(default=None),
     min_n: int = Query(default=20, ge=1),
     sort: str = Query(default="best"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -1360,6 +1361,7 @@ def get_run_v2_pattern_insight_candidates(
         db,
         target_type=target_type,
         target_key=target_key,
+        threshold=threshold,
         min_n=min_n,
         sort=sort,
         limit=limit,

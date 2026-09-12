@@ -242,6 +242,7 @@ def list_candidates(
     *,
     target_type: str | None = None,
     target_key: str | None = None,
+    threshold: float | None = None,
     min_n: int = 20,
     sort: str = "best",
     limit: int = 100,
@@ -262,6 +263,8 @@ def list_candidates(
         base_filters.append(CecchinoRunV2PatternInsightCandidate.target_type == target_type)
     if target_key:
         base_filters.append(CecchinoRunV2PatternInsightCandidate.target_key == target_key)
+    if threshold is not None:
+        base_filters.append(CecchinoRunV2PatternInsightCandidate.threshold == _d(threshold))
 
     total = int(
         db.scalar(
