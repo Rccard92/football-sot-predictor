@@ -10,7 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.cecchino_pattern_discovery import CecchinoPatternDiscoveryStartBody
+from app.schemas.cecchino_pattern_discovery import (
+    CecchinoPatternDiscoveryStartBody,
+    CecchinoPatternGridStartBody,
+)
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityAuditBody,
@@ -1244,6 +1247,70 @@ def post_pattern_discovery_run_cancel(
 
     try:
         out = cancel_pattern_discovery(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/pattern-grid/runs")
+def post_pattern_grid_run(
+    body: CecchinoPatternGridStartBody,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia (in background) il motore Pattern Grid: ricerca esaustiva di
+    combinazioni di filtri, eseguita in sequenza sui pacchetti stagionali
+    indicati da run_ids (stadio 1 → valida+scopre → stadio 2 → ... ), con
+    lignaggio completo per candidato. Nessuna formula esistente viene letta
+    o modificata.
+    """
+    from app.services.cecchino_data_lab.pattern_grid_service import start_pattern_grid
+
+    try:
+        out = start_pattern_grid(
+            db, market_key=body.market_key, run_ids=body.run_ids, competition=body.competition
+        )
+        return JSONResponse(status_code=202, content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/pattern-grid/runs/{run_id}")
+def get_pattern_grid_run_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_grid_service import get_pattern_grid_run
+
+    try:
+        out = get_pattern_grid_run(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/pattern-grid/runs/{run_id}/candidates")
+def get_pattern_grid_run_candidates(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_grid_service import list_pattern_grid_candidates
+
+    try:
+        out = list_pattern_grid_candidates(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/pattern-grid/runs/{run_id}/cancel")
+def post_pattern_grid_run_cancel(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.pattern_grid_service import cancel_pattern_grid
+
+    try:
+        out = cancel_pattern_grid(db, run_id)
         return JSONResponse(content=jsonable_encoder(out))
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
