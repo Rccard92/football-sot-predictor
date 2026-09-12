@@ -1342,6 +1342,23 @@ def get_run_v2_pattern_insight_summary(
     return JSONResponse(content=jsonable_encoder(out))
 
 
+@router.get("/run-v2-pattern-insight/candidates/{candidate_id}/detail")
+def get_run_v2_pattern_insight_candidate_detail(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Drill-down su un pattern: scomposizione per campionato (nessuna nuova
+    ipotesi testata, e' solo la decomposizione di un pattern gia' trovato) ed
+    elenco delle partite che lo hanno effettivamente attivato."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_detail import get_candidate_detail
+
+    try:
+        out = get_candidate_detail(db, candidate_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @router.get("/run-v2-pattern-insight/analytics")
 def get_run_v2_pattern_insight_analytics(
     min_n: int = Query(default=50, ge=1),

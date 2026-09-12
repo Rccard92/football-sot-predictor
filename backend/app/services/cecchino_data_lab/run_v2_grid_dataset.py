@@ -60,6 +60,12 @@ class RunV2GridRow:
     won: bool | None
     profit_1u: float | None
     quota_book: float | None
+    # Solo per il drill-down (quali partite hanno attivato il pattern): non
+    # entrano mai nella logica di matching.
+    kickoff_at: str | None = None
+    home_team: str | None = None
+    away_team: str | None = None
+    actual_value: float | None = None
 
 
 def _pillar_class(payload: dict[str, Any] | None, pillar: str) -> str | None:
@@ -217,6 +223,9 @@ def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> lis
                 won=bool(result.won),
                 profit_1u=profit,
                 quota_book=quota,
+                kickoff_at=snap.kickoff_at.isoformat() if snap.kickoff_at else None,
+                home_team=snap.home_team,
+                away_team=snap.away_team,
             )
         )
     return rows
@@ -255,6 +264,10 @@ def load_run_v2_synthetic_rows(
                 won=bool(value > threshold),
                 profit_1u=None,
                 quota_book=None,
+                kickoff_at=snap.kickoff_at.isoformat() if snap.kickoff_at else None,
+                home_team=snap.home_team,
+                away_team=snap.away_team,
+                actual_value=float(value),
             )
         )
     return rows
