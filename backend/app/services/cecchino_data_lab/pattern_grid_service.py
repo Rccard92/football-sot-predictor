@@ -45,6 +45,25 @@ KNOWN_MARKET_KEYS = (
     "UNDER_2_5",
 )
 
+KNOWN_COMPETITIONS = (
+    "Serie A",
+    "Serie B",
+    "Premier League",
+    "Championship",
+    "League One",
+    "League Two",
+    "La Liga",
+    "La Liga 2",
+    "Bundesliga",
+    "Bundesliga 2",
+    "Ligue 1",
+    "Ligue 2",
+    "Primeira Liga",
+    "Eredivisie",
+    "Jupiler Pro League",
+    "Süper Lig",
+)
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -174,27 +193,33 @@ def list_pattern_grid_candidates(db: Session, run_id: int) -> list[dict[str, Any
 
 
 def get_leaderboard(db: Session, *, min_total_n: int = 20) -> dict[str, Any]:
-    """Vista consolidata su tutti i mercati (scope globale): per ognuno,
-    l'ultimo run completato, e tutti i candidati con profitto totale sui 4
-    anni positivo (non filtrato per un singolo segno)."""
-    runs_by_market: dict[str, CecchinoPatternGridRun] = {}
-    for mk in KNOWN_MARKET_KEYS:
-        run = db.scalars(
-            select(CecchinoPatternGridRun)
-            .where(
-                CecchinoPatternGridRun.market_key == mk,
-                CecchinoPatternGridRun.competition.is_(None),
-                CecchinoPatternGridRun.status == STATUS_COMPLETED,
-            )
-            .order_by(CecchinoPatternGridRun.completed_at.desc())
-        ).first()
-        if run:
-            runs_by_market[mk] = run
+    """Vista consolidata su tutti i mercati e tutti gli scope (globale + ogni
+    singolo campionato): per ognuno, l'ultimo run completato, e tutti i
+    candidati con profitto totale sui 4 anni positivo (non filtrato per un
+    singolo segno o campionato — il filtro e' lato frontend)."""
+    scopes: list[tuple[str, str | None]] = [(mk, None) for mk in KNOWN_MARKET_KEYS] + [
+        (mk, comp) for mk in KNOWN_MARKET_KEYS for comp in KNOWN_COMPETITIONS
+    ]
 
-    if not runs_by_market:
+    runs_by_scope: dict[str, CecchinoPatternGridRun] = {}
+    for mk, comp in scopes:
+        query = select(CecchinoPatternGridRun).where(
+            CecchinoPatternGridRun.market_key == mk,
+            CecchinoPatternGridRun.status == STATUS_COMPLETED,
+        )
+        query = query.where(
+            CecchinoPatternGridRun.competition.is_(None)
+            if comp is None
+            else CecchinoPatternGridRun.competition == comp
+        )
+        run = db.scalars(query.order_by(CecchinoPatternGridRun.completed_at.desc())).first()
+        if run:
+            runs_by_scope[f"{mk}|{comp or ''}"] = run
+
+    if not runs_by_scope:
         return {"runs": {}, "candidates": []}
 
-    run_ids = [r.id for r in runs_by_market.values()]
+    run_ids = [r.id for r in runs_by_scope.values()]
     rows = db.scalars(
         select(CecchinoPatternGridCandidate)
         .where(
@@ -206,7 +231,7 @@ def get_leaderboard(db: Session, *, min_total_n: int = 20) -> dict[str, Any]:
     ).all()
 
     return {
-        "runs": {mk: run_to_dict(r) for mk, r in runs_by_market.items()},
+        "runs": {k: run_to_dict(r) for k, r in runs_by_scope.items()},
         "candidates": [candidate_row_to_dict(r) for r in rows],
     }
 

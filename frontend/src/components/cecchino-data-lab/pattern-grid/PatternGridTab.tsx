@@ -54,14 +54,14 @@ function CandidateRow({ c }: { c: PatternGridCandidate }) {
   return (
     <tr>
       <td className="whitespace-nowrap text-xs font-semibold">{c.market_label}</td>
+      <td className="text-xs" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+        {c.competition ?? 'Globale'}
+      </td>
       <td
         className="min-w-[260px] max-w-[380px] text-xs"
         style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}
       >
         {c.filters_text_human}
-        {c.competition && (
-          <div style={{ color: 'var(--lab-cyan)' }}>· {c.competition}</div>
-        )}
       </td>
       <td className="whitespace-nowrap text-xs">Stadio {c.born_stage}</td>
       {[1, 2, 3, 4].map((stage) => (
@@ -104,6 +104,7 @@ export function PatternGridTab() {
   const [selectedVerdicts, setSelectedVerdicts] = useState<Set<PatternGridVerdict>>(
     () => new Set(ALL_VERDICTS),
   )
+  const [selectedCompetition, setSelectedCompetition] = useState<string>('ALL')
 
   const toggleVerdict = (v: PatternGridVerdict) => {
     setSelectedVerdicts((prev) => {
@@ -179,12 +180,24 @@ export function PatternGridTab() {
   }
 
   const candidates = data?.candidates ?? []
-  const marketsCovered = data ? Object.keys(data.runs).length : 0
+  const runScopeKeys = data ? Object.keys(data.runs) : []
+  const marketsCovered = runScopeKeys.filter((k) => k.endsWith('|')).length
+  const competitionsCovered = new Set(
+    runScopeKeys.filter((k) => !k.endsWith('|')).map((k) => k.split('|')[1]),
+  ).size
   const verdictCounts = candidates.reduce<Record<string, number>>((acc, c) => {
     acc[c.final_verdict] = (acc[c.final_verdict] ?? 0) + 1
     return acc
   }, {})
-  const filteredCandidates = candidates.filter((c) => selectedVerdicts.has(c.final_verdict))
+  const competitionOptions = Array.from(
+    new Set(candidates.map((c) => c.competition).filter((v): v is string => v != null)),
+  ).sort()
+  const filteredCandidates = candidates.filter((c) => {
+    if (!selectedVerdicts.has(c.final_verdict)) return false
+    if (selectedCompetition === 'ALL') return true
+    if (selectedCompetition === 'GLOBAL') return c.competition == null
+    return c.competition === selectedCompetition
+  })
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -193,8 +206,10 @@ export function PatternGridTab() {
         <p className="mt-1 text-sm" style={{ color: 'var(--lab-muted)' }}>
           Ricerca cieca (non parte dai pattern già noti in League Pattern Analysis): prova sistematicamente
           combinazioni di 1-3 caratteristiche della partita, mercato per mercato, in sequenza sulle 4 stagioni
-          2021/22→2024/25. Qui sotto solo i pattern con <strong>profitto totale positivo sui 4 anni combinati</strong>,
-          di tutti i mercati insieme — non filtrati per un singolo segno.
+          2021/22→2024/25 — sia su tutte le leghe insieme ("Globale") sia singolo campionato per singolo
+          campionato (pattern "league-native", che potrebbero valere solo per quella lega). Qui sotto solo i
+          pattern con <strong>profitto totale positivo sui 4 anni combinati</strong>, mischiati tra loro — usa i
+          filtri sotto per restringere a un verdetto o a un campionato specifico.
         </p>
         <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
           <strong>Come leggere le colonne Stadio 1-4</strong>: ogni pattern nasce in uno stadio (una stagione, o il
@@ -207,8 +222,8 @@ export function PatternGridTab() {
         </p>
         {data && (
           <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
-            Mercati coperti: {marketsCovered}/{PATTERN_GRID_MARKET_KEYS.length} · Pattern a profitto positivo:{' '}
-            {candidates.length}
+            Mercati coperti (globale): {marketsCovered}/{PATTERN_GRID_MARKET_KEYS.length} · Campionati
+            coperti: {competitionsCovered}/16 · Pattern a profitto positivo: {candidates.length}
             {filteredCandidates.length !== candidates.length && (
               <> · mostrati con i filtri attuali: {filteredCandidates.length}</>
             )}
@@ -266,21 +281,38 @@ export function PatternGridTab() {
           >
             Nessuno
           </button>
+          <span className="ml-4 text-xs font-semibold" style={{ color: 'var(--lab-muted)' }}>
+            Campionato:
+          </span>
+          <select
+            className="lab-input text-xs"
+            value={selectedCompetition}
+            onChange={(e) => setSelectedCompetition(e.target.value)}
+          >
+            <option value="ALL">Tutti (globale + ogni campionato)</option>
+            <option value="GLOBAL">Solo globale (tutte le leghe insieme)</option>
+            {competitionOptions.map((comp) => (
+              <option key={comp} value={comp}>
+                {comp}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
       {candidates.length > 0 && filteredCandidates.length === 0 && (
         <div style={{ color: 'var(--lab-muted)' }}>
-          Nessun pattern corrisponde ai verdetti selezionati. Attiva almeno un verdetto qui sopra.
+          Nessun pattern corrisponde ai filtri selezionati (verdetto e/o campionato).
         </div>
       )}
 
       {filteredCandidates.length > 0 && (
         <div className="lab-card p-0">
           <div className="lab-table-wrap">
-            <table className="lab-table w-full min-w-[1180px] table-fixed">
+            <table className="lab-table w-full min-w-[1300px] table-fixed">
               <colgroup>
                 <col style={{ width: '70px' }} />
+                <col style={{ width: '120px' }} />
                 <col style={{ width: '300px' }} />
                 <col style={{ width: '80px' }} />
                 <col style={{ width: '110px' }} />
@@ -293,6 +325,7 @@ export function PatternGridTab() {
               <thead>
                 <tr>
                   <th className="text-left">Mercato</th>
+                  <th className="text-left">Campionato</th>
                   <th className="text-left">Pattern</th>
                   <th className="text-left">Nato a</th>
                   {STAGE_SEASON_LABELS.map((label, i) => (
