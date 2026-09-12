@@ -72,6 +72,92 @@ export type PatternInsightCandidatesPage = {
   items: PatternInsightCandidate[]
 }
 
+export type MarketStat = {
+  target_key: string
+  target_label: string
+  pattern_count: number
+  best_roi_pct: number | null
+  median_roi_pct: number | null
+  avg_n: number | null
+  max_n: number | null
+  avg_quota: number | null
+}
+
+export type FactorStat = {
+  column_key: string
+  label: string
+  uses: number
+  avg_roi_pct: number | null
+}
+
+export type ComplexityStat = {
+  atoms: number
+  pattern_count: number
+  avg_roi_pct: number | null
+  avg_n: number | null
+  avg_abs_deviation_pct: number | null
+}
+
+export type QualityPoint = {
+  n: number
+  roi_pct: number | null
+  avg_quota: number | null
+  target_label: string
+}
+
+export type SyntheticDirection = {
+  target_key: string
+  target_label: string
+  threshold: number | null
+  pattern_count: number
+  best_up_pct: number | null
+  best_down_pct: number | null
+  baseline_pct: number | null
+}
+
+export type SampleBucket = {
+  bucket: string
+  pattern_count: number
+  avg_roi_pct: number | null
+}
+
+export type SourceCoverage = {
+  season_label?: string
+  matches?: number
+  date_range?: { start?: string; end?: string }
+  elapsed_seconds?: number
+  avg_ms_per_match?: number
+  market_rows_written?: number
+  leakage_ok?: boolean
+  leakage_violations?: number
+  matches_audited?: number
+  referee_coverage_pct?: number
+  quote_policy_version?: string
+  competitions?: Array<{ competition: string; matches: number; eligible_core: number }>
+  market_coverage?: Array<{
+    market_key: string
+    rows: number
+    rows_with_quote: number
+    quote_coverage_pct: number
+  }>
+}
+
+export type PatternInsightAnalytics = {
+  run: PatternInsightRun | null
+  min_n?: number
+  by_market?: MarketStat[]
+  factor_frequency?: FactorStat[]
+  by_complexity?: ComplexityStat[]
+  quality_scatter?: QualityPoint[]
+  synthetic_directions?: SyntheticDirection[]
+  sample_buckets?: SampleBucket[]
+  source_coverage?: SourceCoverage
+}
+
+export async function getPatternInsightAnalytics(minN = 50): Promise<PatternInsightAnalytics> {
+  return requestJson(`/api/admin/cecchino/research/run-v2-pattern-insight/analytics?min_n=${minN}`)
+}
+
 export async function getPatternInsightSummary(minN = 20): Promise<PatternInsightSummary> {
   return requestJson(`/api/admin/cecchino/research/run-v2-pattern-insight/summary?min_n=${minN}`)
 }
