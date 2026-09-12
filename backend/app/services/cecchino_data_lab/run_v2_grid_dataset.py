@@ -10,17 +10,21 @@ Due modalita' di lettura:
   esiste per questi, quindi si riporta solo la frequenza (win_rate), non il
   ROI. Utili per capire quali profili di partita producono quali situazioni,
   anche se non sono (ancora) scommettibili.
+
+Nota di performance: gli snapshot Run V2 contengono ~350 MB di JSONB per
+stagione, ma a noi servono solo una dozzina di valori scalari per riga. Le
+estrazioni vengono quindi fatte in SQL (operatori jsonb) e viaggiano come
+scalari: caricare gli oggetti ORM interi rendeva ogni lettura decine di
+volte piu' lenta senza alcun beneficio.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.cecchino_run_v2 import CecchinoRunV2MarketResult, CecchinoRunV2MatchSnapshot
 from app.services.cecchino_data_lab.run_v2_grid_vocabulary import (
     CONTINUOUS_FEATURE_COLUMNS,
     QuantileBinner,
@@ -33,8 +37,7 @@ OBSERVATION_LAYER = "core_strict"
 _STAT_KEYS = ("shots", "sot", "corners", "fouls", "yellow_cards", "red_cards")
 
 # Bersagli sintetici senza quota storica: statistica actuals_json + soglie
-# candidate (over N.5) da provare. Non scelte a caso: coprono l'intervallo
-# tipico osservato nei dati (vedi analisi preliminare di sessione).
+# candidate (over N.5) da provare.
 SYNTHETIC_TARGETS: tuple[tuple[str, str, tuple[float, ...]], ...] = (
     ("total_shots", "Tiri totali", (20.5, 24.5, 28.5)),
     ("home_shots", "Tiri squadra 1", (9.5, 11.5, 13.5)),
@@ -49,6 +52,8 @@ SYNTHETIC_TARGETS: tuple[tuple[str, str, tuple[float, ...]], ...] = (
     ("home_yellow_cards", "Cartellini gialli squadra 1", (1.5, 2.5, 3.5)),
     ("away_yellow_cards", "Cartellini gialli squadra 2", (1.5, 2.5, 3.5)),
 )
+
+_ALLOWED_SYNTHETIC_KEYS = frozenset(k for k, _, _ in SYNTHETIC_TARGETS)
 
 
 @dataclass(frozen=True)
@@ -68,97 +73,66 @@ class RunV2GridRow:
     actual_value: float | None = None
 
 
-def _pillar_class(payload: dict[str, Any] | None, pillar: str) -> str | None:
-    if not payload:
-        return None
-    pillars = payload.get("pillars") or {}
-    p = pillars.get(pillar)
-    if not isinstance(p, dict):
-        return None
-    v = p.get("class_key")
-    return str(v) if v else None
+# --- proiezioni SQL ---------------------------------------------------------
+
+_GOAL_PILLARS = (
+    ("goal_offensive_production_class", "offensive_production"),
+    ("goal_defensive_solidity_class", "defensive_solidity"),
+    ("goal_match_tempo_class", "match_tempo"),
+    ("goal_offensive_stability_class", "offensive_stability"),
+)
+_BALANCE_PILLARS = (
+    ("balance_f36_class", "f36"),
+    ("balance_dominance_class", "dominance"),
+    ("balance_draw_credibility_class", "draw_credibility"),
+    ("balance_gap_coherence_class", "gap_coherence"),
+)
 
 
-def _goal_final_class(payload: dict[str, Any] | None) -> str | None:
-    if not payload:
-        return None
-    fc = payload.get("final_class")
-    if isinstance(fc, dict):
-        v = fc.get("key")
-        return str(v) if v else None
-    return None
+def _class_projections() -> str:
+    parts = [
+        f"s.goal_intensity_json->'pillars'->'{pillar}'->>'class_key' AS {alias}"
+        for alias, pillar in _GOAL_PILLARS
+    ]
+    parts.append("s.goal_intensity_json->'final_class'->>'key' AS goal_final_class")
+    parts += [
+        f"s.balance_v5_json->'pillar_classes'->>'{pillar}' AS {alias}"
+        for alias, pillar in _BALANCE_PILLARS
+    ]
+    return ",\n       ".join(parts)
 
 
-def _balance_pillar_class(payload: dict[str, Any] | None, pillar: str) -> str | None:
-    if not payload:
-        return None
-    classes = payload.get("pillar_classes") or {}
-    v = classes.get(pillar)
-    return str(v) if v else None
-
-
-def _purchasability_class_for_market(payload: dict[str, Any] | None, market_key: str) -> str | None:
-    if not payload:
-        return None
-    for entry in payload.get("markets") or []:
-        if isinstance(entry, dict) and entry.get("market_key") == market_key:
-            cls = entry.get("class")
-            return str(cls) if cls else None
-    return None
-
-
-def _team_stat_delta(extra_stats: dict[str, Any] | None, side: str, stat: str) -> float | None:
-    if not extra_stats:
-        return None
-    teams = extra_stats.get("teams") or {}
-    team = teams.get(side)
-    if not isinstance(team, dict):
-        return None
-    stats = team.get("stats") or {}
-    s = stats.get(stat)
-    if not isinstance(s, dict):
-        return None
-    v = s.get("competition_delta_for")
-    return float(v) if isinstance(v, (int, float)) else None
-
-
-def _referee_cards_avg(extra_stats: dict[str, Any] | None) -> float | None:
-    if not extra_stats:
-        return None
-    ref = extra_stats.get("referee") or {}
-    if not ref.get("available"):
-        return None
-    v = ref.get("previous_cards_avg")
-    return float(v) if isinstance(v, (int, float)) else None
-
-
-def _base_categorical(snap: CecchinoRunV2MatchSnapshot) -> dict[str, str | None]:
-    gi = snap.goal_intensity_json
-    bv = snap.balance_v5_json
-    return {
-        "goal_offensive_production_class": _pillar_class(gi, "offensive_production"),
-        "goal_defensive_solidity_class": _pillar_class(gi, "defensive_solidity"),
-        "goal_match_tempo_class": _pillar_class(gi, "match_tempo"),
-        "goal_offensive_stability_class": _pillar_class(gi, "offensive_stability"),
-        "goal_final_class": _goal_final_class(gi),
-        "balance_f36_class": _balance_pillar_class(bv, "f36"),
-        "balance_dominance_class": _balance_pillar_class(bv, "dominance"),
-        "balance_draw_credibility_class": _balance_pillar_class(bv, "draw_credibility"),
-        "balance_gap_coherence_class": _balance_pillar_class(bv, "gap_coherence"),
-    }
-
-
-def _continuous_raw(snap: CecchinoRunV2MatchSnapshot) -> dict[str, float | None]:
-    extra = snap.extra_stats_prematch_json
-    raw: dict[str, float | None] = {}
+def _delta_projections() -> str:
+    parts = []
     for side in ("home", "away"):
         for stat in _STAT_KEYS:
-            raw[f"{side}_{stat}_delta_class"] = _team_stat_delta(extra, side, stat)
-    raw["referee_cards_avg_class"] = _referee_cards_avg(extra)
-    return raw
+            parts.append(
+                f"(s.extra_stats_prematch_json->'teams'->'{side}'->'stats'->'{stat}'"
+                f"->>'competition_delta_for')::double precision AS {side}_{stat}_delta_class"
+            )
+    parts.append(
+        "(CASE WHEN (s.extra_stats_prematch_json->'referee'->>'available')::boolean "
+        "THEN (s.extra_stats_prematch_json->'referee'->>'previous_cards_avg')::double precision "
+        "END) AS referee_cards_avg_class"
+    )
+    return ",\n       ".join(parts)
 
 
-def _compute_binners(raw_rows: list[dict[str, float | None]]) -> dict[str, QuantileBinner]:
+def _base_select(extra_columns: str) -> str:
+    return f"""
+        SELECT s.lab_match_id,
+               s.competition_name,
+               s.kickoff_at,
+               s.home_team,
+               s.away_team,
+               {_class_projections()},
+               {_delta_projections()},
+               {extra_columns}
+        FROM cecchino_run_v2_match_snapshots s
+    """
+
+
+def _binners_from(raw_rows: list[dict[str, float | None]]) -> dict[str, QuantileBinner]:
     by_column: dict[str, list[float]] = {c: [] for c in CONTINUOUS_FEATURE_COLUMNS}
     for raw in raw_rows:
         for col in CONTINUOUS_FEATURE_COLUMNS:
@@ -168,64 +142,75 @@ def _compute_binners(raw_rows: list[dict[str, float | None]]) -> dict[str, Quant
     return bin_continuous_features(by_column)
 
 
-def _eligible_snapshots(db: Session, run_id: int) -> list[CecchinoRunV2MatchSnapshot]:
-    return list(
-        db.scalars(
-            select(CecchinoRunV2MatchSnapshot).where(
-                CecchinoRunV2MatchSnapshot.run_id == run_id,
-                CecchinoRunV2MatchSnapshot.eligibility_status == ELIGIBLE_STATUS,
-            )
-        ).all()
-    )
+def _categorical_from(row: dict, binners: dict[str, QuantileBinner]) -> dict[str, str | None]:
+    categorical: dict[str, str | None] = {}
+    for alias, _ in _GOAL_PILLARS:
+        categorical[alias] = row.get(alias)
+    categorical["goal_final_class"] = row.get("goal_final_class")
+    for alias, _ in _BALANCE_PILLARS:
+        categorical[alias] = row.get(alias)
+    for col in CONTINUOUS_FEATURE_COLUMNS:
+        v = row.get(col)
+        binner = binners.get(col)
+        categorical[col] = binner.label_for(v) if (binner and v is not None) else None
+    return categorical
 
 
 def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> list[RunV2GridRow]:
     """Righe per un mercato con quota storica (i 17 mercati di Run V2)."""
-    snaps = _eligible_snapshots(db, run_id)
-    if not snaps:
-        return []
-    snap_ids = [int(s.id) for s in snaps]
-    results = list(
-        db.scalars(
-            select(CecchinoRunV2MarketResult).where(
-                CecchinoRunV2MarketResult.match_snapshot_id.in_(snap_ids),
-                CecchinoRunV2MarketResult.market_key == market_key,
-                CecchinoRunV2MarketResult.observation_layer == OBSERVATION_LAYER,
-                CecchinoRunV2MarketResult.pre_match_input_safe.is_(True),
-            )
-        ).all()
+    sql = (
+        _base_select(
+            """
+               (SELECT pm->>'class'
+                  FROM jsonb_array_elements(
+                         coalesce(s.purchasability_json->'markets', '[]'::jsonb)) pm
+                 WHERE pm->>'market_key' = :market_key
+                 LIMIT 1) AS purchasability_class,
+               r.won                AS won,
+               r.flat_stake_profit  AS profit_1u,
+               r.quota_book         AS quota_book,
+               r.signal_active      AS signal_active
+            """
+        )
+        + """
+        JOIN cecchino_run_v2_market_results r
+          ON r.match_snapshot_id = s.id
+         AND r.market_key = :market_key
+         AND r.observation_layer = :layer
+         AND r.pre_match_input_safe IS TRUE
+        WHERE s.run_id = :run_id
+          AND s.eligibility_status = :eligible
+          AND r.won IS NOT NULL
+        """
     )
-    result_by_snap = {int(r.match_snapshot_id): r for r in results}
-
-    raw_continuous = [_continuous_raw(s) for s in snaps]
-    binners = _compute_binners(raw_continuous)
+    result = db.execute(
+        text(sql),
+        {
+            "run_id": run_id,
+            "market_key": market_key,
+            "layer": OBSERVATION_LAYER,
+            "eligible": ELIGIBLE_STATUS,
+        },
+    )
+    raw = [dict(r._mapping) for r in result]
+    binners = _binners_from(raw)
 
     rows: list[RunV2GridRow] = []
-    for snap, raw in zip(snaps, raw_continuous):
-        result = result_by_snap.get(int(snap.id))
-        if result is None or result.won is None:
-            continue
-        categorical = _base_categorical(snap)
-        categorical["purchasability_class"] = _purchasability_class_for_market(
-            snap.purchasability_json, market_key
-        )
-        for col, binner in binners.items():
-            v = raw.get(col)
-            categorical[col] = binner.label_for(v) if v is not None else None
-        profit = float(result.flat_stake_profit) if result.flat_stake_profit is not None else None
-        quota = float(result.quota_book) if result.quota_book is not None else None
+    for r in raw:
+        categorical = _categorical_from(r, binners)
+        categorical["purchasability_class"] = r.get("purchasability_class")
         rows.append(
             RunV2GridRow(
-                lab_match_id=int(snap.lab_match_id),
-                competition=snap.competition_name,
+                lab_match_id=int(r["lab_match_id"]),
+                competition=r["competition_name"],
                 categorical=categorical,
-                signal_active=bool(result.signal_active),
-                won=bool(result.won),
-                profit_1u=profit,
-                quota_book=quota,
-                kickoff_at=snap.kickoff_at.isoformat() if snap.kickoff_at else None,
-                home_team=snap.home_team,
-                away_team=snap.away_team,
+                signal_active=bool(r["signal_active"]),
+                won=bool(r["won"]),
+                profit_1u=float(r["profit_1u"]) if r["profit_1u"] is not None else None,
+                quota_book=float(r["quota_book"]) if r["quota_book"] is not None else None,
+                kickoff_at=r["kickoff_at"].isoformat() if r["kickoff_at"] else None,
+                home_team=r["home_team"],
+                away_team=r["away_team"],
             )
         )
     return rows
@@ -237,36 +222,45 @@ def load_run_v2_synthetic_rows(
     """Righe per un bersaglio sintetico senza quota (es. 'total_corners' over
     9.5): won=True se il valore reale della partita ha superato la soglia.
     Nessun profit/quota — servono a capire la frequenza, non un ROI."""
-    snaps = _eligible_snapshots(db, run_id)
-    if not snaps:
-        return []
+    if stat_key not in _ALLOWED_SYNTHETIC_KEYS:
+        raise ValueError(f"stat_key non riconosciuto: {stat_key!r}")
 
-    raw_continuous = [_continuous_raw(s) for s in snaps]
-    binners = _compute_binners(raw_continuous)
+    sql = (
+        _base_select(
+            f"(s.actuals_json->>'{stat_key}')::double precision AS actual_value"
+        )
+        # `stat_key` e' validato contro l'allowlist sopra: nessun input libero
+        # finisce nella query. Si evita l'operatore jsonb `?` (ambiguo con i
+        # placeholder dei driver) usando un semplice IS NOT NULL.
+        + f"""
+        WHERE s.run_id = :run_id
+          AND s.eligibility_status = :eligible
+          AND s.actuals_json->>'{stat_key}' IS NOT NULL
+        """
+    )
+    result = db.execute(text(sql), {"run_id": run_id, "eligible": ELIGIBLE_STATUS})
+    raw = [dict(r._mapping) for r in result]
+    binners = _binners_from(raw)
 
     rows: list[RunV2GridRow] = []
-    for snap, raw in zip(snaps, raw_continuous):
-        actuals = snap.actuals_json or {}
-        value = actuals.get(stat_key)
-        if not isinstance(value, (int, float)):
+    for r in raw:
+        value = r.get("actual_value")
+        if value is None:
             continue
-        categorical = _base_categorical(snap)
+        categorical = _categorical_from(r, binners)
         categorical["purchasability_class"] = None
-        for col, binner in binners.items():
-            v = raw.get(col)
-            categorical[col] = binner.label_for(v) if v is not None else None
         rows.append(
             RunV2GridRow(
-                lab_match_id=int(snap.lab_match_id),
-                competition=snap.competition_name,
+                lab_match_id=int(r["lab_match_id"]),
+                competition=r["competition_name"],
                 categorical=categorical,
                 signal_active=False,
                 won=bool(value > threshold),
                 profit_1u=None,
                 quota_book=None,
-                kickoff_at=snap.kickoff_at.isoformat() if snap.kickoff_at else None,
-                home_team=snap.home_team,
-                away_team=snap.away_team,
+                kickoff_at=r["kickoff_at"].isoformat() if r["kickoff_at"] else None,
+                home_team=r["home_team"],
+                away_team=r["away_team"],
                 actual_value=float(value),
             )
         )
