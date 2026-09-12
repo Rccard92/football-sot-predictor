@@ -54,6 +54,10 @@ from app.models.cecchino_pattern_discovery_run import CecchinoPatternDiscoveryRu
 from app.models.cecchino_discovered_pattern import CecchinoDiscoveredPattern
 from app.models.cecchino_pattern_grid_run import CecchinoPatternGridRun
 from app.models.cecchino_pattern_grid_candidate import CecchinoPatternGridCandidate
+from app.models.cecchino_run_v2_pattern_insight import (
+    CecchinoRunV2PatternInsightCandidate,
+    CecchinoRunV2PatternInsightRun,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -130,6 +134,8 @@ __all__ = [
     "CecchinoDiscoveredPattern",
     "CecchinoPatternGridRun",
     "CecchinoPatternGridCandidate",
+    "CecchinoRunV2PatternInsightRun",
+    "CecchinoRunV2PatternInsightCandidate",
     "Competition",
     "Fixture",
     "FixtureLineup",

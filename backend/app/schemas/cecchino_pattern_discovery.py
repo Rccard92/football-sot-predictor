@@ -26,3 +26,7 @@ class CecchinoPatternGridStartBody(BaseModel):
         default=None,
         description="Se indicato, ricerca ristretta a un solo campionato. Se omesso, globale.",
     )
+
+
+class CecchinoRunV2PatternInsightStartBody(BaseModel):
+    run_v2_run_id: int = Field(description="Id del run Run V2 completato da analizzare (es. 4)")

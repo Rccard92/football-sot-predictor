@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.schemas.cecchino_pattern_discovery import (
     CecchinoPatternDiscoveryStartBody,
     CecchinoPatternGridStartBody,
+    CecchinoRunV2PatternInsightStartBody,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.schemas.cecchino_draw_credibility_research import (
@@ -1322,6 +1323,68 @@ def post_pattern_grid_run_cancel(
 
     try:
         out = cancel_pattern_grid(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/run-v2-pattern-insight/dashboard")
+def get_run_v2_pattern_insight_dashboard(db: Session = Depends(get_db)) -> JSONResponse:
+    """Ultimo run Pattern Insights completato + tutti i suoi candidati, per
+    la pagina Pattern Insights (dati Run V2: vocabolario esteso con
+    tiri/corner/cartellini/arbitro, mercati primo tempo e O/U 0.5/1.5/3.5)."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import get_dashboard
+
+    out = get_dashboard(db)
+    return JSONResponse(content=jsonable_encoder(out))
+
+
+@router.post("/run-v2-pattern-insight/runs")
+def post_run_v2_pattern_insight_run(
+    body: CecchinoRunV2PatternInsightStartBody,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia (in background) la ricerca esaustiva Pattern Insights su una
+    Run V2 completata: 17 mercati con quota + bersagli sintetici senza
+    quota (tiri/corner/cartellini), eseguiti in sequenza."""
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import (
+        start_pattern_insight_run,
+    )
+
+    try:
+        out = start_pattern_insight_run(db, run_v2_run_id=body.run_v2_run_id)
+        return JSONResponse(status_code=202, content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/run-v2-pattern-insight/runs/{run_id}")
+def get_run_v2_pattern_insight_run_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import (
+        get_pattern_insight_run,
+    )
+
+    try:
+        out = get_pattern_insight_run(db, run_id)
+        return JSONResponse(content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/run-v2-pattern-insight/runs/{run_id}/cancel")
+def post_run_v2_pattern_insight_run_cancel(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    from app.services.cecchino_data_lab.run_v2_pattern_insight_service import (
+        cancel_pattern_insight_run,
+    )
+
+    try:
+        out = cancel_pattern_insight_run(db, run_id)
         return JSONResponse(content=jsonable_encoder(out))
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
