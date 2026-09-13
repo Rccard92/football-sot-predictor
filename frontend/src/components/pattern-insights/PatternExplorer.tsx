@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Section } from './PatternInsightsShell'
 import { PatternDetailPanel } from './PatternDetailPanel'
+import { ABOVE_CHANCE, BELOW_CHANCE } from './PatternValidationBlocks'
 import {
+  VERDICT_LABELS,
   getPatternInsightCandidates,
+  type OosStats,
   type PatternInsightCandidate,
   type PatternInsightTargetType,
+  type PatternSort,
 } from '../../lib/patternInsightsApi'
 
 const PAGE_SIZE = 25
@@ -28,12 +32,51 @@ function RiskChip({ n }: { n: number }) {
   )
 }
 
-function Row({ c, onOpen }: { c: PatternInsightCandidate; onOpen: () => void }) {
-  const isMarket = c.target_type === 'market'
+export function VerdictChip({ verdict }: { verdict: OosStats['verdict'] | null | undefined }) {
+  if (!verdict) return <span style={{ color: 'var(--pi-muted)' }}>—</span>
+  const color =
+    verdict === 'confirmed'
+      ? ABOVE_CHANCE
+      : verdict === 'rejected'
+        ? BELOW_CHANCE
+        : verdict === 'attenuated'
+          ? 'var(--pi-warn)'
+          : 'var(--pi-muted)'
+  const icon = verdict === 'confirmed' ? '✓' : verdict === 'rejected' ? '✗' : verdict === 'attenuated' ? '~' : '·'
   return (
-    <tr onClick={onOpen} style={{ cursor: 'pointer' }} title="Apri dettaglio: campionati e partite">
+    <span
+      className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold"
+      style={{ color: 'var(--pi-text)', background: 'rgba(255,255,255,0.03)', border: `1px solid ${color}` }}
+    >
+      <span style={{ color }}>{icon}</span> {VERDICT_LABELS[verdict]}
+    </span>
+  )
+}
+
+function MetricCell({ isMarket, roi, deviation }: { isMarket: boolean; roi: number | null; deviation: number | null }) {
+  const v = isMarket ? roi : deviation
+  return (
+    <span className="font-semibold" style={{ color: (v ?? 0) >= 0 ? 'var(--pi-text)' : BELOW_CHANCE }}>
+      {pct(v)}
+    </span>
+  )
+}
+
+function Row({
+  c,
+  onOpen,
+  hasValidation,
+}: {
+  c: PatternInsightCandidate
+  onOpen: () => void
+  hasValidation: boolean
+}) {
+  const isMarket = c.target_type === 'market'
+  const oos = c.oos
+  return (
+    <tr onClick={onOpen} style={{ cursor: 'pointer' }} title="Apri dettaglio: stagioni, campionati e partite">
       <td className="whitespace-nowrap font-semibold">{c.target_label}</td>
-      <td style={{ maxWidth: 420 }}>
+      <td style={{ maxWidth: 380 }}>
         <div className="leading-snug">{c.filters_text_human}</div>
         {c.refined_from_text ? (
           <div className="mt-0.5 text-[10px]" style={{ color: 'var(--pi-muted)' }}>
@@ -47,31 +90,55 @@ function Row({ c, onOpen }: { c: PatternInsightCandidate; onOpen: () => void }) 
           <RiskChip n={c.n} />
         </div>
         <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-          {c.wins}V · {c.losses}P
+          {c.wins}V · {c.losses}P · {c.win_rate_pct?.toFixed(1)}%
         </div>
       </td>
       <td className="whitespace-nowrap tabular-nums">
-        {c.win_rate_pct != null ? `${c.win_rate_pct.toFixed(1)}%` : '—'}
-        {!isMarket && c.baseline_win_rate_pct != null ? (
+        <MetricCell isMarket={isMarket} roi={c.roi_pct} deviation={c.deviation_pct} />
+        {isMarket && c.avg_quota != null ? (
           <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-            base {c.baseline_win_rate_pct.toFixed(1)}%
+            quota {c.avg_quota.toFixed(2)}
           </div>
         ) : null}
       </td>
-      <td className="whitespace-nowrap tabular-nums font-semibold">
-        {isMarket ? (
-          <span style={{ color: 'var(--pi-pos)' }}>{pct(c.roi_pct)}</span>
-        ) : (
-          <span
-            style={{ color: (c.deviation_pct ?? 0) >= 0 ? 'var(--pi-pos)' : 'var(--pi-neg)' }}
-          >
-            {pct(c.deviation_pct)}
-          </span>
-        )}
-      </td>
-      <td className="whitespace-nowrap tabular-nums">
-        {c.avg_quota != null ? c.avg_quota.toFixed(2) : '—'}
-      </td>
+      {hasValidation && (
+        <>
+          <td className="whitespace-nowrap tabular-nums" style={{ borderLeft: '1px solid var(--pi-border)' }}>
+            {oos ? (
+              <>
+                <div>{oos.n}</div>
+                <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                  {oos.wins}V · {oos.losses}P · {oos.win_rate_pct?.toFixed(1)}%
+                </div>
+              </>
+            ) : (
+              '—'
+            )}
+          </td>
+          <td className="whitespace-nowrap tabular-nums">
+            {oos ? (
+              <>
+                <MetricCell isMarket={isMarket} roi={oos.roi_pct} deviation={oos.deviation_pct} />
+                {isMarket && oos.avg_quota != null ? (
+                  <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                    quota {oos.avg_quota.toFixed(2)}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              '—'
+            )}
+          </td>
+          <td className="whitespace-nowrap">
+            <VerdictChip verdict={oos?.verdict} />
+            {oos?.null_confirm_prob != null && oos.verdict !== 'insufficient_sample' ? (
+              <div className="mt-0.5 text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                caso: {(oos.null_confirm_prob * 100).toFixed(0)}%
+              </div>
+            ) : null}
+          </td>
+        </>
+      )}
     </tr>
   )
 }
@@ -79,10 +146,12 @@ function Row({ c, onOpen }: { c: PatternInsightCandidate; onOpen: () => void }) 
 export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) {
   const [targetType, setTargetType] = useState<'ALL' | PatternInsightTargetType>('market')
   const [minN, setMinN] = useState(defaultMinN)
-  const [sort, setSort] = useState<'best' | 'roi_desc' | 'deviation_desc'>('best')
+  const [verdict, setVerdict] = useState<'ALL' | OosStats['verdict']>('ALL')
+  const [sort, setSort] = useState<PatternSort>('best')
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [items, setItems] = useState<PatternInsightCandidate[]>([])
+  const [validationSeason, setValidationSeason] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
 
@@ -92,16 +161,18 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
       const res = await getPatternInsightCandidates({
         targetType: targetType === 'ALL' ? undefined : targetType,
         minN,
+        verdict: verdict === 'ALL' ? undefined : verdict,
         sort,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
       setTotal(res.total)
       setItems(res.items)
+      setValidationSeason(res.validation?.season_label ?? null)
     } finally {
       setLoading(false)
     }
-  }, [targetType, minN, sort, page])
+  }, [targetType, minN, verdict, sort, page])
 
   useEffect(() => {
     void load()
@@ -109,7 +180,9 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
 
   useEffect(() => {
     setPage(0)
-  }, [targetType, minN, sort])
+  }, [targetType, minN, verdict, sort])
+
+  const hasValidation = validationSeason != null
 
   return (
     <Section
@@ -129,8 +202,24 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
             <option value="ALL">Tutti</option>
           </select>
         </label>
+        {hasValidation && (
+          <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+            Verdetto {validationSeason}
+            <select
+              className="pi-select"
+              value={verdict}
+              onChange={(e) => setVerdict(e.target.value as typeof verdict)}
+            >
+              <option value="ALL">Tutti</option>
+              <option value="confirmed">Confermati</option>
+              <option value="attenuated">Attenuati</option>
+              <option value="rejected">Respinti</option>
+              <option value="insufficient_sample">Campione insufficiente</option>
+            </select>
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-          Campione minimo
+          Campione minimo (scoperta)
           <input
             type="number"
             min={20}
@@ -142,33 +231,50 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
         </label>
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
           Ordinamento
-          <select
-            className="pi-select"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as typeof sort)}
-          >
-            <option value="best">Automatico</option>
-            <option value="roi_desc">ROI decrescente</option>
-            <option value="deviation_desc">Scarto dalla media</option>
+          <select className="pi-select" value={sort} onChange={(e) => setSort(e.target.value as PatternSort)}>
+            <option value="best">Automatico (scoperta)</option>
+            <option value="roi_desc">ROI scoperta</option>
+            <option value="deviation_desc">Scarto scoperta</option>
+            {hasValidation && <option value="oos_roi_desc">ROI {validationSeason}</option>}
+            {hasValidation && <option value="oos_deviation_desc">Scarto {validationSeason}</option>}
+            {hasValidation && <option value="oos_n_desc">Campione {validationSeason}</option>}
           </select>
         </label>
       </div>
 
-      <div className="pi-scroll" style={{ maxHeight: 560 }}>
+      <div className="pi-scroll" style={{ maxHeight: 620 }}>
         <table className="pi-table">
           <thead>
             <tr>
-              <th>Bersaglio</th>
-              <th>Pattern</th>
-              <th>Campione</th>
-              <th>Win rate</th>
-              <th>ROI / Scarto</th>
-              <th>Quota media</th>
+              <th rowSpan={hasValidation ? 2 : 1}>Bersaglio</th>
+              <th rowSpan={hasValidation ? 2 : 1}>Pattern</th>
+              {hasValidation ? (
+                <>
+                  <th colSpan={2} style={{ color: '#b9adf2' }}>Scoperta</th>
+                  <th colSpan={3} style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
+                    Verifica {validationSeason}
+                  </th>
+                </>
+              ) : (
+                <>
+                  <th>Campione</th>
+                  <th>ROI / Scarto</th>
+                </>
+              )}
             </tr>
+            {hasValidation && (
+              <tr>
+                <th style={{ top: 30 }}>Campione</th>
+                <th style={{ top: 30 }}>ROI / Scarto</th>
+                <th style={{ top: 30, borderLeft: '1px solid var(--pi-border)' }}>Campione</th>
+                <th style={{ top: 30 }}>ROI / Scarto</th>
+                <th style={{ top: 30 }}>Verdetto</th>
+              </tr>
+            )}
           </thead>
           <tbody>
             {items.map((c) => (
-              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} />
+              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} hasValidation={hasValidation} />
             ))}
           </tbody>
         </table>

@@ -1422,13 +1422,14 @@ def get_run_v2_pattern_insight_candidates(
     target_key: str | None = Query(default=None),
     threshold: float | None = Query(default=None),
     min_n: int = Query(default=20, ge=1),
+    verdict: str | None = Query(default=None),
     sort: str = Query(default="best"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """Candidati paginati/filtrati per la tabella della dashboard Pattern
-    Insights."""
+    Insights, con i numeri della stagione di verifica affiancati."""
     from app.services.cecchino_data_lab.run_v2_pattern_insight_service import list_candidates
 
     out = list_candidates(
@@ -1437,6 +1438,7 @@ def get_run_v2_pattern_insight_candidates(
         target_key=target_key,
         threshold=threshold,
         min_n=min_n,
+        verdict=verdict,
         sort=sort,
         limit=limit,
         offset=offset,

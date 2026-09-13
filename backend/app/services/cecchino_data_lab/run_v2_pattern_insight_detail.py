@@ -1,14 +1,12 @@
 """Drill-down su un singolo pattern Pattern Insights.
 
-Due domande, entrambe sullo stesso pattern gia' trovato:
-1. Vale ovunque o lo tengono in piedi due o tre campionati? (scomposizione
-   per lega — NON e' una nuova ricerca: nessuna ipotesi aggiuntiva viene
-   testata, quindi non peggiora il problema del multiple testing.)
-2. Quali partite lo hanno attivato davvero?
+Per la stagione di scoperta e per ogni stagione di verifica completata:
+1. vale ovunque o lo tengono in piedi due o tre campionati? (scomposizione
+   per lega — NON e' una nuova ricerca: nessuna ipotesi aggiuntiva testata)
+2. quali partite lo hanno attivato davvero?
 
-Il matching viene rifatto rileggendo le righe con lo stesso loader usato in
-fase di scoperta: i quintili delle feature continue sono ricalcolati sullo
-stesso insieme di righe, quindi le classi coincidono con quelle originali.
+Le fasce di tiri/corner/cartellini/arbitro sono sempre quelle della stagione
+di scoperta, anche quando si leggono le stagioni di verifica.
 """
 
 from __future__ import annotations
@@ -16,18 +14,26 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_run_v2_pattern_insight import (
+    STATUS_COMPLETED,
     TARGET_TYPE_MARKET,
     CecchinoRunV2PatternInsightCandidate,
     CecchinoRunV2PatternInsightRun,
+    CecchinoRunV2PatternValidation,
+    CecchinoRunV2PatternValidationRun,
 )
+from app.models.cecchino_run_v2 import CecchinoRunV2Run
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.run_v2_grid_dataset import (
     RunV2GridRow,
-    load_run_v2_market_rows,
-    load_run_v2_synthetic_rows,
+    load_market_raw,
+    load_season_binners,
+    load_synthetic_raw,
+    market_rows_from_raw,
+    synthetic_rows_from_raw,
 )
 from app.services.cecchino_data_lab.run_v2_grid_vocabulary import Atom, combo_holds
 
@@ -50,52 +56,24 @@ def _stats_for(rows: list[RunV2GridRow]) -> dict[str, Any]:
     }
 
 
-def get_candidate_detail(
-    db: Session, candidate_id: int, *, max_matches: int = 300
+def _season_block(
+    rows: list[RunV2GridRow],
+    combo: tuple[Atom, ...],
+    *,
+    is_market: bool,
+    baseline: float | None,
+    max_matches: int,
 ) -> dict[str, Any]:
-    candidate = db.get(CecchinoRunV2PatternInsightCandidate, candidate_id)
-    if not candidate:
-        raise CecchinoLabImportError("candidate_not_found", "Pattern non trovato", status_code=404)
-
-    insight_run = db.get(CecchinoRunV2PatternInsightRun, int(candidate.insight_run_id))
-    if not insight_run:
-        raise CecchinoLabImportError("run_not_found", "Run non trovato", status_code=404)
-
-    combo = tuple(
-        Atom(column=str(f["column"]), value=str(f["value"])) for f in (candidate.filters_json or [])
-    )
-    run_v2_run_id = int(insight_run.run_v2_run_id)
-    is_market = candidate.target_type == TARGET_TYPE_MARKET
-
-    if is_market:
-        rows = load_run_v2_market_rows(
-            db, run_id=run_v2_run_id, market_key=candidate.target_key
-        )
-    else:
-        rows = load_run_v2_synthetic_rows(
-            db,
-            run_id=run_v2_run_id,
-            stat_key=candidate.target_key,
-            threshold=float(candidate.threshold) if candidate.threshold is not None else 0.0,
-        )
-
     matched = [r for r in rows if combo_holds(r, combo)]
-    overall = _stats_for(matched)
-    baseline = (
-        float(candidate.baseline_win_rate_pct)
-        if candidate.baseline_win_rate_pct is not None
-        else None
-    )
 
-    # --- scomposizione per campionato -------------------------------------
     by_comp: dict[str, list[RunV2GridRow]] = {}
     for r in matched:
         by_comp.setdefault(r.competition, []).append(r)
 
-    league_rows: list[dict[str, Any]] = []
+    leagues: list[dict[str, Any]] = []
     for comp, comp_rows in by_comp.items():
         s = _stats_for(comp_rows)
-        league_rows.append(
+        leagues.append(
             {
                 "competition": comp,
                 **s,
@@ -107,43 +85,152 @@ def get_candidate_detail(
                 "enough_sample": s["n"] >= MIN_LEAGUE_SAMPLE,
             }
         )
-    league_rows.sort(key=lambda x: (x["profit_units"] if x["profit_units"] is not None else x["n"]), reverse=True)
+    leagues.sort(
+        key=lambda x: (x["profit_units"] if x["profit_units"] is not None else x["n"]), reverse=True
+    )
 
-    # --- concentrazione ----------------------------------------------------
-    scored = [l for l in league_rows if l["enough_sample"]]
-    metric_key = "roi_pct" if is_market else "win_rate_pct"
-    positives = [l for l in scored if (l[metric_key] or 0) > (baseline or 0 if not is_market else 0)]
-    total_profit = sum(l["profit_units"] or 0 for l in league_rows)
+    scored = [l for l in leagues if l["enough_sample"]]
+    if is_market:
+        favourable = [l for l in scored if (l["roi_pct"] or 0) > 0]
+    else:
+        favourable = [l for l in scored if (l["deviation_pct"] or 0) > 0]
+    total_profit = sum(l["profit_units"] or 0 for l in leagues)
     top_share = None
     if is_market and total_profit > 0:
-        best = max((l["profit_units"] or 0) for l in league_rows)
-        top_share = round(best / total_profit * 100.0, 1)
+        top_share = round(max((l["profit_units"] or 0) for l in leagues) / total_profit * 100.0, 1)
 
-    concentration = {
-        "leagues_total": len(league_rows),
-        "leagues_with_sample": len(scored),
-        "leagues_favourable": len(positives),
-        "top_league_profit_share_pct": top_share,
-        "min_league_sample": MIN_LEAGUE_SAMPLE,
+    ordered = sorted(matched, key=lambda r: r.kickoff_at or "")
+    return {
+        "overall": _stats_for(matched),
+        "baseline_win_rate_pct": baseline,
+        "by_competition": leagues,
+        "concentration": {
+            "leagues_total": len(leagues),
+            "leagues_with_sample": len(scored),
+            "leagues_favourable": len(favourable),
+            "top_league_profit_share_pct": top_share,
+            "min_league_sample": MIN_LEAGUE_SAMPLE,
+        },
+        "matches": [
+            {
+                "lab_match_id": r.lab_match_id,
+                "kickoff_at": r.kickoff_at,
+                "competition": r.competition,
+                "home_team": r.home_team,
+                "away_team": r.away_team,
+                "won": r.won,
+                "quota_book": r.quota_book,
+                "profit_1u": r.profit_1u,
+                "actual_value": r.actual_value,
+            }
+            for r in ordered[:max_matches]
+        ],
+        "matches_total": len(matched),
+        "matches_truncated": len(matched) > max_matches,
     }
 
-    # --- partite che hanno attivato il pattern -----------------------------
-    matched_sorted = sorted(matched, key=lambda r: r.kickoff_at or "")
-    matches = [
+
+def _rows_for(
+    db: Session,
+    candidate: CecchinoRunV2PatternInsightCandidate,
+    *,
+    run_v2_run_id: int,
+    binners: dict,
+) -> list[RunV2GridRow]:
+    if candidate.target_type == TARGET_TYPE_MARKET:
+        raw = load_market_raw(db, run_id=run_v2_run_id, market_key=candidate.target_key)
+        return market_rows_from_raw(raw, binners)
+    raw = load_synthetic_raw(db, run_id=run_v2_run_id, stat_key=candidate.target_key)
+    threshold = float(candidate.threshold) if candidate.threshold is not None else 0.0
+    return synthetic_rows_from_raw(raw, binners, threshold)
+
+
+def _baseline(rows: list[RunV2GridRow]) -> float | None:
+    return round(sum(1 for r in rows if r.won) / len(rows) * 100.0, 3) if rows else None
+
+
+def get_candidate_detail(
+    db: Session, candidate_id: int, *, max_matches: int = 300
+) -> dict[str, Any]:
+    candidate = db.get(CecchinoRunV2PatternInsightCandidate, candidate_id)
+    if not candidate:
+        raise CecchinoLabImportError("candidate_not_found", "Pattern non trovato", status_code=404)
+    insight_run = db.get(CecchinoRunV2PatternInsightRun, int(candidate.insight_run_id))
+    if not insight_run:
+        raise CecchinoLabImportError("run_not_found", "Run non trovato", status_code=404)
+
+    combo = tuple(
+        Atom(column=str(f["column"]), value=str(f["value"])) for f in (candidate.filters_json or [])
+    )
+    is_market = candidate.target_type == TARGET_TYPE_MARKET
+    disc_id = int(insight_run.run_v2_run_id)
+    binners = load_season_binners(db, run_id=disc_id)
+
+    disc_rows = _rows_for(db, candidate, run_v2_run_id=disc_id, binners=binners)
+    disc_run = db.get(CecchinoRunV2Run, disc_id)
+    seasons: list[dict[str, Any]] = [
         {
-            "lab_match_id": r.lab_match_id,
-            "kickoff_at": r.kickoff_at,
-            "competition": r.competition,
-            "home_team": r.home_team,
-            "away_team": r.away_team,
-            "won": r.won,
-            "quota_book": r.quota_book,
-            "profit_1u": r.profit_1u,
-            "actual_value": r.actual_value,
+            "role": "discovery",
+            "season_label": (disc_run.summary_json or {}).get("season_label") if disc_run else None,
+            "run_v2_run_id": disc_id,
+            "verdict": None,
+            **_season_block(
+                disc_rows,
+                combo,
+                is_market=is_market,
+                baseline=(
+                    float(candidate.baseline_win_rate_pct)
+                    if candidate.baseline_win_rate_pct is not None
+                    else _baseline(disc_rows)
+                ),
+                max_matches=max_matches,
+            ),
         }
-        for r in matched_sorted[:max_matches]
     ]
 
+    vruns = db.scalars(
+        select(CecchinoRunV2PatternValidationRun)
+        .where(
+            CecchinoRunV2PatternValidationRun.insight_run_id == insight_run.id,
+            CecchinoRunV2PatternValidationRun.status == STATUS_COMPLETED,
+        )
+        .order_by(CecchinoRunV2PatternValidationRun.season_label)
+    ).all()
+    seen_runs: set[int] = set()
+    for vrun in vruns:
+        oos_id = int(vrun.run_v2_run_id)
+        if oos_id in seen_runs:
+            continue
+        seen_runs.add(oos_id)
+        verdict_row = db.scalars(
+            select(CecchinoRunV2PatternValidation).where(
+                CecchinoRunV2PatternValidation.validation_run_id == vrun.id,
+                CecchinoRunV2PatternValidation.candidate_id == candidate.id,
+            )
+        ).first()
+        oos_rows = _rows_for(db, candidate, run_v2_run_id=oos_id, binners=binners)
+        seasons.append(
+            {
+                "role": "validation",
+                "season_label": vrun.season_label,
+                "run_v2_run_id": oos_id,
+                "verdict": verdict_row.verdict if verdict_row else None,
+                "null_confirm_prob": (
+                    float(verdict_row.null_confirm_prob)
+                    if verdict_row and verdict_row.null_confirm_prob is not None
+                    else None
+                ),
+                **_season_block(
+                    oos_rows,
+                    combo,
+                    is_market=is_market,
+                    baseline=_baseline(oos_rows),
+                    max_matches=max_matches,
+                ),
+            }
+        )
+
+    discovery = seasons[0]
     return {
         "candidate": {
             "id": int(candidate.id),
@@ -153,12 +240,13 @@ def get_candidate_detail(
             "threshold": float(candidate.threshold) if candidate.threshold is not None else None,
             "filters_text_human": candidate.filters_text_human,
             "refined_from_text": candidate.refined_from_text,
-            "baseline_win_rate_pct": baseline,
+            "baseline_win_rate_pct": discovery["baseline_win_rate_pct"],
         },
-        "overall": overall,
-        "by_competition": league_rows,
-        "concentration": concentration,
-        "matches": matches,
-        "matches_total": len(matched),
-        "matches_truncated": len(matched) > len(matches),
+        "overall": discovery["overall"],
+        "by_competition": discovery["by_competition"],
+        "concentration": discovery["concentration"],
+        "matches": discovery["matches"],
+        "matches_total": discovery["matches_total"],
+        "matches_truncated": discovery["matches_truncated"],
+        "seasons": seasons,
     }

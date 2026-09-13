@@ -64,10 +64,12 @@ export type PatternInsightCandidate = {
   avg_quota: number | null
   baseline_win_rate_pct: number | null
   deviation_pct: number | null
+  oos?: OosStats | null
 }
 
 export type PatternInsightCandidatesPage = {
   run: PatternInsightRun | null
+  validation?: { id: number; season_label: string | null } | null
   total: number
   items: PatternInsightCandidate[]
 }
@@ -154,6 +156,82 @@ export type PatternInsightAnalytics = {
   source_coverage?: SourceCoverage
 }
 
+export type ValidationRate = {
+  total: number
+  tested: number
+  confirmed: number
+  attenuated: number
+  rejected: number
+  insufficient: number
+  confirmed_rate_pct: number | null
+  expected_rate_pct: number | null
+  lift: number | null
+}
+
+export type ValidationAnalytics = {
+  validation: {
+    id: number
+    season_label: string | null
+    completed_at: string | null
+    summary: {
+      parity_checked?: number
+      parity_mismatches?: number
+    } | null
+  } | null
+  min_n?: number
+  headline?: Partial<Record<PatternInsightTargetType, ValidationRate>>
+  by_bucket?: Array<ValidationRate & { bucket: string; target_type: PatternInsightTargetType }>
+  by_complexity?: Array<ValidationRate & { atoms: number; target_type: PatternInsightTargetType }>
+  by_target?: Array<
+    ValidationRate & {
+      target_type: PatternInsightTargetType
+      target_key: string
+      target_label: string
+      disc_avg_roi_pct: number | null
+      oos_avg_roi_pct: number | null
+    }
+  >
+  shrinkage?: Array<{
+    bucket: string
+    disc_avg_roi_pct: number | null
+    oos_avg_roi_pct: number | null
+    patterns: number
+  }>
+  scatter?: Array<{
+    disc_roi_pct: number | null
+    oos_roi_pct: number | null
+    n: number
+    verdict: string
+  }>
+}
+
+export async function getValidationAnalytics(minN = 20): Promise<ValidationAnalytics> {
+  return requestJson(
+    `/api/admin/cecchino/research/run-v2-pattern-insight/validation-analytics?min_n=${minN}`,
+  )
+}
+
+export type OosStats = {
+  n: number
+  wins: number
+  losses: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+  profit_units: number | null
+  avg_quota: number | null
+  baseline_win_rate_pct: number | null
+  deviation_pct: number | null
+  verdict: 'confirmed' | 'attenuated' | 'rejected' | 'insufficient_sample'
+  null_confirm_prob: number | null
+}
+
+export const VERDICT_LABELS: Record<OosStats['verdict'], string> = {
+  confirmed: 'Confermato',
+  attenuated: 'Attenuato',
+  rejected: 'Respinto',
+  insufficient_sample: 'Campione insuff.',
+}
+
 export type LeagueBreakdown = {
   competition: string
   n: number
@@ -210,6 +288,22 @@ export type PatternDetail = {
   matches: TriggeringMatch[]
   matches_total: number
   matches_truncated: boolean
+  seasons?: SeasonBlock[]
+}
+
+export type SeasonBlock = {
+  role: 'discovery' | 'validation'
+  season_label: string | null
+  run_v2_run_id: number
+  verdict: OosStats['verdict'] | null
+  null_confirm_prob?: number | null
+  overall: PatternDetail['overall']
+  baseline_win_rate_pct: number | null
+  by_competition: LeagueBreakdown[]
+  concentration: PatternDetail['concentration']
+  matches: TriggeringMatch[]
+  matches_total: number
+  matches_truncated: boolean
 }
 
 export async function getPatternDetail(candidateId: number): Promise<PatternDetail> {
@@ -226,12 +320,21 @@ export async function getPatternInsightSummary(minN = 20): Promise<PatternInsigh
   return requestJson(`/api/admin/cecchino/research/run-v2-pattern-insight/summary?min_n=${minN}`)
 }
 
+export type PatternSort =
+  | 'best'
+  | 'roi_desc'
+  | 'deviation_desc'
+  | 'oos_roi_desc'
+  | 'oos_deviation_desc'
+  | 'oos_n_desc'
+
 export async function getPatternInsightCandidates(params: {
   targetType?: PatternInsightTargetType
   targetKey?: string
   threshold?: number
   minN?: number
-  sort?: 'best' | 'roi_desc' | 'deviation_desc'
+  verdict?: OosStats['verdict']
+  sort?: PatternSort
   limit?: number
   offset?: number
 }): Promise<PatternInsightCandidatesPage> {
@@ -239,6 +342,7 @@ export async function getPatternInsightCandidates(params: {
   if (params.targetType) qs.set('target_type', params.targetType)
   if (params.targetKey) qs.set('target_key', params.targetKey)
   if (params.threshold != null) qs.set('threshold', String(params.threshold))
+  if (params.verdict) qs.set('verdict', params.verdict)
   qs.set('min_n', String(params.minN ?? 20))
   qs.set('sort', params.sort ?? 'best')
   qs.set('limit', String(params.limit ?? 100))

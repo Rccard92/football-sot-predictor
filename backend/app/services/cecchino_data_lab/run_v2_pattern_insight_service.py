@@ -267,54 +267,99 @@ def list_candidates(
     target_key: str | None = None,
     threshold: float | None = None,
     min_n: int = 20,
+    verdict: str | None = None,
     sort: str = "best",
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Candidati paginati/filtrati per la tabella della dashboard. `sort`:
-    'best' = ROI decrescente per i mercati, |scarto| decrescente per i
-    bersagli sintetici (l'ordine naturale per ciascun tipo)."""
+    """Candidati paginati/filtrati per la tabella della dashboard, con i
+    numeri della stagione di verifica (se esiste una verifica completata)
+    affiancati a quelli della stagione di scoperta."""
+    from app.models.cecchino_run_v2_pattern_insight import (
+        CecchinoRunV2PatternValidation as V,
+        CecchinoRunV2PatternValidationRun as VR,
+    )
+
+    C = CecchinoRunV2PatternInsightCandidate
     run = _latest_completed_run(db)
     if not run:
-        return {"run": None, "total": 0, "items": []}
+        return {"run": None, "validation": None, "total": 0, "items": []}
 
-    base_filters = [
-        CecchinoRunV2PatternInsightCandidate.insight_run_id == run.id,
-        CecchinoRunV2PatternInsightCandidate.n >= min_n,
-    ]
+    vrun = db.scalars(
+        select(VR)
+        .where(VR.insight_run_id == run.id, VR.status == STATUS_COMPLETED)
+        .order_by(VR.completed_at.desc())
+    ).first()
+
+    filters = [C.insight_run_id == run.id, C.n >= min_n]
     if target_type:
-        base_filters.append(CecchinoRunV2PatternInsightCandidate.target_type == target_type)
+        filters.append(C.target_type == target_type)
     if target_key:
-        base_filters.append(CecchinoRunV2PatternInsightCandidate.target_key == target_key)
+        filters.append(C.target_key == target_key)
     if threshold is not None:
-        base_filters.append(CecchinoRunV2PatternInsightCandidate.threshold == _d(threshold))
+        filters.append(C.threshold == _d(threshold))
 
+    join_on = (
+        (V.candidate_id == C.id) & (V.validation_run_id == vrun.id) if vrun is not None else V.id == -1
+    )
+    if vrun is not None and verdict:
+        filters.append(V.verdict == verdict)
+
+    query = select(C, V).select_from(C).outerjoin(V, join_on).where(*filters)
     total = int(
-        db.scalar(
-            select(func.count()).select_from(CecchinoRunV2PatternInsightCandidate).where(*base_filters)
-        )
+        db.scalar(select(func.count(C.id)).select_from(C).outerjoin(V, join_on).where(*filters))
         or 0
     )
 
-    query = select(CecchinoRunV2PatternInsightCandidate).where(*base_filters)
     if sort == "roi_desc":
-        query = query.order_by(CecchinoRunV2PatternInsightCandidate.roi_pct.desc().nulls_last())
+        query = query.order_by(C.roi_pct.desc().nulls_last())
     elif sort == "deviation_desc":
-        query = query.order_by(
-            func.abs(CecchinoRunV2PatternInsightCandidate.deviation_pct).desc().nulls_last()
-        )
+        query = query.order_by(func.abs(C.deviation_pct).desc().nulls_last())
+    elif sort == "oos_roi_desc":
+        query = query.order_by(V.roi_pct.desc().nulls_last())
+    elif sort == "oos_deviation_desc":
+        query = query.order_by(func.abs(V.deviation_pct).desc().nulls_last())
+    elif sort == "oos_n_desc":
+        query = query.order_by(V.n.desc().nulls_last())
     else:
         query = query.order_by(
-            CecchinoRunV2PatternInsightCandidate.roi_pct.desc().nulls_last(),
-            func.abs(CecchinoRunV2PatternInsightCandidate.deviation_pct).desc().nulls_last(),
+            C.roi_pct.desc().nulls_last(), func.abs(C.deviation_pct).desc().nulls_last()
         )
-    query = query.limit(limit).offset(offset)
-    rows = db.scalars(query).all()
+    rows = db.execute(query.limit(limit).offset(offset)).all()
+
+    items = []
+    for cand, val in rows:
+        item = candidate_row_to_dict(cand)
+        item["oos"] = (
+            {
+                "n": val.n,
+                "wins": val.wins,
+                "losses": val.losses,
+                "win_rate_pct": float(val.win_rate_pct) if val.win_rate_pct is not None else None,
+                "roi_pct": float(val.roi_pct) if val.roi_pct is not None else None,
+                "profit_units": float(val.profit_units) if val.profit_units is not None else None,
+                "avg_quota": float(val.avg_quota) if val.avg_quota is not None else None,
+                "baseline_win_rate_pct": (
+                    float(val.baseline_win_rate_pct) if val.baseline_win_rate_pct is not None else None
+                ),
+                "deviation_pct": float(val.deviation_pct) if val.deviation_pct is not None else None,
+                "verdict": val.verdict,
+                "null_confirm_prob": (
+                    float(val.null_confirm_prob) if val.null_confirm_prob is not None else None
+                ),
+            }
+            if val is not None
+            else None
+        )
+        items.append(item)
 
     return {
         "run": run_to_dict(run),
+        "validation": (
+            {"id": int(vrun.id), "season_label": vrun.season_label} if vrun is not None else None
+        ),
         "total": total,
-        "items": [candidate_row_to_dict(r) for r in rows],
+        "items": items,
     }
 
 

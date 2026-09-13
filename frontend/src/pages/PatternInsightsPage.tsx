@@ -9,8 +9,17 @@ import {
 } from '../components/pattern-insights/PatternInsightsBlocks'
 import { PatternExplorer } from '../components/pattern-insights/PatternExplorer'
 import {
+  MarketValidationBlock,
+  SampleProofBlock,
+  ShrinkageBlock,
+  SituationValidationBlock,
+  ValidationHeadlineBlock,
+} from '../components/pattern-insights/PatternValidationBlocks'
+import {
   getPatternInsightAnalytics,
+  getValidationAnalytics,
   type PatternInsightAnalytics,
+  type ValidationAnalytics,
 } from '../lib/patternInsightsApi'
 
 const MIN_N_OPTIONS = [20, 50, 100, 200]
@@ -18,6 +27,7 @@ const MIN_N_OPTIONS = [20, 50, 100, 200]
 export function PatternInsightsPage() {
   const [minN, setMinN] = useState(50)
   const [data, setData] = useState<PatternInsightAnalytics | null>(null)
+  const [validation, setValidation] = useState<ValidationAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,7 +35,12 @@ export function PatternInsightsPage() {
     setLoading(true)
     setError(null)
     try {
-      setData(await getPatternInsightAnalytics(minN))
+      const [analytics, validationAnalytics] = await Promise.all([
+        getPatternInsightAnalytics(minN),
+        getValidationAnalytics(minN),
+      ])
+      setData(analytics)
+      setValidation(validationAnalytics)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore caricamento analisi')
     } finally {
@@ -44,6 +59,8 @@ export function PatternInsightsPage() {
   const situations = data?.synthetic_directions ?? []
 
   const bestMarket = markets[0]
+  const hasValidation = validation?.validation != null
+  const validationSeason = validation?.validation?.season_label
 
   return (
     <PatternInsightsShell>
@@ -51,6 +68,7 @@ export function PatternInsightsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-bold tracking-tight">Pattern Insights</h1>
           {cov.season_label ? <span className="pi-chip">Run V2 · {cov.season_label}</span> : null}
+          {validationSeason ? <span className="pi-chip">Verificato su {validationSeason}</span> : null}
           {cov.leakage_ok ? <span className="pi-chip">Anti-leakage superato</span> : null}
         </div>
         <p className="mt-2 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
@@ -92,10 +110,20 @@ export function PatternInsightsPage() {
             color: '#f6d68a',
           }}
         >
-          <strong>Stadio dell&apos;analisi:</strong> Run V2 ha per ora una sola stagione
-          ({cov.season_label ?? '—'}), quindi nessun pattern qui e&apos; ancora stato verificato su
-          una stagione mai vista. Sono ipotesi da confermare, non pattern validati — e per
-          costruzione i ROI piu&apos; alti si trovano sui campioni piu&apos; piccoli.
+          <strong>Stadio dell&apos;analisi:</strong>{' '}
+          {hasValidation ? (
+            <>
+              pattern scoperti sul {cov.season_label ?? '—'} e verificati su una sola stagione mai vista
+              ({validationSeason}). Una stagione di verifica e&apos; un primo filtro, non una prova
+              definitiva: le prossime stagioni diranno quali conferme reggono nel tempo.
+            </>
+          ) : (
+            <>
+              Run V2 ha per ora una sola stagione ({cov.season_label ?? '—'}), quindi nessun pattern qui
+              e&apos; ancora stato verificato su una stagione mai vista. Sono ipotesi da confermare, non
+              pattern validati.
+            </>
+          )}
         </div>
       </header>
 
@@ -124,6 +152,20 @@ export function PatternInsightsPage() {
 
       {run && (
         <div className="space-y-4">
+          {hasValidation && validation && (
+            <>
+              <ValidationHeadlineBlock data={validation} />
+              <SampleProofBlock data={validation} />
+              <ShrinkageBlock data={validation} />
+              <MarketValidationBlock data={validation} />
+              <SituationValidationBlock data={validation} />
+              <div className="flex items-center gap-3 pt-2">
+                <div className="h-px flex-1" style={{ background: 'var(--pi-border)' }} />
+                <span className="pi-section-title">Scoperta · {cov.season_label ?? ''}</span>
+                <div className="h-px flex-1" style={{ background: 'var(--pi-border)' }} />
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
             <Kpi
               label="Pattern trovati"

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { getPatternDetail, type PatternDetail } from '../../lib/patternInsightsApi'
+import { getPatternDetail, type PatternDetail, type SeasonBlock } from '../../lib/patternInsightsApi'
+import { VerdictChip } from './PatternExplorer'
+import { SEASON_DISCOVERY, SEASON_VALIDATION } from './PatternValidationBlocks'
 import { heatBg } from './PatternInsightsShell'
 
 function pct(v: number | null | undefined, d = 1): string {
@@ -25,6 +27,7 @@ export function PatternDetailPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'leagues' | 'matches'>('leagues')
+  const [seasonIdx, setSeasonIdx] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -46,7 +49,9 @@ export function PatternDetailPanel({
   }, [candidateId])
 
   const isMarket = data?.candidate.target_type === 'market'
-  const maxProfit = Math.max(1, ...(data?.by_competition ?? []).map((l) => Math.abs(l.profit_units ?? 0)))
+  const seasons: SeasonBlock[] = data?.seasons ?? []
+  const block = seasons[seasonIdx] ?? seasons[0]
+  const maxProfit = Math.max(1, ...(block?.by_competition ?? []).map((l) => Math.abs(l.profit_units ?? 0)))
 
   return (
     <div
@@ -87,21 +92,62 @@ export function PatternDetailPanel({
           </div>
         )}
 
-        {data && (
+        {data && block && (
           <>
+            {seasons.length > 1 && (
+              <div className="mb-3">
+                <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {seasons.map((s, i) => {
+                    const isSel = i === seasonIdx
+                    const color = s.role === 'discovery' ? SEASON_DISCOVERY : SEASON_VALIDATION
+                    const metric = isMarket ? s.overall.roi_pct : s.overall.win_rate_pct != null && s.baseline_win_rate_pct != null ? s.overall.win_rate_pct - s.baseline_win_rate_pct : null
+                    return (
+                      <button
+                        key={s.run_v2_run_id}
+                        type="button"
+                        onClick={() => setSeasonIdx(i)}
+                        className="pi-tile text-left"
+                        style={{ borderColor: isSel ? color : 'var(--pi-border)', boxShadow: isSel ? `inset 3px 0 0 ${color}` : 'none', cursor: 'pointer' }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--pi-muted)' }}>
+                            {s.role === 'discovery' ? 'Scoperta' : 'Verifica'} · {s.season_label}
+                          </span>
+                          {s.role === 'validation' && <VerdictChip verdict={s.verdict} />}
+                        </div>
+                        <div className="mt-1 flex items-baseline gap-3">
+                          <span className="text-xl font-bold tabular-nums">{metric == null ? '—' : `${metric > 0 ? '+' : ''}${metric.toFixed(1)}%`}</span>
+                          <span className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                            {isMarket ? 'ROI' : 'scarto dalla media'} · {s.overall.n} partite · {s.overall.wins}V/{s.overall.losses}P
+                          </span>
+                        </div>
+                        {s.role === 'validation' && s.null_confirm_prob != null && s.verdict !== 'insufficient_sample' && (
+                          <div className="mt-1 text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                            Un gruppo casuale di {s.overall.n} partite avrebbe passato lo stesso criterio nel {(s.null_confirm_prob * 100).toFixed(0)}% dei casi.
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                  Clicca una stagione per vederne numeri, campionati e partite. Le fasce di tiri/corner/cartellini sono sempre quelle della stagione di scoperta.
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
               <div className="pi-tile">
                 <div className="text-[10px] uppercase" style={{ color: 'var(--pi-muted)' }}>
                   Partite
                 </div>
-                <div className="text-lg font-bold tabular-nums">{data.overall.n}</div>
+                <div className="text-lg font-bold tabular-nums">{block.overall.n}</div>
               </div>
               <div className="pi-tile">
                 <div className="text-[10px] uppercase" style={{ color: 'var(--pi-muted)' }}>
                   Esiti
                 </div>
                 <div className="text-lg font-bold tabular-nums">
-                  {data.overall.wins}V · {data.overall.losses}P
+                  {block.overall.wins}V · {block.overall.losses}P
                 </div>
               </div>
               <div className="pi-tile">
@@ -109,7 +155,7 @@ export function PatternDetailPanel({
                   Win rate
                 </div>
                 <div className="text-lg font-bold tabular-nums">
-                  {data.overall.win_rate_pct?.toFixed(1)}%
+                  {block.overall.win_rate_pct?.toFixed(1)}%
                 </div>
               </div>
               {isMarket ? (
@@ -120,9 +166,9 @@ export function PatternDetailPanel({
                     </div>
                     <div
                       className="text-lg font-bold tabular-nums"
-                      style={{ color: 'var(--pi-pos)' }}
+                      style={{ color: (block.overall.roi_pct ?? 0) >= 0 ? 'var(--pi-pos)' : 'var(--pi-neg)' }}
                     >
-                      {pct(data.overall.roi_pct)}
+                      {pct(block.overall.roi_pct)}
                     </div>
                   </div>
                   <div className="pi-tile">
@@ -130,7 +176,7 @@ export function PatternDetailPanel({
                       Profitto
                     </div>
                     <div className="text-lg font-bold tabular-nums">
-                      {data.overall.profit_units?.toFixed(1)} u
+                      {block.overall.profit_units?.toFixed(1)} u
                     </div>
                   </div>
                   <div className="pi-tile">
@@ -138,7 +184,7 @@ export function PatternDetailPanel({
                       Quota media
                     </div>
                     <div className="text-lg font-bold tabular-nums">
-                      {data.overall.avg_quota?.toFixed(2)}
+                      {block.overall.avg_quota?.toFixed(2)}
                     </div>
                   </div>
                 </>
@@ -148,7 +194,7 @@ export function PatternDetailPanel({
                     Frequenza base
                   </div>
                   <div className="text-lg font-bold tabular-nums">
-                    {data.candidate.baseline_win_rate_pct?.toFixed(1)}%
+                    {block.baseline_win_rate_pct?.toFixed(1)}%
                   </div>
                 </div>
               )}
@@ -164,16 +210,16 @@ export function PatternDetailPanel({
             >
               Il pattern e&apos; favorevole in{' '}
               <strong style={{ color: 'var(--pi-text)' }}>
-                {data.concentration.leagues_favourable} campionati su{' '}
-                {data.concentration.leagues_with_sample}
+                {block.concentration.leagues_favourable} campionati su{' '}
+                {block.concentration.leagues_with_sample}
               </strong>{' '}
-              con almeno {data.concentration.min_league_sample} partite
-              {data.concentration.top_league_profit_share_pct != null && (
+              con almeno {block.concentration.min_league_sample} partite
+              {block.concentration.top_league_profit_share_pct != null && (
                 <>
                   {' '}
                   · il campionato migliore da solo pesa{' '}
                   <strong style={{ color: 'var(--pi-text)' }}>
-                    {data.concentration.top_league_profit_share_pct}%
+                    {block.concentration.top_league_profit_share_pct}%
                   </strong>{' '}
                   del profitto totale
                 </>
@@ -189,7 +235,7 @@ export function PatternDetailPanel({
                 style={tab === 'leagues' ? { borderColor: 'var(--pi-accent)', color: 'var(--pi-accent)' } : undefined}
                 onClick={() => setTab('leagues')}
               >
-                Per campionato ({data.by_competition.length})
+                Per campionato ({block.by_competition.length})
               </button>
               <button
                 type="button"
@@ -197,7 +243,7 @@ export function PatternDetailPanel({
                 style={tab === 'matches' ? { borderColor: 'var(--pi-accent)', color: 'var(--pi-accent)' } : undefined}
                 onClick={() => setTab('matches')}
               >
-                Partite attivate ({data.matches_total})
+                Partite attivate ({block.matches_total})
               </button>
             </div>
 
@@ -215,7 +261,7 @@ export function PatternDetailPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {data.by_competition.map((l) => (
+                    {block.by_competition.map((l) => (
                       <tr key={l.competition} style={{ opacity: l.enough_sample ? 1 : 0.45 }}>
                         <td className="font-semibold">
                           {l.competition}
@@ -276,7 +322,7 @@ export function PatternDetailPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {data.matches.map((m) => (
+                    {block.matches.map((m) => (
                       <tr key={m.lab_match_id}>
                         <td className="whitespace-nowrap tabular-nums">{fmtDate(m.kickoff_at)}</td>
                         <td className="whitespace-nowrap">{m.competition}</td>
@@ -308,9 +354,9 @@ export function PatternDetailPanel({
                     ))}
                   </tbody>
                 </table>
-                {data.matches_truncated && (
+                {block.matches_truncated && (
                   <div className="p-2 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-                    Mostrate le prime {data.matches.length} partite su {data.matches_total}.
+                    Mostrate le prime {block.matches.length} partite su {block.matches_total}.
                   </div>
                 )}
               </div>
