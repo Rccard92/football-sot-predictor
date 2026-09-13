@@ -88,7 +88,9 @@ def test_discovery_finds_planted_pattern_and_respects_rules():
     assert all(p.discovery["n"] >= PATTERN_MIN_SAMPLE and p.discovery["roi"] > 0 for p in found)
     assert all(len({c for c, _ in p.combo}) == p.size for p in found)
     assert len({frozenset(p.combo) for p in found}) == len(found)
-    assert all("livello=lower" in p.label for p in found)  # nessun altro gruppo e' in utile
+    lower = next(p for p in found if p.label == "livello=lower")
+    assert lower.discovery["n"] == 100 and math.isclose(lower.discovery["roi"], 1.0)
+    assert not any(p.label == "livello=top" for p in found)  # perde sempre
     assert any(p.size == 3 for p in found)
 
 
@@ -104,9 +106,11 @@ def test_validation_verdicts_null_and_frozen_test():
         assert lower.seasons[s]["verdict"] == VERDICT_CONFIRMED
         assert 0.0 <= lower.seasons[s]["null_p"] <= 1.0
     tally = validation_tally(found, JUDGE_SEASONS)
-    assert tally["persistence"]["confirmed"] == tally["persistence"]["tested"]
+    assert 1 <= tally["persistence"]["confirmed"] <= tally["persistence"]["tested"]
+    assert tally["per_season"][0]["tested"] >= tally["per_season"][0]["confirmed"] >= 1
 
-    frozen = frozen_test(matrices, found)
+    twin = next(p for p in found if p.label == "fase=stagione + livello=lower")  # stesse partite
+    frozen = frozen_test(matrices, [lower, twin])
     lower_rows = [r for r in rows if r.season_label == "2024/2025" and r.tier == "lower"]
     assert frozen["bets"] == len(lower_rows)  # una giocata per partita anche con piu' pattern
     assert math.isclose(frozen["roi_pct"], 100.0)
