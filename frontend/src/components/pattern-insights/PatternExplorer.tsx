@@ -66,10 +66,12 @@ function Row({
   c,
   onOpen,
   hasValidation,
+  multiSeason,
 }: {
   c: PatternInsightCandidate
   onOpen: () => void
   hasValidation: boolean
+  multiSeason: boolean
 }) {
   const isMarket = c.target_type === 'market'
   const oos = c.oos
@@ -137,6 +139,21 @@ function Row({
               </div>
             ) : null}
           </td>
+          {multiSeason && (
+            <td className="whitespace-nowrap" style={{ borderLeft: '1px solid var(--pi-border)' }}>
+              <div className="flex flex-col gap-1">
+                {(c.oos_seasons ?? []).map((o) => (
+                  <div key={o.validation_id} className="flex items-center gap-1.5 text-[10px] tabular-nums">
+                    <span style={{ color: 'var(--pi-muted)', minWidth: 58 }}>{o.season_label}</span>
+                    <VerdictChip verdict={o.verdict} />
+                    <span style={{ color: 'var(--pi-muted)' }}>
+                      n {o.n} · {isMarket ? `ROI ${o.roi_pct != null ? o.roi_pct.toFixed(1) : '—'}%` : `scarto ${o.deviation_pct != null ? o.deviation_pct.toFixed(1) : '—'}pt`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </td>
+          )}
         </>
       )}
     </tr>
@@ -152,6 +169,8 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
   const [total, setTotal] = useState(0)
   const [items, setItems] = useState<PatternInsightCandidate[]>([])
   const [validationSeason, setValidationSeason] = useState<string | null>(null)
+  const [validations, setValidations] = useState<Array<{ id: number; season_label: string | null }>>([])
+  const [validationId, setValidationId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
 
@@ -162,6 +181,7 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
         targetType: targetType === 'ALL' ? undefined : targetType,
         minN,
         verdict: verdict === 'ALL' ? undefined : verdict,
+        validationId,
         sort,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
@@ -169,10 +189,11 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
       setTotal(res.total)
       setItems(res.items)
       setValidationSeason(res.validation?.season_label ?? null)
+      setValidations(res.validations ?? [])
     } finally {
       setLoading(false)
     }
-  }, [targetType, minN, verdict, sort, page])
+  }, [targetType, minN, verdict, sort, page, validationId])
 
   useEffect(() => {
     void load()
@@ -180,9 +201,10 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
 
   useEffect(() => {
     setPage(0)
-  }, [targetType, minN, verdict, sort])
+  }, [targetType, minN, verdict, sort, validationId])
 
   const hasValidation = validationSeason != null
+  const multiSeason = validations.length > 1
 
   return (
     <Section
@@ -202,6 +224,22 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
             <option value="ALL">Tutti</option>
           </select>
         </label>
+        {multiSeason && (
+          <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+            Stagione di verifica
+            <select
+              className="pi-select"
+              value={validationId ?? validations[validations.length - 1]?.id ?? ''}
+              onChange={(e) => setValidationId(Number(e.target.value))}
+            >
+              {validations.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.season_label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {hasValidation && (
           <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
             Verdetto {validationSeason}
@@ -254,6 +292,11 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
                   <th colSpan={3} style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
                     Verifica {validationSeason}
                   </th>
+                  {multiSeason && (
+                    <th rowSpan={2} style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
+                      Tutte le verifiche
+                    </th>
+                  )}
                 </>
               ) : (
                 <>
@@ -274,7 +317,7 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
           </thead>
           <tbody>
             {items.map((c) => (
-              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} hasValidation={hasValidation} />
+              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} hasValidation={hasValidation} multiSeason={multiSeason} />
             ))}
           </tbody>
         </table>

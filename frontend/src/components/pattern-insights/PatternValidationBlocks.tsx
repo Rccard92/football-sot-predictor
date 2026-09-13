@@ -622,3 +622,108 @@ export function SituationValidationBlock({ data }: { data: ValidationAnalytics }
     </Section>
   )
 }
+
+export function PersistenceBlock({ data }: { data: ValidationAnalytics }) {
+  const p = data.persistence
+  const rows = useMemo(
+    () =>
+      (p?.by_target ?? [])
+        .filter((r) => r.tested > 0)
+        .sort((a, b) => (a.target_type === b.target_type ? (b.lift ?? 0) - (a.lift ?? 0) : a.target_type === 'market' ? -1 : 1)),
+    [p],
+  )
+  if (!p) return null
+  const seasons = p.seasons.filter(Boolean).join(' e ')
+  const maxLift = Math.max(2, ...rows.map((r) => r.lift ?? 0))
+
+  return (
+    <Section
+      title={`Tenuta nel tempo · ${seasons}`}
+      note="Pattern confermati in TUTTE le stagioni di verifica, contro quanti ne confermerebbe il caso"
+    >
+      <p className="mb-3 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
+        Una conferma su una sola stagione puo&apos; ancora essere fortuna. Qui contano solo i pattern
+        che hanno avuto campione sufficiente in ogni stagione e si sono confermati in tutte. Il caso
+        e&apos; il prodotto delle probabilita&apos; di passare ogni stagione per puro caso: le stagioni
+        usano partite diverse, quindi due conferme casuali di fila sono molto piu&apos; rare di una.
+      </p>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {(['market', 'synthetic'] as const).map((k) => {
+          const r = p.headline[k]
+          if (!r) return null
+          const v = liftVerdict(r.lift)
+          return (
+            <div key={k} className="pi-kpi" style={{ padding: 18 }}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--pi-muted)' }}>
+                {TYPE_LABEL[k]}
+              </div>
+              <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
+                <div>
+                  <div className="text-4xl font-bold tabular-nums">{r.confirmed.toLocaleString('it-IT')}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                    confermati in tutte ({pct(r.confirmed_rate_pct)})
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold tabular-nums" style={{ color: 'var(--pi-muted)' }}>
+                    {r.expected.toLocaleString('it-IT')}
+                  </div>
+                  <div className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                    attesi per caso ({pct(r.expected_rate_pct, 2)})
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold tabular-nums">{liftText(r.lift)}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                    rispetto al caso
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                {r.tested.toLocaleString('it-IT')} pattern con campione sufficiente in ogni stagione
+              </div>
+              <div className="mt-2 text-sm font-semibold" style={{ color: v.tone }}>
+                {v.text}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-3 pi-scroll" style={{ maxHeight: 460 }}>
+        <table className="pi-table">
+          <thead>
+            <tr>
+              <th>Bersaglio</th>
+              <th>Tipo</th>
+              <th>Testati in tutte</th>
+              <th>Confermati in tutte</th>
+              <th>Attesi per caso</th>
+              <th>Rispetto al caso</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.target_type}-${r.target_key}-${r.target_label}`} style={{ opacity: r.tested < 30 ? 0.5 : 1 }}>
+                <td className="font-semibold">{r.target_label}</td>
+                <td style={{ color: 'var(--pi-muted)' }}>{TYPE_LABEL[r.target_type]}</td>
+                <td className="tabular-nums">{r.tested.toLocaleString('it-IT')}</td>
+                <td className="tabular-nums font-semibold">
+                  {r.confirmed.toLocaleString('it-IT')} <span style={{ color: 'var(--pi-muted)' }}>({pct(r.confirmed_rate_pct)})</span>
+                </td>
+                <td className="tabular-nums" style={{ color: 'var(--pi-muted)' }}>
+                  {r.expected.toLocaleString('it-IT')}
+                </td>
+                <td
+                  className="tabular-nums font-semibold"
+                  style={{ background: heatBg((r.lift ?? 1) - 1, maxLift - 1, (r.lift ?? 1) >= 1) }}
+                >
+                  {liftText(r.lift)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  )
+}

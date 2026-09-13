@@ -25,6 +25,8 @@ export type PatternInsightRun = {
   } | null
   error: { message?: string } | null
   source_git_commit: string | null
+  odds_mode?: 'v2' | 'closing'
+  engine_version?: string
 }
 
 export type PatternInsightTargetType = 'market' | 'synthetic'
@@ -65,11 +67,39 @@ export type PatternInsightCandidate = {
   baseline_win_rate_pct: number | null
   deviation_pct: number | null
   oos?: OosStats | null
+  oos_seasons?: OosSeasonStats[]
+}
+
+export type TierKey = 'all' | 'top' | 'lower'
+
+export type TierStats = {
+  n: number
+  roi_pct: number | null
+  win_rate_pct: number | null
+  deviation_pct: number | null
+  verdict: OosStats['verdict']
+  null_confirm_prob: number | null
+}
+
+export type OosSeasonStats = {
+  validation_id: number
+  season_label: string | null
+  n: number
+  wins: number
+  losses: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+  avg_quota: number | null
+  deviation_pct: number | null
+  verdict: OosStats['verdict']
+  null_confirm_prob: number | null
+  tier_json?: Partial<Record<'top' | 'lower', TierStats>> | null
 }
 
 export type PatternInsightCandidatesPage = {
   run: PatternInsightRun | null
   validation?: { id: number; season_label: string | null } | null
+  validations?: Array<{ id: number; season_label: string | null }>
   total: number
   items: PatternInsightCandidate[]
 }
@@ -168,7 +198,31 @@ export type ValidationRate = {
   lift: number | null
 }
 
+export type PersistenceRate = {
+  tested: number
+  confirmed: number
+  confirmed_rate_pct: number | null
+  expected: number
+  expected_rate_pct: number | null
+  lift: number | null
+}
+
 export type ValidationAnalytics = {
+  insight?: { id: number; odds_mode: 'v2' | 'closing'; engine_version: string }
+  validations?: Array<{ id: number; season_label: string | null }>
+  tier?: TierKey
+  tiers?: Array<{ key: TierKey; label: string }>
+  persistence?: {
+    seasons: Array<string | null>
+    headline: Partial<Record<PatternInsightTargetType, PersistenceRate>>
+    by_target: Array<
+      PersistenceRate & {
+        target_type: PatternInsightTargetType
+        target_key: string
+        target_label: string
+      }
+    >
+  } | null
   validation: {
     id: number
     season_label: string | null
@@ -205,10 +259,62 @@ export type ValidationAnalytics = {
   }>
 }
 
-export async function getValidationAnalytics(minN = 20): Promise<ValidationAnalytics> {
+export async function getValidationAnalytics(
+  minN = 20,
+  validationId?: number | null,
+  tier: TierKey = 'all',
+): Promise<ValidationAnalytics> {
+  const qs = new URLSearchParams({ min_n: String(minN), tier })
+  if (validationId != null) qs.set('validation_id', String(validationId))
   return requestJson(
-    `/api/admin/cecchino/research/run-v2-pattern-insight/validation-analytics?min_n=${minN}`,
+    `/api/admin/cecchino/research/run-v2-pattern-insight/validation-analytics?${qs.toString()}`,
   )
+}
+
+export type ScoreboardAccuracy = {
+  season_label: string
+  market_family: string
+  tier: TierKey
+  n: number
+  brier_cecchino: number | null
+  brier_book: number | null
+  won_pct: number | null
+}
+
+export type ScoreboardCompetition = {
+  competition: string
+  tier: 'top' | 'lower'
+  n: number
+  brier_cecchino: number | null
+  brier_book: number | null
+  margin_pct: number | null
+  roi_all_bets_pct: number | null
+}
+
+export type ScoreboardValuePoint = {
+  season_label: string
+  tier: TierKey
+  bucket: string
+  n: number
+  roi_pct: number | null
+  won_pct: number | null
+  fair_pct: number | null
+  cecchino_pct: number | null
+  avg_quota: number | null
+}
+
+export type MarketScoreboard = {
+  seasons: string[]
+  lockbox_season: string
+  odds_reference: string
+  tiers: Array<{ key: TierKey; label: string }>
+  accuracy: ScoreboardAccuracy[]
+  by_competition: ScoreboardCompetition[]
+  value_curve: ScoreboardValuePoint[]
+}
+
+export async function getMarketScoreboard(): Promise<MarketScoreboard> {
+  return requestJson('/api/admin/cecchino/research/run-v2-pattern-insight/market-scoreboard')
 }
 
 export type OosStats = {
@@ -334,6 +440,7 @@ export async function getPatternInsightCandidates(params: {
   threshold?: number
   minN?: number
   verdict?: OosStats['verdict']
+  validationId?: number | null
   sort?: PatternSort
   limit?: number
   offset?: number
@@ -343,6 +450,7 @@ export async function getPatternInsightCandidates(params: {
   if (params.targetKey) qs.set('target_key', params.targetKey)
   if (params.threshold != null) qs.set('threshold', String(params.threshold))
   if (params.verdict) qs.set('verdict', params.verdict)
+  if (params.validationId != null) qs.set('validation_id', String(params.validationId))
   qs.set('min_n', String(params.minN ?? 20))
   qs.set('sort', params.sort ?? 'best')
   qs.set('limit', String(params.limit ?? 100))

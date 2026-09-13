@@ -8,17 +8,22 @@ import {
   SituationsBlock,
 } from '../components/pattern-insights/PatternInsightsBlocks'
 import { PatternExplorer } from '../components/pattern-insights/PatternExplorer'
+import { MarketScoreboardBlock } from '../components/pattern-insights/MarketScoreboardBlock'
 import {
   MarketValidationBlock,
+  PersistenceBlock,
   SampleProofBlock,
   ShrinkageBlock,
   SituationValidationBlock,
   ValidationHeadlineBlock,
 } from '../components/pattern-insights/PatternValidationBlocks'
 import {
+  getMarketScoreboard,
   getPatternInsightAnalytics,
   getValidationAnalytics,
+  type MarketScoreboard,
   type PatternInsightAnalytics,
+  type TierKey,
   type ValidationAnalytics,
 } from '../lib/patternInsightsApi'
 
@@ -28,6 +33,9 @@ export function PatternInsightsPage() {
   const [minN, setMinN] = useState(50)
   const [data, setData] = useState<PatternInsightAnalytics | null>(null)
   const [validation, setValidation] = useState<ValidationAnalytics | null>(null)
+  const [scoreboard, setScoreboard] = useState<MarketScoreboard | null>(null)
+  const [validationId, setValidationId] = useState<number | null>(null)
+  const [tier, setTier] = useState<TierKey>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,7 +45,7 @@ export function PatternInsightsPage() {
     try {
       const [analytics, validationAnalytics] = await Promise.all([
         getPatternInsightAnalytics(minN),
-        getValidationAnalytics(minN),
+        getValidationAnalytics(minN, validationId, tier),
       ])
       setData(analytics)
       setValidation(validationAnalytics)
@@ -46,7 +54,13 @@ export function PatternInsightsPage() {
     } finally {
       setLoading(false)
     }
-  }, [minN])
+  }, [minN, validationId, tier])
+
+  useEffect(() => {
+    getMarketScoreboard()
+      .then(setScoreboard)
+      .catch(() => setScoreboard(null))
+  }, [])
 
   useEffect(() => {
     void load()
@@ -61,6 +75,8 @@ export function PatternInsightsPage() {
   const bestMarket = markets[0]
   const hasValidation = validation?.validation != null
   const validationSeason = validation?.validation?.season_label
+  const validationSeasons = (validation?.validations ?? []).map((v) => v.season_label).filter(Boolean)
+  const oddsMode = run?.odds_mode ?? validation?.insight?.odds_mode
 
   return (
     <PatternInsightsShell>
@@ -68,7 +84,12 @@ export function PatternInsightsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-bold tracking-tight">Pattern Insights</h1>
           {cov.season_label ? <span className="pi-chip">Run V2 · {cov.season_label}</span> : null}
-          {validationSeason ? <span className="pi-chip">Verificato su {validationSeason}</span> : null}
+          {validationSeasons.length ? (
+            <span className="pi-chip">Verificato su {validationSeasons.join(' · ')}</span>
+          ) : null}
+          {oddsMode ? (
+            <span className="pi-chip">{oddsMode === 'closing' ? 'Quote di chiusura' : 'Quote Run V2 (miste)'}</span>
+          ) : null}
           {cov.leakage_ok ? <span className="pi-chip">Anti-leakage superato</span> : null}
         </div>
         <p className="mt-2 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
@@ -113,9 +134,12 @@ export function PatternInsightsPage() {
           <strong>Stadio dell&apos;analisi:</strong>{' '}
           {hasValidation ? (
             <>
-              pattern scoperti sul {cov.season_label ?? '—'} e verificati su una sola stagione mai vista
-              ({validationSeason}). Una stagione di verifica e&apos; un primo filtro, non una prova
-              definitiva: le prossime stagioni diranno quali conferme reggono nel tempo.
+              pattern scoperti sul {cov.season_label ?? '—'} e verificati su{' '}
+              {validationSeasons.length > 1
+                ? `${validationSeasons.length} stagioni mai viste (${validationSeasons.join(', ')})`
+                : `una sola stagione mai vista (${validationSeason})`}
+              . Profitti misurati a quota di chiusura, prime divisioni e divisioni inferiori leggibili
+              separatamente. Il 2025/26 resta sotto chiave per il test finale.
             </>
           ) : (
             <>
@@ -152,8 +176,54 @@ export function PatternInsightsPage() {
 
       {run && (
         <div className="space-y-4">
+          {scoreboard && scoreboard.seasons.length > 0 && <MarketScoreboardBlock data={scoreboard} />}
+
           {hasValidation && validation && (
             <>
+              <div className="pi-section flex flex-wrap items-center gap-4">
+                <span className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                  Stagione di verifica:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(validation.validations ?? []).map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      className="pi-btn"
+                      style={
+                        v.id === validation.validation?.id
+                          ? { borderColor: 'var(--pi-accent)', color: 'var(--pi-accent)' }
+                          : undefined
+                      }
+                      onClick={() => setValidationId(v.id)}
+                    >
+                      {v.season_label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                  Campionati:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(validation.tiers ?? []).map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      className="pi-btn"
+                      style={t.key === tier ? { borderColor: 'var(--pi-accent)', color: 'var(--pi-accent)' } : undefined}
+                      onClick={() => setTier(t.key)}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {loading && (
+                  <span className="text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+                    aggiornamento…
+                  </span>
+                )}
+              </div>
+              <PersistenceBlock data={validation} />
               <ValidationHeadlineBlock data={validation} />
               <SampleProofBlock data={validation} />
               <ShrinkageBlock data={validation} />
