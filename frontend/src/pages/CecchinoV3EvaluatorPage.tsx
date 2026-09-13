@@ -12,6 +12,7 @@ import {
   type EvaluatorPlay,
   type EvaluatorRun,
   type GroupedSummary,
+  type OddsMode,
   type PlaySummary,
   type StrategyCode,
 } from '../lib/cecchinoV3EvaluatorApi'
@@ -328,7 +329,7 @@ function EdgeGridBlock({ run }: { run: EvaluatorRun }) {
   )
 }
 
-function PlaysBlock({ run, onOpen }: { run: EvaluatorRun; onOpen: (id: number) => void }) {
+function PlaysBlock({ run, oddsMode, onOpen }: { run: EvaluatorRun; oddsMode: OddsMode; onOpen: (id: number) => void }) {
   const [strategy, setStrategy] = useState<StrategyCode>('VALUTATORE_PRINCIPALI')
   const [season, setSeason] = useState('')
   const [competition, setCompetition] = useState('')
@@ -342,13 +343,13 @@ function PlaysBlock({ run, onOpen }: { run: EvaluatorRun; onOpen: (id: number) =
 
   useEffect(() => {
     let alive = true
-    listPlays({ strategy, season, competition, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+    listPlays({ oddsMode, strategy, season, competition, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
       .then((res) => alive && setData(res))
       .catch((e) => alive && setError(e instanceof Error ? e.message : 'Errore caricamento giocate'))
     return () => {
       alive = false
     }
-  }, [run.id, strategy, season, competition, page])
+  }, [run.id, oddsMode, strategy, season, competition, page])
 
   return (
     <Section title="Giocate" note={`${data.total.toLocaleString('it-IT')} giocate con i filtri attuali · clicca per il dettaglio partita`}>
@@ -481,6 +482,7 @@ function PlaysBlock({ run, onOpen }: { run: EvaluatorRun; onOpen: (id: number) =
 }
 
 export function CecchinoV3EvaluatorPage() {
+  const [oddsMode, setOddsMode] = useState<OddsMode>('closing')
   const [runs, setRuns] = useState<{ latest: EvaluatorRun | null; completed: EvaluatorRun | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -488,21 +490,21 @@ export function CecchinoV3EvaluatorPage() {
 
   const loadRuns = useCallback(async () => {
     try {
-      setRuns(await getEvaluatorRuns())
+      setRuns(await getEvaluatorRuns(oddsMode))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore caricamento')
     }
-  }, [])
+  }, [oddsMode])
 
   useEffect(() => {
     let alive = true
-    getEvaluatorRuns()
+    getEvaluatorRuns(oddsMode)
       .then((r) => alive && setRuns(r))
       .catch((e) => alive && setError(e instanceof Error ? e.message : 'Errore caricamento'))
     return () => {
       alive = false
     }
-  }, [])
+  }, [oddsMode])
 
   const active = runs?.latest?.status === 'pending' || runs?.latest?.status === 'running'
   useEffect(() => {
@@ -514,7 +516,7 @@ export function CecchinoV3EvaluatorPage() {
   const start = async () => {
     setBusy(true)
     try {
-      await startEvaluatorRun()
+      await startEvaluatorRun(oddsMode)
       await loadRuns()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Avvio non riuscito')
@@ -552,6 +554,27 @@ export function CecchinoV3EvaluatorPage() {
       )}
 
       <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ['closing', 'Quota di chiusura'],
+              ['opening', "Quota di apertura"],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className="pi-btn"
+              style={mode === oddsMode ? { borderColor: COLOR_OK } : undefined}
+              onClick={() => {
+                setRuns(null)
+                setOddsMode(mode)
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <Section title="Calcolo" note={runs?.latest ? `Ultimo calcolo #${runs.latest.id}` : 'Nessun calcolo'}>
           {active ? (
             <div className="text-xs">{runs?.latest?.current_step ?? 'In attesa di avvio'}…</div>
@@ -575,7 +598,7 @@ export function CecchinoV3EvaluatorPage() {
             <PlayabilityBlock run={completed} />
             <StrategiesBlock run={completed} />
             <EdgeGridBlock run={completed} />
-            <PlaysBlock run={completed} onOpen={setDetailId} />
+            <PlaysBlock key={oddsMode} run={completed} oddsMode={oddsMode} onOpen={setDetailId} />
           </>
         )}
       </div>

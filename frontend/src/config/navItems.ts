@@ -33,6 +33,7 @@ export const NAV_CECCHINO: NavItem[] = [
   { to: '/cecchino-v3', label: 'Cecchino V3', icon: 'flask', section: 'cecchino' },
   { to: '/cecchino-v3/partite', label: 'V3 · Partita per partita', icon: 'target', section: 'cecchino' },
   { to: '/cecchino-v3/valutatore', label: 'V3 · Valutatore di mercato', icon: 'target', section: 'cecchino' },
+  { to: '/cecchino-v3/finale', label: 'V3 · Pattern e test finale', icon: 'target', section: 'cecchino' },
   { to: '/monitoraggio-moduli', label: 'Monitoraggio Moduli', icon: 'activity', section: 'cecchino' },
   { to: '/monitoraggio-segno-1', label: 'Monitoraggio Segno 1', icon: 'target', section: 'cecchino' },
   { to: '/monitoraggio-segnali', label: 'Monitoraggio Segnali', icon: 'target', section: 'cecchino' },

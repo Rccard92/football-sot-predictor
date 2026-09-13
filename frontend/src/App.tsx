@@ -19,6 +19,7 @@ import { PatternInsightsPage } from './pages/PatternInsightsPage'
 import { CecchinoV3Page } from './pages/CecchinoV3Page'
 import { CecchinoV3MatchesPage } from './pages/CecchinoV3MatchesPage'
 import { CecchinoV3EvaluatorPage } from './pages/CecchinoV3EvaluatorPage'
+import { CecchinoV3FinalPage } from './pages/CecchinoV3FinalPage'
 
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/cecchino-v3" element={<CecchinoV3Page />} />
           <Route path="/cecchino-v3/partite" element={<CecchinoV3MatchesPage />} />
           <Route path="/cecchino-v3/valutatore" element={<CecchinoV3EvaluatorPage />} />
+          <Route path="/cecchino-v3/finale" element={<CecchinoV3FinalPage />} />
           <Route path="/cecchino-lab/pattern-lab" element={<CecchinoLabPatternLabPage />} />
           <Route
             path="/cecchino-lab/historical-scans/:runId/kpi-signals"

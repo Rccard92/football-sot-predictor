@@ -97,22 +97,32 @@ export type EvaluatorPlay = {
   profit: number
 }
 
-export async function getEvaluatorRuns(): Promise<{ latest: EvaluatorRun | null; completed: EvaluatorRun | null }> {
-  return requestJson(`${BASE}/runs/latest`)
+export type OddsMode = 'closing' | 'opening'
+
+export async function getEvaluatorRuns(
+  oddsMode: OddsMode = 'closing',
+): Promise<{ latest: EvaluatorRun | null; completed: EvaluatorRun | null }> {
+  return requestJson(`${BASE}/runs/latest?odds_mode=${oddsMode}`)
 }
 
-export async function startEvaluatorRun(): Promise<EvaluatorRun> {
-  return requestJson(`${BASE}/runs`, { method: 'POST' })
+export async function startEvaluatorRun(oddsMode: OddsMode = 'closing'): Promise<EvaluatorRun> {
+  return requestJson(`${BASE}/runs?odds_mode=${oddsMode}`, { method: 'POST' })
 }
 
 export async function listPlays(params: {
+  oddsMode: OddsMode
   strategy: StrategyCode
   season?: string
   competition?: string
   limit: number
   offset: number
 }): Promise<{ total: number; items: EvaluatorPlay[]; competitions: string[] }> {
-  const qs = new URLSearchParams({ strategy: params.strategy, limit: String(params.limit), offset: String(params.offset) })
+  const qs = new URLSearchParams({
+    strategy: params.strategy,
+    odds_mode: params.oddsMode,
+    limit: String(params.limit),
+    offset: String(params.offset),
+  })
   if (params.season) qs.set('season_label', params.season)
   if (params.competition) qs.set('competition', params.competition)
   return requestJson(`${BASE}/giocate?${qs.toString()}`)
