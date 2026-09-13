@@ -9,7 +9,6 @@ Non cambiano le probabilita': le raccontano. Tutto e' pre-partita:
 from __future__ import annotations
 
 import bisect
-import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,18 +17,9 @@ from app.services.cecchino_v3.constants import (
     INDEX_CLASS_EDGES,
     INDEX_CLASSES,
     INDEX_MIN_HISTORY,
-    RELIABILITY_EARLY_FACTOR,
-    RELIABILITY_FULL_EVIDENCE,
-    RELIABILITY_HIGH,
-    RELIABILITY_MEDIUM,
-    RELIABILITY_NEW_TEAM_FACTOR,
-    RELIABILITY_SUPREMACY_SCALE,
-    RELIABILITY_TOTAL_SCALE,
 )
 from app.services.cecchino_v3.data import MatchRecord
 from app.services.cecchino_v3.discipline import DisciplineFeatures
-
-SPECIALISTS: tuple[str, ...] = ("forza", "sot", "shots")
 
 
 @dataclass
@@ -46,6 +36,7 @@ class IndexInput:
     home_evidence: float
     away_evidence: float
     specialists: dict[str, Any]
+    rho: float = 0.0
     new_team_home: bool = False  # neopromossa o nuova nel dataset, prima stagione
     new_team_away: bool = False
     discipline: DisciplineFeatures | None = None
@@ -94,66 +85,6 @@ def equilibrium_value(prob_home: float, prob_away: float) -> float:
     return 100.0 * (1.0 - abs(prob_home - prob_away) / total)
 
 
-def specialist_disagreement(specialists: dict[str, Any]) -> tuple[float | None, float | None]:
-    """Differenza massima tra specialisti su differenza di forza (log casa/ospite)
-    e su gol totali (log casa+ospite)."""
-    supremacy: list[float] = []
-    totals: list[float] = []
-    for name in SPECIALISTS:
-        opinion = specialists.get(name) if isinstance(specialists, dict) else None
-        if not isinstance(opinion, dict):
-            continue
-        home, away = opinion.get("home"), opinion.get("away")
-        if home is None or away is None or home <= 0 or away <= 0:
-            continue
-        supremacy.append(math.log(home / away))
-        totals.append(math.log(home + away))
-    if len(supremacy) < 2:
-        return None, None
-    return max(supremacy) - min(supremacy), max(totals) - min(totals)
-
-
-def reliability(
-    *,
-    home_evidence: float,
-    away_evidence: float,
-    disagreement_supremacy: float | None,
-    disagreement_total: float | None,
-    new_team: bool,
-    early: bool,
-) -> dict[str, Any]:
-    knowledge = min(1.0, min(home_evidence, away_evidence) / RELIABILITY_FULL_EVIDENCE)
-    if disagreement_supremacy is None or disagreement_total is None:
-        agreement = 1.0
-    else:
-        agreement = 1.0 / (
-            1.0
-            + disagreement_supremacy / RELIABILITY_SUPREMACY_SCALE
-            + disagreement_total / RELIABILITY_TOTAL_SCALE
-        )
-    value = 100.0 * knowledge * agreement
-    if new_team:
-        value *= RELIABILITY_NEW_TEAM_FACTOR
-    if early:
-        value *= RELIABILITY_EARLY_FACTOR
-    if value >= RELIABILITY_HIGH:
-        klass = "alta"
-    elif value >= RELIABILITY_MEDIUM:
-        klass = "media"
-    else:
-        klass = "bassa"
-    return {
-        "value": round(value, 1),
-        "class": klass,
-        "knowledge": round(knowledge, 3),
-        "agreement": round(agreement, 3),
-        "disagreement_supremacy": round(disagreement_supremacy, 4) if disagreement_supremacy is not None else None,
-        "disagreement_total": round(disagreement_total, 4) if disagreement_total is not None else None,
-        "new_team": new_team,
-        "early_season": early,
-    }
-
-
 def _form_block(detail: dict[str, Any] | None, side: str, matches: Any) -> dict[str, Any] | None:
     if not isinstance(detail, dict):
         return None
@@ -171,9 +102,16 @@ def _form_block(detail: dict[str, Any] | None, side: str, matches: Any) -> dict[
     }
 
 
-def compute_indices(inputs: Iterable[IndexInput]) -> dict[int, dict[str, Any]]:
-    """Indici per ogni partita; gli input devono essere in ordine cronologico."""
+def compute_indices(
+    inputs: Iterable[IndexInput], reliability: dict[int, dict[str, Any]] | None = None
+) -> dict[int, dict[str, Any]]:
+    """Indici per ogni partita; gli input devono essere in ordine cronologico.
+    L'affidabilita' (walk-forward per stagione) si puo' passare gia' calcolata."""
     ordered = list(inputs)
+    if reliability is None:
+        from app.services.cecchino_v3.reliability import compute_reliability
+
+        reliability = compute_reliability(ordered).per_match
     leagues: dict[str, _LeagueHistory] = {}
     out: dict[int, dict[str, Any]] = {}
 
@@ -202,7 +140,6 @@ def compute_indices(inputs: Iterable[IndexInput]) -> dict[int, dict[str, Any]]:
             specialists = item.specialists or {}
             form_detail = specialists.get("form") if isinstance(specialists, dict) else None
             calendar = specialists.get("calendar") if isinstance(specialists, dict) else None
-            d_sup, d_tot = specialist_disagreement(specialists)
             rest_home = calendar.get("rest_days_home") if isinstance(calendar, dict) else None
             rest_away = calendar.get("rest_days_away") if isinstance(calendar, dict) else None
 
@@ -252,14 +189,7 @@ def compute_indices(inputs: Iterable[IndexInput]) -> dict[int, dict[str, Any]]:
                     "final_phase": m.phase == "final",
                 },
                 "disciplina": discipline,
-                "affidabilita": reliability(
-                    home_evidence=item.home_evidence,
-                    away_evidence=item.away_evidence,
-                    disagreement_supremacy=d_sup,
-                    disagreement_total=d_tot,
-                    new_team=item.new_team_home or item.new_team_away,
-                    early=not m.eval_eligible,
-                ),
+                "affidabilita": reliability[m.lab_match_id],
             }
             pending.append((league, {"equilibrio": eq, "pareggio": item.prob_draw, "intensita_goal": total_goals}, item))
 
@@ -287,7 +217,7 @@ def _strictly_monotonic(values: list[float], *, increasing: bool) -> bool:
 def coherence_checks(
     inputs: list[IndexInput], indices: dict[int, dict[str, Any]], judge_seasons: tuple[str, ...]
 ) -> list[dict[str, Any]]:
-    """C1-C4 sulle stagioni di giudizio, partite idonee."""
+    """C1-C3 sulle stagioni di giudizio, partite idonee (affidabilita': R1-R4)."""
     rows = [
         (item, indices[item.match.lab_match_id])
         for item in inputs
@@ -319,17 +249,10 @@ def coherence_checks(
             return float(m.ft_home > m.ft_away)
         return float(m.ft_away > m.ft_home)
 
-    def brier_1x2(item: IndexInput) -> float:
-        m = item.match
-        outcomes = (m.ft_home > m.ft_away, m.ft_home == m.ft_away, m.ft_home < m.ft_away)
-        probs = (item.prob_home, item.prob_draw, item.prob_away)
-        return sum((float(o) - p) ** 2 for o, p in zip(outcomes, probs)) / 3.0
-
     checks = [
         ("C1", "Intensita' goal -> gol reali medi sempre crescenti", "intensita_goal", INDEX_CLASSES, goals, True),
         ("C2", "Credibilita' pareggio -> frequenza pareggi sempre crescente", "pareggio", INDEX_CLASSES, draw, True),
         ("C3", "Equilibrio -> vittorie del favorito sempre decrescenti", "equilibrio", INDEX_CLASSES, favourite_won, False),
-        ("C4", "Affidabilita' bassa -> alta: errore 1X2 sempre decrescente", "affidabilita", ("bassa", "media", "alta"), brier_1x2, False),
     ]
     out: list[dict[str, Any]] = []
     for code, label, index_name, classes, metric, increasing in checks:
@@ -342,6 +265,7 @@ def coherence_checks(
                 "label": label,
                 "index": index_name,
                 "increasing": increasing,
+                "value_format": "goals" if code == "C1" else "pct",
                 "rows": table,
                 "passed": complete and _strictly_monotonic([float(v) for v in values], increasing=increasing),
             }

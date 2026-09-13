@@ -56,23 +56,42 @@ export type MatchIndices = {
     referee_goals_index: number
   } | null
   affidabilita: {
-    value: number
-    class: ReliabilityClass
-    knowledge: number
-    agreement: number
-    disagreement_supremacy: number | null
-    disagreement_total: number | null
+    value: number | null
+    class: ReliabilityClass | null
+    signals: Record<ReliabilityComponent, number>
+    contributions: Record<ReliabilityComponent, number> | null
     new_team: boolean
     early_season: boolean
+    sign_support: SignSupport
   }
+}
+
+export type ReliabilityComponent =
+  | 'poca_conoscenza'
+  | 'disaccordo_forza'
+  | 'disaccordo_gol'
+  | 'squadra_nuova'
+  | 'inizio_stagione'
+  | 'irregolarita'
+
+export type Sign = '1' | 'X' | '2'
+
+export type SignSupport = {
+  sign: Sign
+  prob: number
+  agents_agree: number
+  agents_total: number
+  specialists: Record<string, Record<Sign, number>>
+  form: 'concorde' | 'contraria' | 'neutra' | 'non disponibile'
 }
 
 export type CoherenceCheck = {
   code: string
   label: string
   index: string
-  increasing: boolean
-  rows: Array<{ class: string; n: number; value: number | null }>
+  increasing?: boolean
+  value_format: 'goals' | 'pct' | 'brier_signed' | 'pp_signed'
+  rows: Array<{ class: string; n: number; value: number | null; realized?: number | null; expected?: number | null }>
   passed: boolean
 }
 
@@ -86,6 +105,16 @@ export type IndexRun = {
   summary: {
     matches: number
     coherence_checks: CoherenceCheck[]
+    reliability_checks?: CoherenceCheck[]
+    reliability_passed?: boolean
+    reliability_models?: Array<{
+      season: string
+      trained_on: string[]
+      n_train: number
+      weights: Record<ReliabilityComponent, number>
+      degenerate: boolean
+    }>
+    sign_support?: Array<{ agents_agree: number; n: number; mean_prob: number; hit_rate: number }>
     all_checks_passed: boolean
     class_distribution: Record<string, Record<string, number>>
   } | null
@@ -196,6 +225,17 @@ export const RELIABILITY_LABELS: Record<ReliabilityClass, string> = {
   media: 'Media',
   bassa: 'Bassa',
 }
+
+export const RELIABILITY_COMPONENT_LABELS: Record<ReliabilityComponent, string> = {
+  poca_conoscenza: 'Poche partite per conoscere le squadre',
+  disaccordo_forza: "Specialisti in disaccordo su chi e' piu' forte",
+  disaccordo_gol: 'Specialisti in disaccordo sui gol totali',
+  squadra_nuova: 'Squadra neopromossa o nuova',
+  inizio_stagione: 'Inizio stagione',
+  irregolarita: 'Risultati recenti irregolari rispetto alle attese',
+}
+
+export const RELIABILITY_COMPONENTS = Object.keys(RELIABILITY_COMPONENT_LABELS) as ReliabilityComponent[]
 
 export const MARKET_LABELS: Record<string, string> = {
   HOME: '1',

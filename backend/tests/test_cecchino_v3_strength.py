@@ -688,40 +688,113 @@ def test_rolling_percentile_needs_history():
     assert rp.percentile(1e9) == 100.0
 
 
-def test_reliability_formula():
-    from app.services.cecchino_v3.constants import (
-        RELIABILITY_EARLY_FACTOR,
-        RELIABILITY_NEW_TEAM_FACTOR,
-        RELIABILITY_SUPREMACY_SCALE,
-        RELIABILITY_TOTAL_SCALE,
-    )
-    from app.services.cecchino_v3.indices import reliability, specialist_disagreement
+def test_excess_brier_is_zero_on_average_when_probabilities_are_exact():
+    from app.services.cecchino_v3.reliability import brier_1x2, excess_brier_1x2, expected_brier_1x2
 
-    full = reliability(
-        home_evidence=40, away_evidence=25, disagreement_supremacy=0.0, disagreement_total=0.0,
-        new_team=False, early=False,
-    )
-    assert full["value"] == 100.0 and full["class"] == "alta"
-    half = reliability(
-        home_evidence=10, away_evidence=40, disagreement_supremacy=0.0, disagreement_total=0.0,
-        new_team=False, early=False,
-    )
-    assert half["value"] == 50.0 and half["class"] == "media"
-    d_sup, d_tot = 0.2, 0.15
-    expected = 100.0 / (1 + d_sup / RELIABILITY_SUPREMACY_SCALE + d_tot / RELIABILITY_TOTAL_SCALE)
-    expected *= RELIABILITY_NEW_TEAM_FACTOR * RELIABILITY_EARLY_FACTOR
-    got = reliability(
-        home_evidence=30, away_evidence=30, disagreement_supremacy=d_sup, disagreement_total=d_tot,
-        new_team=True, early=True,
-    )
-    assert abs(got["value"] - round(expected, 1)) < 1e-9 and got["class"] == "bassa"
+    probs = (0.5, 0.3, 0.2)
+    assert abs(expected_brier_1x2(probs) - (1 - 0.25 - 0.09 - 0.04) / 3) < 1e-12
+    assert abs(brier_1x2(probs, (1.0, 0.0, 0.0)) - (0.25 + 0.09 + 0.04) / 3) < 1e-12
+    rng = np.random.default_rng(7)
+    draws = rng.choice(3, size=200_000, p=probs)
+    goals = {0: (1, 0), 1: (1, 1), 2: (0, 1)}
+    counts = np.bincount(draws, minlength=3)
+    mean_excess = sum(counts[k] * excess_brier_1x2(probs, *goals[k]) for k in range(3)) / draws.size
+    assert abs(mean_excess) < 1e-3
 
-    sup, tot = specialist_disagreement(
-        {"forza": {"home": 2.0, "away": 1.0}, "sot": {"home": 1.0, "away": 1.0}, "shots": {"home": 1.5, "away": 1.0}}
-    )
-    assert abs(sup - math.log(2.0)) < 1e-12
-    assert abs(tot - (math.log(3.0) - math.log(2.0))) < 1e-12
-    assert specialist_disagreement({"forza": {"home": 1.0, "away": 1.0}}) == (None, None)
+
+def test_reliability_weights_follow_excess_error_and_stay_non_negative():
+    from app.services.cecchino_v3.constants import RELIABILITY_COMPONENTS
+    from app.services.cecchino_v3.reliability import fit_reliability_model
+
+    rng = np.random.default_rng(3)
+    signals, excess = [], []
+    for _ in range(3000):
+        s = {k: float(rng.normal()) for k in RELIABILITY_COMPONENTS}
+        s["squadra_nuova"] = float(rng.random() < 0.1)
+        signals.append(s)
+        # l'errore in eccesso cresce con il disaccordo e cala (segno sbagliato) con l'irregolarita'
+        excess.append(0.02 * s["disaccordo_forza"] - 0.02 * s["irregolarita"] + float(rng.normal(0, 0.01)))
+    model = fit_reliability_model("2022/2023", ["2021/2022"], signals, excess)
+    assert all(w >= 0.0 for w in model.weights.values())
+    assert model.weights["disaccordo_forza"] > 0.015
+    assert model.weights["irregolarita"] == 0.0
+    risky = dict(signals[0], disaccordo_forza=3.0)
+    safe = dict(signals[0], disaccordo_forza=-3.0)
+    assert model.risk(risky)[0] > model.risk(safe)[0]
+
+
+def _two_season_inputs(n_per_season=60):
+    inputs, mid = [], 1
+    teams = ["A", "B", "C", "D"]
+    for s_idx, season in enumerate(("2021/2022", "2022/2023")):
+        for k in range(n_per_season):
+            home, away = teams[k % 4], teams[(k + 1 + k // 4) % 4]
+            if home == away:
+                away = teams[(k + 2) % 4]
+            item = _index_input(
+                mid, s_idx * 400 + k, home=home, away=away, gh=(k * 7) % 4, ga=(k * 3) % 3,
+                p=(0.4 + (k % 5) / 50, 0.27, 0.33 - (k % 5) / 50), season=season,
+            )
+            item.home_evidence = float(k % 25)
+            item.specialists["sot"] = {"home": 1.2 + (k % 3) / 5, "away": 1.1}
+            inputs.append(item)
+            mid += 1
+    return inputs
+
+
+def test_reliability_walk_forward_without_leak():
+    from dataclasses import replace
+
+    from app.services.cecchino_v3.reliability import compute_reliability
+
+    inputs = _two_season_inputs()
+    base = compute_reliability(inputs)
+    assert len(base.models) == 1 and base.models[0].trained_on == ["2021/2022"]
+    first_season = [i for i in inputs if i.match.season_label == "2021/2022"]
+    assert all(base.per_match[i.match.lab_match_id]["value"] is None for i in first_season)
+
+    target = inputs[90].match  # seconda stagione
+    changed = [
+        replace(item, match=replace(item.match, ft_home=5, ft_away=0)) if item.match.day >= target.day else item
+        for item in inputs
+    ]
+    after = compute_reliability(changed)
+    for item in inputs:
+        if item.match.day <= target.day:
+            assert base.per_match[item.match.lab_match_id] == after.per_match[item.match.lab_match_id]
+
+
+def test_sign_support_counts_specialists_seeing_the_same_sign():
+    from app.services.cecchino_v3.reliability import sign_support
+
+    item = _index_input(1, 0, p=(0.55, 0.25, 0.20), lam=(1.9, 0.8))
+    item.specialists["shots"] = {"home": 0.7, "away": 1.8}
+    item.specialists["form"] = {
+        "home_attack_shots": 0.2, "home_defence_shots": 0.0, "away_attack_shots": 0.0, "away_defence_shots": 0.1,
+    }
+    support = sign_support(item)
+    assert support["sign"] == "1" and support["agents_total"] == 3 and support["agents_agree"] == 2
+    assert support["specialists"]["shots"]["2"] > support["specialists"]["shots"]["1"]
+    assert support["form"] == "concorde"
+
+
+def test_reliability_exam_rows_and_rules():
+    from app.services.cecchino_v3.constants import JUDGE_SEASONS
+    from app.services.cecchino_v3.reliability import reliability_exam
+
+    inputs, per_match = [], {}
+    mid = 1
+    for season in JUDGE_SEASONS:
+        for klass, (p_home, gh, ga) in zip(("bassa", "media", "alta"), ((0.7, 0, 2), (0.5, 1, 1), (0.6, 2, 0))):
+            for k in range(10):
+                item = _index_input(mid, mid, p=(p_home, 0.2, 0.8 - p_home), gh=gh, ga=ga, season=season)
+                inputs.append(item)
+                per_match[mid] = {"class": klass}
+                mid += 1
+    checks = {c["code"]: c for c in reliability_exam(inputs, per_match, JUDGE_SEASONS, 0.15)}
+    assert [r["n"] for r in checks["R1"]["rows"]] == [30, 30, 30]
+    assert checks["R1"]["passed"] and checks["R2"]["passed"] and checks["R3"]["passed"]
+    assert checks["R4"]["passed"]  # 0.7 - 0 > 0.5 - 0 > 0.6 - 1
 
 
 def test_indices_use_only_previous_days_of_same_league():

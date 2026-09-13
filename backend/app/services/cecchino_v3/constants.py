@@ -271,21 +271,51 @@ EXAM_STABILITY_NEUTRAL = 0.01
 INDEX_MIN_HISTORY = 200
 INDEX_CLASS_EDGES: tuple[float, ...] = (20.0, 40.0, 60.0, 80.0)
 INDEX_CLASSES: tuple[str, ...] = ("molto_basso", "basso", "medio", "alto", "molto_alto")
-# Affidabilita' della stima (0-100):
-#   conoscenza = min(1, partite equivalenti della squadra meno conosciuta / 20)
-#   accordo    = 1 / (1 + diff. forza tra specialisti / 0,4 + diff. gol totali / 0,3)
-#   x 0,85 se una squadra e' neopromossa o nuova nel dataset (prima stagione)
-#   x 0,5 nelle partite di inizio stagione (meno di 5 partite giocate)
-RELIABILITY_FULL_EVIDENCE = 20.0
-RELIABILITY_SUPREMACY_SCALE = 0.4
-RELIABILITY_TOTAL_SCALE = 0.3
-RELIABILITY_NEW_TEAM_FACTOR = 0.85
-RELIABILITY_EARLY_FACTOR = 0.5
-RELIABILITY_HIGH = 75.0
-RELIABILITY_MEDIUM = 50.0
+# Affidabilita' della stima, versione 2 (la v1 non ha superato C4: misurava
+# quanto una partita e' prevedibile, non quanto la stima e' solida).
+# Nessuna quota entra nel calcolo. Domanda: "quanto possiamo fidarci delle
+# probabilita' che gli agenti hanno prodotto per QUESTA partita?"
+# Segnali di incertezza, tutti pre-partita e dai dati degli agenti:
+#   poca_conoscenza  = 1 / sqrt(1 + partite equivalenti della squadra meno conosciuta)
+#   disaccordo_forza = differenza massima tra specialisti su log(gol casa / gol ospite)
+#   disaccordo_gol   = differenza massima tra specialisti su log(gol totali)
+#   squadra_nuova    = 1 se una squadra e' neopromossa o nuova nel dataset
+#   inizio_stagione  = 1 se una squadra ha meno di 5 partite giocate
+#   irregolarita     = scarti quadratici (gol fatti e subiti - attesi) / gol attesi,
+#                      ultime 10 partite delle due squadre (1 = regolare come Poisson)
+# Quanto pesa ogni segnale lo decidono i dati, walk-forward: per la stagione S
+# si stimano pesi >= 0 sulle stagioni precedenti, con obiettivo l'ERRORE IN
+# ECCESSO 1X2 = Brier reale - Brier atteso dal modello stesso (1 - somma p^2)/3.
+# L'errore in eccesso non dipende da quanto la partita e' prevedibile: una
+# partita equilibrata ha errore atteso alto ma, se la stima e' solida, eccesso ~0.
+# Valore 0-100 = 100 - percentile del rischio tra le partite delle stagioni di stima.
+# Prima stagione (rodaggio): nessun peso stimabile -> affidabilita' non disponibile.
+RELIABILITY_COMPONENTS: tuple[str, ...] = (
+    "poca_conoscenza",
+    "disaccordo_forza",
+    "disaccordo_gol",
+    "squadra_nuova",
+    "inizio_stagione",
+    "irregolarita",
+)
+RELIABILITY_IRREGULARITY_MATCHES = 10
+RELIABILITY_IRREGULARITY_MIN_MATCHES = 3
+RELIABILITY_HIGH = 70.0  # alta = 30% delle partite piu' solide (rispetto alla stima)
+RELIABILITY_MEDIUM = 30.0  # bassa = 30% delle partite meno solide
+# Segno sostenuto dagli agenti: il segno piu' probabile del modello e quanti
+# specialisti (Forza, tiri in porta, tiri), ognuno da solo, lo vedono come il
+# piu' probabile. Forma concorde/contraria se la differenza di forma di gioco
+# supera questa soglia (log rapporto) nella direzione del segno.
+RELIABILITY_FORM_NEUTRAL = 0.05
 # Controlli di coerenza sulle stagioni di giudizio (partite idonee):
 # C1 intensita' goal -> gol reali medi sempre crescenti tra le 5 classi
 # C2 credibilita' pareggio -> frequenza pareggi sempre crescente tra le 5 classi
 # C3 equilibrio -> vittorie del favorito sempre decrescenti tra le 5 classi
-# C4 affidabilita' bassa -> media -> alta: errore 1X2 (Brier) sempre decrescente
-INDEX_ENGINE_VERSION = "cecchino_v3_indices_v1"
+# Esame affidabilita' v2 (fissato prima del calcolo):
+# R1 errore in eccesso 1X2 sempre decrescente bassa -> media -> alta
+# R2 in ognuna delle 3 stagioni di giudizio: eccesso bassa > eccesso alta
+# R3 ogni classe contiene almeno il 15% delle partite
+# R4 eccesso di fiducia sul segno piu' probabile (prob. - frequenza reale)
+#    sempre decrescente bassa -> media -> alta
+RELIABILITY_MIN_CLASS_SHARE = 0.15
+INDEX_ENGINE_VERSION = "cecchino_v3_indices_v2"

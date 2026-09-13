@@ -3,11 +3,14 @@ import { PatternInsightsShell, Section } from '../components/pattern-insights/Pa
 import { ClassChip, MatchDetailPanel } from '../components/cecchino-v3/MatchDetailPanel'
 import {
   INDEX_CLASS_LABELS,
+  RELIABILITY_COMPONENTS,
+  RELIABILITY_COMPONENT_LABELS,
   RELIABILITY_LABELS,
   getIndexRuns,
   getMatchFilters,
   listMatches,
   startIndexRun,
+  type CoherenceCheck,
   type IndexClass,
   type IndexRun,
   type MatchListItem,
@@ -23,13 +26,30 @@ function pct(v: number | null | undefined): string {
   return v == null ? '—' : `${(v * 100).toFixed(0)}%`
 }
 
-function CoherenceBlock({ run }: { run: IndexRun }) {
-  const checks = run.summary?.coherence_checks ?? []
+function formatValue(c: CoherenceCheck, v: number | null | undefined): string {
+  if (v == null) return '—'
+  switch (c.value_format) {
+    case 'goals':
+      return v.toFixed(2)
+    case 'brier_signed':
+      return `${v > 0 ? '+' : ''}${v.toFixed(4)}`
+    case 'pp_signed':
+      return `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)} punti`
+    default:
+      return `${(v * 100).toFixed(1)}%`
+  }
+}
+
+const VALUE_HEADERS: Record<string, string> = {
+  C1: 'Gol medi',
+  R1: 'Errore in eccesso',
+  R2: 'Eccesso bassa − alta',
+  R3: 'Quota partite',
+  R4: 'Fiducia in eccesso',
+}
+
+function CheckTiles({ checks }: { checks: CoherenceCheck[] }) {
   return (
-    <Section
-      title="Controlli di coerenza degli indici"
-      note="Fissati prima del calcolo · stagioni di giudizio, partite idonee"
-    >
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {checks.map((c) => (
           <div key={c.code} className="pi-tile">
@@ -50,7 +70,9 @@ function CoherenceBlock({ run }: { run: IndexRun }) {
                 <tr>
                   <th>Classe</th>
                   <th>Partite</th>
-                  <th>{c.code === 'C1' ? 'Gol medi' : c.code === 'C4' ? 'Errore 1X2' : 'Frequenza'}</th>
+                  <th>{VALUE_HEADERS[c.code] ?? 'Frequenza'}</th>
+                  {c.code === 'R1' && <th>Errore reale</th>}
+                  {c.code === 'R1' && <th>Errore atteso</th>}
                 </tr>
               </thead>
               <tbody>
@@ -60,9 +82,9 @@ function CoherenceBlock({ run }: { run: IndexRun }) {
                       {INDEX_CLASS_LABELS[r.class as IndexClass] ?? RELIABILITY_LABELS[r.class as ReliabilityClass] ?? r.class}
                     </td>
                     <td className="tabular-nums">{r.n.toLocaleString('it-IT')}</td>
-                    <td className="tabular-nums">
-                      {r.value == null ? '—' : c.code === 'C1' ? r.value.toFixed(2) : c.code === 'C4' ? r.value.toFixed(4) : `${(r.value * 100).toFixed(1)}%`}
-                    </td>
+                    <td className="tabular-nums">{formatValue(c, r.value)}</td>
+                    {c.code === 'R1' && <td className="tabular-nums">{r.realized?.toFixed(4) ?? '—'}</td>}
+                    {c.code === 'R1' && <td className="tabular-nums">{r.expected?.toFixed(4) ?? '—'}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -70,7 +92,88 @@ function CoherenceBlock({ run }: { run: IndexRun }) {
           </div>
         ))}
       </div>
-    </Section>
+  )
+}
+
+function CoherenceBlock({ run }: { run: IndexRun }) {
+  const summary = run.summary
+  const reliabilityChecks = summary?.reliability_checks ?? []
+  const models = summary?.reliability_models ?? []
+  const support = summary?.sign_support ?? []
+  return (
+    <>
+      <Section
+        title="Controlli di coerenza degli indici"
+        note="Fissati prima del calcolo · stagioni di giudizio, partite idonee"
+      >
+        <CheckTiles checks={summary?.coherence_checks ?? []} />
+      </Section>
+      {reliabilityChecks.length > 0 && (
+        <Section
+          title="Esame dell'affidabilita' (versione 2)"
+          note="Nessuna quota del book usata · errore in eccesso = errore reale − errore atteso dal modello stesso"
+        >
+          <CheckTiles checks={reliabilityChecks} />
+          {models.length > 0 && (
+            <div className="pi-scroll mt-3">
+              <table className="pi-table">
+                <thead>
+                  <tr>
+                    <th>Stagione</th>
+                    <th>Stimata su</th>
+                    {RELIABILITY_COMPONENTS.map((k) => (
+                      <th key={k}>{RELIABILITY_COMPONENT_LABELS[k]}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {models.map((m) => (
+                    <tr key={m.season}>
+                      <td className="font-semibold">{m.season}</td>
+                      <td>
+                        {m.trained_on.join(', ')} ({m.n_train.toLocaleString('it-IT')} partite)
+                      </td>
+                      {RELIABILITY_COMPONENTS.map((k) => (
+                        <td key={k} className="tabular-nums">
+                          {(m.weights[k] ?? 0).toFixed(4)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-1 text-[10px]" style={{ color: TEXT_MUTED }}>
+                Peso di ogni segnale di incertezza (sempre maggiore o uguale a zero), stimato solo sulle stagioni precedenti.
+              </div>
+            </div>
+          )}
+          {support.length > 0 && (
+            <div className="pi-scroll mt-3">
+              <table className="pi-table">
+                <thead>
+                  <tr>
+                    <th>Specialisti che vedono lo stesso segno</th>
+                    <th>Partite</th>
+                    <th>Probabilita' media del segno</th>
+                    <th>Frequenza reale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {support.map((r) => (
+                    <tr key={r.agents_agree}>
+                      <td className="font-semibold">{r.agents_agree} su 3</td>
+                      <td className="tabular-nums">{r.n.toLocaleString('it-IT')}</td>
+                      <td className="tabular-nums">{(r.mean_prob * 100).toFixed(1)}%</td>
+                      <td className="tabular-nums">{(r.hit_rate * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
+    </>
   )
 }
 

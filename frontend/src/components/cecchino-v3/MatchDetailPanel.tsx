@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   INDEX_CLASS_LABELS,
   MARKET_LABELS,
+  RELIABILITY_COMPONENTS,
+  RELIABILITY_COMPONENT_LABELS,
   RELIABILITY_LABELS,
   getMatchDetail,
   type FormaTeam,
@@ -64,6 +66,57 @@ function specialistGoals(specialists: Record<string, unknown> | null, name: stri
   return `${s.home.toFixed(2)} – ${s.away.toFixed(2)}`
 }
 
+function ReliabilityCard({ detail }: { detail: MatchDetail }) {
+  const rel = detail.indices.affidabilita
+  const reasons = rel.contributions
+    ? RELIABILITY_COMPONENTS.map((k) => ({ key: k, value: rel.contributions![k] ?? 0 }))
+        .filter((r) => Math.abs(r.value) >= 0.005)
+        .sort((a, b) => b.value - a.value)
+    : []
+  return (
+    <Card title="Affidabilita' della stima">
+      <div className="text-2xl font-bold tabular-nums">{rel.value == null ? 'n.d.' : rel.value.toFixed(0)}</div>
+      <div className="mb-2 text-xs">
+        {rel.class ? RELIABILITY_LABELS[rel.class] : 'Stagione di rodaggio: pesi non ancora stimabili'}
+      </div>
+      {reasons.map((r) => (
+        <Line
+          key={r.key}
+          label={RELIABILITY_COMPONENT_LABELS[r.key]}
+          value={r.value > 0 ? `abbassa (${r.value.toFixed(2)})` : `alza (${r.value.toFixed(2)})`}
+        />
+      ))}
+      <div className="mt-1 text-[10px]" style={{ color: TEXT_MUTED }}>
+        Calcolata solo dai dati degli agenti, senza quote. Confronto con le partite delle stagioni precedenti.
+      </div>
+    </Card>
+  )
+}
+
+const SPECIALIST_LABELS: Record<string, string> = { forza: 'Forza (gol)', sot: 'Tiri in porta', shots: 'Tiri' }
+
+function SignSupportCard({ detail }: { detail: MatchDetail }) {
+  const support = detail.indices.affidabilita.sign_support
+  return (
+    <Card title="Segno sostenuto dagli agenti">
+      <div className="flex items-center gap-2">
+        <span className="text-2xl font-bold">{support.sign}</span>
+        <span className="text-xs">
+          {pct(support.prob)} · {support.agents_agree} specialisti su {support.agents_total} lo vedono favorito
+        </span>
+      </div>
+      {Object.entries(support.specialists).map(([name, probs]) => (
+        <Line
+          key={name}
+          label={SPECIALIST_LABELS[name] ?? name}
+          value={`1 ${pct(probs['1'], 0)} · X ${pct(probs['X'], 0)} · 2 ${pct(probs['2'], 0)}`}
+        />
+      ))}
+      <Line label="Forma di gioco" value={support.form} />
+    </Card>
+  )
+}
+
 export function MatchDetailPanel({ labMatchId, onClose }: { labMatchId: number; onClose: () => void }) {
   const [detail, setDetail] = useState<MatchDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -114,14 +167,8 @@ export function MatchDetailPanel({ labMatchId, onClose }: { labMatchId: number; 
         {detail && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <Card title="Affidabilita' della stima">
-                <div className="text-2xl font-bold tabular-nums">{detail.indices.affidabilita.value.toFixed(0)}</div>
-                <div className="mb-2 text-xs">{RELIABILITY_LABELS[detail.indices.affidabilita.class]}</div>
-                <Line label="Conoscenza squadre" value={num(detail.indices.affidabilita.knowledge)} />
-                <Line label="Accordo specialisti" value={num(detail.indices.affidabilita.agreement)} />
-                <Line label="Squadra nuova/neopromossa" value={detail.indices.affidabilita.new_team ? 'si' : 'no'} />
-                <Line label="Inizio stagione" value={detail.indices.affidabilita.early_season ? 'si' : 'no'} />
-              </Card>
+              <ReliabilityCard detail={detail} />
+              <SignSupportCard detail={detail} />
               <Card title="Equilibrio">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold tabular-nums">{detail.indices.equilibrio.value.toFixed(0)}</span>

@@ -40,18 +40,19 @@ from app.services.cecchino_v3.constants import (
     INDEX_MIN_HISTORY,
     JUDGE_SEASONS,
     MARKET_KEYS,
-    RELIABILITY_EARLY_FACTOR,
-    RELIABILITY_FULL_EVIDENCE,
+    RELIABILITY_COMPONENTS,
+    RELIABILITY_FORM_NEUTRAL,
     RELIABILITY_HIGH,
+    RELIABILITY_IRREGULARITY_MATCHES,
+    RELIABILITY_IRREGULARITY_MIN_MATCHES,
     RELIABILITY_MEDIUM,
-    RELIABILITY_NEW_TEAM_FACTOR,
-    RELIABILITY_SUPREMACY_SCALE,
-    RELIABILITY_TOTAL_SCALE,
+    RELIABILITY_MIN_CLASS_SHARE,
 )
 from app.services.cecchino_v3.data import MatchRecord, group_matches, load_matches
 from app.services.cecchino_v3.discipline import compute_discipline
 from app.services.cecchino_v3.form import Expectation
 from app.services.cecchino_v3.indices import IndexInput, coherence_checks, compute_indices
+from app.services.cecchino_v3.reliability import compute_reliability, reliability_exam, sign_support_table
 from app.services.cecchino_v3.walkforward import divisions_for, mover_flags
 
 logger = logging.getLogger(__name__)
@@ -100,13 +101,16 @@ def _config(source_run_id: int) -> dict[str, Any]:
         "class_edges": list(INDEX_CLASS_EDGES),
         "classes": list(INDEX_CLASSES),
         "reliability": {
-            "full_evidence": RELIABILITY_FULL_EVIDENCE,
-            "supremacy_scale": RELIABILITY_SUPREMACY_SCALE,
-            "total_scale": RELIABILITY_TOTAL_SCALE,
-            "new_team_factor": RELIABILITY_NEW_TEAM_FACTOR,
-            "early_factor": RELIABILITY_EARLY_FACTOR,
+            "components": list(RELIABILITY_COMPONENTS),
+            "target": "errore in eccesso 1X2 (Brier reale - Brier atteso dal modello)",
+            "weights": "minimi quadrati con pesi >= 0, stagioni precedenti (walk-forward)",
+            "irregularity_matches": RELIABILITY_IRREGULARITY_MATCHES,
+            "irregularity_min_matches": RELIABILITY_IRREGULARITY_MIN_MATCHES,
             "high": RELIABILITY_HIGH,
             "medium": RELIABILITY_MEDIUM,
+            "min_class_share": RELIABILITY_MIN_CLASS_SHARE,
+            "form_neutral": RELIABILITY_FORM_NEUTRAL,
+            "book_odds_used": False,
         },
         "judge_seasons": list(JUDGE_SEASONS),
     }
@@ -189,7 +193,7 @@ def _load_source(db: Session, source_run_id: int) -> dict[int, dict[str, Any]]:
     rows = db.execute(
         text(
             """
-            SELECT mp.lab_match_id, mp.lambda_home, mp.lambda_away, mp.home_evidence, mp.away_evidence,
+            SELECT mp.lab_match_id, mp.lambda_home, mp.lambda_away, mp.rho, mp.home_evidence, mp.away_evidence,
                    mp.specialists_json,
                    max(mk.probability) FILTER (WHERE mk.market_key = 'HOME') AS p_home,
                    max(mk.probability) FILTER (WHERE mk.market_key = 'DRAW') AS p_draw,
@@ -255,6 +259,7 @@ def _execute(run_id: int) -> None:
                         home_evidence=float(s["home_evidence"]),
                         away_evidence=float(s["away_evidence"]),
                         specialists=s["specialists_json"] or {},
+                        rho=float(s["rho"]),
                         new_team_home=new_home,
                         new_team_away=new_away,
                         discipline=discipline.get(m.lab_match_id),
@@ -262,8 +267,12 @@ def _execute(run_id: int) -> None:
                 )
 
             _set_step(db, run_id, "Indici a 360 gradi")
-            indices = compute_indices(inputs)
+            reliability = compute_reliability(inputs)
+            indices = compute_indices(inputs, reliability.per_match)
             checks = coherence_checks(inputs, indices, JUDGE_SEASONS)
+            reliability_checks = reliability_exam(
+                inputs, reliability.per_match, JUDGE_SEASONS, RELIABILITY_MIN_CLASS_SHARE
+            )
 
             _set_step(db, run_id, "Salvataggio")
             rows = []
@@ -279,7 +288,11 @@ def _execute(run_id: int) -> None:
                         "kickoff_at": m.kickoff_at,
                         "home_team": m.home_team,
                         "away_team": m.away_team,
-                        "reliability": Decimal(str(idx["affidabilita"]["value"])),
+                        "reliability": (
+                            Decimal(str(idx["affidabilita"]["value"]))
+                            if idx["affidabilita"]["value"] is not None
+                            else None
+                        ),
                         "reliability_class": idx["affidabilita"]["class"],
                         "equilibrio_class": idx["equilibrio"]["class"],
                         "pareggio_class": idx["pareggio"]["class"],
@@ -302,7 +315,11 @@ def _execute(run_id: int) -> None:
             run.summary_json = {
                 "matches": len(rows),
                 "coherence_checks": checks,
-                "all_checks_passed": all(c["passed"] for c in checks),
+                "reliability_checks": reliability_checks,
+                "reliability_passed": all(c["passed"] for c in reliability_checks),
+                "reliability_models": [model.summary() for model in reliability.models],
+                "sign_support": sign_support_table(inputs, reliability.per_match, JUDGE_SEASONS),
+                "all_checks_passed": all(c["passed"] for c in checks + reliability_checks),
                 "class_distribution": distribution,
             }
             run.status = V3_STATUS_COMPLETED
