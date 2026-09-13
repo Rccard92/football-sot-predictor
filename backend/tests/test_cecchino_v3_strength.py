@@ -419,8 +419,9 @@ def test_referee_index_uses_only_past_matches_of_that_referee():
     assert abs(feats[3].adjust_home["referee_goals"] - expected) < 1e-12
     assert feats[3].adjust_away["referee_goals"] == feats[3].adjust_home["referee_goals"]
     assert feats[4].adjust_home["referee_goals"] == 0.0
-    # cambiare i risultati dal giorno 4 in poi non cambia nulla dei giorni <= 4
-    changed = [MatchRecord(**{**m.__dict__, "ft_home": 9, "home_fouls": 40}) if m.day >= 4 else m for m in matches]
+    # cambiare i risultati dal giorno della partita 3 in poi non cambia nulla dei giorni fino a quello
+    cut = matches[2].day
+    changed = [MatchRecord(**{**m.__dict__, "ft_home": 9, "home_fouls": 40}) if m.day >= cut else m for m in matches]
     after = compute_discipline(changed, exp)
     for m in matches:
         assert feats[m.lab_match_id] == after[m.lab_match_id]
