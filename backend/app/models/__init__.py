@@ -60,6 +60,11 @@ from app.models.cecchino_run_v2_pattern_insight import (
     CecchinoRunV2PatternValidation,
     CecchinoRunV2PatternValidationRun,
 )
+from app.models.cecchino_v3 import (
+    CecchinoV3MarketPrediction,
+    CecchinoV3MatchPrediction,
+    CecchinoV3Run,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -140,6 +145,9 @@ __all__ = [
     "CecchinoRunV2PatternInsightCandidate",
     "CecchinoRunV2PatternValidationRun",
     "CecchinoRunV2PatternValidation",
+    "CecchinoV3Run",
+    "CecchinoV3MatchPrediction",
+    "CecchinoV3MarketPrediction",
     "Competition",
     "Fixture",
     "FixtureLineup",
