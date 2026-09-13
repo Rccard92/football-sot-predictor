@@ -67,6 +67,8 @@ from app.models.cecchino_v3 import (
     CecchinoV3MarketPrediction,
     CecchinoV3MatchIndex,
     CecchinoV3MatchPrediction,
+    CecchinoV3Pattern,
+    CecchinoV3PatternRun,
     CecchinoV3Run,
 )
 from app.models.competition import Competition
@@ -156,6 +158,8 @@ __all__ = [
     "CecchinoV3MatchIndex",
     "CecchinoV3EvaluatorRun",
     "CecchinoV3EvaluatorPlay",
+    "CecchinoV3PatternRun",
+    "CecchinoV3Pattern",
     "Competition",
     "Fixture",
     "FixtureLineup",

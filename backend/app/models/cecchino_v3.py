@@ -209,3 +209,46 @@ class CecchinoV3EvaluatorPlay(Base):
     edge: Mapped[Decimal] = mapped_column(Numeric(9, 5), nullable=False)
     won: Mapped[bool] = mapped_column(Boolean, nullable=False)
     profit: Mapped[Decimal] = mapped_column(Numeric(9, 3), nullable=False)
+
+
+class CecchinoV3PatternRun(Base, TimestampMixin):
+    """Ricerca pattern V3 con il protocollo V2 e movimento di mercato (Passo 3b/3c)."""
+
+    __tablename__ = "cecchino_v3_pattern_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_v3_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    index_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_v3_index_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    engine_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=V3_STATUS_PENDING)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_step: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    config_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CecchinoV3Pattern(Base):
+    __tablename__ = "cecchino_v3_patterns"
+    __table_args__ = (Index("ix_cecchino_v3_pattern_run_market", "pattern_run_id", "market_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pattern_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_v3_pattern_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    market_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str] = mapped_column(String(512), nullable=False)
+    conditions_json: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
+    discovery_n: Mapped[int] = mapped_column(Integer, nullable=False)
+    discovery_roi: Mapped[Decimal] = mapped_column(Numeric(10, 5), nullable=False)
+    seasons_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    confirmed_all: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    frozen: Mapped[bool] = mapped_column(Boolean, nullable=False)

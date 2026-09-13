@@ -370,3 +370,59 @@ STRATEGY_MAIN = "VALUTATORE_PRINCIPALI"
 STRATEGY_V3_PURE = "V3_PURA_PRINCIPALI"
 STRATEGY_ALL = "VALUTATORE_TUTTI"
 EVALUATOR_EDGE_GRID: tuple[float, ...] = (0.0, 0.025, 0.05, 0.075, 0.10)  # solo descrittivo
+
+# --- Passo 3b: il mercato si muove verso la V3? (dichiarato prima) -----------
+# Mercati con quota di apertura e di chiusura: 1X2 finale e Over/Under 2.5.
+#   movimento = logit(p_chiusura) - logit(p_apertura)   (probabilita' senza margine)
+#   distanza  = logit(p_V3)       - logit(p_apertura)
+#   movimento = alfa + beta * distanza, minimi quadrati, errore robusto per partita.
+# Esame M: beta > 0 con limite inferiore dell'intervallo al 95% > 0 in ognuna
+#          delle 3 stagioni di giudizio, per 1X2 e per Over/Under 2.5.
+# Descrittivo: giocate V3 alla quota di APERTURA (stesse regole del valutatore:
+# valore >= 5%, quote 1,30-5,00, 1 per partita, 15 al giorno), ROI all'apertura e
+# guadagno di quota rispetto alla chiusura (quota apertura / quota chiusura - 1).
+MOVE_MARKETS: dict[str, tuple[str, ...]] = {
+    "FT_1X2": ("HOME", "DRAW", "AWAY"),
+    "OU_2_5": ("OVER_2_5",),
+}
+
+# --- Passo 3c: ricerca pattern V3, STESSO protocollo della V2 (dichiarato prima) ---
+# Righe: partite idonee x 17 mercati, quota di chiusura (come la ricerca V2).
+# Condizioni (atomi) lette dagli agenti V3, mai dal risultato:
+#   prob_v3      quintili della probabilita' V3 del mercato
+#   v3_vs_book   quintili di (probabilita' V3 - probabilita' book senza margine)
+#   quota        quintili della quota
+#   equilibrio, pareggio, intensita_goal   classi degli indici (5)
+#   segno_agenti specialisti concordi sul segno piu' probabile (3 / 2 / 0-1)
+#   forma        quintili di (forma di gioco casa - forma di gioco ospite)
+#   riposo       differenza giorni di riposo casa - ospite (< -1 / -1..1 / > 1)
+#   fase         stagione / ultime 5 giornate
+#   livello      prime divisioni / divisioni inferiori
+#   I quintili sono calcolati sulla stagione di scoperta e poi congelati.
+# Scoperta sul 2021/22: combinazioni di 1 e 2 condizioni con almeno 20 giocate e
+# ROI > 0; raffinamento a 3 condizioni sui 15 migliori pattern a 2 condizioni.
+# Verifica su 2022/23, 2023/24, 2024/25, ognuna da sola: almeno 20 giocate,
+# confermato se ROI > 0. Riferimento del caso: probabilita' che un gruppo casuale
+# di partite della stessa stagione e mercato, grande uguale, abbia ROI > 0
+# (400 estrazioni). Tenuta: confermati in tutte e 3 contro il prodotto delle
+# probabilita' del caso.
+# Test congelato: pattern confermati in 2022/23 E 2023/24 -> giocati sul 2024/25,
+# una giocata per partita per mercato.
+# Confronto con la V2: stesse misure lette dalle verifiche V2 gia' salvate.
+# Esame P (la V3 registra pattern vincenti):
+#   P1 tasso di conferma > tasso atteso dal caso in ognuna delle 3 stagioni,
+#      con rapporto (lift) complessivo >= 1,10;
+#   P2 confermati in tutte e 3 le stagioni > 1,5 volte l'atteso dal caso;
+#   P3 test congelato 2024/25: ROI > 0.
+PATTERN_ENGINE_VERSION = "cecchino_v3_patterns_v1"
+PATTERN_DISCOVERY_SEASON = "2021/2022"
+PATTERN_MIN_SAMPLE = 20
+PATTERN_REFINEMENT_BASES = 15
+PATTERN_NULL_SAMPLES = 400
+PATTERN_NULL_SEED = 20260913
+PATTERN_QUANTILES = 5
+PATTERN_MIN_LIFT = 1.10
+PATTERN_MIN_PERSISTENCE_LIFT = 1.5
+PATTERN_FROZEN_SEASON = "2024/2025"
+PATTERN_FROZEN_FROM: tuple[str, ...] = ("2022/2023", "2023/2024")
+V2_INSIGHT_ODDS_MODE = "closing"

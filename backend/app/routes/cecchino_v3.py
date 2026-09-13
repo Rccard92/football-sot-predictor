@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.cecchino_v3 import CecchinoV3MarketPrediction, CecchinoV3MatchPrediction
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
-from app.services.cecchino_v3 import evaluator_service, index_service, service
+from app.services.cecchino_v3 import evaluator_service, index_service, pattern_service, service
 
 router = APIRouter(prefix="/admin/cecchino/v3", tags=["admin-cecchino-v3"])
 
@@ -199,4 +199,30 @@ def get_v3_evaluator_plays(
     out = evaluator_service.list_plays(
         db, strategy=strategy, season_label=season_label, competition=competition, limit=limit, offset=offset
     )
+    return JSONResponse(content=jsonable_encoder(out))
+
+
+@router.post("/pattern/runs")
+def post_v3_pattern_run(db: Session = Depends(get_db)) -> JSONResponse:
+    """Ricerca pattern V3 con il protocollo V2 e movimento di mercato."""
+    try:
+        return JSONResponse(status_code=202, content=jsonable_encoder(pattern_service.start_pattern_run(db)))
+    except CecchinoLabImportError as exc:
+        _raise(exc)
+
+
+@router.get("/pattern/runs/latest")
+def get_v3_pattern_runs_latest(db: Session = Depends(get_db)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder(pattern_service.latest_pattern_runs(db)))
+
+
+@router.get("/pattern/elenco")
+def get_v3_patterns(
+    market_key: str | None = Query(default=None),
+    only: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    out = pattern_service.list_patterns(db, market_key=market_key, only=only, limit=limit, offset=offset)
     return JSONResponse(content=jsonable_encoder(out))
