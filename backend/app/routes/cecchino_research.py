@@ -1372,16 +1372,32 @@ def get_run_v2_pattern_validation(run_id: int, db: Session = Depends(get_db)) ->
 @router.get("/run-v2-pattern-insight/validation-analytics")
 def get_run_v2_pattern_validation_analytics(
     min_n: int = Query(default=20, ge=1),
+    validation_id: int | None = Query(default=None),
+    tier: str = Query(default="all"),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """Aggregati della verifica fuori campione per la dashboard: tasso di
     riconferma osservato contro quello atteso per puro caso, spezzato per
-    campione, complessita', mercato e situazione."""
+    campione, complessita', mercato e situazione, per stagione e divisione."""
     from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
         get_validation_analytics,
     )
 
-    return JSONResponse(content=jsonable_encoder(get_validation_analytics(db, min_n=min_n)))
+    return JSONResponse(
+        content=jsonable_encoder(
+            get_validation_analytics(db, min_n=min_n, validation_id=validation_id, tier=tier)
+        )
+    )
+
+
+@router.get("/run-v2-pattern-insight/market-scoreboard")
+def get_run_v2_market_scoreboard(db: Session = Depends(get_db)) -> JSONResponse:
+    """Cecchino contro Bet365 su tutte le partite eleggibili, a quota di
+    chiusura: precisione delle probabilita' (Brier), margine del bookmaker e
+    curva del valore, per stagione, mercato e divisione. Il 2025/26 e' escluso."""
+    from app.services.cecchino_data_lab.run_v2_market_scoreboard import get_market_scoreboard
+
+    return JSONResponse(content=jsonable_encoder(get_market_scoreboard(db)))
 
 
 @router.get("/run-v2-pattern-insight/candidates/{candidate_id}/detail")
@@ -1423,6 +1439,7 @@ def get_run_v2_pattern_insight_candidates(
     threshold: float | None = Query(default=None),
     min_n: int = Query(default=20, ge=1),
     verdict: str | None = Query(default=None),
+    validation_id: int | None = Query(default=None),
     sort: str = Query(default="best"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -1439,6 +1456,7 @@ def get_run_v2_pattern_insight_candidates(
         threshold=threshold,
         min_n=min_n,
         verdict=verdict,
+        validation_id=validation_id,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -1459,7 +1477,9 @@ def post_run_v2_pattern_insight_run(
     )
 
     try:
-        out = start_pattern_insight_run(db, run_v2_run_id=body.run_v2_run_id)
+        out = start_pattern_insight_run(
+            db, run_v2_run_id=body.run_v2_run_id, odds_mode=body.odds_mode
+        )
         return JSONResponse(status_code=202, content=jsonable_encoder(out))
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

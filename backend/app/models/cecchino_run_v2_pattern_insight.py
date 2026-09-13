@@ -57,6 +57,9 @@ class CecchinoRunV2PatternInsightRun(Base, TimestampMixin):
     error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 'closing' = quota di chiusura come metro unico; 'v2' = quote come salvate da Run V2
+    odds_mode: Mapped[str] = mapped_column(String(16), nullable=False, default='closing')
+    engine_version: Mapped[str] = mapped_column(String(32), nullable=False, default='numpy_v1')
 
 
 class CecchinoRunV2PatternInsightCandidate(Base, TimestampMixin):
@@ -156,3 +159,5 @@ class CecchinoRunV2PatternValidation(Base, TimestampMixin):
     deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 3), nullable=True)
     verdict: Mapped[str] = mapped_column(String(24), nullable=False)
     null_confirm_prob: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    # stesse statistiche ristrette a prime divisioni / divisioni inferiori
+    tier_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

@@ -39,7 +39,13 @@ from app.services.cecchino_data_lab.run_v2_grid_dataset import (
     load_run_v2_market_rows,
     load_run_v2_synthetic_rows,
 )
-from app.services.cecchino_data_lab.run_v2_grid_engine import candidate_to_summary, discover_patterns
+from app.services.cecchino_data_lab.run_v2_grid_dataset import ODDS_MODE_CLOSING, ODDS_MODES
+from app.services.cecchino_data_lab.run_v2_grid_engine import (
+    ENGINE_VERSION_VECTORIZED,
+    candidate_to_summary,
+    discover_patterns_fast,
+)
+from app.services.cecchino_data_lab.run_v2_scope import is_lockbox_season
 from app.services.cecchino_data_lab.run_v2_grid_labels import target_label
 
 logger = logging.getLogger(__name__)
@@ -91,6 +97,8 @@ def run_to_dict(run: CecchinoRunV2PatternInsightRun) -> dict[str, Any]:
         "summary": run.summary_json,
         "error": run.error_json,
         "source_git_commit": run.source_git_commit,
+        "odds_mode": run.odds_mode,
+        "engine_version": run.engine_version,
     }
 
 
@@ -119,10 +127,20 @@ def candidate_row_to_dict(row: CecchinoRunV2PatternInsightCandidate) -> dict[str
     }
 
 
-def start_pattern_insight_run(db: Session, *, run_v2_run_id: int) -> dict[str, Any]:
+def start_pattern_insight_run(
+    db: Session, *, run_v2_run_id: int, odds_mode: str = ODDS_MODE_CLOSING
+) -> dict[str, Any]:
+    if odds_mode not in ODDS_MODES:
+        raise CecchinoLabImportError("invalid_odds_mode", f"odds_mode non valido: {odds_mode}", status_code=400)
     run_v2 = db.get(CecchinoRunV2Run, run_v2_run_id)
     if not run_v2:
         raise CecchinoLabImportError("run_v2_not_found", "Run V2 non trovata", status_code=404)
+    if is_lockbox_season((run_v2.summary_json or {}).get("season_label")):
+        raise CecchinoLabImportError(
+            "lockbox_season",
+            "La stagione 2025/26 e' sotto chiave: e' il test finale e non puo' essere usata per la scoperta.",
+            status_code=403,
+        )
     if run_v2.status != "completed":
         raise CecchinoLabImportError(
             "run_v2_not_completed",
@@ -150,6 +168,8 @@ def start_pattern_insight_run(db: Session, *, run_v2_run_id: int) -> dict[str, A
         status=STATUS_PENDING,
         requested_at=_utcnow(),
         source_git_commit=revision.get("source_git_commit"),
+        odds_mode=odds_mode,
+        engine_version=ENGINE_VERSION_VECTORIZED,
     )
     db.add(run)
     db.commit()
@@ -177,11 +197,19 @@ def cancel_pattern_insight_run(db: Session, run_id: int) -> dict[str, Any]:
 
 
 def _latest_completed_run(db: Session) -> CecchinoRunV2PatternInsightRun | None:
-    return db.scalars(
-        select(CecchinoRunV2PatternInsightRun)
-        .where(CecchinoRunV2PatternInsightRun.status == STATUS_COMPLETED)
-        .order_by(CecchinoRunV2PatternInsightRun.completed_at.desc())
+    """Ultima analisi completata, preferendo il metro unico a quota di chiusura:
+    le analisi in modalita' 'v2' restano solo come confronto storico."""
+    base = select(CecchinoRunV2PatternInsightRun).where(
+        CecchinoRunV2PatternInsightRun.status == STATUS_COMPLETED
+    )
+    closing = db.scalars(
+        base.where(CecchinoRunV2PatternInsightRun.odds_mode == ODDS_MODE_CLOSING).order_by(
+            CecchinoRunV2PatternInsightRun.completed_at.desc()
+        )
     ).first()
+    if closing is not None:
+        return closing
+    return db.scalars(base.order_by(CecchinoRunV2PatternInsightRun.completed_at.desc())).first()
 
 
 def get_summary(db: Session, *, min_n: int = 20) -> dict[str, Any]:
@@ -268,6 +296,7 @@ def list_candidates(
     threshold: float | None = None,
     min_n: int = 20,
     verdict: str | None = None,
+    validation_id: int | None = None,
     sort: str = "best",
     limit: int = 100,
     offset: int = 0,
@@ -283,13 +312,16 @@ def list_candidates(
     C = CecchinoRunV2PatternInsightCandidate
     run = _latest_completed_run(db)
     if not run:
-        return {"run": None, "validation": None, "total": 0, "items": []}
+        return {"run": None, "validation": None, "validations": [], "total": 0, "items": []}
 
-    vrun = db.scalars(
-        select(VR)
-        .where(VR.insight_run_id == run.id, VR.status == STATUS_COMPLETED)
-        .order_by(VR.completed_at.desc())
-    ).first()
+    from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
+        _completed_validations,
+    )
+
+    # una verifica per stagione (la piu' recente); filtri e ordinamenti sulla
+    # stagione scelta, di default l'ultima
+    vruns = _completed_validations(db, int(run.id))
+    vrun = next((v for v in vruns if int(v.id) == validation_id), vruns[-1] if vruns else None)
 
     filters = [C.insight_run_id == run.id, C.n >= min_n]
     if target_type:
@@ -353,11 +385,45 @@ def list_candidates(
         )
         items.append(item)
 
+    # numeri di tutte le stagioni di verifica per le righe della pagina
+    if vruns and items:
+        season_of = {int(v.id): v.season_label for v in vruns}
+        page_ids = [it["id"] for it in items]
+        by_candidate: dict[int, list[dict[str, Any]]] = {}
+        for val in db.scalars(
+            select(V).where(
+                V.validation_run_id.in_(list(season_of.keys())), V.candidate_id.in_(page_ids)
+            )
+        ).all():
+            by_candidate.setdefault(int(val.candidate_id), []).append(
+                {
+                    "validation_id": int(val.validation_run_id),
+                    "season_label": season_of[int(val.validation_run_id)],
+                    "n": val.n,
+                    "wins": val.wins,
+                    "losses": val.losses,
+                    "win_rate_pct": float(val.win_rate_pct) if val.win_rate_pct is not None else None,
+                    "roi_pct": float(val.roi_pct) if val.roi_pct is not None else None,
+                    "avg_quota": float(val.avg_quota) if val.avg_quota is not None else None,
+                    "deviation_pct": float(val.deviation_pct) if val.deviation_pct is not None else None,
+                    "verdict": val.verdict,
+                    "null_confirm_prob": (
+                        float(val.null_confirm_prob) if val.null_confirm_prob is not None else None
+                    ),
+                    "tier_json": val.tier_json,
+                }
+            )
+        for it in items:
+            it["oos_seasons"] = sorted(
+                by_candidate.get(it["id"], []), key=lambda x: x["season_label"] or ""
+            )
+
     return {
         "run": run_to_dict(run),
         "validation": (
             {"id": int(vrun.id), "season_label": vrun.season_label} if vrun is not None else None
         ),
+        "validations": [{"id": int(v.id), "season_label": v.season_label} for v in vruns],
         "total": total,
         "items": items,
     }
@@ -421,7 +487,9 @@ def _execute_pattern_insight_run(run_id: int) -> None:
                 db.commit()
 
                 if target_type == TARGET_TYPE_MARKET:
-                    rows = load_run_v2_market_rows(db, run_id=run_v2_run_id, market_key=target_key)
+                    rows = load_run_v2_market_rows(
+                        db, run_id=run_v2_run_id, market_key=target_key, odds_mode=run.odds_mode
+                    )
                     has_odds = True
                 else:
                     rows = load_run_v2_synthetic_rows(
@@ -431,7 +499,7 @@ def _execute_pattern_insight_run(run_id: int) -> None:
 
                 if rows:
                     baseline = round(sum(1 for r in rows if r.won) / len(rows) * 100.0, 3)
-                    candidates = discover_patterns(rows, has_odds=has_odds)
+                    candidates = discover_patterns_fast(rows, has_odds=has_odds)
                     for c in candidates:
                         summary = candidate_to_summary(c, baseline_win_rate=baseline)
                         db.add(

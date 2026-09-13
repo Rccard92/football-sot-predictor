@@ -139,9 +139,12 @@ def _rows_for(
     *,
     run_v2_run_id: int,
     binners: dict,
+    odds_mode: str,
 ) -> list[RunV2GridRow]:
     if candidate.target_type == TARGET_TYPE_MARKET:
-        raw = load_market_raw(db, run_id=run_v2_run_id, market_key=candidate.target_key)
+        raw = load_market_raw(
+            db, run_id=run_v2_run_id, market_key=candidate.target_key, odds_mode=odds_mode
+        )
         return market_rows_from_raw(raw, binners)
     raw = load_synthetic_raw(db, run_id=run_v2_run_id, stat_key=candidate.target_key)
     threshold = float(candidate.threshold) if candidate.threshold is not None else 0.0
@@ -169,7 +172,9 @@ def get_candidate_detail(
     disc_id = int(insight_run.run_v2_run_id)
     binners = load_season_binners(db, run_id=disc_id)
 
-    disc_rows = _rows_for(db, candidate, run_v2_run_id=disc_id, binners=binners)
+    disc_rows = _rows_for(
+        db, candidate, run_v2_run_id=disc_id, binners=binners, odds_mode=insight_run.odds_mode
+    )
     disc_run = db.get(CecchinoRunV2Run, disc_id)
     seasons: list[dict[str, Any]] = [
         {
@@ -191,14 +196,11 @@ def get_candidate_detail(
         }
     ]
 
-    vruns = db.scalars(
-        select(CecchinoRunV2PatternValidationRun)
-        .where(
-            CecchinoRunV2PatternValidationRun.insight_run_id == insight_run.id,
-            CecchinoRunV2PatternValidationRun.status == STATUS_COMPLETED,
-        )
-        .order_by(CecchinoRunV2PatternValidationRun.season_label)
-    ).all()
+    from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
+        _completed_validations,
+    )
+
+    vruns = _completed_validations(db, int(insight_run.id))
     seen_runs: set[int] = set()
     for vrun in vruns:
         oos_id = int(vrun.run_v2_run_id)
@@ -211,13 +213,16 @@ def get_candidate_detail(
                 CecchinoRunV2PatternValidation.candidate_id == candidate.id,
             )
         ).first()
-        oos_rows = _rows_for(db, candidate, run_v2_run_id=oos_id, binners=binners)
+        oos_rows = _rows_for(
+            db, candidate, run_v2_run_id=oos_id, binners=binners, odds_mode=insight_run.odds_mode
+        )
         seasons.append(
             {
                 "role": "validation",
                 "season_label": vrun.season_label,
                 "run_v2_run_id": oos_id,
                 "verdict": verdict_row.verdict if verdict_row else None,
+                "tier_json": verdict_row.tier_json if verdict_row else None,
                 "null_confirm_prob": (
                     float(verdict_row.null_confirm_prob)
                     if verdict_row and verdict_row.null_confirm_prob is not None

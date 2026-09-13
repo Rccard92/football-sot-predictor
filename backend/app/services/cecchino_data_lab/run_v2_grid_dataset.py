@@ -178,28 +178,89 @@ def load_season_binners(db: Session, *, run_id: int) -> dict[str, QuantileBinner
     return _binners_from([dict(r._mapping) for r in result])
 
 
-def load_market_raw(db: Session, *, run_id: int, market_key: str) -> list[dict]:
-    """Righe grezze (feature continue non ancora binnate) per un mercato."""
+ODDS_MODE_V2 = "v2"
+ODDS_MODE_CLOSING = "closing"
+ODDS_MODES = (ODDS_MODE_V2, ODDS_MODE_CLOSING)
+
+
+def _inv(col: str) -> str:
+    return f"1.0/NULLIF({col}, 0)"
+
+
+# Metro unico "quota di chiusura" per tutti i 17 mercati, letta dalle colonne
+# grezze di cecchino_lab_matches. Run V2 usa invece una miscela: pre-chiusura
+# per 1X2 e Over/Under 2.5, chiusura per gli altri, e per la doppia chance
+# mancante una quota ricavata dall'1X2 SENZA margine (profitto gonfiato).
+# Qui la doppia chance mancante e' ricavata dall'1X2 di chiusura TENENDO il
+# margine: mai piu' generosa del bookmaker.
+_CLOSING_QUOTE_SQL: dict[str, str] = {
+    "HOME": "m.bet365_closing_home",
+    "DRAW": "m.bet365_closing_draw",
+    "AWAY": "m.bet365_closing_away",
+    "ONE_X": f"coalesce(m.bet365_dc_1x, 1.0/NULLIF({_inv('m.bet365_closing_home')} + {_inv('m.bet365_closing_draw')}, 0))",
+    "X_TWO": f"coalesce(m.bet365_dc_x2, 1.0/NULLIF({_inv('m.bet365_closing_draw')} + {_inv('m.bet365_closing_away')}, 0))",
+    "ONE_TWO": f"coalesce(m.bet365_dc_12, 1.0/NULLIF({_inv('m.bet365_closing_home')} + {_inv('m.bet365_closing_away')}, 0))",
+    "OVER_2_5": "m.bet365_closing_over_25",
+    "UNDER_2_5": "m.bet365_closing_under_25",
+    "OVER_0_5": "m.bet365_over_05",
+    "UNDER_0_5": "m.bet365_under_05",
+    "OVER_1_5": "m.bet365_over_15",
+    "UNDER_1_5": "m.bet365_under_15",
+    "OVER_3_5": "m.bet365_over_35",
+    "UNDER_3_5": "m.bet365_under_35",
+    "HOME_PT": "m.bet365_ht_home",
+    "DRAW_PT": "m.bet365_ht_draw",
+    "AWAY_PT": "m.bet365_ht_away",
+}
+
+
+def load_market_raw(
+    db: Session, *, run_id: int, market_key: str, odds_mode: str = ODDS_MODE_CLOSING
+) -> list[dict]:
+    """Righe grezze (feature continue non ancora binnate) per un mercato.
+
+    odds_mode="closing": quota di chiusura dalle colonne grezze, profitto
+    ricalcolato (vinta: quota-1, persa: -1). odds_mode="v2": quota e profitto
+    come salvati da Run V2 (solo per confronti di parita' col passato).
+    """
+    if odds_mode not in ODDS_MODES:
+        raise ValueError(f"odds_mode non riconosciuto: {odds_mode!r}")
+    if odds_mode == ODDS_MODE_CLOSING and market_key not in _CLOSING_QUOTE_SQL:
+        raise ValueError(f"market_key non riconosciuto: {market_key!r}")
+
+    if odds_mode == ODDS_MODE_CLOSING:
+        # espressione presa da un dizionario di costanti: nessun input libero
+        odds_columns = f"""
+               ({_CLOSING_QUOTE_SQL[market_key]})::double precision AS quota_close,
+               NULL::double precision AS profit_1u,
+               NULL::double precision AS quota_book,"""
+        join_matches = "JOIN cecchino_lab_matches m ON m.id = s.lab_match_id"
+    else:
+        odds_columns = """
+               NULL::double precision AS quota_close,
+               r.flat_stake_profit  AS profit_1u,
+               r.quota_book         AS quota_book,"""
+        join_matches = ""
+
     sql = (
         _base_select(
-            """
+            f"""
                (SELECT pm->>'class'
                   FROM jsonb_array_elements(
                          coalesce(s.purchasability_json->'markets', '[]'::jsonb)) pm
                  WHERE pm->>'market_key' = :market_key
                  LIMIT 1) AS purchasability_class,
-               r.won                AS won,
-               r.flat_stake_profit  AS profit_1u,
-               r.quota_book         AS quota_book,
+               r.won                AS won,{odds_columns}
                r.signal_active      AS signal_active
             """
         )
-        + """
+        + f"""
         JOIN cecchino_run_v2_market_results r
           ON r.match_snapshot_id = s.id
          AND r.market_key = :market_key
          AND r.observation_layer = :layer
          AND r.pre_match_input_safe IS TRUE
+        {join_matches}
         WHERE s.run_id = :run_id
           AND s.eligibility_status = :eligible
           AND r.won IS NOT NULL
@@ -214,7 +275,16 @@ def load_market_raw(db: Session, *, run_id: int, market_key: str) -> list[dict]:
             "eligible": ELIGIBLE_STATUS,
         },
     )
-    return [dict(r._mapping) for r in result]
+    raw = [dict(r._mapping) for r in result]
+    if odds_mode == ODDS_MODE_CLOSING:
+        for r in raw:
+            q = r.get("quota_close")
+            if q is None or q <= 1.0:
+                r["quota_book"], r["profit_1u"] = None, None
+            else:
+                r["quota_book"] = q
+                r["profit_1u"] = (q - 1.0) if r["won"] else -1.0
+    return raw
 
 
 def market_rows_from_raw(
@@ -241,10 +311,12 @@ def market_rows_from_raw(
     return rows
 
 
-def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> list[RunV2GridRow]:
+def load_run_v2_market_rows(
+    db: Session, *, run_id: int, market_key: str, odds_mode: str = ODDS_MODE_CLOSING
+) -> list[RunV2GridRow]:
     """Righe per un mercato con quota storica, con i quintili della stessa
     stagione (uso in scoperta e nel drill-down sulla stagione di scoperta)."""
-    raw = load_market_raw(db, run_id=run_id, market_key=market_key)
+    raw = load_market_raw(db, run_id=run_id, market_key=market_key, odds_mode=odds_mode)
     return market_rows_from_raw(raw, load_season_binners(db, run_id=run_id))
 
 

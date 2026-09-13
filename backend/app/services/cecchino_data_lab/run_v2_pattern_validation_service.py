@@ -67,6 +67,7 @@ from app.services.cecchino_data_lab.run_v2_grid_labels import target_label
 from app.services.cecchino_data_lab.run_v2_grid_matrix import NullModel, RowMatrix
 from app.services.cecchino_data_lab.run_v2_grid_vocabulary import Atom
 from app.services.cecchino_data_lab.run_v2_pattern_insight_service import MARKET_KEYS
+from app.services.cecchino_data_lab.run_v2_scope import TIERS, is_lockbox_season, tier_of
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,12 @@ def start_validation(db: Session, *, run_v2_run_id: int) -> dict[str, Any]:
         raise CecchinoLabImportError("run_v2_not_found", "Run V2 di scoperta non trovata", status_code=404)
 
     target_season, discovery_season = _season(target), _season(discovery)
+    if is_lockbox_season(target_season):
+        raise CecchinoLabImportError(
+            "lockbox_season",
+            "La stagione 2025/26 e' sotto chiave: e' il test finale, non si usa per le verifiche intermedie.",
+            status_code=403,
+        )
     if int(target.id) == int(discovery.id) or (
         target_season and discovery_season and target_season <= discovery_season
     ):
@@ -249,6 +256,36 @@ class _Tally:
         return out
 
 
+def _judge(
+    s: dict[str, Any],
+    *,
+    target_type: str,
+    baseline: float | None,
+    discovery_deviation: float | None,
+    null: NullModel,
+) -> tuple[str, float | None, float | None]:
+    """Verdetto, probabilita' del caso e scarto dalla media per una stagione."""
+    deviation = (
+        round(s["win_rate_pct"] - baseline, 3)
+        if s["win_rate_pct"] is not None and baseline is not None
+        else None
+    )
+    if s["n"] < MIN_OOS_SAMPLE:
+        return VERDICT_INSUFFICIENT, None, deviation
+    if target_type == TARGET_TYPE_MARKET:
+        verdict = VERDICT_CONFIRMED if (s["roi_pct"] or 0) > 0 else VERDICT_REJECTED
+        return verdict, null.p_roi_positive(s["n"]), deviation
+    direction = 1 if (discovery_deviation or 0) >= 0 else -1
+    dev = deviation or 0.0
+    if dev * direction >= SYNTHETIC_CONFIRM_DEVIATION_PCT:
+        verdict = VERDICT_CONFIRMED
+    elif dev * direction > 0:
+        verdict = VERDICT_ATTENUATED
+    else:
+        verdict = VERDICT_REJECTED
+    return verdict, null.p_deviation(s["n"], direction=direction), deviation
+
+
 def _verify_group(
     db: Session,
     *,
@@ -256,63 +293,66 @@ def _verify_group(
     target_type: str,
     candidates: list[CecchinoRunV2PatternInsightCandidate],
     discovery_matrix: RowMatrix,
-    oos_matrix: RowMatrix,
+    oos_rows: list,
     tally: _Tally,
 ) -> None:
     if not candidates:
         return
-    null = NullModel(oos_matrix, deviation_threshold_pct=SYNTHETIC_CONFIRM_DEVIATION_PCT)
-    oos_baseline = oos_matrix.baseline_win_rate_pct()
+    scopes = {"all": RowMatrix(oos_rows)}
+    for tier in TIERS:
+        scopes[tier] = RowMatrix([r for r in oos_rows if tier_of(r.competition) == tier])
+    nulls = {
+        k: NullModel(m, deviation_threshold_pct=SYNTHETIC_CONFIRM_DEVIATION_PCT)
+        for k, m in scopes.items()
+    }
+    baselines = {k: m.baseline_win_rate_pct() for k, m in scopes.items()}
     records: list[dict[str, Any]] = []
 
     for c in candidates:
         combo = _combo(c)
+        disc_dev = float(c.deviation_pct) if c.deviation_pct is not None else None
 
         disc = discovery_matrix.stats(discovery_matrix.combo_mask(combo))
         tally.parity_checked += 1
         if disc["n"] != c.n or disc["wins"] != c.wins:
             tally.parity_mismatches += 1
 
-        s = oos_matrix.stats(oos_matrix.combo_mask(combo))
-        deviation = (
-            round(s["win_rate_pct"] - oos_baseline, 3)
-            if s["win_rate_pct"] is not None and oos_baseline is not None
-            else None
-        )
+        per_scope: dict[str, dict[str, Any]] = {}
+        for k, m in scopes.items():
+            st = m.stats(m.combo_mask(combo))
+            verdict, null_prob, deviation = _judge(
+                st,
+                target_type=target_type,
+                baseline=baselines[k],
+                discovery_deviation=disc_dev,
+                null=nulls[k],
+            )
+            per_scope[k] = {
+                **st,
+                "baseline_win_rate_pct": baselines[k],
+                "deviation_pct": deviation,
+                "verdict": verdict,
+                "null_confirm_prob": round(null_prob, 4) if null_prob is not None else None,
+            }
 
-        null_prob: float | None
-        if s["n"] < MIN_OOS_SAMPLE:
-            verdict, null_prob = VERDICT_INSUFFICIENT, None
-        elif target_type == TARGET_TYPE_MARKET:
-            verdict = VERDICT_CONFIRMED if (s["roi_pct"] or 0) > 0 else VERDICT_REJECTED
-            null_prob = null.p_roi_positive(s["n"])
-        else:
-            direction = 1 if (c.deviation_pct or 0) >= 0 else -1
-            dev = deviation or 0.0
-            if dev * direction >= SYNTHETIC_CONFIRM_DEVIATION_PCT:
-                verdict = VERDICT_CONFIRMED
-            elif dev * direction > 0:
-                verdict = VERDICT_ATTENUATED
-            else:
-                verdict = VERDICT_REJECTED
-            null_prob = null.p_deviation(s["n"], direction=direction)
-
-        tally.add(target_type, verdict, null_prob)
+        s_all = per_scope["all"]
+        tally.add(target_type, s_all["verdict"], s_all["null_confirm_prob"])
         records.append(
             {
                 "validation_run_id": validation_run_id,
                 "candidate_id": int(c.id),
-                "n": s["n"],
-                "wins": s["wins"],
-                "losses": s["losses"],
-                "win_rate_pct": _d(s["win_rate_pct"]),
-                "roi_pct": _d(s["roi_pct"]),
-                "profit_units": _d(s["profit_units"]),
-                "avg_quota": _d(s["avg_quota"]),
-                "baseline_win_rate_pct": _d(oos_baseline),
-                "deviation_pct": _d(deviation),
-                "verdict": verdict,
-                "null_confirm_prob": _d(round(null_prob, 4) if null_prob is not None else None),
+                "n": s_all["n"],
+                "wins": s_all["wins"],
+                "losses": s_all["losses"],
+                "win_rate_pct": _d(s_all["win_rate_pct"]),
+                "roi_pct": _d(s_all["roi_pct"]),
+                "profit_units": _d(s_all["profit_units"]),
+                "avg_quota": _d(s_all["avg_quota"]),
+                "baseline_win_rate_pct": _d(s_all["baseline_win_rate_pct"]),
+                "deviation_pct": _d(s_all["deviation_pct"]),
+                "verdict": s_all["verdict"],
+                "null_confirm_prob": _d(s_all["null_confirm_prob"]),
+                "tier_json": {tier: per_scope[tier] for tier in TIERS},
             }
         )
 
@@ -333,6 +373,7 @@ def _execute_validation(run_id: int) -> None:
         try:
             insight = db.get(CecchinoRunV2PatternInsightRun, int(run.insight_run_id))
             disc_id = int(insight.run_v2_run_id)
+            odds_mode = insight.odds_mode
             oos_id = int(run.run_v2_run_id)
             insight_id = int(insight.id)
 
@@ -354,10 +395,12 @@ def _execute_validation(run_id: int) -> None:
             for mk in MARKET_KEYS:
                 progress(target_label(mk))
                 disc_rows = market_rows_from_raw(
-                    load_market_raw(db, run_id=disc_id, market_key=mk), disc_binners
+                    load_market_raw(db, run_id=disc_id, market_key=mk, odds_mode=odds_mode),
+                    disc_binners,
                 )
                 oos_rows = market_rows_from_raw(
-                    load_market_raw(db, run_id=oos_id, market_key=mk), disc_binners
+                    load_market_raw(db, run_id=oos_id, market_key=mk, odds_mode=odds_mode),
+                    disc_binners,
                 )
                 _verify_group(
                     db,
@@ -365,7 +408,7 @@ def _execute_validation(run_id: int) -> None:
                     target_type=TARGET_TYPE_MARKET,
                     candidates=_candidates_for(db, insight_id, TARGET_TYPE_MARKET, mk, None),
                     discovery_matrix=RowMatrix(disc_rows),
-                    oos_matrix=RowMatrix(oos_rows),
+                    oos_rows=oos_rows,
                     tally=tally,
                 )
                 done += 1
@@ -385,9 +428,7 @@ def _execute_validation(run_id: int) -> None:
                         discovery_matrix=RowMatrix(
                             synthetic_rows_from_raw(disc_raw, disc_binners, threshold)
                         ),
-                        oos_matrix=RowMatrix(
-                            synthetic_rows_from_raw(oos_raw, disc_binners, threshold)
-                        ),
+                        oos_rows=synthetic_rows_from_raw(oos_raw, disc_binners, threshold),
                         tally=tally,
                     )
                 done += 1

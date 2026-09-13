@@ -122,6 +122,63 @@ def discover_patterns(rows: list[RunV2GridRow], *, has_odds: bool) -> list[RunV2
     return found
 
 
+ENGINE_VERSION_PYTHON = "python_v1"
+ENGINE_VERSION_VECTORIZED = "numpy_v1"
+
+
+def discover_patterns_fast(rows: list[RunV2GridRow], *, has_odds: bool) -> list[RunV2Candidate]:
+    """Stessa identica ricerca di `discover_patterns` (stesso vocabolario, stesso
+    ordine di enumerazione, stessi criteri e stesso raffinamento), ma con le
+    statistiche calcolate su maschere numpy invece che riga per riga. La parita'
+    con la versione Python va verificata rilanciando la scoperta sulla stessa
+    stagione e confrontando i candidati."""
+    from app.services.cecchino_data_lab.run_v2_grid_matrix import RowMatrix
+
+    if not rows:
+        return []
+    baseline_win_rate = round(sum(1 for r in rows if r.won) / len(rows) * 100.0, 3)
+    vocab = build_atom_vocabulary(rows)
+    matrix = RowMatrix(rows)
+    found: list[RunV2Candidate] = []
+    existing_keys: set[frozenset[tuple[str, str]]] = set()
+
+    for size in (1, 2):
+        for combo in enumerate_combos(vocab, size):
+            key = frozenset((a.column, a.value) for a in combo)
+            if key in existing_keys:
+                continue
+            s = matrix.stats(matrix.combo_mask(combo))
+            if _qualifies(s, has_odds=has_odds, baseline_win_rate=baseline_win_rate):
+                found.append(RunV2Candidate(combo=combo, stats=s))
+                existing_keys.add(key)
+
+    two_atom_bases = [c for c in found if len(c.combo) == 2]
+    two_atom_bases.sort(
+        key=lambda c: _rank_key(c, has_odds=has_odds, baseline_win_rate=baseline_win_rate),
+        reverse=True,
+    )
+    for base in two_atom_bases[:REFINEMENT_BASES]:
+        used_cols = {a.column for a in base.combo}
+        base_mask = matrix.combo_mask(base.combo)
+        for atom in vocab:
+            if atom.column in used_cols:
+                continue
+            combo = tuple(list(base.combo) + [atom])
+            key = frozenset((a.column, a.value) for a in combo)
+            if key in existing_keys:
+                continue
+            s = matrix.stats(base_mask & matrix.atom_mask(atom))
+            if _qualifies(s, has_odds=has_odds, baseline_win_rate=baseline_win_rate):
+                found.append(RunV2Candidate(combo=combo, stats=s, refined_from=base.combo))
+                existing_keys.add(key)
+
+    found.sort(
+        key=lambda c: _rank_key(c, has_odds=has_odds, baseline_win_rate=baseline_win_rate),
+        reverse=True,
+    )
+    return found
+
+
 def candidate_to_summary(candidate: RunV2Candidate, *, baseline_win_rate: float) -> dict[str, Any]:
     from app.services.cecchino_data_lab.run_v2_grid_labels import humanize_combo
 
