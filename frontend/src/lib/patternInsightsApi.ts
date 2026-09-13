@@ -68,7 +68,44 @@ export type PatternInsightCandidate = {
   deviation_pct: number | null
   oos?: OosStats | null
   oos_seasons?: OosSeasonStats[]
+  profit_units?: number | null
+  n_priced?: number | null
+  total?: PatternTotal
+  seasons?: PatternSeasonRow[]
 }
+
+export type PatternTotal = {
+  seasons: number
+  n: number
+  wins: number
+  losses: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+  profit_units: number | null
+  n_priced: number
+  deviation_pct: number | null
+  validations_confirmed: number
+  validations_tested: number
+  validations_total: number
+}
+
+export type PatternSeasonRow = {
+  role: 'discovery' | 'validation'
+  validation_id: number | null
+  season_label: string | null
+  n: number
+  wins: number
+  losses: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+  profit_units: number | null
+  avg_quota: number | null
+  deviation_pct: number | null
+  verdict: OosStats['verdict'] | null
+  null_confirm_prob: number | null
+}
+
+export type PatternHold = 'positive_total' | 'confirmed_all' | 'all'
 
 export type TierKey = 'all' | 'top' | 'lower'
 
@@ -100,6 +137,8 @@ export type PatternInsightCandidatesPage = {
   run: PatternInsightRun | null
   validation?: { id: number; season_label: string | null } | null
   validations?: Array<{ id: number; season_label: string | null }>
+  seasons?: Array<string | null>
+  hold?: PatternHold
   total: number
   items: PatternInsightCandidate[]
 }
@@ -427,6 +466,10 @@ export async function getPatternInsightSummary(minN = 20): Promise<PatternInsigh
 }
 
 export type PatternSort =
+  | 'total_profit_desc'
+  | 'total_roi_desc'
+  | 'total_n_desc'
+  | 'total_deviation_desc'
   | 'best'
   | 'roi_desc'
   | 'deviation_desc'
@@ -441,6 +484,7 @@ export async function getPatternInsightCandidates(params: {
   minN?: number
   verdict?: OosStats['verdict']
   validationId?: number | null
+  hold?: PatternHold
   sort?: PatternSort
   limit?: number
   offset?: number
@@ -451,8 +495,9 @@ export async function getPatternInsightCandidates(params: {
   if (params.threshold != null) qs.set('threshold', String(params.threshold))
   if (params.verdict) qs.set('verdict', params.verdict)
   if (params.validationId != null) qs.set('validation_id', String(params.validationId))
+  qs.set('hold', params.hold ?? 'positive_total')
   qs.set('min_n', String(params.minN ?? 20))
-  qs.set('sort', params.sort ?? 'best')
+  qs.set('sort', params.sort ?? 'total_profit_desc')
   qs.set('limit', String(params.limit ?? 100))
   qs.set('offset', String(params.offset ?? 0))
   return requestJson(`/api/admin/cecchino/research/run-v2-pattern-insight/candidates?${qs.toString()}`)

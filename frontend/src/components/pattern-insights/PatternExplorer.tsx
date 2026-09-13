@@ -6,12 +6,34 @@ import {
   VERDICT_LABELS,
   getPatternInsightCandidates,
   type OosStats,
+  type PatternHold,
   type PatternInsightCandidate,
   type PatternInsightTargetType,
+  type PatternSeasonRow,
   type PatternSort,
 } from '../../lib/patternInsightsApi'
 
 const PAGE_SIZE = 25
+
+const MARKET_OPTIONS: Array<[string, string]> = [
+  ['HOME', 'Segno 1'],
+  ['DRAW', 'Segno X'],
+  ['AWAY', 'Segno 2'],
+  ['HOME_PT', 'Segno 1 primo tempo'],
+  ['DRAW_PT', 'Segno X primo tempo'],
+  ['AWAY_PT', 'Segno 2 primo tempo'],
+  ['ONE_X', '1X'],
+  ['X_TWO', 'X2'],
+  ['ONE_TWO', '12'],
+  ['OVER_0_5', 'Over 0.5'],
+  ['UNDER_0_5', 'Under 0.5'],
+  ['OVER_1_5', 'Over 1.5'],
+  ['UNDER_1_5', 'Under 1.5'],
+  ['OVER_2_5', 'Over 2.5'],
+  ['UNDER_2_5', 'Under 2.5'],
+  ['OVER_3_5', 'Over 3.5'],
+  ['UNDER_3_5', 'Under 3.5'],
+]
 
 function pct(v: number | null | undefined, d = 1): string {
   if (v == null) return '—'
@@ -19,17 +41,14 @@ function pct(v: number | null | undefined, d = 1): string {
   return `${sign}${v.toFixed(d)}%`
 }
 
-function RiskChip({ n }: { n: number }) {
-  const label = n < 50 ? 'fragile' : n < 150 ? 'medio' : 'solido'
-  const color = n < 50 ? 'var(--pi-neg)' : n < 150 ? 'var(--pi-warn)' : 'var(--pi-pos)'
-  return (
-    <span
-      className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-      style={{ color, background: 'rgba(255,255,255,0.04)', border: `1px solid ${color}55` }}
-    >
-      {label}
-    </span>
-  )
+function units(v: number | null | undefined): string {
+  if (v == null) return '—'
+  return `${v > 0 ? '+' : ''}${v.toFixed(1)} u`
+}
+
+function tone(v: number | null | undefined): string {
+  if (v == null) return 'var(--pi-muted)'
+  return v >= 0 ? ABOVE_CHANCE : BELOW_CHANCE
 }
 
 export function VerdictChip({ verdict }: { verdict: OosStats['verdict'] | null | undefined }) {
@@ -53,32 +72,59 @@ export function VerdictChip({ verdict }: { verdict: OosStats['verdict'] | null |
   )
 }
 
-function MetricCell({ isMarket, roi, deviation }: { isMarket: boolean; roi: number | null; deviation: number | null }) {
-  const v = isMarket ? roi : deviation
+function SeasonCell({ s, isMarket }: { s: PatternSeasonRow | undefined; isMarket: boolean }) {
+  if (!s || s.n === 0) {
+    return (
+      <td className="whitespace-nowrap text-[11px]" style={{ borderLeft: '1px solid var(--pi-border)', color: 'var(--pi-muted)' }}>
+        nessuna partita
+      </td>
+    )
+  }
+  const metric = isMarket ? s.roi_pct : s.deviation_pct
   return (
-    <span className="font-semibold" style={{ color: (v ?? 0) >= 0 ? 'var(--pi-text)' : BELOW_CHANCE }}>
-      {pct(v)}
-    </span>
+    <td className="whitespace-nowrap tabular-nums" style={{ borderLeft: '1px solid var(--pi-border)' }}>
+      <div className="flex items-center gap-2">
+        <span className="font-semibold" style={{ color: tone(metric) }}>
+          {isMarket ? pct(metric) : `${metric != null && metric > 0 ? '+' : ''}${metric?.toFixed(1) ?? '—'} pt`}
+        </span>
+        {s.role === 'discovery' ? (
+          <span className="text-[10px]" style={{ color: '#b9adf2' }}>
+            scoperta
+          </span>
+        ) : (
+          <VerdictChip verdict={s.verdict} />
+        )}
+      </div>
+      <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+        {s.n} giocate · {s.wins}V {s.losses}P · {s.win_rate_pct?.toFixed(1)}%
+      </div>
+      {isMarket && (
+        <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+          {units(s.profit_units)}
+          {s.avg_quota != null ? ` · quota ${s.avg_quota.toFixed(2)}` : ''}
+        </div>
+      )}
+    </td>
   )
 }
 
 function Row({
   c,
+  seasons,
   onOpen,
-  hasValidation,
-  multiSeason,
 }: {
   c: PatternInsightCandidate
+  seasons: Array<string | null>
   onOpen: () => void
-  hasValidation: boolean
-  multiSeason: boolean
 }) {
   const isMarket = c.target_type === 'market'
-  const oos = c.oos
+  const t = c.total
+  const bySeason = new Map((c.seasons ?? []).map((s) => [s.season_label, s]))
+  const allConfirmed = t != null && t.validations_total > 0 && t.validations_confirmed === t.validations_total
   return (
     <tr onClick={onOpen} style={{ cursor: 'pointer' }} title="Apri dettaglio: stagioni, campionati e partite">
       <td className="whitespace-nowrap font-semibold">{c.target_label}</td>
-      <td style={{ maxWidth: 380 }}>
+      <td style={{ minWidth: 240, maxWidth: 340 }}>
         <div className="leading-snug">{c.filters_text_human}</div>
         {c.refined_from_text ? (
           <div className="mt-0.5 text-[10px]" style={{ color: 'var(--pi-muted)' }}>
@@ -86,114 +132,73 @@ function Row({
           </div>
         ) : null}
       </td>
-      <td className="whitespace-nowrap tabular-nums">
-        <div className="flex items-center gap-2">
-          <span>{c.n}</span>
-          <RiskChip n={c.n} />
-        </div>
-        <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-          {c.wins}V · {c.losses}P · {c.win_rate_pct?.toFixed(1)}%
-        </div>
+      <td className="whitespace-nowrap tabular-nums" style={{ borderLeft: '1px solid var(--pi-border)', background: 'rgba(30,166,143,0.05)' }}>
+        {t ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold" style={{ color: tone(isMarket ? t.roi_pct : t.deviation_pct) }}>
+                {isMarket ? pct(t.roi_pct) : `${t.deviation_pct != null && t.deviation_pct > 0 ? '+' : ''}${t.deviation_pct?.toFixed(1) ?? '—'} pt`}
+              </span>
+              {isMarket && (
+                <span className="text-xs font-semibold" style={{ color: tone(t.profit_units) }}>
+                  {units(t.profit_units)}
+                </span>
+              )}
+            </div>
+            <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+              {t.n} giocate · {t.wins} vinte · {t.losses} perse · {t.win_rate_pct?.toFixed(1)}%
+            </div>
+            <div className="mt-0.5 text-[10px] font-semibold" style={{ color: allConfirmed ? ABOVE_CHANCE : 'var(--pi-muted)' }}>
+              {allConfirmed ? '✓ ' : ''}confermato {t.validations_confirmed}/{t.validations_total} verifiche
+            </div>
+          </>
+        ) : (
+          '—'
+        )}
       </td>
-      <td className="whitespace-nowrap tabular-nums">
-        <MetricCell isMarket={isMarket} roi={c.roi_pct} deviation={c.deviation_pct} />
-        {isMarket && c.avg_quota != null ? (
-          <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-            quota {c.avg_quota.toFixed(2)}
-          </div>
-        ) : null}
-      </td>
-      {hasValidation && (
-        <>
-          <td className="whitespace-nowrap tabular-nums" style={{ borderLeft: '1px solid var(--pi-border)' }}>
-            {oos ? (
-              <>
-                <div>{oos.n}</div>
-                <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-                  {oos.wins}V · {oos.losses}P · {oos.win_rate_pct?.toFixed(1)}%
-                </div>
-              </>
-            ) : (
-              '—'
-            )}
-          </td>
-          <td className="whitespace-nowrap tabular-nums">
-            {oos ? (
-              <>
-                <MetricCell isMarket={isMarket} roi={oos.roi_pct} deviation={oos.deviation_pct} />
-                {isMarket && oos.avg_quota != null ? (
-                  <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-                    quota {oos.avg_quota.toFixed(2)}
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              '—'
-            )}
-          </td>
-          <td className="whitespace-nowrap">
-            <VerdictChip verdict={oos?.verdict} />
-            {oos?.null_confirm_prob != null && oos.verdict !== 'insufficient_sample' ? (
-              <div className="mt-0.5 text-[10px]" style={{ color: 'var(--pi-muted)' }}>
-                caso: {(oos.null_confirm_prob * 100).toFixed(0)}%
-              </div>
-            ) : null}
-          </td>
-          {multiSeason && (
-            <td className="whitespace-nowrap" style={{ borderLeft: '1px solid var(--pi-border)' }}>
-              <div className="flex flex-col gap-1">
-                {(c.oos_seasons ?? []).map((o) => (
-                  <div key={o.validation_id} className="flex items-center gap-1.5 text-[10px] tabular-nums">
-                    <span style={{ color: 'var(--pi-muted)', minWidth: 58 }}>{o.season_label}</span>
-                    <VerdictChip verdict={o.verdict} />
-                    <span style={{ color: 'var(--pi-muted)' }}>
-                      n {o.n} · {isMarket ? `ROI ${o.roi_pct != null ? o.roi_pct.toFixed(1) : '—'}%` : `scarto ${o.deviation_pct != null ? o.deviation_pct.toFixed(1) : '—'}pt`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </td>
-          )}
-        </>
-      )}
+      {seasons.map((label) => (
+        <SeasonCell key={label ?? 'x'} s={bySeason.get(label)} isMarket={isMarket} />
+      ))}
     </tr>
   )
 }
 
 export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) {
-  const [targetType, setTargetType] = useState<'ALL' | PatternInsightTargetType>('market')
+  const [targetType, setTargetType] = useState<PatternInsightTargetType>('market')
+  const [targetKey, setTargetKey] = useState<string>('')
+  const [hold, setHold] = useState<PatternHold>('positive_total')
   const [minN, setMinN] = useState(defaultMinN)
-  const [verdict, setVerdict] = useState<'ALL' | OosStats['verdict']>('ALL')
-  const [sort, setSort] = useState<PatternSort>('best')
+  const [sort, setSort] = useState<PatternSort>('total_profit_desc')
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [items, setItems] = useState<PatternInsightCandidate[]>([])
-  const [validationSeason, setValidationSeason] = useState<string | null>(null)
-  const [validations, setValidations] = useState<Array<{ id: number; season_label: string | null }>>([])
-  const [validationId, setValidationId] = useState<number | null>(null)
+  const [seasons, setSeasons] = useState<Array<string | null>>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await getPatternInsightCandidates({
-        targetType: targetType === 'ALL' ? undefined : targetType,
+        targetType,
+        targetKey: targetType === 'market' && targetKey ? targetKey : undefined,
         minN,
-        verdict: verdict === 'ALL' ? undefined : verdict,
-        validationId,
+        hold,
         sort,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
       setTotal(res.total)
       setItems(res.items)
-      setValidationSeason(res.validation?.season_label ?? null)
-      setValidations(res.validations ?? [])
+      setSeasons(res.seasons ?? [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore caricamento pattern')
     } finally {
       setLoading(false)
     }
-  }, [targetType, minN, verdict, sort, page, validationId])
+  }, [targetType, targetKey, minN, hold, sort, page])
 
   useEffect(() => {
     void load()
@@ -201,63 +206,59 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
 
   useEffect(() => {
     setPage(0)
-  }, [targetType, minN, verdict, sort, validationId])
+  }, [targetType, targetKey, minN, hold, sort])
 
-  const hasValidation = validationSeason != null
-  const multiSeason = validations.length > 1
+  const isMarket = targetType === 'market'
+  const verifications = Math.max(0, seasons.length - 1)
 
   return (
     <Section
       title="Esplora i pattern"
-      note={`${total.toLocaleString('it-IT')} pattern con i filtri attuali · clicca una riga per il dettaglio`}
+      note={`${total.toLocaleString('it-IT')} pattern con i filtri attuali · clicca una riga per campionati e partite`}
     >
       <div className="mb-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
+          Tenuta
+          <select className="pi-select" value={hold} onChange={(e) => setHold(e.target.value as PatternHold)}>
+            <option value="positive_total">
+              {isMarket ? 'In attivo sul totale delle stagioni' : 'Effetto ancora presente sul totale'}
+            </option>
+            <option value="confirmed_all">
+              Confermati in tutte le {seasons.length || 4} stagioni
+            </option>
+            <option value="all">Tutti, anche respinti (rumore)</option>
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
           Tipo di bersaglio
           <select
             className="pi-select"
             value={targetType}
-            onChange={(e) => setTargetType(e.target.value as typeof targetType)}
+            onChange={(e) => {
+              const v = e.target.value as PatternInsightTargetType
+              setTargetType(v)
+              setSort(v === 'market' ? 'total_profit_desc' : 'total_deviation_desc')
+            }}
           >
             <option value="market">Mercati con quota</option>
             <option value="synthetic">Tiri / corner / cartellini</option>
-            <option value="ALL">Tutti</option>
           </select>
         </label>
-        {multiSeason && (
+        {isMarket && (
           <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-            Stagione di verifica
-            <select
-              className="pi-select"
-              value={validationId ?? validations[validations.length - 1]?.id ?? ''}
-              onChange={(e) => setValidationId(Number(e.target.value))}
-            >
-              {validations.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.season_label}
+            Mercato
+            <select className="pi-select" value={targetKey} onChange={(e) => setTargetKey(e.target.value)}>
+              <option value="">Tutti i mercati</option>
+              {MARKET_OPTIONS.map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
                 </option>
               ))}
             </select>
           </label>
         )}
-        {hasValidation && (
-          <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-            Verdetto {validationSeason}
-            <select
-              className="pi-select"
-              value={verdict}
-              onChange={(e) => setVerdict(e.target.value as typeof verdict)}
-            >
-              <option value="ALL">Tutti</option>
-              <option value="confirmed">Confermati</option>
-              <option value="attenuated">Attenuati</option>
-              <option value="rejected">Respinti</option>
-              <option value="insufficient_sample">Campione insufficiente</option>
-            </select>
-          </label>
-        )}
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-          Campione minimo (scoperta)
+          Giocate minime in scoperta
           <input
             type="number"
             min={20}
@@ -270,54 +271,58 @@ export function PatternExplorer({ defaultMinN = 50 }: { defaultMinN?: number }) 
         <label className="flex flex-col gap-1 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
           Ordinamento
           <select className="pi-select" value={sort} onChange={(e) => setSort(e.target.value as PatternSort)}>
-            <option value="best">Automatico (scoperta)</option>
-            <option value="roi_desc">ROI scoperta</option>
-            <option value="deviation_desc">Scarto scoperta</option>
-            {hasValidation && <option value="oos_roi_desc">ROI {validationSeason}</option>}
-            {hasValidation && <option value="oos_deviation_desc">Scarto {validationSeason}</option>}
-            {hasValidation && <option value="oos_n_desc">Campione {validationSeason}</option>}
+            {isMarket ? (
+              <>
+                <option value="total_profit_desc">Profitto totale</option>
+                <option value="total_roi_desc">ROI totale</option>
+              </>
+            ) : (
+              <option value="total_deviation_desc">Scarto totale</option>
+            )}
+            <option value="total_n_desc">Giocate totali</option>
           </select>
         </label>
       </div>
 
-      <div className="pi-scroll" style={{ maxHeight: 620 }}>
+      {hold === 'confirmed_all' && (
+        <div
+          className="mb-3 rounded-xl border px-3 py-2 text-[11px] leading-relaxed"
+          style={{ borderColor: 'rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.07)', color: '#f6d68a' }}
+        >
+          Pattern promossi nel {seasons[0] ?? 'primo anno'} e confermati in ognuna delle {verifications} stagioni
+          successive. Attenzione: su migliaia di pattern provati, una parte passa tutte le verifiche anche per
+          caso. Il blocco &quot;Tenuta nel tempo&quot; qui sopra dice quanti se ne aspetterebbero per pura fortuna.
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-3 text-xs" style={{ color: '#fca5a5' }}>
+          {error}
+        </div>
+      )}
+
+      <div className="pi-scroll" style={{ maxHeight: 680 }}>
         <table className="pi-table">
           <thead>
             <tr>
-              <th rowSpan={hasValidation ? 2 : 1}>Bersaglio</th>
-              <th rowSpan={hasValidation ? 2 : 1}>Pattern</th>
-              {hasValidation ? (
-                <>
-                  <th colSpan={2} style={{ color: '#b9adf2' }}>Scoperta</th>
-                  <th colSpan={3} style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
-                    Verifica {validationSeason}
-                  </th>
-                  {multiSeason && (
-                    <th rowSpan={2} style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
-                      Tutte le verifiche
-                    </th>
-                  )}
-                </>
-              ) : (
-                <>
-                  <th>Campione</th>
-                  <th>ROI / Scarto</th>
-                </>
-              )}
+              <th>Bersaglio</th>
+              <th>Pattern</th>
+              <th style={{ color: '#7fd9c8', borderLeft: '1px solid var(--pi-border)' }}>
+                Totale {seasons.length} stagioni
+              </th>
+              {seasons.map((s, i) => (
+                <th
+                  key={s ?? i}
+                  style={{ color: i === 0 ? '#b9adf2' : 'var(--pi-muted)', borderLeft: '1px solid var(--pi-border)' }}
+                >
+                  {s}
+                </th>
+              ))}
             </tr>
-            {hasValidation && (
-              <tr>
-                <th style={{ top: 30 }}>Campione</th>
-                <th style={{ top: 30 }}>ROI / Scarto</th>
-                <th style={{ top: 30, borderLeft: '1px solid var(--pi-border)' }}>Campione</th>
-                <th style={{ top: 30 }}>ROI / Scarto</th>
-                <th style={{ top: 30 }}>Verdetto</th>
-              </tr>
-            )}
           </thead>
           <tbody>
             {items.map((c) => (
-              <Row key={c.id} c={c} onOpen={() => setDetailId(c.id)} hasValidation={hasValidation} multiSeason={multiSeason} />
+              <Row key={c.id} c={c} seasons={seasons} onOpen={() => setDetailId(c.id)} />
             ))}
           </tbody>
         </table>
