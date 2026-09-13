@@ -319,3 +319,54 @@ RELIABILITY_FORM_NEUTRAL = 0.05
 #    sempre decrescente bassa -> media -> alta
 RELIABILITY_MIN_CLASS_SHARE = 0.15
 INDEX_ENGINE_VERSION = "cecchino_v3_indices_v2"
+
+# --- Passo 3: valutatore di mercato (dichiarato prima di calcolare) ----------
+# E' l'unico punto in cui entrano le quote. Le probabilita' degli agenti non
+# cambiano: il valutatore decide soltanto quali mercati sono giocabili.
+#
+# A) Probabilita' del valutatore. Per ogni mercato, regressione logistica
+#    stimata SOLO sulle stagioni precedenti (partite idonee):
+#      logit P(vinto) = a + b * logit(p_book) + c * (logit(p_V3) - logit(p_book))
+#    p_book = probabilita' della quota senza margine. c > 0 significa che la
+#    V3 sa qualcosa che la quota non contiene. Prima stagione: nessun modello.
+# Esame I (informazione oltre il mercato), per 1X2 finale e Over/Under 2.5:
+#    I1 log-loss della probabilita' del valutatore < log-loss del book in ognuna
+#       delle 3 stagioni di giudizio;
+#    I2 c stimato su ogni singola stagione di giudizio > 0 con limite inferiore
+#       dell'intervallo al 95% > 0 (errore robusto per partita).
+#
+# B) Giocate. Candidato = mercato con quota tra 1,30 e 5,00, partita idonea,
+#    valore atteso p * quota - 1 >= 5%. Una sola giocata per partita (valore
+#    piu' alto), al massimo 15 giocate per giorno di calendario (valore piu' alto).
+#    Fase finale (ultime 5 giornate) no-bet per una famiglia nella stagione S se,
+#    nelle stagioni precedenti con modello, in fase finale il valutatore non ha
+#    migliorato il log-loss del book (nessuno storico: fase finale ammessa).
+#    Strategie:
+#      VALUTATORE_PRINCIPALI  probabilita' del valutatore, mercati con quota di
+#                             chiusura (1, X, 2, Over 2.5, Under 2.5)  -> esame G
+#      V3_PURA_PRINCIPALI     probabilita' V3 senza correzione, stessi mercati
+#                             (solo confronto)
+#      VALUTATORE_TUTTI       probabilita' del valutatore, tutti i 17 mercati
+#                             (altri mercati: ultima quota rilevata; solo confronto)
+# Esame G (giocabilita' alla chiusura nei 16 campionati), VALUTATORE_PRINCIPALI:
+#    G1 ROI > 0 in ognuna delle 3 stagioni di giudizio;
+#    G2 ROI complessivo con limite inferiore dell'intervallo al 95% > 0;
+#    G3 almeno 300 giocate complessive.
+EVALUATOR_ENGINE_VERSION = "cecchino_v3_evaluator_v1"
+EVALUATOR_MIN_ODDS = 1.30
+EVALUATOR_MAX_ODDS = 5.00
+EVALUATOR_MIN_EDGE = 0.05
+EVALUATOR_MAX_PLAYS_PER_DAY = 15
+EVALUATOR_MIN_TRAIN_ROWS = 500
+EVALUATOR_L2 = 1e-3
+EVALUATOR_PROB_CLIP = 1e-4
+EVALUATOR_MIN_PLAYS = 300
+EVALUATOR_PRINCIPAL_MARKETS: tuple[str, ...] = ("HOME", "DRAW", "AWAY", "OVER_2_5", "UNDER_2_5")
+EVALUATOR_INFO_FAMILIES: dict[str, tuple[str, ...]] = {
+    "FT_1X2": ("HOME", "DRAW", "AWAY"),
+    "OU_2_5": ("OVER_2_5",),
+}
+STRATEGY_MAIN = "VALUTATORE_PRINCIPALI"
+STRATEGY_V3_PURE = "V3_PURA_PRINCIPALI"
+STRATEGY_ALL = "VALUTATORE_TUTTI"
+EVALUATOR_EDGE_GRID: tuple[float, ...] = (0.0, 0.025, 0.05, 0.075, 0.10)  # solo descrittivo

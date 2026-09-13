@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.cecchino_v3 import CecchinoV3MarketPrediction, CecchinoV3MatchPrediction
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
-from app.services.cecchino_v3 import index_service, service
+from app.services.cecchino_v3 import evaluator_service, index_service, service
 
 router = APIRouter(prefix="/admin/cecchino/v3", tags=["admin-cecchino-v3"])
 
@@ -171,3 +171,32 @@ def get_v3_run_matches(
         for r in rows
     ]
     return JSONResponse(content=jsonable_encoder({"items": items}))
+
+
+@router.post("/valutatore/runs")
+def post_v3_evaluator_run(db: Session = Depends(get_db)) -> JSONResponse:
+    """Valutatore di mercato (Passo 3) sul modello di riferimento."""
+    try:
+        return JSONResponse(status_code=202, content=jsonable_encoder(evaluator_service.start_evaluator_run(db)))
+    except CecchinoLabImportError as exc:
+        _raise(exc)
+
+
+@router.get("/valutatore/runs/latest")
+def get_v3_evaluator_runs_latest(db: Session = Depends(get_db)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder(evaluator_service.latest_evaluator_runs(db)))
+
+
+@router.get("/valutatore/giocate")
+def get_v3_evaluator_plays(
+    strategy: str = Query(default="VALUTATORE_PRINCIPALI"),
+    season_label: str | None = Query(default=None),
+    competition: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    out = evaluator_service.list_plays(
+        db, strategy=strategy, season_label=season_label, competition=competition, limit=limit, offset=offset
+    )
+    return JSONResponse(content=jsonable_encoder(out))
