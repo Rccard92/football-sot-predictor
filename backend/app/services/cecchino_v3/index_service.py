@@ -116,7 +116,14 @@ def _config(source_run_id: int) -> dict[str, Any]:
     }
 
 
-def start_index_run(db: Session) -> dict[str, Any]:
+def _includes_lockbox(run: CecchinoV3Run) -> bool:
+    from app.services.cecchino_v3.constants import PHASE_FEATURES
+
+    phase = int((run.config_json or {}).get("phase") or 1)
+    return bool(PHASE_FEATURES.get(phase) and PHASE_FEATURES[phase].lockbox)
+
+
+def start_index_run(db: Session, source_run_id: int | None = None) -> dict[str, Any]:
     active = db.scalars(
         select(CecchinoV3IndexRun).where(CecchinoV3IndexRun.status.in_(V3_ACTIVE_STATUSES))
     ).first()
@@ -124,10 +131,10 @@ def start_index_run(db: Session) -> dict[str, Any]:
         raise CecchinoLabImportError(
             "duplicate_active_run", f"Esiste gia' un calcolo indici in corso (id={active.id})", status_code=409
         )
-    source = _reference_run(db)
-    if source is None:
+    source = db.get(CecchinoV3Run, source_run_id) if source_run_id is not None else _reference_run(db)
+    if source is None or source.status != V3_STATUS_COMPLETED:
         raise CecchinoLabImportError(
-            "reference_missing", "Nessun calcolo V3 segnato come modello di riferimento", status_code=400
+            "reference_missing", "Calcolo V3 sorgente non trovato o non completato", status_code=400
         )
     run = CecchinoV3IndexRun(
         source_run_id=int(source.id),
@@ -229,7 +236,8 @@ def _execute(run_id: int) -> None:
         source_run_id = int(run.source_run_id)
         try:
             _set_step(db, run_id, "Caricamento partite e previsioni del modello di riferimento")
-            matches = load_matches(db)
+            source_run = db.get(CecchinoV3Run, source_run_id)
+            matches = load_matches(db, include_lockbox=_includes_lockbox(source_run))
             source = _load_source(db, source_run_id)
             matches = [m for m in matches if m.lab_match_id in source]
 

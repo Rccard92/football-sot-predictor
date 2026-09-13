@@ -113,7 +113,9 @@ def _season(run: CecchinoRunV2Run) -> str | None:
     return (run.summary_json or {}).get("season_label")
 
 
-def start_validation(db: Session, *, run_v2_run_id: int) -> dict[str, Any]:
+def start_validation(db: Session, *, run_v2_run_id: int, final_lockbox_test: bool = False) -> dict[str, Any]:
+    """final_lockbox_test: unico uso ammesso della stagione sotto chiave, il test
+    finale di confronto V2/V3 con i pattern gia' congelati."""
     insight = db.scalars(
         select(CecchinoRunV2PatternInsightRun)
         .where(CecchinoRunV2PatternInsightRun.status == STATUS_COMPLETED)
@@ -134,7 +136,7 @@ def start_validation(db: Session, *, run_v2_run_id: int) -> dict[str, Any]:
         raise CecchinoLabImportError("run_v2_not_found", "Run V2 di scoperta non trovata", status_code=404)
 
     target_season, discovery_season = _season(target), _season(discovery)
-    if is_lockbox_season(target_season):
+    if is_lockbox_season(target_season) and not final_lockbox_test:
         raise CecchinoLabImportError(
             "lockbox_season",
             "La stagione 2025/26 e' sotto chiave: e' il test finale, non si usa per le verifiche intermedie.",

@@ -58,6 +58,7 @@ from app.services.cecchino_v3.constants import (
     ENGINE_VERSION_PHASE6,
     ENGINE_VERSION_PHASE7,
     ENGINE_VERSION_PHASE8,
+    ENGINE_VERSION_PHASE9,
     EXAM_STRICT_FROM_PHASE,
     EXAM_TOLERANCE_PCT,
     FINAL_PHASE_MATCHES,
@@ -151,6 +152,7 @@ _ENGINE_BY_PHASE = {
     6: ENGINE_VERSION_PHASE6,
     7: ENGINE_VERSION_PHASE7,
     8: ENGINE_VERSION_PHASE8,
+    9: ENGINE_VERSION_PHASE9,
 }
 
 
@@ -228,7 +230,9 @@ def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
                 "calibration_preserve_total": feats.calibration_preserve_total,
             }
         )
-    if phase >= EXAM_STRICT_FROM_PHASE:
+    if PHASE_FEATURES[phase].lockbox:
+        config["final_run"] = "modello di riferimento (Fase 4) esteso alla stagione sotto chiave: nessun esame di fase"
+    elif phase >= EXAM_STRICT_FROM_PHASE:
         config["exam_strict"] = True
     return config
 
@@ -824,11 +828,11 @@ def _execute_run(run_id: int) -> None:
 
         try:
             _progress(db, run_id, 1.0, "Caricamento partite")
-            matches = load_matches(db)
+            feats = PHASE_FEATURES[phase]
+            matches = load_matches(db, include_lockbox=feats.lockbox)
             groups = group_matches(matches)
             should_stop = _cancel_checker(run_id)
             timings: dict[str, float] = {}
-            feats = PHASE_FEATURES[phase]
             specialist_grids = 1 + (len(GAME_STATS) if feats.game else 0)
             span = 80.0 / specialist_grids
 
@@ -972,7 +976,8 @@ def _execute_run(run_id: int) -> None:
             from app.services.cecchino_v3.evaluation import build_evaluation
 
             stability: dict[str, dict[str, float]] | None = None
-            if phase >= EXAM_STRICT_FROM_PHASE:
+            exam_phase = not feats.lockbox
+            if exam_phase and phase >= EXAM_STRICT_FROM_PHASE:
                 if feats.calibration:
                     stability = _calibration_stability(calibrations)
                 elif feats.promotion:
@@ -981,8 +986,8 @@ def _execute_run(run_id: int) -> None:
                 db,
                 run_id,
                 baseline_run_id=baseline_run_id,
-                tolerance_pct=EXAM_TOLERANCE_PCT if phase >= 3 else None,
-                strict=phase >= EXAM_STRICT_FROM_PHASE,
+                tolerance_pct=EXAM_TOLERANCE_PCT if exam_phase and phase >= 3 else None,
+                strict=exam_phase and phase >= EXAM_STRICT_FROM_PHASE,
                 stability=stability,
             )
 

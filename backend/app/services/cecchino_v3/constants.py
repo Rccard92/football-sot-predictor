@@ -19,9 +19,10 @@ ENGINE_VERSION_PHASE5 = "cecchino_v3_phase5_discipline_v1"
 ENGINE_VERSION_PHASE6 = "cecchino_v3_phase6_promotion_v1"
 ENGINE_VERSION_PHASE7 = "cecchino_v3_phase7_calibration_v1"
 ENGINE_VERSION_PHASE8 = "cecchino_v3_phase7b_calibration_total_v1"
-PHASES: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
+ENGINE_VERSION_PHASE9 = "cecchino_v3_final_lockbox_v1"
+PHASES: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8, 9)
 # Etichette per l'utente quando il numero interno non coincide con il nome.
-PHASE_LABELS: dict[int, str] = {8: "7b"}
+PHASE_LABELS: dict[int, str] = {8: "7b", 9: "Finale 2025/26"}
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class PhaseFeatures:
     promotion: bool = False
     calibration: bool = False
     calibration_preserve_total: bool = False
+    lockbox: bool = False  # include la stagione sotto chiave (solo calcolo finale)
 
 
 # La Fase 5 (Disciplina) non e' stata adottata: la Fase 6 riparte dalla Fase 4.
@@ -55,6 +57,9 @@ PHASE_FEATURES: dict[int, PhaseFeatures] = {
     # risultati: stessa calibrazione a gol totali invariati (fattore globale gamma),
     # stessa regola d'esame rigorosa, confronto con la Fase 4.
     8: PhaseFeatures(game=True, form=True, calendar=True, calibration=True, calibration_preserve_total=True),
+    # Calcolo finale: modello di riferimento (Fase 4) identico, stesse regole
+    # walk-forward, esteso alla stagione sotto chiave 2025/26. Nessun parametro nuovo.
+    9: PhaseFeatures(game=True, form=True, calendar=True, lockbox=True),
 }
 # Termine di paragone dell'esame di ogni fase.
 PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 8: 4}
@@ -426,3 +431,33 @@ PATTERN_MIN_PERSISTENCE_LIFT = 1.5
 PATTERN_FROZEN_SEASON = "2024/2025"
 PATTERN_FROZEN_FROM: tuple[str, ...] = ("2022/2023", "2023/2024")
 V2_INSIGHT_ODDS_MODE = "closing"
+
+# --- Passo 3d: valutatore alla quota di APERTURA (dichiarato prima) ------------
+# Motivo: l'esame M e' superato (tra apertura e chiusura il mercato si sposta
+# verso la V3 in ogni stagione). Stesso valutatore del Passo 3 (combinazione
+# logistica walk-forward, stesse regole di giocata), ma con quota e probabilita'
+# del book di APERTURA, solo sui mercati che hanno l'apertura (1, X, 2, Over 2.5,
+# Under 2.5). Esami identici al Passo 3: I (peso V3 > 0 in ogni stagione,
+# log-loss migliore del book) e G (ROI > 0 ogni stagione, intervallo sopra zero,
+# almeno 300 giocate). Unica prova sulle stagioni di giudizio.
+EVALUATOR_ODDS_CLOSING = "closing"
+EVALUATOR_ODDS_OPENING = "opening"
+
+# --- Passo 4: test finale sulla stagione sotto chiave 2025/26 (dichiarato prima) ---
+# Si usa UNA volta, con tutto congelato: modello di riferimento (Fase 4) esteso
+# al 2025/26 con le stesse regole, pattern V3 e V2 gia' scoperti e verificati,
+# valutatori con pesi stimati solo sulle stagioni precedenti.
+# F0 integrita': il calcolo finale riproduce il modello #5 su 2021/22-2024/25
+#    (differenza massima di probabilita' < 0,000001).
+# F1 precisione 2025/26: errore (Brier) V3 < V2 in tutte e 4 le famiglie di
+#    mercato (partite comuni) e distanza dal book sull'1X2 <= +3%.
+# F2 pattern V3 sul 2025/26: tasso di conferma > caso con lift >= 1,10 e i
+#    pattern confermati in tutte e 3 le stagioni di giudizio, giocati sul 2025/26
+#    (una giocata per partita per mercato), con ROI > 0.
+# F3 confronto con la V2 sul 2025/26: lift V3 > lift V2 e ROI per giocata dei
+#    pattern sempre confermati V3 > quello dei pattern sempre confermati V2.
+# Descrittivo: valutatori (chiusura e apertura) e movimento del mercato sul 2025/26.
+FINAL_ENGINE_VERSION = "cecchino_v3_final_test_v1"
+FINAL_MAX_PROB_DIFF = 1e-6
+FINAL_MAX_BOOK_GAP_PCT = 3.0
+FINAL_MIN_LIFT = 1.10

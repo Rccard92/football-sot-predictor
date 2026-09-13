@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import traceback
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -40,6 +41,8 @@ from app.services.cecchino_v3.constants import (
     EVALUATOR_MIN_ODDS,
     EVALUATOR_MIN_PLAYS,
     EVALUATOR_MIN_TRAIN_ROWS,
+    EVALUATOR_ODDS_CLOSING,
+    EVALUATOR_ODDS_OPENING,
     EVALUATOR_PRINCIPAL_MARKETS,
     JUDGE_SEASONS,
     LOCKBOX,
@@ -122,9 +125,14 @@ def run_to_dict(run: CecchinoV3EvaluatorRun) -> dict[str, Any]:
     }
 
 
-def _config(source_run_id: int) -> dict[str, Any]:
+def _odds_mode(run: CecchinoV3EvaluatorRun) -> str:
+    return (run.config_json or {}).get("odds_mode") or EVALUATOR_ODDS_CLOSING
+
+
+def _config(source_run_id: int, odds_mode: str) -> dict[str, Any]:
     return {
         "engine_version": EVALUATOR_ENGINE_VERSION,
+        "odds_mode": odds_mode,
         "source_run_id": source_run_id,
         "min_odds": EVALUATOR_MIN_ODDS,
         "max_odds": EVALUATOR_MAX_ODDS,
@@ -140,7 +148,9 @@ def _config(source_run_id: int) -> dict[str, Any]:
     }
 
 
-def start_evaluator_run(db: Session) -> dict[str, Any]:
+def start_evaluator_run(db: Session, odds_mode: str = EVALUATOR_ODDS_CLOSING) -> dict[str, Any]:
+    if odds_mode not in (EVALUATOR_ODDS_CLOSING, EVALUATOR_ODDS_OPENING):
+        raise CecchinoLabImportError("invalid_odds_mode", f"Quota non valida: {odds_mode}", status_code=400)
     active = db.scalars(
         select(CecchinoV3EvaluatorRun).where(CecchinoV3EvaluatorRun.status.in_(V3_ACTIVE_STATUSES))
     ).first()
@@ -158,7 +168,7 @@ def start_evaluator_run(db: Session) -> dict[str, Any]:
         engine_version=EVALUATOR_ENGINE_VERSION,
         status=V3_STATUS_PENDING,
         requested_at=_utcnow(),
-        config_json=_config(int(source.id)),
+        config_json=_config(int(source.id), odds_mode),
         source_git_commit=revision_as_source_fields().get("source_git_commit"),
     )
     db.add(run)
@@ -171,17 +181,27 @@ def start_evaluator_run(db: Session) -> dict[str, Any]:
     return run_to_dict(run)
 
 
-def _latest_completed(db: Session) -> CecchinoV3EvaluatorRun | None:
-    return db.scalars(
+def _latest_completed(db: Session, odds_mode: str = EVALUATOR_ODDS_CLOSING) -> CecchinoV3EvaluatorRun | None:
+    for run in db.scalars(
         select(CecchinoV3EvaluatorRun)
         .where(CecchinoV3EvaluatorRun.status == V3_STATUS_COMPLETED)
         .order_by(CecchinoV3EvaluatorRun.completed_at.desc())
-    ).first()
+    ):
+        if _odds_mode(run) == odds_mode:
+            return run
+    return None
 
 
-def latest_evaluator_runs(db: Session) -> dict[str, Any]:
-    latest = db.scalars(select(CecchinoV3EvaluatorRun).order_by(CecchinoV3EvaluatorRun.id.desc())).first()
-    completed = _latest_completed(db)
+def latest_evaluator_runs(db: Session, odds_mode: str = EVALUATOR_ODDS_CLOSING) -> dict[str, Any]:
+    latest = next(
+        (
+            r
+            for r in db.scalars(select(CecchinoV3EvaluatorRun).order_by(CecchinoV3EvaluatorRun.id.desc()))
+            if _odds_mode(r) == odds_mode
+        ),
+        None,
+    )
+    completed = _latest_completed(db, odds_mode)
     return {
         "latest": run_to_dict(latest) if latest else None,
         "completed": run_to_dict(completed) if completed else None,
@@ -195,8 +215,8 @@ def _float(value: Any) -> float | None:
     return float(value) if value is not None else None
 
 
-def load_market_rows(db: Session, source_run_id: int) -> list[MarketRow]:
-    matches = {m.lab_match_id: m for m in load_matches(db)}
+def load_market_rows(db: Session, source_run_id: int, *, include_lockbox: bool = False) -> list[MarketRow]:
+    matches = {m.lab_match_id: m for m in load_matches(db, include_lockbox=include_lockbox)}
     probabilities: dict[int, dict[str, float]] = {}
     for r in db.execute(
         text(
@@ -229,7 +249,7 @@ def load_market_rows(db: Session, source_run_id: int) -> list[MarketRow]:
     for mid in sorted(probabilities):
         m = matches.get(mid)
         odds = odds_by_match.get(mid)
-        if m is None or odds is None or m.season_label >= LOCKBOX:
+        if m is None or odds is None or m.season_label > LOCKBOX or (m.season_label == LOCKBOX and not include_lockbox):
             continue
         book = book_probabilities(odds)
         outcomes = market_outcomes(m.ft_home, m.ft_away, m.ht_home, m.ht_away)
@@ -260,6 +280,49 @@ def load_market_rows(db: Session, source_run_id: int) -> list[MarketRow]:
             )
     rows.sort(key=lambda r: (r.match_date, r.lab_match_id, r.market_key))
     return rows
+
+
+_OPENING_COLUMNS: dict[str, str] = {
+    "home": "bet365_home",
+    "draw": "bet365_draw",
+    "away": "bet365_away",
+    "over_25": "bet365_over_25",
+    "under_25": "bet365_under_25",
+}
+
+
+def load_opening(db: Session, source_run_id: int) -> dict[tuple[int, str], tuple[float, float]]:
+    """(partita, mercato) -> (quota di apertura, probabilita' di apertura senza margine)."""
+    columns = ", ".join(f"m.{col} AS {key}" for key, col in _OPENING_COLUMNS.items())
+    out: dict[tuple[int, str], tuple[float, float]] = {}
+    for r in db.execute(
+        text(
+            f"""
+            SELECT m.id, {columns}
+            FROM cecchino_lab_matches m
+            JOIN cecchino_v3_match_predictions mp ON mp.lab_match_id = m.id AND mp.run_id = :run_id
+            """
+        ),
+        {"run_id": source_run_id},
+    ):
+        data = dict(r._mapping)
+        mid = int(data.pop("id"))
+        for market, quote in book_probabilities({k: _float(v) for k, v in data.items()}).items():
+            if market in EVALUATOR_PRINCIPAL_MARKETS:
+                out[(mid, market)] = quote
+    return out
+
+
+def opening_market_rows(
+    rows: list[MarketRow], opening: dict[tuple[int, str], tuple[float, float]]
+) -> list[MarketRow]:
+    """Stesse righe con quota e probabilita' del book di apertura (solo mercati che la hanno)."""
+    out = []
+    for r in rows:
+        quote = opening.get((r.lab_match_id, r.market_key))
+        if quote is not None:
+            out.append(replace(r, odds=quote[0], p_book=quote[1]))
+    return out
 
 
 def _set_step(db: Session, run_id: int, step: str) -> None:
@@ -357,6 +420,8 @@ def _execute(run_id: int) -> None:
         try:
             _set_step(db, run_id, "Caricamento previsioni V3 e quote")
             rows = load_market_rows(db, source_run_id)
+            if _odds_mode(run) == EVALUATOR_ODDS_OPENING:
+                rows = opening_market_rows(rows, load_opening(db, source_run_id))
             _set_step(db, run_id, "Valutatore: informazione, fase finale, giocate")
             summary, strategies = run_evaluator(rows)
 
@@ -394,12 +459,13 @@ def list_plays(
     db: Session,
     *,
     strategy: str,
+    odds_mode: str = EVALUATOR_ODDS_CLOSING,
     season_label: str | None,
     competition: str | None,
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    run = _latest_completed(db)
+    run = _latest_completed(db, odds_mode)
     if run is None:
         return {"evaluator_run": None, "total": 0, "items": [], "competitions": []}
     p = CecchinoV3EvaluatorPlay

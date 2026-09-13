@@ -252,3 +252,21 @@ class CecchinoV3Pattern(Base):
     seasons_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     confirmed_all: Mapped[bool] = mapped_column(Boolean, nullable=False)
     frozen: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class CecchinoV3FinalRun(Base, TimestampMixin):
+    """Test finale sulla stagione sotto chiave (Passo 4): una sola misura, tutto congelato."""
+
+    __tablename__ = "cecchino_v3_final_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    engine_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=V3_STATUS_PENDING)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_step: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    config_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)

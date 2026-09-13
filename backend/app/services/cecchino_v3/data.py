@@ -63,9 +63,13 @@ class MatchRecord:
     eval_eligible: bool = False
 
 
-def load_matches(db: Session) -> list[MatchRecord]:
+def load_matches(db: Session, *, include_lockbox: bool = False) -> list[MatchRecord]:
     """Tutte le partite con risultato delle stagioni precedenti alla chiave,
-    in ordine cronologico."""
+    in ordine cronologico. La stagione sotto chiave entra solo nel calcolo
+    finale (include_lockbox=True); le stagioni successive mai."""
+    seasons = (
+        CecchinoLabDataset.season_label <= LOCKBOX if include_lockbox else CecchinoLabDataset.season_label < LOCKBOX
+    )
     rows = db.execute(
         select(
             CecchinoLabMatch.id,
@@ -92,7 +96,7 @@ def load_matches(db: Session) -> list[MatchRecord]:
             CecchinoLabMatch.referee,
         )
         .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabMatch.dataset_id)
-        .where(CecchinoLabDataset.season_label < LOCKBOX)
+        .where(seasons)
     ).all()
 
     matches: list[MatchRecord] = []

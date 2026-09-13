@@ -1345,6 +1345,7 @@ def get_run_v2_pattern_insight_summary(
 @router.post("/run-v2-pattern-insight/validations")
 def post_run_v2_pattern_validation(
     body: CecchinoRunV2PatternInsightStartBody,
+    final_test: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """Avvia la verifica fuori campione: i pattern dell'ultima analisi
@@ -1353,7 +1354,7 @@ def post_run_v2_pattern_validation(
     from app.services.cecchino_data_lab.run_v2_pattern_validation_service import start_validation
 
     try:
-        out = start_validation(db, run_v2_run_id=body.run_v2_run_id)
+        out = start_validation(db, run_v2_run_id=body.run_v2_run_id, final_lockbox_test=final_test)
         return JSONResponse(status_code=202, content=jsonable_encoder(out))
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
