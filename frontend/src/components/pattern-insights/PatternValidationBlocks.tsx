@@ -402,14 +402,24 @@ function LiftBars({
   height: number
   labelWidth: number
 }) {
+  // Le barre partono dalla linea del caso (lift 1×) e vanno a destra o a
+  // sinistra: partendo da zero, 0,9× e 1,1× sembrerebbero quasi uguali.
+  const data = rows.map((r) => ({ label: r.label, gap: r.lift - 1, lift: r.lift }))
+  const reach = Math.max(0.25, ...data.map((d) => Math.abs(d.gap)))
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={rows} layout="vertical" margin={{ left: 4, right: 30 }}>
+      <BarChart data={data} layout="vertical" margin={{ left: 4, right: 30 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
-        <XAxis type="number" tick={AXIS} stroke={GRID} tickFormatter={(v) => `${v}×`} />
+        <XAxis
+          type="number"
+          domain={[-reach, reach]}
+          tick={AXIS}
+          stroke={GRID}
+          tickFormatter={(v) => `${(Number(v) + 1).toFixed(1)}×`}
+        />
         <YAxis type="category" dataKey="label" width={labelWidth} tick={AXIS} stroke={GRID} />
         <ReferenceLine
-          x={1}
+          x={0}
           stroke="#e8eef9"
           strokeDasharray="4 3"
           label={{ value: 'caso', fill: '#8494b0', fontSize: 10, position: 'top' }}
@@ -417,11 +427,14 @@ function LiftBars({
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
           cursor={{ fill: 'rgba(30,166,143,0.06)' }}
-          formatter={(v) => [`${Number(v).toFixed(2)}× rispetto al caso`, 'Riconferma']}
+          formatter={(_v, _n, item) => [
+            `${Number((item as { payload?: { lift?: number } }).payload?.lift ?? 0).toFixed(2)}× rispetto al caso`,
+            'Riconferma',
+          ]}
         />
-        <Bar dataKey="lift" radius={[0, 4, 4, 0]} maxBarSize={18}>
-          {rows.map((r) => (
-            <Cell key={r.label} fill={r.lift >= 1 ? ABOVE_CHANCE : BELOW_CHANCE} />
+        <Bar dataKey="gap" maxBarSize={18}>
+          {data.map((d) => (
+            <Cell key={d.label} fill={d.gap >= 0 ? ABOVE_CHANCE : BELOW_CHANCE} />
           ))}
         </Bar>
       </BarChart>

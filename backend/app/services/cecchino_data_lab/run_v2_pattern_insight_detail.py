@@ -94,10 +94,13 @@ def _season_block(
         favourable = [l for l in scored if (l["roi_pct"] or 0) > 0]
     else:
         favourable = [l for l in scored if (l["deviation_pct"] or 0) > 0]
-    total_profit = sum(l["profit_units"] or 0 for l in leagues)
+    # Quota sui guadagni LORDI delle leghe in attivo, non sul netto: il netto
+    # puo' essere vicino a zero (o piu' piccolo della lega migliore) e farebbe
+    # esplodere la percentuale oltre il 100%.
+    gross_gains = sum(max(0.0, l["profit_units"] or 0.0) for l in leagues)
     top_share = None
-    if is_market and total_profit > 0:
-        top_share = round(max((l["profit_units"] or 0) for l in leagues) / total_profit * 100.0, 1)
+    if is_market and gross_gains > 0:
+        top_share = round(max((l["profit_units"] or 0) for l in leagues) / gross_gains * 100.0, 1)
 
     ordered = sorted(matched, key=lambda r: r.kickoff_at or "")
     return {

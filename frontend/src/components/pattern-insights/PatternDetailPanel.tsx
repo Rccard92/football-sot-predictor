@@ -221,7 +221,7 @@ export function PatternDetailPanel({
                   <strong style={{ color: 'var(--pi-text)' }}>
                     {block.concentration.top_league_profit_share_pct}%
                   </strong>{' '}
-                  del profitto totale
+                  dei guadagni di tutte le leghe in attivo
                 </>
               )}
               . Se il profitto e&apos; concentrato in una o due leghe, il pattern non e&apos;
