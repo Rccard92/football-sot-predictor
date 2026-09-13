@@ -11,12 +11,19 @@ import {
   YAxis,
 } from 'recharts'
 import { Section } from '../pattern-insights/PatternInsightsShell'
-import { FAMILY_LABELS, type V3Evaluation, type V3Family, type V3Metric, type V3Run } from '../../lib/cecchinoV3Api'
+import {
+  FAMILY_LABELS,
+  type V3Evaluation,
+  type V3Family,
+  type V3Metric,
+  type V3Run,
+} from '../../lib/cecchinoV3Api'
 
-// Stessa coppia validata di Pattern Insights (fondo #0e1526): V3 verde acqua,
-// V2 viola, bookmaker grigio neutro tratteggiato.
+// Palette validata sul fondo #0e1526 (dataviz validate_palette): V3 verde
+// acqua, V2 viola, fase precedente ambra; bookmaker grigio neutro.
 const COLOR_V3 = '#1ea68f'
 const COLOR_V2 = '#8a78e6'
+const COLOR_PREV = '#b8862f'
 const COLOR_BOOK = '#8494b0'
 const COLOR_BAD = '#d95a57'
 const AXIS = { fill: '#8494b0', fontSize: 11 }
@@ -78,11 +85,12 @@ function PassChip({ passed }: { passed: boolean }) {
   )
 }
 
-export function ExamBlock({ evaluation }: { evaluation: V3Evaluation }) {
+export function ExamBlock({ evaluation, phase = 1 }: { evaluation: V3Evaluation; phase?: number }) {
   const exam = evaluation.exam
   const color = exam.passed ? COLOR_V3 : COLOR_BAD
+  const refLabel = exam.reference === 'prev' ? 'Fase precedente' : 'V2'
   return (
-    <Section title="Esame della Fase 1" note="Criteri fissati prima di vedere i risultati">
+    <Section title={`Esame della Fase ${phase}`} note="Criteri fissati prima di vedere i risultati">
       <div
         className="mb-4 rounded-xl border px-4 py-3"
         style={{ borderColor: `${color}88`, background: `${color}14` }}
@@ -103,7 +111,9 @@ export function ExamBlock({ evaluation }: { evaluation: V3Evaluation }) {
             <tr>
               <th>Mercato</th>
               {evaluation.judge_seasons.map((s) => (
-                <th key={s}>{s} · errore V3 / V2</th>
+                <th key={s}>
+                  {s} · errore V3 / {refLabel}
+                </th>
               ))}
               <th>Esito</th>
             </tr>
@@ -117,7 +127,7 @@ export function ExamBlock({ evaluation }: { evaluation: V3Evaluation }) {
                     <span style={{ color: s.passed ? COLOR_V3 : COLOR_BAD }} className="font-semibold">
                       {brier(s.brier_v3)}
                     </span>
-                    <span style={{ color: 'var(--pi-muted)' }}> / {brier(s.brier_v2)}</span>
+                    <span style={{ color: 'var(--pi-muted)' }}> / {brier(s.brier_reference ?? s.brier_v2)}</span>
                   </td>
                 ))}
                 <td>
@@ -147,6 +157,7 @@ type Scope = 'all' | 'top' | 'lower' | 'mid' | 'final'
 
 export function AccuracyBlock({ evaluation }: { evaluation: V3Evaluation }) {
   const [scope, setScope] = useState<Scope>('all')
+  const hasPrev = evaluation.by_season.some((r) => r.brier_prev != null)
   const seasons = useMemo(
     () => Array.from(new Set(evaluation.by_season.map((r) => r.season_label))).sort(),
     [evaluation.by_season],
@@ -210,10 +221,20 @@ export function AccuracyBlock({ evaluation }: { evaluation: V3Evaluation }) {
                             <span style={{ color: COLOR_V3 }} className="font-semibold">
                               {brier(r.brier_v3)}
                             </span>
+                            {hasPrev && <span style={{ color: COLOR_PREV }}> · {brier(r.brier_prev)}</span>}
                             <span style={{ color: COLOR_V2 }}> · {brier(r.brier_v2)}</span>
                             <span style={{ color: COLOR_BOOK }}> · {brier(r.brier_book)}</span>
                           </div>
                           <div className="text-[10px]" style={{ color: 'var(--pi-muted)' }}>
+                            {hasPrev && (
+                              <>
+                                vs Fase 1{' '}
+                                <span style={{ color: (r.v3_vs_prev_pct ?? 0) <= 0 ? COLOR_V3 : COLOR_BAD }}>
+                                  {signed(r.v3_vs_prev_pct, 2)}
+                                </span>{' '}
+                                ·{' '}
+                              </>
+                            )}
                             vs V2{' '}
                             <span style={{ color: (r.v3_vs_v2_pct ?? 0) <= 0 ? COLOR_V3 : COLOR_BAD }}>
                               {signed(r.v3_vs_v2_pct)}
@@ -240,6 +261,11 @@ export function AccuracyBlock({ evaluation }: { evaluation: V3Evaluation }) {
         <span>
           <span style={{ color: COLOR_V3 }}>■</span> V3
         </span>
+        {hasPrev && (
+          <span>
+            <span style={{ color: COLOR_PREV }}>■</span> Fase precedente (solo Forza)
+          </span>
+        )}
         <span>
           <span style={{ color: COLOR_V2 }}>■</span> V2
         </span>
@@ -344,6 +370,50 @@ export function CompetitionBlock({ evaluation }: { evaluation: V3Evaluation }) {
                 <td className="tabular-nums" style={{ color: (r.v3_vs_book_pct ?? 0) <= 0 ? COLOR_V3 : COLOR_BAD }}>
                   {signed(r.v3_vs_book_pct)}
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  )
+}
+
+export function OrchestratorBlock({ run }: { run: V3Run }) {
+  const weights = run.summary?.orchestrator_weights
+  if (!weights) return null
+  const seasons = Object.keys(weights).sort()
+  const cell = (v: number) => (
+    <span className="font-semibold" style={{ color: Math.abs(v) < 0.05 ? 'var(--pi-muted)' : 'var(--pi-text)' }}>
+      {v.toFixed(3)}
+    </span>
+  )
+  return (
+    <Section title="Come l'orchestratore ascolta gli specialisti" note="Pesi stimati sulla stagione precedente">
+      <p className="mb-3 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
+        Ogni specialista propone i suoi gol attesi; l&apos;orchestratore li combina con questi pesi. Un peso vicino a zero
+        vuol dire che quello specialista, sulla stagione precedente, non aggiungeva informazione. I pesi di una stagione
+        non vedono mai i risultati di quella stagione. Nel rodaggio vale solo la Forza.
+      </p>
+      <div className="pi-scroll">
+        <table className="pi-table">
+          <thead>
+            <tr>
+              <th>Stagione</th>
+              <th>Forza (gol)</th>
+              <th>Gioco · tiri in porta</th>
+              <th>Gioco · tiri</th>
+              <th>Correzione di livello</th>
+            </tr>
+          </thead>
+          <tbody>
+            {seasons.map((s) => (
+              <tr key={s}>
+                <td className="font-semibold">{s}</td>
+                <td className="tabular-nums">{cell(weights[s].forza)}</td>
+                <td className="tabular-nums">{cell(weights[s].sot)}</td>
+                <td className="tabular-nums">{cell(weights[s].shots)}</td>
+                <td className="tabular-nums">{cell(weights[s].intercept)}</td>
               </tr>
             ))}
           </tbody>

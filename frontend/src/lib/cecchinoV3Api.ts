@@ -10,11 +10,13 @@ export type V3Metric = {
   n: number
   brier_v3: number | null
   brier_v2?: number | null
+  brier_prev?: number | null
   brier_book: number | null
   log_loss_v3: number | null
   log_loss_v2?: number | null
   log_loss_book: number | null
   v3_vs_v2_pct?: number
+  v3_vs_prev_pct?: number
   v3_vs_book_pct?: number
 }
 
@@ -23,9 +25,11 @@ export type V3Family = 'FT_1X2' | 'DOUBLE_CHANCE' | 'FT_OVER_UNDER' | 'HT_1X2'
 export type V3Evaluation = {
   warmup_season: string
   judge_seasons: string[]
+  baseline_run_id?: number | null
   comparison_set: string
   exam: {
     passed: boolean
+    reference?: 'v2' | 'prev'
     rules: string[]
     accuracy_vs_v2: Array<{
       family: V3Family
@@ -35,6 +39,7 @@ export type V3Evaluation = {
         passed: boolean
         brier_v3: number | null
         brier_v2: number | null
+        brier_reference?: number | null
         brier_book: number | null
       }>
     }>
@@ -63,9 +68,12 @@ export type V3Evaluation = {
   calibration_error: Record<string, { v3_pct: number | null }>
 }
 
+export type V3Weights = { intercept: number; forza: number; sot: number; shots: number }
+
 export type V3Run = {
   id: number
   engine_version: string
+  phase?: number
   status: V3RunStatus
   requested_at: string | null
   started_at: string | null
@@ -87,6 +95,8 @@ export type V3Run = {
     written: { matches: number; markets: number }
     elapsed_seconds: number
     evaluation: V3Evaluation
+    orchestrator_weights?: Record<string, V3Weights>
+    game_chosen_hyper?: Record<string, Record<string, { xi: number; sigma: number }>>
   } | null
   error: { message?: string } | null
 }
@@ -95,8 +105,24 @@ export async function getLatestV3Runs(): Promise<{ latest: V3Run | null; complet
   return requestJson(`${BASE}/runs/latest`)
 }
 
-export async function startV3Run(): Promise<V3Run> {
-  return requestJson(`${BASE}/runs`, { method: 'POST' })
+export async function startV3Run(phase = 2): Promise<V3Run> {
+  return requestJson(`${BASE}/runs?phase=${phase}`, { method: 'POST' })
+}
+
+export type V3RunListItem = {
+  id: number
+  phase: number
+  engine_version: string
+  completed_at: string | null
+  exam_passed: boolean | null
+}
+
+export async function listV3Runs(): Promise<{ items: V3RunListItem[] }> {
+  return requestJson(`${BASE}/runs`)
+}
+
+export async function getV3Run(runId: number): Promise<V3Run> {
+  return requestJson(`${BASE}/runs/${runId}`)
 }
 
 export async function cancelV3Run(runId: number): Promise<V3Run> {
