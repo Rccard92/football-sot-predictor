@@ -634,3 +634,143 @@ def test_calibration_preserving_total_goals():
     assert abs(fitted.beta + 0.04) < 0.04
     assert abs(fitted.gamma - 0.03) < 0.03
     assert fit_calibration([], preserve_total=True) == Calibration(preserve_total=True)
+
+
+# --- Passo 2: indici a 360 gradi ------------------------------------------------
+
+
+def _index_input(mid, day, home="A", away="B", gh=1, ga=1, p=(0.45, 0.27, 0.28), lam=(1.5, 1.1), season="2022/2023"):
+    from app.services.cecchino_v3.indices import IndexInput
+
+    m = _form_match(mid, day, home, away, gh, ga, season=season)
+    m.eval_eligible = True
+    m.phase = "mid"
+    return IndexInput(
+        match=m,
+        prob_home=p[0],
+        prob_draw=p[1],
+        prob_away=p[2],
+        prob_over_2_5=0.5,
+        lambda_home=lam[0],
+        lambda_away=lam[1],
+        home_evidence=30.0,
+        away_evidence=30.0,
+        specialists={
+            "forza": {"home": lam[0], "away": lam[1]},
+            "sot": {"home": lam[0], "away": lam[1]},
+            "shots": {"home": lam[0], "away": lam[1]},
+        },
+    )
+
+
+def test_equilibrium_and_classes():
+    from app.services.cecchino_v3.indices import equilibrium_value, percentile_class
+
+    assert equilibrium_value(0.35, 0.35) == 100.0
+    assert abs(equilibrium_value(0.6, 0.2) - 50.0) < 1e-12
+    assert percentile_class(None) is None
+    assert percentile_class(10.0) == "molto_basso"
+    assert percentile_class(20.0) == "basso"
+    assert percentile_class(59.9) == "medio"
+    assert percentile_class(80.0) == "molto_alto"
+
+
+def test_rolling_percentile_needs_history():
+    from app.services.cecchino_v3.constants import INDEX_MIN_HISTORY
+    from app.services.cecchino_v3.indices import RollingPercentile
+
+    rp = RollingPercentile()
+    for v in range(INDEX_MIN_HISTORY - 1):
+        rp.add(float(v))
+    assert rp.percentile(10.0) is None
+    rp.add(float(INDEX_MIN_HISTORY - 1))
+    assert rp.percentile(-1.0) == 0.0
+    assert rp.percentile(1e9) == 100.0
+
+
+def test_reliability_formula():
+    from app.services.cecchino_v3.constants import (
+        RELIABILITY_EARLY_FACTOR,
+        RELIABILITY_NEW_TEAM_FACTOR,
+        RELIABILITY_SUPREMACY_SCALE,
+        RELIABILITY_TOTAL_SCALE,
+    )
+    from app.services.cecchino_v3.indices import reliability, specialist_disagreement
+
+    full = reliability(
+        home_evidence=40, away_evidence=25, disagreement_supremacy=0.0, disagreement_total=0.0,
+        new_team=False, early=False,
+    )
+    assert full["value"] == 100.0 and full["class"] == "alta"
+    half = reliability(
+        home_evidence=10, away_evidence=40, disagreement_supremacy=0.0, disagreement_total=0.0,
+        new_team=False, early=False,
+    )
+    assert half["value"] == 50.0 and half["class"] == "media"
+    d_sup, d_tot = 0.2, 0.15
+    expected = 100.0 / (1 + d_sup / RELIABILITY_SUPREMACY_SCALE + d_tot / RELIABILITY_TOTAL_SCALE)
+    expected *= RELIABILITY_NEW_TEAM_FACTOR * RELIABILITY_EARLY_FACTOR
+    got = reliability(
+        home_evidence=30, away_evidence=30, disagreement_supremacy=d_sup, disagreement_total=d_tot,
+        new_team=True, early=True,
+    )
+    assert abs(got["value"] - round(expected, 1)) < 1e-9 and got["class"] == "bassa"
+
+    sup, tot = specialist_disagreement(
+        {"forza": {"home": 2.0, "away": 1.0}, "sot": {"home": 1.0, "away": 1.0}, "shots": {"home": 1.5, "away": 1.0}}
+    )
+    assert abs(sup - math.log(2.0)) < 1e-12
+    assert abs(tot - (math.log(3.0) - math.log(2.0))) < 1e-12
+    assert specialist_disagreement({"forza": {"home": 1.0, "away": 1.0}}) == (None, None)
+
+
+def test_indices_use_only_previous_days_of_same_league():
+    from app.services.cecchino_v3.constants import INDEX_MIN_HISTORY
+    from app.services.cecchino_v3.indices import compute_indices
+
+    inputs = []
+    mid = 1
+    for day in range(INDEX_MIN_HISTORY + 20):
+        inputs.append(_index_input(mid, day, gh=day % 4, ga=1, lam=(1.0 + (day % 7) / 10, 1.0)))
+        mid += 1
+    base = compute_indices(inputs)
+    first = base[1]
+    assert first["pareggio"]["league_draw_rate"] is None and first["intensita_goal"]["percentile"] is None
+    target = inputs[INDEX_MIN_HISTORY + 5].match
+    assert base[target.lab_match_id]["intensita_goal"]["league_goals_avg"] is not None
+
+    from dataclasses import replace
+
+    # risultati stravolti dal giorno della partita bersaglio in poi
+    changed = [
+        replace(item, match=replace(item.match, ft_home=9, ft_away=9)) if item.match.day >= target.day else item
+        for item in inputs
+    ]
+    after = compute_indices(changed)
+    for item in inputs:
+        if item.match.day <= target.day:
+            assert base[item.match.lab_match_id] == after[item.match.lab_match_id]
+
+
+def test_coherence_checks_detect_monotonic_patterns():
+    from app.services.cecchino_v3.constants import JUDGE_SEASONS
+    from app.services.cecchino_v3.indices import coherence_checks
+
+    classes = ("molto_basso", "basso", "medio", "alto", "molto_alto")
+    inputs, indices = [], {}
+    mid = 1
+    for level, klass in enumerate(classes):
+        for k in range(10):
+            item = _index_input(mid, level * 10 + k, gh=level, ga=0 if k % 2 else level, season=JUDGE_SEASONS[0])
+            inputs.append(item)
+            indices[mid] = {
+                "intensita_goal": {"class": klass},
+                "pareggio": {"class": klass},
+                "equilibrio": {"class": klass},
+                "affidabilita": {"class": ("bassa", "media", "alta")[min(level, 2)]},
+            }
+            mid += 1
+    checks = {c["code"]: c for c in coherence_checks(inputs, indices, JUDGE_SEASONS)}
+    assert checks["C1"]["passed"]  # gol crescono con la classe
+    assert [r["n"] for r in checks["C1"]["rows"]] == [10] * 5
+    assert not checks["C3"]["passed"]  # favorito non decrescente in questo esempio costruito

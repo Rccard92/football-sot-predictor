@@ -113,3 +113,49 @@ class CecchinoV3MarketPrediction(Base):
     market_key: Mapped[str] = mapped_column(String(32), nullable=False)
     probability: Mapped[Decimal] = mapped_column(Numeric(9, 7), nullable=False)
     won: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class CecchinoV3IndexRun(Base, TimestampMixin):
+    """Calcolo degli indici a 360 gradi a partire da un calcolo V3 di riferimento."""
+
+    __tablename__ = "cecchino_v3_index_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_v3_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    engine_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=V3_STATUS_PENDING)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_step: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    config_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CecchinoV3MatchIndex(Base):
+    __tablename__ = "cecchino_v3_match_indices"
+    __table_args__ = (
+        UniqueConstraint("index_run_id", "lab_match_id", name="uq_cecchino_v3_match_index_run_match"),
+        Index("ix_cecchino_v3_match_index_run_comp_season", "index_run_id", "competition_name", "season_label"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    index_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_v3_index_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    lab_match_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    competition_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    season_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    kickoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    home_team: Mapped[str] = mapped_column(String(128), nullable=False)
+    away_team: Mapped[str] = mapped_column(String(128), nullable=False)
+    reliability: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
+    reliability_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    equilibrio_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pareggio_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    intensita_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    indices_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

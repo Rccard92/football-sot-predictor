@@ -28,7 +28,8 @@ export function Layout() {
     location.pathname === MONITORAGGIO_SEGNO_1_PATH ||
     location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`) ||
     location.pathname === PATTERN_INSIGHTS_PATH ||
-    location.pathname === CECCHINO_V3_PATH
+    location.pathname === CECCHINO_V3_PATH ||
+    location.pathname.startsWith(`${CECCHINO_V3_PATH}/`)
 
   const contentClass = isFullWidthWorkspace
     ? 'w-full max-w-none px-3 py-4 sm:px-4 lg:px-5'

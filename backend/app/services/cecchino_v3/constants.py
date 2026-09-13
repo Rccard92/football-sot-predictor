@@ -263,3 +263,29 @@ EXAM_STRICT_FROM_PHASE = 6
 EXAM_MAIN_FAMILIES: tuple[str, ...] = ("FT_1X2", "FT_OVER_UNDER")
 EXAM_MIN_MEAN_GAIN_PCT = 0.05
 EXAM_STABILITY_NEUTRAL = 0.01
+
+# --- Passo 2: indici a 360 gradi (dichiarati prima di calcolarli) ------------
+# Indici descrittivi letti dal modello di riferimento: non cambiano le probabilita'.
+# Posizione rispetto al campionato: percentile tra le partite dei giorni
+# precedenti dello stesso campionato, solo con almeno INDEX_MIN_HISTORY valori.
+INDEX_MIN_HISTORY = 200
+INDEX_CLASS_EDGES: tuple[float, ...] = (20.0, 40.0, 60.0, 80.0)
+INDEX_CLASSES: tuple[str, ...] = ("molto_basso", "basso", "medio", "alto", "molto_alto")
+# Affidabilita' della stima (0-100):
+#   conoscenza = min(1, partite equivalenti della squadra meno conosciuta / 20)
+#   accordo    = 1 / (1 + diff. forza tra specialisti / 0,4 + diff. gol totali / 0,3)
+#   x 0,85 se una squadra e' neopromossa o nuova nel dataset (prima stagione)
+#   x 0,5 nelle partite di inizio stagione (meno di 5 partite giocate)
+RELIABILITY_FULL_EVIDENCE = 20.0
+RELIABILITY_SUPREMACY_SCALE = 0.4
+RELIABILITY_TOTAL_SCALE = 0.3
+RELIABILITY_NEW_TEAM_FACTOR = 0.85
+RELIABILITY_EARLY_FACTOR = 0.5
+RELIABILITY_HIGH = 75.0
+RELIABILITY_MEDIUM = 50.0
+# Controlli di coerenza sulle stagioni di giudizio (partite idonee):
+# C1 intensita' goal -> gol reali medi sempre crescenti tra le 5 classi
+# C2 credibilita' pareggio -> frequenza pareggi sempre crescente tra le 5 classi
+# C3 equilibrio -> vittorie del favorito sempre decrescenti tra le 5 classi
+# C4 affidabilita' bassa -> media -> alta: errore 1X2 (Brier) sempre decrescente
+INDEX_ENGINE_VERSION = "cecchino_v3_indices_v1"

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.cecchino_v3 import CecchinoV3MarketPrediction, CecchinoV3MatchPrediction
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
-from app.services.cecchino_v3 import service
+from app.services.cecchino_v3 import index_service, service
 
 router = APIRouter(prefix="/admin/cecchino/v3", tags=["admin-cecchino-v3"])
 
@@ -47,6 +47,56 @@ def get_latest_v3_run(db: Session = Depends(get_db)) -> JSONResponse:
 def get_v3_runs(db: Session = Depends(get_db)) -> JSONResponse:
     """Calcoli completati (per scegliere quale guardare nella pagina)."""
     return JSONResponse(content=jsonable_encoder({"items": service.list_completed_runs(db)}))
+
+
+@router.post("/indices/runs")
+def post_v3_index_run(db: Session = Depends(get_db)) -> JSONResponse:
+    """Calcola gli indici a 360 gradi dal modello di riferimento."""
+    try:
+        return JSONResponse(status_code=202, content=jsonable_encoder(index_service.start_index_run(db)))
+    except CecchinoLabImportError as exc:
+        _raise(exc)
+
+
+@router.get("/indices/runs/latest")
+def get_v3_index_runs_latest(db: Session = Depends(get_db)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder(index_service.latest_index_runs(db)))
+
+
+@router.get("/partite/filtri")
+def get_v3_match_filters(db: Session = Depends(get_db)) -> JSONResponse:
+    return JSONResponse(content=jsonable_encoder(index_service.match_filters(db)))
+
+
+@router.get("/partite")
+def get_v3_match_list(
+    competition: str | None = Query(default=None),
+    season_label: str | None = Query(default=None),
+    team: str | None = Query(default=None),
+    reliability_class: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Elenco partite con indici principali per la pagina "Partita per partita"."""
+    out = index_service.list_matches(
+        db,
+        competition=competition,
+        season_label=season_label,
+        team=team,
+        reliability_class=reliability_class,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(content=jsonable_encoder(out))
+
+
+@router.get("/partite/{lab_match_id}")
+def get_v3_match_detail(lab_match_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    try:
+        return JSONResponse(content=jsonable_encoder(index_service.match_detail(db, lab_match_id)))
+    except CecchinoLabImportError as exc:
+        _raise(exc)
 
 
 @router.get("/runs/{run_id}")

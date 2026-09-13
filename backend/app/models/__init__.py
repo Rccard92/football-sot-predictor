@@ -61,7 +61,9 @@ from app.models.cecchino_run_v2_pattern_insight import (
     CecchinoRunV2PatternValidationRun,
 )
 from app.models.cecchino_v3 import (
+    CecchinoV3IndexRun,
     CecchinoV3MarketPrediction,
+    CecchinoV3MatchIndex,
     CecchinoV3MatchPrediction,
     CecchinoV3Run,
 )
@@ -148,6 +150,8 @@ __all__ = [
     "CecchinoV3Run",
     "CecchinoV3MatchPrediction",
     "CecchinoV3MarketPrediction",
+    "CecchinoV3IndexRun",
+    "CecchinoV3MatchIndex",
     "Competition",
     "Fixture",
     "FixtureLineup",

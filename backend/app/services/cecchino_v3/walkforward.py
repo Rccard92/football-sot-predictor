@@ -82,7 +82,7 @@ class _GroupArrays:
     away_move: np.ndarray
 
 
-def _divisions_for(matches: list[MatchRecord]) -> tuple[str, ...]:
+def divisions_for(matches: list[MatchRecord]) -> tuple[str, ...]:
     group = matches[0].group
     if group in COUNTRY_GROUPS:
         return COUNTRY_GROUPS[group]
@@ -119,7 +119,7 @@ def mover_flags(
 
 
 def _prepare(matches: list[MatchRecord], *, movers: bool = False) -> _GroupArrays:
-    divisions = _divisions_for(matches)
+    divisions = divisions_for(matches)
     div_index = {c: i for i, c in enumerate(divisions)}
     home_move, away_move = mover_flags(matches, div_index)
     teams = sorted({m.home_team for m in matches} | {m.away_team for m in matches})
