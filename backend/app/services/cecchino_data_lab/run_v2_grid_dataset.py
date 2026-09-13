@@ -156,8 +156,30 @@ def _categorical_from(row: dict, binners: dict[str, QuantileBinner]) -> dict[str
     return categorical
 
 
-def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> list[RunV2GridRow]:
-    """Righe per un mercato con quota storica (i 17 mercati di Run V2)."""
+def compute_binners(raw: list[dict]) -> dict[str, QuantileBinner]:
+    return _binners_from(raw)
+
+
+def load_season_binners(db: Session, *, run_id: int) -> dict[str, QuantileBinner]:
+    """Quintili delle feature continue di una stagione, calcolati su TUTTE le
+    partite eleggibili (indipendenti dal mercato: stesse fasce per ogni
+    bersaglio della stagione, come in fase di scoperta).
+
+    Per validare fuori campione vanno presi dalla stagione di SCOPERTA e
+    applicati bloccati a quella di verifica: ricalcolarli sulla stagione di
+    verifica le passerebbe informazioni sulla sua distribuzione.
+    """
+    sql = f"""
+        SELECT {_delta_projections()}
+        FROM cecchino_run_v2_match_snapshots s
+        WHERE s.run_id = :run_id AND s.eligibility_status = :eligible
+    """
+    result = db.execute(text(sql), {"run_id": run_id, "eligible": ELIGIBLE_STATUS})
+    return _binners_from([dict(r._mapping) for r in result])
+
+
+def load_market_raw(db: Session, *, run_id: int, market_key: str) -> list[dict]:
+    """Righe grezze (feature continue non ancora binnate) per un mercato."""
     sql = (
         _base_select(
             """
@@ -192,9 +214,12 @@ def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> lis
             "eligible": ELIGIBLE_STATUS,
         },
     )
-    raw = [dict(r._mapping) for r in result]
-    binners = _binners_from(raw)
+    return [dict(r._mapping) for r in result]
 
+
+def market_rows_from_raw(
+    raw: list[dict], binners: dict[str, QuantileBinner]
+) -> list[RunV2GridRow]:
     rows: list[RunV2GridRow] = []
     for r in raw:
         categorical = _categorical_from(r, binners)
@@ -216,12 +241,16 @@ def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> lis
     return rows
 
 
-def load_run_v2_synthetic_rows(
-    db: Session, *, run_id: int, stat_key: str, threshold: float
-) -> list[RunV2GridRow]:
-    """Righe per un bersaglio sintetico senza quota (es. 'total_corners' over
-    9.5): won=True se il valore reale della partita ha superato la soglia.
-    Nessun profit/quota — servono a capire la frequenza, non un ROI."""
+def load_run_v2_market_rows(db: Session, *, run_id: int, market_key: str) -> list[RunV2GridRow]:
+    """Righe per un mercato con quota storica, con i quintili della stessa
+    stagione (uso in scoperta e nel drill-down sulla stagione di scoperta)."""
+    raw = load_market_raw(db, run_id=run_id, market_key=market_key)
+    return market_rows_from_raw(raw, load_season_binners(db, run_id=run_id))
+
+
+def load_synthetic_raw(db: Session, *, run_id: int, stat_key: str) -> list[dict]:
+    """Righe grezze per un bersaglio senza quota. Non dipende dalla soglia:
+    la stessa lettura serve tutte le soglie di quella statistica."""
     if stat_key not in _ALLOWED_SYNTHETIC_KEYS:
         raise ValueError(f"stat_key non riconosciuto: {stat_key!r}")
 
@@ -239,9 +268,12 @@ def load_run_v2_synthetic_rows(
         """
     )
     result = db.execute(text(sql), {"run_id": run_id, "eligible": ELIGIBLE_STATUS})
-    raw = [dict(r._mapping) for r in result]
-    binners = _binners_from(raw)
+    return [dict(r._mapping) for r in result]
 
+
+def synthetic_rows_from_raw(
+    raw: list[dict], binners: dict[str, QuantileBinner], threshold: float
+) -> list[RunV2GridRow]:
     rows: list[RunV2GridRow] = []
     for r in raw:
         value = r.get("actual_value")
@@ -265,3 +297,13 @@ def load_run_v2_synthetic_rows(
             )
         )
     return rows
+
+
+def load_run_v2_synthetic_rows(
+    db: Session, *, run_id: int, stat_key: str, threshold: float
+) -> list[RunV2GridRow]:
+    """Righe per un bersaglio sintetico senza quota (es. 'total_corners' over
+    9.5): won=True se il valore reale della partita ha superato la soglia.
+    Nessun profit/quota — servono a capire la frequenza, non un ROI."""
+    raw = load_synthetic_raw(db, run_id=run_id, stat_key=stat_key)
+    return synthetic_rows_from_raw(raw, load_season_binners(db, run_id=run_id), threshold)

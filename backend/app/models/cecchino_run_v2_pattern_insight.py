@@ -90,3 +90,69 @@ class CecchinoRunV2PatternInsightCandidate(Base, TimestampMixin):
     avg_quota: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     baseline_win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True, index=True)
+
+
+VERDICT_CONFIRMED = "confirmed"
+VERDICT_ATTENUATED = "attenuated"
+VERDICT_REJECTED = "rejected"
+VERDICT_INSUFFICIENT = "insufficient_sample"
+
+
+class CecchinoRunV2PatternValidationRun(Base, TimestampMixin):
+    """Verifica fuori campione dei pattern di un'analisi su una stagione Run V2
+    successiva, mai vista in fase di scoperta."""
+
+    __tablename__ = "cecchino_run_v2_pattern_validation_runs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    insight_run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("cecchino_run_v2_pattern_insight_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_v2_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cecchino_run_v2_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    season_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=STATUS_PENDING)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    targets_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    targets_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_target_label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    progress_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
+    summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CecchinoRunV2PatternValidation(Base, TimestampMixin):
+    __tablename__ = "cecchino_run_v2_pattern_validations"
+    __table_args__ = (
+        Index("ix_cecchino_run_v2_pval_run_verdict", "validation_run_id", "verdict"),
+        Index("ix_cecchino_run_v2_pval_candidate", "candidate_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    validation_run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("cecchino_run_v2_pattern_validation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    candidate_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("cecchino_run_v2_pattern_insight_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, nullable=False)
+    win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    roi_pct: Mapped[Decimal | None] = mapped_column(Numeric(9, 3), nullable=True)
+    profit_units: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    avg_quota: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    baseline_win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 3), nullable=True)
+    verdict: Mapped[str] = mapped_column(String(24), nullable=False)
+    null_confirm_prob: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)

@@ -57,6 +57,8 @@ from app.models.cecchino_pattern_grid_candidate import CecchinoPatternGridCandid
 from app.models.cecchino_run_v2_pattern_insight import (
     CecchinoRunV2PatternInsightCandidate,
     CecchinoRunV2PatternInsightRun,
+    CecchinoRunV2PatternValidation,
+    CecchinoRunV2PatternValidationRun,
 )
 from app.models.competition import Competition
 from app.models.fixture import Fixture
@@ -136,6 +138,8 @@ __all__ = [
     "CecchinoPatternGridCandidate",
     "CecchinoRunV2PatternInsightRun",
     "CecchinoRunV2PatternInsightCandidate",
+    "CecchinoRunV2PatternValidationRun",
+    "CecchinoRunV2PatternValidation",
     "Competition",
     "Fixture",
     "FixtureLineup",

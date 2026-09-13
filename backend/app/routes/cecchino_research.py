@@ -1342,6 +1342,48 @@ def get_run_v2_pattern_insight_summary(
     return JSONResponse(content=jsonable_encoder(out))
 
 
+@router.post("/run-v2-pattern-insight/validations")
+def post_run_v2_pattern_validation(
+    body: CecchinoRunV2PatternInsightStartBody,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Avvia la verifica fuori campione: i pattern dell'ultima analisi
+    completata vengono misurati sulla stagione Run V2 indicata, che deve
+    essere successiva a quella di scoperta."""
+    from app.services.cecchino_data_lab.run_v2_pattern_validation_service import start_validation
+
+    try:
+        out = start_validation(db, run_v2_run_id=body.run_v2_run_id)
+        return JSONResponse(status_code=202, content=jsonable_encoder(out))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/run-v2-pattern-insight/validations/{run_id}")
+def get_run_v2_pattern_validation(run_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    from app.services.cecchino_data_lab.run_v2_pattern_validation_service import get_validation_run
+
+    try:
+        return JSONResponse(content=jsonable_encoder(get_validation_run(db, run_id)))
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/run-v2-pattern-insight/validation-analytics")
+def get_run_v2_pattern_validation_analytics(
+    min_n: int = Query(default=20, ge=1),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Aggregati della verifica fuori campione per la dashboard: tasso di
+    riconferma osservato contro quello atteso per puro caso, spezzato per
+    campione, complessita', mercato e situazione."""
+    from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
+        get_validation_analytics,
+    )
+
+    return JSONResponse(content=jsonable_encoder(get_validation_analytics(db, min_n=min_n)))
+
+
 @router.get("/run-v2-pattern-insight/candidates/{candidate_id}/detail")
 def get_run_v2_pattern_insight_candidate_detail(
     candidate_id: int,
