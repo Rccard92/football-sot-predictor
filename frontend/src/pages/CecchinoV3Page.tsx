@@ -151,6 +151,8 @@ export function CecchinoV3Page() {
                   #{r.id} · Fase {r.phase}
                   {r.exam_passed == null ? '' : r.exam_passed ? ' · ✓' : ' · ✗'}
                   {!r.exam_passed && r.user_decision?.accepted ? ' accettata' : ''}
+                  {r.user_decision?.accepted === false ? ' · non adottata' : ''}
+                  {r.reference_model ? ' · riferimento' : ''}
                 </button>
               )
             })}

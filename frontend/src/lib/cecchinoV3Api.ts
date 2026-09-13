@@ -134,6 +134,7 @@ export type V3RunListItem = {
   completed_at: string | null
   exam_passed: boolean | null
   user_decision?: { accepted: boolean; note: string; decided_at: string } | null
+  reference_model?: boolean
 }
 
 export async function listV3Runs(): Promise<{ items: V3RunListItem[] }> {

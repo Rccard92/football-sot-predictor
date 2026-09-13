@@ -269,6 +269,7 @@ def list_completed_runs(db: Session) -> list[dict[str, Any]]:
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             "exam_passed": ((r.summary_json or {}).get("evaluation") or {}).get("exam", {}).get("passed"),
             "user_decision": (r.config_json or {}).get("user_decision"),
+            "reference_model": bool((r.config_json or {}).get("reference_model")),
         }
         for r in db.scalars(
             select(CecchinoV3Run)
