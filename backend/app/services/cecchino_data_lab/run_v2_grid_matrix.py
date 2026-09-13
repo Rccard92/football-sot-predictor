@@ -77,6 +77,7 @@ class RowMatrix:
             "roi_pct": round(float(profits.mean()) * 100.0, 3) if profits.size else None,
             "profit_units": round(float(profits.sum()), 3) if profits.size else None,
             "avg_quota": round(float(quotes.mean()), 3) if quotes.size else None,
+            "n_priced": int(profits.size),
         }
 
     def baseline_win_rate_pct(self) -> float | None:

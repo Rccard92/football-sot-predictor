@@ -288,145 +288,11 @@ def get_analytics(db: Session, *, min_n: int = 50) -> dict[str, Any]:
     }
 
 
-def list_candidates(
-    db: Session,
-    *,
-    target_type: str | None = None,
-    target_key: str | None = None,
-    threshold: float | None = None,
-    min_n: int = 20,
-    verdict: str | None = None,
-    validation_id: int | None = None,
-    sort: str = "best",
-    limit: int = 100,
-    offset: int = 0,
-) -> dict[str, Any]:
-    """Candidati paginati/filtrati per la tabella della dashboard, con i
-    numeri della stagione di verifica (se esiste una verifica completata)
-    affiancati a quelli della stagione di scoperta."""
-    from app.models.cecchino_run_v2_pattern_insight import (
-        CecchinoRunV2PatternValidation as V,
-        CecchinoRunV2PatternValidationRun as VR,
-    )
+def list_candidates(db: Session, **kwargs: Any) -> dict[str, Any]:
+    """Tabella "Esplora i pattern": vedi run_v2_pattern_explorer."""
+    from app.services.cecchino_data_lab.run_v2_pattern_explorer import list_candidates as _list
 
-    C = CecchinoRunV2PatternInsightCandidate
-    run = _latest_completed_run(db)
-    if not run:
-        return {"run": None, "validation": None, "validations": [], "total": 0, "items": []}
-
-    from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
-        _completed_validations,
-    )
-
-    # una verifica per stagione (la piu' recente); filtri e ordinamenti sulla
-    # stagione scelta, di default l'ultima
-    vruns = _completed_validations(db, int(run.id))
-    vrun = next((v for v in vruns if int(v.id) == validation_id), vruns[-1] if vruns else None)
-
-    filters = [C.insight_run_id == run.id, C.n >= min_n]
-    if target_type:
-        filters.append(C.target_type == target_type)
-    if target_key:
-        filters.append(C.target_key == target_key)
-    if threshold is not None:
-        filters.append(C.threshold == _d(threshold))
-
-    join_on = (
-        (V.candidate_id == C.id) & (V.validation_run_id == vrun.id) if vrun is not None else V.id == -1
-    )
-    if vrun is not None and verdict:
-        filters.append(V.verdict == verdict)
-
-    query = select(C, V).select_from(C).outerjoin(V, join_on).where(*filters)
-    total = int(
-        db.scalar(select(func.count(C.id)).select_from(C).outerjoin(V, join_on).where(*filters))
-        or 0
-    )
-
-    if sort == "roi_desc":
-        query = query.order_by(C.roi_pct.desc().nulls_last())
-    elif sort == "deviation_desc":
-        query = query.order_by(func.abs(C.deviation_pct).desc().nulls_last())
-    elif sort == "oos_roi_desc":
-        query = query.order_by(V.roi_pct.desc().nulls_last())
-    elif sort == "oos_deviation_desc":
-        query = query.order_by(func.abs(V.deviation_pct).desc().nulls_last())
-    elif sort == "oos_n_desc":
-        query = query.order_by(V.n.desc().nulls_last())
-    else:
-        query = query.order_by(
-            C.roi_pct.desc().nulls_last(), func.abs(C.deviation_pct).desc().nulls_last()
-        )
-    rows = db.execute(query.limit(limit).offset(offset)).all()
-
-    items = []
-    for cand, val in rows:
-        item = candidate_row_to_dict(cand)
-        item["oos"] = (
-            {
-                "n": val.n,
-                "wins": val.wins,
-                "losses": val.losses,
-                "win_rate_pct": float(val.win_rate_pct) if val.win_rate_pct is not None else None,
-                "roi_pct": float(val.roi_pct) if val.roi_pct is not None else None,
-                "profit_units": float(val.profit_units) if val.profit_units is not None else None,
-                "avg_quota": float(val.avg_quota) if val.avg_quota is not None else None,
-                "baseline_win_rate_pct": (
-                    float(val.baseline_win_rate_pct) if val.baseline_win_rate_pct is not None else None
-                ),
-                "deviation_pct": float(val.deviation_pct) if val.deviation_pct is not None else None,
-                "verdict": val.verdict,
-                "null_confirm_prob": (
-                    float(val.null_confirm_prob) if val.null_confirm_prob is not None else None
-                ),
-            }
-            if val is not None
-            else None
-        )
-        items.append(item)
-
-    # numeri di tutte le stagioni di verifica per le righe della pagina
-    if vruns and items:
-        season_of = {int(v.id): v.season_label for v in vruns}
-        page_ids = [it["id"] for it in items]
-        by_candidate: dict[int, list[dict[str, Any]]] = {}
-        for val in db.scalars(
-            select(V).where(
-                V.validation_run_id.in_(list(season_of.keys())), V.candidate_id.in_(page_ids)
-            )
-        ).all():
-            by_candidate.setdefault(int(val.candidate_id), []).append(
-                {
-                    "validation_id": int(val.validation_run_id),
-                    "season_label": season_of[int(val.validation_run_id)],
-                    "n": val.n,
-                    "wins": val.wins,
-                    "losses": val.losses,
-                    "win_rate_pct": float(val.win_rate_pct) if val.win_rate_pct is not None else None,
-                    "roi_pct": float(val.roi_pct) if val.roi_pct is not None else None,
-                    "avg_quota": float(val.avg_quota) if val.avg_quota is not None else None,
-                    "deviation_pct": float(val.deviation_pct) if val.deviation_pct is not None else None,
-                    "verdict": val.verdict,
-                    "null_confirm_prob": (
-                        float(val.null_confirm_prob) if val.null_confirm_prob is not None else None
-                    ),
-                    "tier_json": val.tier_json,
-                }
-            )
-        for it in items:
-            it["oos_seasons"] = sorted(
-                by_candidate.get(it["id"], []), key=lambda x: x["season_label"] or ""
-            )
-
-    return {
-        "run": run_to_dict(run),
-        "validation": (
-            {"id": int(vrun.id), "season_label": vrun.season_label} if vrun is not None else None
-        ),
-        "validations": [{"id": int(v.id), "season_label": v.season_label} for v in vruns],
-        "total": total,
-        "items": items,
-    }
+    return _list(db, **kwargs)
 
 
 def _spawn_worker(run_id: int) -> None:
@@ -521,6 +387,8 @@ def _execute_pattern_insight_run(run_id: int) -> None:
                                 avg_quota=_d(summary["avg_quota"]),
                                 baseline_win_rate_pct=_d(summary["baseline_win_rate_pct"]),
                                 deviation_pct=_d(summary["deviation_pct"]),
+                                profit_units=_d(c.stats.get("profit_units")),
+                                n_priced=c.stats.get("n_priced"),
                             )
                         )
                     total_candidates += len(candidates)

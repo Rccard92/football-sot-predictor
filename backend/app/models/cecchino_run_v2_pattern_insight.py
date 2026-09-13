@@ -93,6 +93,9 @@ class CecchinoRunV2PatternInsightCandidate(Base, TimestampMixin):
     avg_quota: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     baseline_win_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True, index=True)
+    # profitto a 1 unita' e numero di giocate con quota (base del ROI)
+    profit_units: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    n_priced: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 VERDICT_CONFIRMED = "confirmed"
@@ -159,5 +162,6 @@ class CecchinoRunV2PatternValidation(Base, TimestampMixin):
     deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 3), nullable=True)
     verdict: Mapped[str] = mapped_column(String(24), nullable=False)
     null_confirm_prob: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    n_priced: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # stesse statistiche ristrette a prime divisioni / divisioni inferiori
     tier_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

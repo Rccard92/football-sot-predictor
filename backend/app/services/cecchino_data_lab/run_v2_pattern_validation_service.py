@@ -351,6 +351,7 @@ def _verify_group(
                 "baseline_win_rate_pct": _d(s_all["baseline_win_rate_pct"]),
                 "deviation_pct": _d(s_all["deviation_pct"]),
                 "verdict": s_all["verdict"],
+                "n_priced": s_all.get("n_priced"),
                 "null_confirm_prob": _d(s_all["null_confirm_prob"]),
                 "tier_json": {tier: per_scope[tier] for tier in TIERS},
             }
