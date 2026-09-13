@@ -33,8 +33,10 @@ class PhaseFeatures:
     calibration: bool = False
 
 
-# La Fase 5 (Disciplina) non e' stata adottata: le fasi 6 e 7 ripartono dalla
-# Fase 4, modello di riferimento.
+# La Fase 5 (Disciplina) non e' stata adottata: la Fase 6 riparte dalla Fase 4.
+# La Fase 6 (neopromosse) non ha superato l'esame rigoroso: prima di vedere
+# qualsiasi risultato della calibrazione, la Fase 7 e' ridefinita come
+# Fase 4 (modello di riferimento) + calibrazione, confrontata con la Fase 4.
 PHASE_FEATURES: dict[int, PhaseFeatures] = {
     1: PhaseFeatures(),
     2: PhaseFeatures(game=True),
@@ -42,10 +44,10 @@ PHASE_FEATURES: dict[int, PhaseFeatures] = {
     4: PhaseFeatures(game=True, form=True, calendar=True),
     5: PhaseFeatures(game=True, form=True, calendar=True, discipline=True),
     6: PhaseFeatures(game=True, form=True, calendar=True, promotion=True),
-    7: PhaseFeatures(game=True, form=True, calendar=True, promotion=True, calibration=True),
+    7: PhaseFeatures(game=True, form=True, calendar=True, calibration=True),
 }
 # Termine di paragone dell'esame di ogni fase.
-PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 6}
+PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4}
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).

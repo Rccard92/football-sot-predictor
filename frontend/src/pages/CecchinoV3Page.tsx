@@ -27,10 +27,10 @@ const PHASE_TITLES: Record<number, string> = {
   4: 'Fase 4 · Forza + Gioco + Forma + Calendario',
   5: 'Fase 5 · Forza + Gioco + Forma + Calendario + Disciplina',
   6: 'Fase 6 · Fase 4 + neopromosse e retrocesse',
-  7: 'Fase 7 · Fase 6 + calibrazione',
+  7: 'Fase 7 · Fase 4 + calibrazione',
 }
 
-const NEXT_PHASE = 6
+const NEXT_PHASE = 7
 
 const POLL_MS = 10000
 
