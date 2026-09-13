@@ -16,6 +16,7 @@ import { CecchinoLabPatternLabPage } from './pages/CecchinoLabPatternLabPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { PatternInsightsPage } from './pages/PatternInsightsPage'
+import { CecchinoV3Page } from './pages/CecchinoV3Page'
 
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route path="/pattern-insights" element={<PatternInsightsPage />} />
+          <Route path="/cecchino-v3" element={<CecchinoV3Page />} />
           <Route path="/cecchino-lab/pattern-lab" element={<CecchinoLabPatternLabPage />} />
           <Route
             path="/cecchino-lab/historical-scans/:runId/kpi-signals"

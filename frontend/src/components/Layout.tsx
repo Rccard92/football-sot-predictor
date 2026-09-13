@@ -12,6 +12,7 @@ const CECCHINO_LAB_PATH = '/cecchino-lab'
 const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
 const MONITORAGGIO_SEGNO_1_PATH = '/monitoraggio-segno-1'
 const PATTERN_INSIGHTS_PATH = '/pattern-insights'
+const CECCHINO_V3_PATH = '/cecchino-v3'
 
 export function Layout() {
   const location = useLocation()
@@ -26,7 +27,8 @@ export function Layout() {
     location.pathname.startsWith(`${MONITORAGGIO_MODULI_PATH}/`) ||
     location.pathname === MONITORAGGIO_SEGNO_1_PATH ||
     location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`) ||
-    location.pathname === PATTERN_INSIGHTS_PATH
+    location.pathname === PATTERN_INSIGHTS_PATH ||
+    location.pathname === CECCHINO_V3_PATH
 
   const contentClass = isFullWidthWorkspace
     ? 'w-full max-w-none px-3 py-4 sm:px-4 lg:px-5'
