@@ -18,7 +18,10 @@ ENGINE_VERSION_PHASE4 = "cecchino_v3_phase4_calendar_v1"
 ENGINE_VERSION_PHASE5 = "cecchino_v3_phase5_discipline_v1"
 ENGINE_VERSION_PHASE6 = "cecchino_v3_phase6_promotion_v1"
 ENGINE_VERSION_PHASE7 = "cecchino_v3_phase7_calibration_v1"
-PHASES: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
+ENGINE_VERSION_PHASE8 = "cecchino_v3_phase7b_calibration_total_v1"
+PHASES: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
+# Etichette per l'utente quando il numero interno non coincide con il nome.
+PHASE_LABELS: dict[int, str] = {8: "7b"}
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class PhaseFeatures:
     discipline: bool = False
     promotion: bool = False
     calibration: bool = False
+    calibration_preserve_total: bool = False
 
 
 # La Fase 5 (Disciplina) non e' stata adottata: la Fase 6 riparte dalla Fase 4.
@@ -45,9 +49,15 @@ PHASE_FEATURES: dict[int, PhaseFeatures] = {
     5: PhaseFeatures(game=True, form=True, calendar=True, discipline=True),
     6: PhaseFeatures(game=True, form=True, calendar=True, promotion=True),
     7: PhaseFeatures(game=True, form=True, calendar=True, calibration=True),
+    # Fase 7b (numero interno 8): la Fase 7 non ha superato l'esame perche' allargare
+    # la differenza di forza a livello medio fisso aumenta i gol totali nelle partite
+    # sbilanciate. Seconda e unica prova, approvata dall'utente e fissata prima dei
+    # risultati: stessa calibrazione a gol totali invariati (fattore globale gamma),
+    # stessa regola d'esame rigorosa, confronto con la Fase 4.
+    8: PhaseFeatures(game=True, form=True, calendar=True, calibration=True, calibration_preserve_total=True),
 }
 # Termine di paragone dell'esame di ogni fase.
-PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4}
+PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 8: 4}
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).

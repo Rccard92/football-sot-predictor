@@ -118,7 +118,7 @@ export type V3Run = {
     orchestrator_weights?: Record<string, V3Weights>
     base_orchestrator_weights?: Record<string, V3Weights>
     promotion_parameters?: Record<string, Record<string, number>>
-    calibration?: Record<string, { alpha: number; beta: number; gamma: number }>
+    calibration?: Record<string, { alpha: number; beta: number; gamma: number; preserve_total?: boolean }>
     game_chosen_hyper?: Record<string, Record<string, { xi: number; sigma: number }>>
   } | null
   error: { message?: string } | null
@@ -140,6 +140,7 @@ export type V3RunListItem = {
   exam_passed: boolean | null
   user_decision?: { accepted: boolean; note: string; decided_at: string } | null
   reference_model?: boolean
+  phase_label?: string
 }
 
 export async function listV3Runs(): Promise<{ items: V3RunListItem[] }> {

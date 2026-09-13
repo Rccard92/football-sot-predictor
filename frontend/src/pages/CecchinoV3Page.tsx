@@ -28,9 +28,10 @@ const PHASE_TITLES: Record<number, string> = {
   5: 'Fase 5 · Forza + Gioco + Forma + Calendario + Disciplina',
   6: 'Fase 6 · Fase 4 + neopromosse e retrocesse',
   7: 'Fase 7 · Fase 4 + calibrazione',
+  8: 'Fase 7b · Fase 4 + calibrazione a gol totali invariati',
 }
 
-const NEXT_PHASE = 7
+const NEXT_PHASE = 8
 
 const POLL_MS = 10000
 
@@ -151,7 +152,7 @@ export function CecchinoV3Page() {
                   style={active ? { borderColor: 'var(--pi-accent)', color: 'var(--pi-accent)' } : undefined}
                   onClick={() => setSelectedId(r.id)}
                 >
-                  #{r.id} · Fase {r.phase}
+                  #{r.id} · Fase {r.phase_label ?? r.phase}
                   {r.exam_passed == null ? '' : r.exam_passed ? ' · ✓' : ' · ✗'}
                   {!r.exam_passed && r.user_decision?.accepted ? ' accettata' : ''}
                   {r.user_decision?.accepted === false ? ' · non adottata' : ''}
@@ -193,7 +194,7 @@ export function CecchinoV3Page() {
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" className="pi-btn" disabled={busy} onClick={() => void start()}>
-                Avvia calcolo Fase {NEXT_PHASE}
+                Avvia calcolo Fase 7b
               </button>
               {latest?.status === 'failed' && (
                 <span className="text-xs" style={{ color: '#fca5a5' }}>

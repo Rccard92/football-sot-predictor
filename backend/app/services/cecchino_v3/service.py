@@ -57,6 +57,7 @@ from app.services.cecchino_v3.constants import (
     ENGINE_VERSION_PHASE5,
     ENGINE_VERSION_PHASE6,
     ENGINE_VERSION_PHASE7,
+    ENGINE_VERSION_PHASE8,
     EXAM_STRICT_FROM_PHASE,
     EXAM_TOLERANCE_PCT,
     FINAL_PHASE_MATCHES,
@@ -72,6 +73,7 @@ from app.services.cecchino_v3.constants import (
     ORCHESTRATOR_DEFAULT_WEIGHTS,
     PHASES,
     PHASE_BASELINE,
+    PHASE_LABELS,
     PHASE_FEATURES,
     PRIOR_GOALS_PER_STAT,
     PROMOTION_PRIOR_PRECISION,
@@ -84,7 +86,6 @@ from app.services.cecchino_v3.constants import (
 )
 from app.services.cecchino_v3.calendar_features import CalendarFeatures, compute_calendar
 from app.services.cecchino_v3.calibration import (
-    IDENTITY,
     Calibration,
     CalibrationSample,
     apply_calibration,
@@ -149,6 +150,7 @@ _ENGINE_BY_PHASE = {
     5: ENGINE_VERSION_PHASE5,
     6: ENGINE_VERSION_PHASE6,
     7: ENGINE_VERSION_PHASE7,
+    8: ENGINE_VERSION_PHASE8,
 }
 
 
@@ -223,6 +225,7 @@ def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
                 "calibration_alpha_bounds": list(CALIBRATION_ALPHA_BOUNDS),
                 "calibration_shift_bounds": list(CALIBRATION_SHIFT_BOUNDS),
                 "calibration_rule": "stagione S stimata sulle previsioni non calibrate della stagione S-1",
+                "calibration_preserve_total": feats.calibration_preserve_total,
             }
         )
     if phase >= EXAM_STRICT_FROM_PHASE:
@@ -310,6 +313,7 @@ def list_completed_runs(db: Session) -> list[dict[str, Any]]:
         {
             "id": int(r.id),
             "phase": run_phase(r),
+            "phase_label": PHASE_LABELS.get(run_phase(r), str(run_phase(r))),
             "engine_version": r.engine_version,
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             "exam_passed": ((r.summary_json or {}).get("evaluation") or {}).get("exam", {}).get("passed"),
@@ -609,6 +613,8 @@ def _season_calibrations(
     raw: dict[int, tuple[float, float]],
     forza: dict[str, dict[int, StrengthPrediction]],
     chosen_forza: dict[str, Hyper],
+    *,
+    preserve_total: bool = False,
 ) -> dict[str, Calibration]:
     """Calibrazione della stagione S stimata sulle previsioni non calibrate
     (fuori campione) della stagione S-1, partite idonee; identita' nel rodaggio."""
@@ -616,7 +622,7 @@ def _season_calibrations(
     out: dict[str, Calibration] = {}
     for idx, season in enumerate(seasons):
         if idx == 0:
-            out[season] = IDENTITY
+            out[season] = Calibration(preserve_total=preserve_total)
             continue
         previous = seasons[idx - 1]
         samples = []
@@ -626,7 +632,7 @@ def _season_calibrations(
             lam_h, lam_a = raw[m.lab_match_id]
             rho = forza[chosen_forza[previous].key][m.lab_match_id].rho
             samples.append(CalibrationSample(lam_h, lam_a, rho, m.ft_home, m.ft_away))
-        out[season] = fit_calibration(samples)
+        out[season] = fit_calibration(samples, preserve_total=preserve_total)
     return out
 
 
@@ -912,7 +918,9 @@ def _execute_run(run_id: int) -> None:
             calibrations: dict[str, Calibration] = {}
             if feats.calibration:
                 _progress(db, run_id, 85.8, "Calibrazione sulla stagione precedente")
-                calibrations = _season_calibrations(matches, raw, forza, chosen_forza)
+                calibrations = _season_calibrations(
+                    matches, raw, forza, chosen_forza, preserve_total=feats.calibration_preserve_total
+                )
 
             final: dict[int, FinalPrediction] = {}
             for m in matches:

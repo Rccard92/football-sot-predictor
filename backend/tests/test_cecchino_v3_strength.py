@@ -596,3 +596,41 @@ def test_exam_strict_rules():
     assert not passed(good, {"x": dict(zip(JUDGE_SEASONS, [0.2, -0.15, 0.1]))})
     # regola rigorosa senza parametri da controllare: non passa
     assert not passed(good, None)
+
+
+def test_calibration_preserving_total_goals():
+    from app.services.cecchino_v3.calibration import (
+        Calibration,
+        CalibrationSample,
+        apply_calibration,
+        fit_calibration,
+    )
+
+    # gamma = 0: i gol totali restano identici anche allargando molto le differenze
+    cal = Calibration(alpha=1.4, beta=-0.05, gamma=0.0, preserve_total=True)
+    h, a = apply_calibration(1.8, 0.8, cal)
+    assert abs((h + a) - 2.6) < 1e-12
+    assert h / a > 1.8 / 0.8  # differenza allargata
+    # la variante a livello medio fisso invece aumenta i gol totali
+    h1, a1 = apply_calibration(1.8, 0.8, Calibration(alpha=1.4, beta=-0.05, gamma=0.0))
+    assert h1 + a1 > 2.6
+    # identita' in entrambe le varianti
+    hi, ai = apply_calibration(1.8, 0.8, Calibration(preserve_total=True))
+    assert abs(hi - 1.8) < 1e-12 and abs(ai - 0.8) < 1e-12
+    # gamma riscala solo il totale
+    hg, ag = apply_calibration(1.8, 0.8, Calibration(gamma=0.1, preserve_total=True))
+    assert abs((hg + ag) - 2.6 * math.exp(0.1)) < 1e-12 and abs(hg / ag - 1.8 / 0.8) < 1e-9
+
+    rng = np.random.default_rng(13)
+    true = Calibration(alpha=1.25, beta=-0.04, gamma=0.03, preserve_total=True)
+    samples = []
+    for _ in range(12000):
+        lh, la = rng.uniform(0.6, 2.2), rng.uniform(0.5, 1.8)
+        th, ta = apply_calibration(lh, la, true)
+        samples.append(CalibrationSample(lh, la, 0.0, int(rng.poisson(th)), int(rng.poisson(ta))))
+    fitted = fit_calibration(samples, preserve_total=True)
+    assert fitted.preserve_total
+    assert abs(fitted.alpha - 1.25) < 0.08
+    assert abs(fitted.beta + 0.04) < 0.04
+    assert abs(fitted.gamma - 0.03) < 0.03
+    assert fit_calibration([], preserve_total=True) == Calibration(preserve_total=True)

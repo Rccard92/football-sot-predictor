@@ -11,6 +11,15 @@ coerenti tra loro:
     m' = m + gamma
     casa' = exp(m' + s'/2),  ospite' = exp(m' - s'/2)
 
+Variante a gol totali invariati (Fase 7b, preserve_total=True): la differenza
+di forza si calibra come sopra, ma i gol totali della partita restano quelli
+dell'orchestratore, riscalati solo da un fattore globale:
+
+    T = casa + ospite
+    casa' = T * exp(gamma) * sigmoide(s'),  ospite' = T * exp(gamma) * sigmoide(-s')
+
+cosi' allargare le differenze non aumenta i gol totali nelle partite sbilanciate.
+
 I tre numeri della stagione S si stimano sui risultati esatti della stagione
 S-1 (verosimiglianza Dixon-Coles), usando le previsioni NON calibrate che quella
 stagione aveva davvero: sono fuori campione. Nel rodaggio nessuna calibrazione.
@@ -33,9 +42,15 @@ class Calibration:
     alpha: float = 1.0
     beta: float = 0.0
     gamma: float = 0.0
+    preserve_total: bool = False
 
-    def as_dict(self) -> dict[str, float]:
-        return {"alpha": round(self.alpha, 6), "beta": round(self.beta, 6), "gamma": round(self.gamma, 6)}
+    def as_dict(self) -> dict[str, float | bool]:
+        return {
+            "alpha": round(self.alpha, 6),
+            "beta": round(self.beta, 6),
+            "gamma": round(self.gamma, 6),
+            "preserve_total": self.preserve_total,
+        }
 
 
 IDENTITY = Calibration()
@@ -50,20 +65,44 @@ class CalibrationSample:
     goals_away: int
 
 
+def _sigmoid(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
+
+
 def apply_calibration(lambda_home: float, lambda_away: float, cal: Calibration) -> tuple[float, float]:
-    log_h = math.log(max(lambda_home, 1e-9))
-    log_a = math.log(max(lambda_away, 1e-9))
+    lam_h = max(lambda_home, 1e-9)
+    lam_a = max(lambda_away, 1e-9)
+    log_h = math.log(lam_h)
+    log_a = math.log(lam_a)
     s = cal.alpha * (log_h - log_a) + cal.beta
+    if cal.preserve_total:
+        total = (lam_h + lam_a) * math.exp(cal.gamma)
+        share = _sigmoid(s)
+        return total * share, total * (1.0 - share)
     m = (log_h + log_a) / 2.0 + cal.gamma
     return math.exp(m + s / 2.0), math.exp(m - s / 2.0)
 
 
-def _negative_log_likelihood(params: np.ndarray, data: dict[str, np.ndarray]) -> float:
+def _calibrated_arrays(
+    params: np.ndarray, data: dict[str, np.ndarray], preserve_total: bool
+) -> tuple[np.ndarray, np.ndarray]:
     alpha, beta, gamma = (float(v) for v in params)
     s = alpha * data["s"] + beta
+    if preserve_total:
+        total = data["total"] * math.exp(gamma)
+        share = 1.0 / (1.0 + np.exp(-s))
+        return total * share, total * (1.0 - share)
     m = data["m"] + gamma
-    lam_h = np.exp(m + s / 2.0)
-    lam_a = np.exp(m - s / 2.0)
+    return np.exp(m + s / 2.0), np.exp(m - s / 2.0)
+
+
+def _negative_log_likelihood(params: np.ndarray, data: dict[str, np.ndarray], preserve_total: bool) -> float:
+    lam_h, lam_a = _calibrated_arrays(params, data, preserve_total)
+    lam_h = np.maximum(lam_h, 1e-9)
+    lam_a = np.maximum(lam_a, 1e-9)
     gh, ga, rho = data["gh"], data["ga"], data["rho"]
 
     tau = np.ones_like(lam_h)
@@ -89,10 +128,11 @@ def _negative_log_likelihood(params: np.ndarray, data: dict[str, np.ndarray]) ->
     return float(-np.mean(log_lik))
 
 
-def fit_calibration(samples: list[CalibrationSample]) -> Calibration:
+def fit_calibration(samples: list[CalibrationSample], *, preserve_total: bool = False) -> Calibration:
     """Massima verosimiglianza dei risultati esatti entro i limiti ammessi."""
+    identity = Calibration(preserve_total=preserve_total)
     if not samples:
-        return IDENTITY
+        return identity
     lam_h = np.array([max(x.lambda_home, 1e-9) for x in samples])
     lam_a = np.array([max(x.lambda_away, 1e-9) for x in samples])
     gh = np.array([x.goals_home for x in samples], dtype=float)
@@ -100,6 +140,7 @@ def fit_calibration(samples: list[CalibrationSample]) -> Calibration:
     data = {
         "s": np.log(lam_h) - np.log(lam_a),
         "m": (np.log(lam_h) + np.log(lam_a)) / 2.0,
+        "total": lam_h + lam_a,
         "gh": gh,
         "ga": ga,
         "rho": np.array([x.rho for x in samples]),
@@ -109,15 +150,15 @@ def fit_calibration(samples: list[CalibrationSample]) -> Calibration:
     result = minimize(
         _negative_log_likelihood,
         x0=np.array([1.0, 0.0, 0.0]),
-        args=(data,),
+        args=(data, preserve_total),
         method="L-BFGS-B",
         bounds=[CALIBRATION_ALPHA_BOUNDS, CALIBRATION_SHIFT_BOUNDS, CALIBRATION_SHIFT_BOUNDS],
         options={"maxiter": 500, "ftol": 1e-12, "gtol": 1e-9},
     )
     alpha, beta, gamma = (float(v) for v in result.x)
     # se l'ottimizzazione non migliora il punto di partenza si resta all'identita'
-    if not result.success and _negative_log_likelihood(result.x, data) > _negative_log_likelihood(
-        np.array([1.0, 0.0, 0.0]), data
+    if not result.success and _negative_log_likelihood(result.x, data, preserve_total) > _negative_log_likelihood(
+        np.array([1.0, 0.0, 0.0]), data, preserve_total
     ):
-        return IDENTITY
-    return Calibration(alpha=alpha, beta=beta, gamma=gamma)
+        return identity
+    return Calibration(alpha=alpha, beta=beta, gamma=gamma, preserve_total=preserve_total)
