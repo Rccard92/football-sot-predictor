@@ -97,6 +97,7 @@ class CecchinoV3MarketPrediction(Base):
     __table_args__ = (
         Index("ix_cecchino_v3_market_pred_run_market", "run_id", "market_key"),
         Index("ix_cecchino_v3_market_pred_match", "match_prediction_id"),
+        Index("ix_cecchino_v3_market_pred_run_lab_market", "run_id", "lab_match_id", "market_key"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

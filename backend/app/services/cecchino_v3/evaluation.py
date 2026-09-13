@@ -47,7 +47,7 @@ def _base_cte(with_baseline: bool) -> str:
           AND summary_json->>'season_label' < :lockbox
         ORDER BY summary_json->>'season_label', completed_at DESC
     ),
-    v2 AS (
+    v2 AS MATERIALIZED (
         SELECT s.lab_match_id, r.market_key, r.probability::double precision AS p
         FROM cecchino_run_v2_market_results r
         JOIN v2_runs ON v2_runs.id = r.run_id
@@ -57,6 +57,11 @@ def _base_cte(with_baseline: bool) -> str:
           AND r.pre_match_input_safe IS TRUE
           AND r.probability IS NOT NULL
     ),
+    {'''prev AS MATERIALIZED (
+        SELECT lab_match_id, market_key, probability::double precision AS p
+        FROM cecchino_v3_market_predictions
+        WHERE run_id = :baseline_run_id
+    ),''' if with_baseline else ''}
     base AS (
         SELECT mp.season_label,
                mp.competition_name,
@@ -68,15 +73,14 @@ def _base_cte(with_baseline: bool) -> str:
                mk.won::int AS won,
                mk.probability::double precision AS p3,
                v2.p AS p2,
-               {'bp.probability::double precision' if with_baseline else 'NULL::double precision'} AS pp,
+               {'prev.p' if with_baseline else 'NULL::double precision'} AS pp,
                {_case('mk.market_key', _FAIR_PROB_SQL)}::double precision AS pb
         FROM cecchino_v3_market_predictions mk
         JOIN cecchino_v3_match_predictions mp ON mp.id = mk.match_prediction_id
         JOIN cecchino_lab_matches m ON m.id = mk.lab_match_id
         LEFT JOIN v2 ON v2.lab_match_id = mk.lab_match_id AND v2.market_key = mk.market_key
-        {'''LEFT JOIN cecchino_v3_market_predictions bp
-               ON bp.run_id = :baseline_run_id AND bp.lab_match_id = mk.lab_match_id
-              AND bp.market_key = mk.market_key''' if with_baseline else ''}
+        {'LEFT JOIN prev ON prev.lab_match_id = mk.lab_match_id AND prev.market_key = mk.market_key'
+         if with_baseline else ''}
         WHERE mk.run_id = :run_id AND mp.eval_eligible AND mk.won IS NOT NULL
     ),
     common AS (
