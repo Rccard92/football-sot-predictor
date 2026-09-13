@@ -145,6 +145,7 @@ export type MatchListItem = {
 export type MatchDetail = {
   index_run_id: number
   source_run_id: number
+  reliability_passed: boolean
   match: {
     lab_match_id: number
     kickoff_at: string | null

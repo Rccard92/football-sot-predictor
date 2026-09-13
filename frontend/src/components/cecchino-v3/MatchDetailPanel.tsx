@@ -88,6 +88,7 @@ function ReliabilityCard({ detail }: { detail: MatchDetail }) {
       ))}
       <div className="mt-1 text-[10px]" style={{ color: TEXT_MUTED }}>
         Calcolata solo dai dati degli agenti, senza quote. Confronto con le partite delle stagioni precedenti.
+        {!detail.reliability_passed && ' Esame non superato: solo descrittiva, non usata per decidere.'}
       </div>
     </Card>
   )

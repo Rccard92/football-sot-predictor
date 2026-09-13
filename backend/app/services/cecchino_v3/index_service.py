@@ -491,6 +491,7 @@ def match_detail(db: Session, lab_match_id: int) -> dict[str, Any]:
     return {
         "index_run_id": int(run.id),
         "source_run_id": int(run.source_run_id),
+        "reliability_passed": bool((run.summary_json or {}).get("reliability_passed")),
         "match": {
             "lab_match_id": lab_match_id,
             "kickoff_at": pred.kickoff_at.isoformat() if pred.kickoff_at else None,
