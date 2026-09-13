@@ -1,5 +1,9 @@
-"""Esecuzione della Fase 1 in background (riga di stato su DB + thread),
-con lo stesso schema dei job gia' usati da Pattern Insights."""
+"""Esecuzione dei calcoli V3 in background (riga di stato su DB + thread),
+con lo stesso schema dei job gia' usati da Pattern Insights.
+
+Fase 1: solo specialista Forza.
+Fase 2: Forza + specialista Gioco (tiri in porta, tiri) + orchestratore.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -32,21 +37,33 @@ from app.models.cecchino_v3 import (
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.revision_resolve import revision_as_source_fields
 from app.services.cecchino_v3.constants import (
+    CONVERSION_PSEUDO_COUNT,
     COUNTRY_GROUPS,
     DEFAULT_HYPER,
     ENGINE_VERSION,
+    ENGINE_VERSION_PHASE2,
     FINAL_PHASE_MATCHES,
+    GAME_STATS,
     HYPER_GRID,
     JUDGE_SEASONS,
     LOCKBOX,
     MARKET_KEYS,
     MIN_MATCHES_PLAYED,
+    ORCHESTRATOR_DEFAULT_WEIGHTS,
+    PHASES,
+    PRIOR_GOALS_PER_STAT,
     WARMUP_SEASON,
     Hyper,
 )
 from app.services.cecchino_v3.data import MatchRecord, group_matches, load_matches
 from app.services.cecchino_v3.markets import market_outcomes, market_probabilities, score_matrix
-from app.services.cecchino_v3.walkforward import StrengthPrediction, run_group
+from app.services.cecchino_v3.orchestrator import Opinions, combine, default_weights, fit_weights
+from app.services.cecchino_v3.walkforward import (
+    GamePrediction,
+    StrengthPrediction,
+    run_game_group,
+    run_group,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +82,15 @@ def _d(value: float, places: int) -> Decimal:
     return Decimal(str(round(float(value), places)))
 
 
+def run_phase(run: CecchinoV3Run) -> int:
+    return int((run.config_json or {}).get("phase") or 1)
+
+
 def run_to_dict(run: CecchinoV3Run) -> dict[str, Any]:
     return {
         "id": int(run.id),
         "engine_version": run.engine_version,
+        "phase": run_phase(run),
         "status": run.status,
         "requested_at": run.requested_at.isoformat() if run.requested_at else None,
         "started_at": run.started_at.isoformat() if run.started_at else None,
@@ -82,9 +104,10 @@ def run_to_dict(run: CecchinoV3Run) -> dict[str, Any]:
     }
 
 
-def _config() -> dict[str, Any]:
-    return {
-        "engine_version": ENGINE_VERSION,
+def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "phase": phase,
+        "engine_version": ENGINE_VERSION if phase == 1 else ENGINE_VERSION_PHASE2,
         "warmup_season": WARMUP_SEASON,
         "judge_seasons": list(JUDGE_SEASONS),
         "lockbox_season": LOCKBOX,
@@ -92,12 +115,37 @@ def _config() -> dict[str, Any]:
         "final_phase_matches": FINAL_PHASE_MATCHES,
         "hyper_grid": [{"xi": h.xi, "sigma": h.sigma} for h in HYPER_GRID],
         "default_hyper": {"xi": DEFAULT_HYPER.xi, "sigma": DEFAULT_HYPER.sigma},
-        "hyper_selection": "per stagione S: griglia con log-loss 1X2 minima sulla stagione S-1 (partite idonee)",
+        "hyper_selection": "per stagione S: griglia con il miglior risultato sulla stagione S-1 (partite idonee)",
         "country_groups": {k: list(v) for k, v in COUNTRY_GROUPS.items()},
     }
+    if phase == 2:
+        config.update(
+            {
+                "baseline_run_id": baseline_run_id,
+                "game_stats": list(GAME_STATS),
+                "prior_goals_per_stat": dict(PRIOR_GOALS_PER_STAT),
+                "conversion_pseudo_count": dict(CONVERSION_PSEUDO_COUNT),
+                "orchestrator_default_weights": dict(ORCHESTRATOR_DEFAULT_WEIGHTS),
+                "orchestrator_fit": "pesi della stagione S stimati sulle previsioni della stagione S-1",
+            }
+        )
+    return config
 
 
-def start_run(db: Session) -> dict[str, Any]:
+def _latest_completed_phase(db: Session, phase: int) -> CecchinoV3Run | None:
+    for run in db.scalars(
+        select(CecchinoV3Run)
+        .where(CecchinoV3Run.status == V3_STATUS_COMPLETED)
+        .order_by(CecchinoV3Run.completed_at.desc())
+    ):
+        if run_phase(run) == phase:
+            return run
+    return None
+
+
+def start_run(db: Session, *, phase: int = 2) -> dict[str, Any]:
+    if phase not in PHASES:
+        raise CecchinoLabImportError("invalid_phase", f"Fase non valida: {phase}", status_code=400)
     active = db.scalars(
         select(CecchinoV3Run).where(CecchinoV3Run.status.in_(V3_ACTIVE_STATUSES))
     ).first()
@@ -107,11 +155,22 @@ def start_run(db: Session) -> dict[str, Any]:
             f"Esiste gia' un calcolo V3 in corso (id={active.id})",
             status_code=409,
         )
+    baseline_run_id: int | None = None
+    if phase == 2:
+        baseline = _latest_completed_phase(db, 1)
+        if baseline is None:
+            raise CecchinoLabImportError(
+                "baseline_missing",
+                "Serve un calcolo della Fase 1 completato: e' il termine di paragone dell'esame.",
+                status_code=400,
+            )
+        baseline_run_id = int(baseline.id)
+    config = _config(phase, baseline_run_id)
     run = CecchinoV3Run(
-        engine_version=ENGINE_VERSION,
+        engine_version=config["engine_version"],
         status=V3_STATUS_PENDING,
         requested_at=_utcnow(),
-        config_json=_config(),
+        config_json=config,
         source_git_commit=revision_as_source_fields().get("source_git_commit"),
     )
     db.add(run)
@@ -138,6 +197,23 @@ def latest_completed_run(db: Session) -> CecchinoV3Run | None:
         .where(CecchinoV3Run.status == V3_STATUS_COMPLETED)
         .order_by(CecchinoV3Run.completed_at.desc())
     ).first()
+
+
+def list_completed_runs(db: Session) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": int(r.id),
+            "phase": run_phase(r),
+            "engine_version": r.engine_version,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "exam_passed": ((r.summary_json or {}).get("evaluation") or {}).get("exam", {}).get("passed"),
+        }
+        for r in db.scalars(
+            select(CecchinoV3Run)
+            .where(CecchinoV3Run.status == V3_STATUS_COMPLETED)
+            .order_by(CecchinoV3Run.id.desc())
+        )
+    ]
 
 
 def cancel_run(db: Session, run_id: int) -> dict[str, Any]:
@@ -176,29 +252,38 @@ def _one_x_two_log_loss(match: MatchRecord, pred: StrengthPrediction) -> float:
     return -math.log(max(p, 1e-9))
 
 
-def select_hypers(
+def _goals_log_loss(match: MatchRecord, pred: GamePrediction) -> float:
+    """Poisson (senza costante) dei gol reali con i gol attesi dello specialista."""
+    loss = 0.0
+    for lam, goals in ((pred.lambda_home, match.ft_home), (pred.lambda_away, match.ft_away)):
+        lam = max(lam, 1e-6)
+        loss += lam - goals * math.log(lam)
+    return loss
+
+
+def _select_by_previous_season(
     matches: list[MatchRecord],
-    predictions: dict[str, dict[int, StrengthPrediction]],
+    predictions: dict[str, dict[int, Any]],
+    loss: Callable[[MatchRecord, Any], float],
+    metric_name: str,
 ) -> tuple[dict[str, Hyper], dict[str, dict[str, Any]]]:
-    """Per ogni stagione, la griglia che ha previsto meglio la stagione
-    precedente. Restituisce la scelta e la tabella dei log-loss."""
+    """Per ogni stagione, la griglia con la perdita media piu' bassa sulla
+    stagione precedente; nel rodaggio il valore di partenza."""
     seasons = sorted({m.season_label for m in matches})
     table: dict[str, dict[str, Any]] = {}
     for hyper in HYPER_GRID:
         preds = predictions[hyper.key]
-        per_season: dict[str, dict[str, float]] = {}
+        per_season: dict[str, list[float]] = {}
         for m in matches:
             if not m.eval_eligible or m.lab_match_id not in preds:
                 continue
-            acc = per_season.setdefault(m.season_label, {"sum": 0.0, "n": 0})
-            acc["sum"] += _one_x_two_log_loss(m, preds[m.lab_match_id])
-            acc["n"] += 1
+            acc = per_season.setdefault(m.season_label, [0.0, 0])
+            acc[0] += loss(m, preds[m.lab_match_id])
+            acc[1] += 1
         table[hyper.key] = {
             "xi": hyper.xi,
             "sigma": hyper.sigma,
-            "log_loss_1x2": {
-                s: round(v["sum"] / v["n"], 5) for s, v in per_season.items() if v["n"]
-            },
+            metric_name: {s: round(v[0] / v[1], 5) for s, v in per_season.items() if v[1]},
         }
 
     chosen: dict[str, Hyper] = {}
@@ -207,12 +292,80 @@ def select_hypers(
             chosen[season] = DEFAULT_HYPER
             continue
         previous = seasons[idx - 1]
-        best = min(
-            HYPER_GRID,
-            key=lambda h: table[h.key]["log_loss_1x2"].get(previous, float("inf")),
+        chosen[season] = min(
+            HYPER_GRID, key=lambda h: table[h.key][metric_name].get(previous, float("inf"))
         )
-        chosen[season] = best
     return chosen, table
+
+
+def select_hypers(
+    matches: list[MatchRecord], predictions: dict[str, dict[int, StrengthPrediction]]
+) -> tuple[dict[str, Hyper], dict[str, dict[str, Any]]]:
+    return _select_by_previous_season(matches, predictions, _one_x_two_log_loss, "log_loss_1x2")
+
+
+# --- previsione finale per partita ------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FinalPrediction:
+    lambda_home: float
+    lambda_away: float
+    rho: float
+    ht_share: float
+    home_evidence: float
+    away_evidence: float
+    hyper: Hyper
+    specialists: dict[str, Any] | None
+
+
+def _opinions(
+    m: MatchRecord,
+    season: str,
+    forza: dict[str, dict[int, StrengthPrediction]],
+    game: dict[str, dict[str, dict[int, GamePrediction]]],
+    chosen_forza: dict[str, Hyper],
+    chosen_game: dict[str, dict[str, Hyper]],
+) -> Opinions | None:
+    f = forza[chosen_forza[season].key].get(m.lab_match_id)
+    if f is None:
+        return None
+    home = {"forza": f.lambda_home}
+    away = {"forza": f.lambda_away}
+    for stat in GAME_STATS:
+        gp = game[stat][chosen_game[stat][season].key].get(m.lab_match_id)
+        if gp is None:
+            return None
+        home[stat] = gp.lambda_home
+        away[stat] = gp.lambda_away
+    return Opinions(home=home, away=away)
+
+
+def _orchestrator_weights(
+    matches: list[MatchRecord],
+    forza: dict[str, dict[int, StrengthPrediction]],
+    game: dict[str, dict[str, dict[int, GamePrediction]]],
+    chosen_forza: dict[str, Hyper],
+    chosen_game: dict[str, dict[str, Hyper]],
+) -> dict[str, dict[str, float]]:
+    """Pesi per la stagione S dalle previsioni della stagione S-1, fatte con gli
+    stessi specialisti (e parametri) che si useranno nella stagione S."""
+    seasons = sorted({m.season_label for m in matches})
+    weights: dict[str, dict[str, float]] = {}
+    for idx, season in enumerate(seasons):
+        if idx == 0:
+            weights[season] = default_weights()
+            continue
+        previous = seasons[idx - 1]
+        samples = []
+        for m in matches:
+            if m.season_label != previous or not m.eval_eligible:
+                continue
+            ops = _opinions(m, season, forza, game, chosen_forza, chosen_game)
+            if ops is not None:
+                samples.append((ops, m.ft_home, m.ft_away))
+        weights[season] = fit_weights(samples)
+    return weights
 
 
 # --- esecuzione ---------------------------------------------------------------------
@@ -247,8 +400,7 @@ def _persist(
     db: Session,
     run_id: int,
     matches: list[MatchRecord],
-    predictions: dict[str, dict[int, StrengthPrediction]],
-    chosen: dict[str, Hyper],
+    final: dict[int, FinalPrediction],
 ) -> dict[str, int]:
     written = {"matches": 0, "markets": 0}
     for start in range(0, len(matches), _INSERT_CHUNK):
@@ -256,8 +408,7 @@ def _persist(
         match_rows: list[dict[str, Any]] = []
         market_payload: dict[int, list[tuple[str, float, bool | None]]] = {}
         for m in chunk:
-            hyper = chosen[m.season_label]
-            pred = predictions[hyper.key].get(m.lab_match_id)
+            pred = final.get(m.lab_match_id)
             if pred is None:
                 continue
             probs = market_probabilities(pred.lambda_home, pred.lambda_away, pred.rho, pred.ht_share)
@@ -285,10 +436,11 @@ def _persist(
                     "ht_share": _d(pred.ht_share, 4),
                     "home_evidence": _d(pred.home_evidence, 3),
                     "away_evidence": _d(pred.away_evidence, 3),
-                    "hyper_xi": _d(hyper.xi, 5),
-                    "hyper_sigma": _d(hyper.sigma, 3),
+                    "hyper_xi": _d(pred.hyper.xi, 5),
+                    "hyper_sigma": _d(pred.hyper.sigma, 3),
                     "ft_home_goals": m.ft_home,
                     "ft_away_goals": m.ft_away,
+                    "specialists_json": pred.specialists,
                 }
             )
         if not match_rows:
@@ -318,6 +470,38 @@ def _persist(
     return written
 
 
+class _Cancelled(Exception):
+    pass
+
+
+def _grid(
+    db: Session,
+    run_id: int,
+    groups: dict[str, list[MatchRecord]],
+    label: str,
+    compute: Callable[[list[MatchRecord], Hyper], dict[int, Any]],
+    *,
+    progress_from: float,
+    progress_span: float,
+    should_stop: Callable[[], bool],
+    timings: dict[str, float],
+) -> dict[str, dict[int, Any]]:
+    total = len(HYPER_GRID) * sum(len(v) for v in groups.values())
+    done = 0
+    out: dict[str, dict[int, Any]] = {}
+    for hyper in HYPER_GRID:
+        out[hyper.key] = {}
+        for group, group_list in groups.items():
+            _progress(db, run_id, progress_from + progress_span * done / max(total, 1), f"{label} · {group} · {hyper.key}")
+            g0 = time.monotonic()
+            out[hyper.key].update(compute(group_list, hyper))
+            timings[f"{label}|{group}|{hyper.key}"] = round(time.monotonic() - g0, 2)
+            done += len(group_list)
+            if should_stop():
+                raise _Cancelled()
+    return out
+
+
 def _execute_run(run_id: int) -> None:
     db = SessionLocal()
     t0 = time.monotonic()
@@ -325,6 +509,8 @@ def _execute_run(run_id: int) -> None:
         run = db.get(CecchinoV3Run, run_id)
         if not run:
             return
+        phase = run_phase(run)
+        baseline_run_id = (run.config_json or {}).get("baseline_run_id")
         run.status = V3_STATUS_RUNNING
         run.started_at = _utcnow()
         db.commit()
@@ -334,45 +520,96 @@ def _execute_run(run_id: int) -> None:
             matches = load_matches(db)
             groups = group_matches(matches)
             should_stop = _cancel_checker(run_id)
-
-            total_work = len(HYPER_GRID) * len(matches)
-            done = 0
-            predictions: dict[str, dict[int, StrengthPrediction]] = {}
             timings: dict[str, float] = {}
-            for hyper in HYPER_GRID:
-                predictions[hyper.key] = {}
-                for group, group_list in groups.items():
-                    _progress(
-                        db, run_id, 2.0 + 80.0 * done / max(total_work, 1), f"Forza · {group} · {hyper.key}"
+            span = 80.0 if phase == 1 else 80.0 / (1 + len(GAME_STATS))
+
+            forza = _grid(
+                db,
+                run_id,
+                groups,
+                "Forza",
+                lambda ms, h: run_group(ms, h, should_stop=should_stop),
+                progress_from=2.0,
+                progress_span=span,
+                should_stop=should_stop,
+                timings=timings,
+            )
+            game: dict[str, dict[str, dict[int, GamePrediction]]] = {}
+            if phase == 2:
+                for k, stat in enumerate(GAME_STATS, start=1):
+                    game[stat] = _grid(
+                        db,
+                        run_id,
+                        groups,
+                        f"Gioco {stat}",
+                        lambda ms, h, s=stat: run_game_group(ms, h, s, should_stop=should_stop),
+                        progress_from=2.0 + span * k,
+                        progress_span=span,
+                        should_stop=should_stop,
+                        timings=timings,
                     )
-                    g0 = time.monotonic()
-                    predictions[hyper.key].update(run_group(group_list, hyper, should_stop=should_stop))
-                    timings[f"{group}|{hyper.key}"] = round(time.monotonic() - g0, 2)
-                    done += len(group_list)
-                    if should_stop():
-                        break
-                if should_stop():
-                    break
 
-            run = db.get(CecchinoV3Run, run_id)
-            if run is None:
-                return
-            if should_stop():
-                run.status = V3_STATUS_CANCELLED
-                run.completed_at = _utcnow()
-                db.commit()
-                return
+            _progress(db, run_id, 83.0, "Scelta parametri sulla stagione precedente")
+            chosen_forza, forza_table = select_hypers(matches, forza)
+            chosen_game: dict[str, dict[str, Hyper]] = {}
+            game_tables: dict[str, Any] = {}
+            weights: dict[str, dict[str, float]] = {}
+            if phase == 2:
+                for stat in GAME_STATS:
+                    chosen_game[stat], game_tables[stat] = _select_by_previous_season(
+                        matches, game[stat], _goals_log_loss, "goals_log_loss"
+                    )
+                _progress(db, run_id, 84.0, "Pesi dell'orchestratore")
+                weights = _orchestrator_weights(matches, forza, game, chosen_forza, chosen_game)
 
-            _progress(db, run_id, 83.0, "Scelta iperparametri sulla stagione precedente")
-            chosen, hyper_table = select_hypers(matches, predictions)
+            final: dict[int, FinalPrediction] = {}
+            for m in matches:
+                season = m.season_label
+                f = forza[chosen_forza[season].key].get(m.lab_match_id)
+                if f is None:
+                    continue
+                lam_h, lam_a = f.lambda_home, f.lambda_away
+                specialists: dict[str, Any] | None = None
+                if phase == 2:
+                    ops = _opinions(m, season, forza, game, chosen_forza, chosen_game)
+                    if ops is None:
+                        continue
+                    lam_h, lam_a = combine(ops, weights[season])
+                    specialists = {
+                        "forza": {"home": round(f.lambda_home, 5), "away": round(f.lambda_away, 5)},
+                        **{
+                            stat: {
+                                "home": round(ops.home[stat], 5),
+                                "away": round(ops.away[stat], 5),
+                                "volume_home": round(
+                                    game[stat][chosen_game[stat][season].key][m.lab_match_id].stat_home, 3
+                                ),
+                                "volume_away": round(
+                                    game[stat][chosen_game[stat][season].key][m.lab_match_id].stat_away, 3
+                                ),
+                            }
+                            for stat in GAME_STATS
+                        },
+                        "weights": weights[season],
+                    }
+                final[m.lab_match_id] = FinalPrediction(
+                    lambda_home=lam_h,
+                    lambda_away=lam_a,
+                    rho=f.rho,
+                    ht_share=f.ht_share,
+                    home_evidence=f.home_evidence,
+                    away_evidence=f.away_evidence,
+                    hyper=chosen_forza[season],
+                    specialists=specialists,
+                )
 
             _progress(db, run_id, 86.0, "Salvataggio previsioni")
-            written = _persist(db, run_id, matches, predictions, chosen)
+            written = _persist(db, run_id, matches, final)
 
-            _progress(db, run_id, 95.0, "Valutazione contro V2 e bookmaker")
+            _progress(db, run_id, 95.0, "Valutazione")
             from app.services.cecchino_v3.evaluation import build_evaluation
 
-            evaluation = build_evaluation(db, run_id)
+            evaluation = build_evaluation(db, run_id, baseline_run_id=baseline_run_id)
 
             seasons: dict[str, dict[str, int]] = {}
             for m in matches:
@@ -383,21 +620,37 @@ def _execute_run(run_id: int) -> None:
                 s["eligible"] += int(m.eval_eligible)
                 s[m.phase] += 1
 
-            run = db.get(CecchinoV3Run, run_id)
-            run.summary_json = {
+            summary: dict[str, Any] = {
                 "seasons": seasons,
-                "chosen_hyper": {s: {"xi": h.xi, "sigma": h.sigma} for s, h in chosen.items()},
-                "hyper_table": hyper_table,
+                "chosen_hyper": {s: {"xi": h.xi, "sigma": h.sigma} for s, h in chosen_forza.items()},
+                "hyper_table": forza_table,
                 "written": written,
                 "elapsed_seconds": round(time.monotonic() - t0, 1),
                 "group_timings_seconds": timings,
                 "evaluation": evaluation,
             }
+            if phase == 2:
+                summary["game_chosen_hyper"] = {
+                    stat: {s: {"xi": h.xi, "sigma": h.sigma} for s, h in chosen.items()}
+                    for stat, chosen in chosen_game.items()
+                }
+                summary["game_hyper_table"] = game_tables
+                summary["orchestrator_weights"] = weights
+
+            run = db.get(CecchinoV3Run, run_id)
+            run.summary_json = summary
             run.progress_pct = Decimal("100.0")
             run.current_step = None
             run.status = V3_STATUS_COMPLETED
             run.completed_at = _utcnow()
             db.commit()
+        except _Cancelled:
+            db.rollback()
+            run = db.get(CecchinoV3Run, run_id)
+            if run:
+                run.status = V3_STATUS_CANCELLED
+                run.completed_at = _utcnow()
+                db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             run = db.get(CecchinoV3Run, run_id)

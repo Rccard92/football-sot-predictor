@@ -1,8 +1,10 @@
-"""Esame della Fase 1: V3 contro V2 e contro la quota di chiusura.
+"""Esame dei calcoli V3 contro V2, contro la fase precedente e contro la
+quota di chiusura.
 
 Confronto sempre sulle STESSE partite (idonee per la V3, presenti nella V2,
-con quote di chiusura). Errore = Brier (media di (esito - probabilita')^2 per
-esito di mercato, come nel blocco "Cecchino contro il mercato") e log-loss.
+con quote di chiusura e, dalla Fase 2, previste anche dalla fase precedente).
+Errore = Brier (media di (esito - probabilita')^2 per esito di mercato, come
+nel blocco "Cecchino contro il mercato") e log-loss.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ def _case(column: str, mapping: dict[str, str]) -> str:
     return f"(CASE {column} {whens} END)"
 
 
-def _base_cte() -> str:
+def _base_cte(with_baseline: bool) -> str:
     families = {k: f"'{v}'" for k, v in MARKET_FAMILY.items()}
     return f"""
     WITH v2_runs AS (
@@ -66,15 +68,20 @@ def _base_cte() -> str:
                mk.won::int AS won,
                mk.probability::double precision AS p3,
                v2.p AS p2,
+               {'bp.probability::double precision' if with_baseline else 'NULL::double precision'} AS pp,
                {_case('mk.market_key', _FAIR_PROB_SQL)}::double precision AS pb
         FROM cecchino_v3_market_predictions mk
         JOIN cecchino_v3_match_predictions mp ON mp.id = mk.match_prediction_id
         JOIN cecchino_lab_matches m ON m.id = mk.lab_match_id
         LEFT JOIN v2 ON v2.lab_match_id = mk.lab_match_id AND v2.market_key = mk.market_key
+        {'''LEFT JOIN cecchino_v3_market_predictions bp
+               ON bp.run_id = :baseline_run_id AND bp.lab_match_id = mk.lab_match_id
+              AND bp.market_key = mk.market_key''' if with_baseline else ''}
         WHERE mk.run_id = :run_id AND mp.eval_eligible AND mk.won IS NOT NULL
     ),
     common AS (
-        SELECT * FROM base WHERE p2 IS NOT NULL AND pb IS NOT NULL
+        SELECT * FROM base
+        WHERE p2 IS NOT NULL AND pb IS NOT NULL {'AND pp IS NOT NULL' if with_baseline else ''}
     )
     """
 
@@ -88,9 +95,11 @@ _METRICS_COMMON = f"""
     count(*) AS n,
     avg(power(won - p3, 2)) AS brier_v3,
     avg(power(won - p2, 2)) AS brier_v2,
+    avg(power(won - pp, 2)) AS brier_prev,
     avg(power(won - pb, 2)) AS brier_book,
     {_ll('p3')} AS log_loss_v3,
     {_ll('p2')} AS log_loss_v2,
+    {_ll('pp')} AS log_loss_prev,
     {_ll('pb')} AS log_loss_book
 """
 
@@ -99,19 +108,35 @@ def _f(v: Any, nd: int = 5) -> float | None:
     return round(float(v), nd) if v is not None else None
 
 
-def _rows(db: Session, sql: str, run_id: int) -> list[dict[str, Any]]:
+def _rows(db: Session, sql: str, run_id: int, baseline_run_id: int | None) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"run_id": run_id, "lockbox": LOCKBOX}
+    if baseline_run_id is not None:
+        params["baseline_run_id"] = baseline_run_id
     return [
         dict(r._mapping)
-        for r in db.execute(text(_base_cte() + sql), {"run_id": run_id, "lockbox": LOCKBOX})
+        for r in db.execute(text(_base_cte(baseline_run_id is not None) + sql), params)
     ]
 
 
 def _metric_row(r: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     out = {k: r[k] for k in keys}
     out["n"] = int(r["n"])
-    for k in ("brier_v3", "brier_v2", "brier_book", "log_loss_v3", "log_loss_v2", "log_loss_book"):
+    for k in (
+        "brier_v3",
+        "brier_v2",
+        "brier_prev",
+        "brier_book",
+        "log_loss_v3",
+        "log_loss_v2",
+        "log_loss_prev",
+        "log_loss_book",
+    ):
         if k in r:
             out[k] = _f(r[k])
+    if out.get("brier_v3") is not None and out.get("brier_prev"):
+        out["v3_vs_prev_pct"] = round(
+            (out["brier_v3"] - out["brier_prev"]) / out["brier_prev"] * 100.0, 2
+        )
     if out.get("brier_v3") is not None and out.get("brier_v2"):
         out["v3_vs_v2_pct"] = round((out["brier_v3"] - out["brier_v2"]) / out["brier_v2"] * 100.0, 2)
     if out.get("brier_v3") is not None and out.get("brier_book"):
@@ -121,55 +146,38 @@ def _metric_row(r: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     return out
 
 
-def build_evaluation(db: Session, run_id: int) -> dict[str, Any]:
+def build_evaluation(db: Session, run_id: int, *, baseline_run_id: int | None = None) -> dict[str, Any]:
+    def rows(sql: str) -> list[dict[str, Any]]:
+        return _rows(db, sql, run_id, baseline_run_id)
+
     by_season = [
         _metric_row(r, ("season_label", "family"))
-        for r in _rows(
-            db,
-            f"SELECT season_label, family, {_METRICS_COMMON} FROM common GROUP BY 1, 2 ORDER BY 1, 2",
-            run_id,
-        )
+        for r in rows(f"SELECT season_label, family, {_METRICS_COMMON} FROM common GROUP BY 1, 2 ORDER BY 1, 2")
     ]
     by_tier = [
         _metric_row(r, ("season_label", "family", "tier"))
-        for r in _rows(
-            db,
-            f"SELECT season_label, family, tier, {_METRICS_COMMON} FROM common GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
-            run_id,
-        )
+        for r in rows(f"SELECT season_label, family, tier, {_METRICS_COMMON} FROM common GROUP BY 1, 2, 3 ORDER BY 1, 2, 3")
     ]
     by_phase = [
         _metric_row(r, ("season_label", "family", "phase"))
-        for r in _rows(
-            db,
-            f"SELECT season_label, family, phase, {_METRICS_COMMON} FROM common GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
-            run_id,
-        )
+        for r in rows(f"SELECT season_label, family, phase, {_METRICS_COMMON} FROM common GROUP BY 1, 2, 3 ORDER BY 1, 2, 3")
     ]
     judge = _quoted(list(JUDGE_SEASONS))
     by_competition = [
         _metric_row(r, ("competition_name", "tier"))
-        for r in _rows(
-            db,
-            f"""SELECT competition_name, tier, {_METRICS_COMMON} FROM common
+        for r in rows(f"""SELECT competition_name, tier, {_METRICS_COMMON} FROM common
                 WHERE family = 'FT_1X2' AND season_label IN ({judge})
-                GROUP BY 1, 2 ORDER BY 1""",
-            run_id,
-        )
+                GROUP BY 1, 2 ORDER BY 1""")
     ]
     # tutte le partite idonee della V3 (anche quelle che la V2 non copre)
     v3_only = [
         _metric_row(r, ("season_label", "family"))
-        for r in _rows(
-            db,
-            f"""SELECT season_label, family, count(*) AS n,
+        for r in rows(f"""SELECT season_label, family, count(*) AS n,
                        avg(power(won - p3, 2)) AS brier_v3,
                        avg(power(won - pb, 2)) AS brier_book,
                        {_ll('p3')} AS log_loss_v3,
                        {_ll('pb')} AS log_loss_book
-                FROM base WHERE pb IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2""",
-            run_id,
-        )
+                FROM base WHERE pb IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2""")
     ]
     coverage = [
         {
@@ -177,28 +185,20 @@ def build_evaluation(db: Session, run_id: int) -> dict[str, Any]:
             "v3_eligible_matches": int(r["v3"]),
             "common_matches": int(r["common"]),
         }
-        for r in _rows(
-            db,
-            """SELECT season_label,
+        for r in rows("""SELECT season_label,
                       count(*) FILTER (WHERE market_key = 'HOME') AS v3,
                       count(*) FILTER (WHERE market_key = 'HOME' AND p2 IS NOT NULL AND pb IS NOT NULL) AS common
-               FROM base GROUP BY season_label ORDER BY 1""",
-            run_id,
-        )
+               FROM base GROUP BY season_label ORDER BY 1""")
     ]
 
     calibration: list[dict[str, Any]] = []
     calibration_error: dict[str, dict[str, float | None]] = {}
     for family in EXAM_CALIBRATION_FAMILIES:
-        bins = _rows(
-            db,
-            f"""SELECT least(floor(p3 * {CALIBRATION_BINS})::int, {CALIBRATION_BINS - 1}) AS bin,
+        bins = rows(f"""SELECT least(floor(p3 * {CALIBRATION_BINS})::int, {CALIBRATION_BINS - 1}) AS bin,
                        count(*) AS n, avg(p3) AS avg_p3, avg(won) AS won_rate,
                        avg(p2) AS avg_p2, avg(pb) AS avg_pb
                 FROM common WHERE family = '{family}' AND season_label IN ({judge})
-                GROUP BY 1 ORDER BY 1""",
-            run_id,
-        )
+                GROUP BY 1 ORDER BY 1""")
         total = sum(int(b["n"]) for b in bins)
         ece = (
             sum(int(b["n"]) * abs(float(b["avg_p3"]) - float(b["won_rate"])) for b in bins) / total * 100.0
@@ -219,11 +219,16 @@ def build_evaluation(db: Session, run_id: int) -> dict[str, Any]:
                 }
             )
 
-    exam = _exam(by_season, calibration_error)
+    reference = "prev" if baseline_run_id is not None else "v2"
+    exam = _exam(by_season, calibration_error, reference=reference)
     return {
         "warmup_season": WARMUP_SEASON,
         "judge_seasons": list(JUDGE_SEASONS),
-        "comparison_set": "partite idonee V3 (>=5 partite giocate) presenti anche nella V2 e con quota di chiusura",
+        "baseline_run_id": baseline_run_id,
+        "comparison_set": (
+            "partite idonee V3 (>=5 partite giocate) presenti anche nella V2, con quota di chiusura"
+            + (" e previste dalla fase precedente" if baseline_run_id is not None else "")
+        ),
         "exam": exam,
         "by_season": by_season,
         "by_tier": by_tier,
@@ -236,9 +241,16 @@ def build_evaluation(db: Session, run_id: int) -> dict[str, Any]:
     }
 
 
+_REFERENCE_LABELS = {"v2": "della V2", "prev": "della fase precedente"}
+
+
 def _exam(
-    by_season: list[dict[str, Any]], calibration_error: dict[str, dict[str, float | None]]
+    by_season: list[dict[str, Any]],
+    calibration_error: dict[str, dict[str, float | None]],
+    *,
+    reference: str,
 ) -> dict[str, Any]:
+    ref_key = "brier_v2" if reference == "v2" else "brier_prev"
     families: list[dict[str, Any]] = []
     for family in EXAM_FAMILIES:
         seasons = []
@@ -249,8 +261,8 @@ def _exam(
             better = (
                 row is not None
                 and row.get("brier_v3") is not None
-                and row.get("brier_v2") is not None
-                and row["brier_v3"] < row["brier_v2"]
+                and row.get(ref_key) is not None
+                and row["brier_v3"] < row[ref_key]
             )
             seasons.append(
                 {
@@ -258,6 +270,7 @@ def _exam(
                     "passed": better,
                     "brier_v3": row.get("brier_v3") if row else None,
                     "brier_v2": row.get("brier_v2") if row else None,
+                    "brier_reference": row.get(ref_key) if row else None,
                     "brier_book": row.get("brier_book") if row else None,
                 }
             )
@@ -276,10 +289,12 @@ def _exam(
     ]
     return {
         "passed": all(f["passed"] for f in families) and all(c["passed"] for c in calibration),
+        "reference": reference,
         "accuracy_vs_v2": families,
         "calibration": calibration,
         "rules": [
-            "In ogni famiglia di mercato, errore V3 piu' basso della V2 in tutte le stagioni di giudizio",
+            f"In ogni famiglia di mercato, errore V3 piu' basso {_REFERENCE_LABELS[reference]} "
+            "in tutte le stagioni di giudizio",
             f"Errore di calibrazione V3 <= {EXAM_MAX_CALIBRATION_ERROR_PCT} punti su 1X2 finale e Over/Under",
         ],
     }

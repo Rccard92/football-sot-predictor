@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from app.services.cecchino_data_lab.run_v2_scope import LOCKBOX_SEASON
 
 ENGINE_VERSION = "cecchino_v3_phase1_strength_v1"
+ENGINE_VERSION_PHASE2 = "cecchino_v3_phase2_game_v1"
+PHASES: tuple[int, ...] = (1, 2)
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).
@@ -138,3 +140,18 @@ EXAM_FAMILIES: tuple[str, ...] = ("FT_1X2", "DOUBLE_CHANCE", "FT_OVER_UNDER", "H
 EXAM_CALIBRATION_FAMILIES: tuple[str, ...] = ("FT_1X2", "FT_OVER_UNDER")
 EXAM_MAX_CALIBRATION_ERROR_PCT = 2.0
 CALIBRATION_BINS = 10
+
+# --- Fase 2: specialista Gioco (dichiarato prima dei risultati) --------------
+# Statistiche di gioco usate e tasso di conversione a priori in gol (medie
+# tipiche del calcio europeo; i dati le sovrascrivono per ogni divisione).
+GAME_STATS: tuple[str, ...] = ("sot", "shots")
+PRIOR_GOALS_PER_STAT: dict[str, float] = {"sot": 0.32, "shots": 0.11}
+CONVERSION_PSEUDO_COUNT: dict[str, float] = {"sot": 60.0, "shots": 180.0}
+# Orchestratore: log(gol attesi) = a + b_forza*log(forza) + b_sot*log(sot) + b_tiri*log(tiri)
+# pesi stimati sulla stagione precedente; nel rodaggio vale solo la Forza.
+ORCHESTRATOR_INPUTS: tuple[str, ...] = ("forza", "sot", "shots")
+ORCHESTRATOR_DEFAULT_WEIGHTS: dict[str, float] = {"intercept": 0.0, "forza": 1.0, "sot": 0.0, "shots": 0.0}
+ORCHESTRATOR_PRIOR_PRECISION = 1.0
+# Esame Fase 2: con lo specialista Gioco l'errore deve scendere rispetto alla
+# sola Forza (calcolo Fase 1) in ogni famiglia e in tutte le stagioni di
+# giudizio; calibrazione entro lo stesso limite della Fase 1.

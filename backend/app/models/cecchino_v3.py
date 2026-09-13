@@ -85,6 +85,8 @@ class CecchinoV3MatchPrediction(Base, TimestampMixin):
     away_evidence: Mapped[Decimal] = mapped_column(Numeric(9, 3), nullable=False)
     hyper_xi: Mapped[Decimal] = mapped_column(Numeric(8, 5), nullable=False)
     hyper_sigma: Mapped[Decimal] = mapped_column(Numeric(6, 3), nullable=False)
+    # opinioni dei singoli specialisti e pesi dell'orchestratore (dalla Fase 2)
+    specialists_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # esito reale: scritto dopo la previsione, usato solo per la valutazione
     ft_home_goals: Mapped[int] = mapped_column(Integer, nullable=False)
     ft_away_goals: Mapped[int] = mapped_column(Integer, nullable=False)

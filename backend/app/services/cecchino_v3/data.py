@@ -43,6 +43,10 @@ class MatchRecord:
     ft_away: int
     ht_home: int | None
     ht_away: int | None
+    home_shots: int | None = None
+    away_shots: int | None = None
+    home_sot: int | None = None  # tiri in porta
+    away_sot: int | None = None
     # contesto di stagione (stesso campionato)
     home_played: int = 0
     away_played: int = 0
@@ -68,6 +72,10 @@ def load_matches(db: Session) -> list[MatchRecord]:
             CecchinoLabMatch.ft_away_goals,
             CecchinoLabMatch.ht_home_goals,
             CecchinoLabMatch.ht_away_goals,
+            CecchinoLabMatch.home_shots,
+            CecchinoLabMatch.away_shots,
+            CecchinoLabMatch.home_shots_on_target,
+            CecchinoLabMatch.away_shots_on_target,
         )
         .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabMatch.dataset_id)
         .where(CecchinoLabDataset.season_label < LOCKBOX)
@@ -95,6 +103,10 @@ def load_matches(db: Session) -> list[MatchRecord]:
                 ft_away=int(r.ft_away_goals),
                 ht_home=int(r.ht_home_goals) if r.ht_home_goals is not None else None,
                 ht_away=int(r.ht_away_goals) if r.ht_away_goals is not None else None,
+                home_shots=int(r.home_shots) if r.home_shots is not None else None,
+                away_shots=int(r.away_shots) if r.away_shots is not None else None,
+                home_sot=int(r.home_shots_on_target) if r.home_shots_on_target is not None else None,
+                away_sot=int(r.away_shots_on_target) if r.away_shots_on_target is not None else None,
             )
         )
     matches.sort(key=_chronological_key)

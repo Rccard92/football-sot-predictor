@@ -88,9 +88,9 @@ class ParamLayout:
     def size(self) -> int:
         return 4 * self.n_divisions + 2 * self.n_teams
 
-    def prior_mean(self) -> np.ndarray:
+    def prior_mean(self, log_level: float = PRIOR_LOG_GOALS) -> np.ndarray:
         m = np.zeros(self.size)
-        m[self.mu] = PRIOR_LOG_GOALS
+        m[self.mu] = log_level
         m[self.home] = PRIOR_HOME_ADVANTAGE
         return m
 
@@ -176,9 +176,12 @@ def fit_strength(
     newcomer: np.ndarray,
     sigma: float,
     beta_start: np.ndarray | None = None,
+    prior_log_level: float = PRIOR_LOG_GOALS,
 ) -> np.ndarray:
-    """Stima penalizzata dei parametri (Newton). Restituisce il vettore beta."""
-    prior_mean = layout.prior_mean()
+    """Stima penalizzata dei parametri (Newton). Restituisce il vettore beta.
+    I conteggi possono essere gol o volumi di gioco (tiri, tiri in porta):
+    `prior_log_level` e' il livello medio a priori sulla loro scala."""
+    prior_mean = layout.prior_mean(prior_log_level)
     prior_prec = layout.prior_precision(sigma)
     beta = prior_mean.copy() if beta_start is None else beta_start.copy()
     if window.home.size == 0:

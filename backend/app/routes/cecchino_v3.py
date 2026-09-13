@@ -21,9 +21,9 @@ def _raise(exc: CecchinoLabImportError) -> None:
 
 
 @router.post("/runs")
-def post_v3_run(db: Session = Depends(get_db)) -> JSONResponse:
+def post_v3_run(phase: int = Query(default=2), db: Session = Depends(get_db)) -> JSONResponse:
     try:
-        return JSONResponse(status_code=202, content=jsonable_encoder(service.start_run(db)))
+        return JSONResponse(status_code=202, content=jsonable_encoder(service.start_run(db, phase=phase)))
     except CecchinoLabImportError as exc:
         _raise(exc)
 
@@ -41,6 +41,12 @@ def get_latest_v3_run(db: Session = Depends(get_db)) -> JSONResponse:
             }
         )
     )
+
+
+@router.get("/runs")
+def get_v3_runs(db: Session = Depends(get_db)) -> JSONResponse:
+    """Calcoli completati (per scegliere quale guardare nella pagina)."""
+    return JSONResponse(content=jsonable_encoder({"items": service.list_completed_runs(db)}))
 
 
 @router.get("/runs/{run_id}")
@@ -109,6 +115,7 @@ def get_v3_run_matches(
             "rho": float(r.rho),
             "home_evidence": float(r.home_evidence),
             "away_evidence": float(r.away_evidence),
+            "specialists": r.specialists_json,
             "markets": markets.get(int(r.id), {}),
         }
         for r in rows

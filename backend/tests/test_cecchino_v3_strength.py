@@ -9,13 +9,14 @@ import numpy as np
 from app.services.cecchino_v3.constants import Hyper
 from app.services.cecchino_v3.data import MatchRecord, annotate_season_context
 from app.services.cecchino_v3.markets import market_outcomes, market_probabilities
+from app.services.cecchino_v3.orchestrator import Opinions, combine, fit_weights
 from app.services.cecchino_v3.strength_model import (
     ParamLayout,
     WindowData,
     fit_strength,
     team_divisions,
 )
-from app.services.cecchino_v3.walkforward import run_group
+from app.services.cecchino_v3.walkforward import run_game_group, run_group
 
 
 def test_market_probabilities_are_coherent():
@@ -108,6 +109,10 @@ def _records(n_days: int = 60) -> list[MatchRecord]:
                     ft_away=int(rng.poisson(1.1)),
                     ht_home=0,
                     ht_away=0,
+                    home_shots=int(rng.poisson(13)),
+                    away_shots=int(rng.poisson(10)),
+                    home_sot=int(rng.poisson(4.5)),
+                    away_sot=None if day == 3 else int(rng.poisson(3.5)),
                 )
             )
             mid += 1
@@ -136,3 +141,50 @@ def test_season_context_phases():
     assert first.home_played == 0 and not first.eval_eligible and first.phase == "early"
     assert any(m.phase == "final" for m in matches)
     assert any(m.phase == "mid" for m in matches)
+
+
+def test_game_specialist_never_uses_same_day_or_future_stats():
+    matches = _records()
+    hyper = Hyper(xi=0.002, sigma=0.3)
+    base = run_game_group(matches, hyper, "sot")
+    cut_day = matches[len(matches) // 2].day
+    changed = [
+        MatchRecord(**{**m.__dict__, "home_sot": 30 if m.day >= cut_day else m.home_sot})
+        for m in matches
+    ]
+    after = run_game_group(changed, hyper, "sot")
+    for m in matches:
+        if m.day <= cut_day:
+            assert base[m.lab_match_id] == after[m.lab_match_id]
+    last = base[matches[-1].lab_match_id]
+    # ~4 tiri in porta attesi, tradotti in gol con la conversione della divisione
+    assert 2.5 < last.stat_home < 7.0
+    assert 0.1 < last.conversion < 0.6
+    assert abs(last.lambda_home - last.stat_home * last.conversion) < 1e-9
+
+
+def test_orchestrator_recovers_combination_weights():
+    rng = np.random.default_rng(11)
+    samples = []
+    for _ in range(6000):
+        f_h, s_h, t_h = rng.uniform(0.6, 2.4, 3)
+        f_a, s_a, t_a = rng.uniform(0.5, 2.0, 3)
+        true_h = np.exp(0.05 + 0.5 * np.log(f_h) + 0.4 * np.log(s_h))
+        true_a = np.exp(0.05 + 0.5 * np.log(f_a) + 0.4 * np.log(s_a))
+        ops = Opinions(
+            home={"forza": f_h, "sot": s_h, "shots": t_h},
+            away={"forza": f_a, "sot": s_a, "shots": t_a},
+        )
+        samples.append((ops, int(rng.poisson(true_h)), int(rng.poisson(true_a))))
+    w = fit_weights(samples)
+    assert abs(w["forza"] - 0.5) < 0.1
+    assert abs(w["sot"] - 0.4) < 0.1
+    assert abs(w["shots"]) < 0.1
+    home, away = combine(samples[0][0], w)
+    assert home > 0 and away > 0
+
+
+def test_orchestrator_default_is_forza_only():
+    ops = Opinions(home={"forza": 1.7, "sot": 0.9, "shots": 1.1}, away={"forza": 1.1, "sot": 1.5, "shots": 1.2})
+    home, away = combine(ops, {"intercept": 0.0, "forza": 1.0, "sot": 0.0, "shots": 0.0})
+    assert abs(home - 1.7) < 1e-9 and abs(away - 1.1) < 1e-9
