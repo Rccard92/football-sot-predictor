@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 
 from app.services.cecchino_v3.constants import (
     COUNTRY_GROUPS,
@@ -58,6 +59,19 @@ def run_group(
     """Previsioni walk-forward per tutte le partite (gia' ordinate) di una piramide."""
     if not matches:
         return {}
+    # Migliaia di sistemi lineari piccoli (~200x200): con i thread BLAS di un
+    # server a molti core il costo di coordinamento li rende ~200 volte piu'
+    # lenti. Un solo thread per tutta la durata del calcolo.
+    with threadpool_limits(limits=1, user_api="blas"):
+        return _run_group(matches, hyper, should_stop=should_stop)
+
+
+def _run_group(
+    matches: list[MatchRecord],
+    hyper: Hyper,
+    *,
+    should_stop: Callable[[], bool] | None,
+) -> dict[int, StrengthPrediction]:
     divisions = _divisions_for(matches)
     div_index = {c: i for i, c in enumerate(divisions)}
     teams = sorted({m.home_team for m in matches} | {m.away_team for m in matches})
