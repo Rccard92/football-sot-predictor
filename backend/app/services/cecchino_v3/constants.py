@@ -13,7 +13,8 @@ from app.services.cecchino_data_lab.run_v2_scope import LOCKBOX_SEASON
 
 ENGINE_VERSION = "cecchino_v3_phase1_strength_v1"
 ENGINE_VERSION_PHASE2 = "cecchino_v3_phase2_game_v1"
-PHASES: tuple[int, ...] = (1, 2)
+ENGINE_VERSION_PHASE3 = "cecchino_v3_phase3_form_v1"
+PHASES: tuple[int, ...] = (1, 2, 3)
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).
@@ -155,3 +156,21 @@ ORCHESTRATOR_PRIOR_PRECISION = 1.0
 # Esame Fase 2: con lo specialista Gioco l'errore deve scendere rispetto alla
 # sola Forza (calcolo Fase 1) in ogni famiglia e in tutte le stagioni di
 # giudizio; calibrazione entro lo stesso limite della Fase 1.
+# Esito: 11 controlli migliorati su 12, 1X2 primo tempo 2022/23 in pareggio
+# esatto -> formalmente non superato, specialista accettato dall'utente
+# (opzione A) con la richiesta di una tolleranza esplicita dalle fasi successive.
+
+# --- Fase 3: specialista Forma (dichiarato prima dei risultati) --------------
+# Ultime N partite della squadra nella stagione in corso: scarto tra quanto
+# fatto e quanto atteso prima di ciascuna partita (gol e tiri, fatti e
+# subiti), trattenuto verso zero con un conteggio a priori.
+FORM_MATCHES = 5
+FORM_PSEUDO_COUNT: dict[str, float] = {"goals": 5.0, "shots": 30.0}
+# Correzioni aggiunte all'orchestratore (peso di partenza 0).
+FORM_ADJUSTMENTS: tuple[str, ...] = ("form_goals", "form_shots")
+
+# Esame dalla Fase 3 in poi, rispetto alla fase precedente:
+# 1) in ogni famiglia e stagione di giudizio errore non peggiore di +0,1%;
+# 2) in ogni famiglia errore piu' basso in media sulle stagioni di giudizio;
+# 3) calibrazione entro EXAM_MAX_CALIBRATION_ERROR_PCT.
+EXAM_TOLERANCE_PCT = 0.1

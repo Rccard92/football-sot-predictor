@@ -150,7 +150,16 @@ def _metric_row(r: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     return out
 
 
-def build_evaluation(db: Session, run_id: int, *, baseline_run_id: int | None = None) -> dict[str, Any]:
+def build_evaluation(
+    db: Session,
+    run_id: int,
+    *,
+    baseline_run_id: int | None = None,
+    tolerance_pct: float | None = None,
+) -> dict[str, Any]:
+    """tolerance_pct: se indicata (dalla Fase 3), una stagione passa se l'errore
+    non supera il riferimento di oltre tolerance_pct e la famiglia passa solo se
+    in media sulle stagioni di giudizio l'errore scende."""
     def rows(sql: str) -> list[dict[str, Any]]:
         return _rows(db, sql, run_id, baseline_run_id)
 
@@ -224,7 +233,7 @@ def build_evaluation(db: Session, run_id: int, *, baseline_run_id: int | None = 
             )
 
     reference = "prev" if baseline_run_id is not None else "v2"
-    exam = _exam(by_season, calibration_error, reference=reference)
+    exam = _exam(by_season, calibration_error, reference=reference, tolerance_pct=tolerance_pct)
     return {
         "warmup_season": WARMUP_SEASON,
         "judge_seasons": list(JUDGE_SEASONS),
@@ -253,8 +262,10 @@ def _exam(
     calibration_error: dict[str, dict[str, float | None]],
     *,
     reference: str,
+    tolerance_pct: float | None = None,
 ) -> dict[str, Any]:
     ref_key = "brier_v2" if reference == "v2" else "brier_prev"
+    factor = 1.0 + (tolerance_pct or 0.0) / 100.0
     families: list[dict[str, Any]] = []
     for family in EXAM_FAMILIES:
         seasons = []
@@ -262,12 +273,13 @@ def _exam(
             row = next(
                 (r for r in by_season if r["family"] == family and r["season_label"] == season), None
             )
-            better = (
-                row is not None
-                and row.get("brier_v3") is not None
-                and row.get(ref_key) is not None
-                and row["brier_v3"] < row[ref_key]
-            )
+            comparable = row is not None and row.get("brier_v3") is not None and row.get(ref_key) is not None
+            if not comparable:
+                better = False
+            elif tolerance_pct is None:
+                better = row["brier_v3"] < row[ref_key]
+            else:
+                better = row["brier_v3"] <= row[ref_key] * factor
             seasons.append(
                 {
                     "season_label": season,
@@ -275,11 +287,21 @@ def _exam(
                     "brier_v3": row.get("brier_v3") if row else None,
                     "brier_v2": row.get("brier_v2") if row else None,
                     "brier_reference": row.get(ref_key) if row else None,
+                    "change_pct": (
+                        round((row["brier_v3"] - row[ref_key]) / row[ref_key] * 100.0, 3)
+                        if comparable and row[ref_key]
+                        else None
+                    ),
                     "brier_book": row.get("brier_book") if row else None,
                 }
             )
+        changes = [s["change_pct"] for s in seasons if s["change_pct"] is not None]
+        mean_change = round(sum(changes) / len(changes), 3) if len(changes) == len(seasons) else None
+        passed = all(s["passed"] for s in seasons)
+        if tolerance_pct is not None:
+            passed = passed and mean_change is not None and mean_change < 0
         families.append(
-            {"family": family, "passed": all(s["passed"] for s in seasons), "seasons": seasons}
+            {"family": family, "passed": passed, "mean_change_pct": mean_change, "seasons": seasons}
         )
     calibration = [
         {
@@ -291,14 +313,23 @@ def _exam(
         }
         for family in EXAM_CALIBRATION_FAMILIES
     ]
+    if tolerance_pct is None:
+        rules = [
+            f"In ogni famiglia di mercato, errore V3 piu' basso {_REFERENCE_LABELS[reference]} "
+            "in tutte le stagioni di giudizio",
+        ]
+    else:
+        rules = [
+            f"In ogni famiglia e stagione di giudizio, errore non peggiore {_REFERENCE_LABELS[reference]} "
+            f"di oltre il {tolerance_pct:g}%",
+            f"In ogni famiglia, errore piu' basso {_REFERENCE_LABELS[reference]} in media sulle stagioni di giudizio",
+        ]
+    rules.append(f"Errore di calibrazione V3 <= {EXAM_MAX_CALIBRATION_ERROR_PCT} punti su 1X2 finale e Over/Under")
     return {
         "passed": all(f["passed"] for f in families) and all(c["passed"] for c in calibration),
         "reference": reference,
+        "tolerance_pct": tolerance_pct,
         "accuracy_vs_v2": families,
         "calibration": calibration,
-        "rules": [
-            f"In ogni famiglia di mercato, errore V3 piu' basso {_REFERENCE_LABELS[reference]} "
-            "in tutte le stagioni di giudizio",
-            f"Errore di calibrazione V3 <= {EXAM_MAX_CALIBRATION_ERROR_PCT} punti su 1X2 finale e Over/Under",
-        ],
+        "rules": rules,
     }

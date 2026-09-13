@@ -115,6 +115,7 @@ export function ExamBlock({ evaluation, phase = 1 }: { evaluation: V3Evaluation;
                   {s} · errore V3 / {refLabel}
                 </th>
               ))}
+              {exam.tolerance_pct != null && <th>Media</th>}
               <th>Esito</th>
             </tr>
           </thead>
@@ -128,8 +129,21 @@ export function ExamBlock({ evaluation, phase = 1 }: { evaluation: V3Evaluation;
                       {brier(s.brier_v3)}
                     </span>
                     <span style={{ color: 'var(--pi-muted)' }}> / {brier(s.brier_reference ?? s.brier_v2)}</span>
+                    {s.change_pct != null && (
+                      <div className="text-[10px]" style={{ color: s.change_pct <= 0 ? COLOR_V3 : COLOR_BAD }}>
+                        {signed(s.change_pct, 2)}
+                      </div>
+                    )}
                   </td>
                 ))}
+                {exam.tolerance_pct != null && (
+                  <td
+                    className="tabular-nums font-semibold"
+                    style={{ color: (f.mean_change_pct ?? 0) < 0 ? COLOR_V3 : COLOR_BAD }}
+                  >
+                    {signed(f.mean_change_pct, 2)}
+                  </td>
+                )}
                 <td>
                   <PassChip passed={f.passed} />
                 </td>
@@ -138,7 +152,10 @@ export function ExamBlock({ evaluation, phase = 1 }: { evaluation: V3Evaluation;
             {exam.calibration.map((c) => (
               <tr key={`cal-${c.family}`}>
                 <td className="font-semibold">Calibrazione · {FAMILY_LABELS[c.family]}</td>
-                <td colSpan={evaluation.judge_seasons.length} className="tabular-nums">
+                <td
+                  colSpan={evaluation.judge_seasons.length + (exam.tolerance_pct != null ? 1 : 0)}
+                  className="tabular-nums"
+                >
                   errore medio {c.calibration_error_pct?.toFixed(2) ?? '—'} punti (massimo {c.max_allowed_pct})
                 </td>
                 <td>
@@ -383,6 +400,7 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
   const weights = run.summary?.orchestrator_weights
   if (!weights) return null
   const seasons = Object.keys(weights).sort()
+  const hasForm = seasons.some((s) => weights[s].form_goals != null)
   const cell = (v: number) => (
     <span className="font-semibold" style={{ color: Math.abs(v) < 0.05 ? 'var(--pi-muted)' : 'var(--pi-text)' }}>
       {v.toFixed(3)}
@@ -393,7 +411,8 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
       <p className="mb-3 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
         Ogni specialista propone i suoi gol attesi; l&apos;orchestratore li combina con questi pesi. Un peso vicino a zero
         vuol dire che quello specialista, sulla stagione precedente, non aggiungeva informazione. I pesi di una stagione
-        non vedono mai i risultati di quella stagione. Nel rodaggio vale solo la Forza.
+        non vedono mai i risultati di quella stagione. Nel rodaggio vale solo la Forza. I pesi della Forma
+        moltiplicano lo scarto recente rispetto alle attese: 0 vuol dire che la forma non sposta la previsione.
       </p>
       <div className="pi-scroll">
         <table className="pi-table">
@@ -403,6 +422,8 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
               <th>Forza (gol)</th>
               <th>Gioco · tiri in porta</th>
               <th>Gioco · tiri</th>
+              {hasForm && <th>Forma · gol</th>}
+              {hasForm && <th>Forma · tiri</th>}
               <th>Correzione di livello</th>
             </tr>
           </thead>
@@ -413,6 +434,8 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
                 <td className="tabular-nums">{cell(weights[s].forza)}</td>
                 <td className="tabular-nums">{cell(weights[s].sot)}</td>
                 <td className="tabular-nums">{cell(weights[s].shots)}</td>
+                {hasForm && <td className="tabular-nums">{cell(weights[s].form_goals ?? 0)}</td>}
+                {hasForm && <td className="tabular-nums">{cell(weights[s].form_shots ?? 0)}</td>}
                 <td className="tabular-nums">{cell(weights[s].intercept)}</td>
               </tr>
             ))}

@@ -22,7 +22,10 @@ import {
 const PHASE_TITLES: Record<number, string> = {
   1: 'Fase 1 · Specialista Forza',
   2: 'Fase 2 · Forza + Gioco + orchestratore',
+  3: 'Fase 3 · Forza + Gioco + Forma',
 }
+
+const NEXT_PHASE = 3
 
 const POLL_MS = 10000
 
@@ -75,7 +78,7 @@ export function CecchinoV3Page() {
   const start = async () => {
     setBusy(true)
     try {
-      await startV3Run(2)
+      await startV3Run(NEXT_PHASE)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Avvio non riuscito')
@@ -122,7 +125,9 @@ export function CecchinoV3Page() {
           tra stagioni e tra divisioni (promosse e retrocesse). Ogni partita e&apos; prevista usando solo le partite
           dei giorni precedenti. Da un&apos;unica distribuzione dei risultati escono tutti i 17 mercati. Dalla Fase 2
           lo specialista Gioco stima quanti tiri e tiri in porta produce e concede ogni squadra e li traduce in gol
-          attesi; l&apos;orchestratore combina le opinioni con pesi imparati sulla stagione precedente.
+          attesi; l&apos;orchestratore combina le opinioni con pesi imparati sulla stagione precedente. Dalla Fase
+          3 lo specialista Forma confronta le ultime 5 partite di ogni squadra con quanto era atteso prima di
+          ciascuna, per gol e tiri fatti e subiti.
         </p>
         {runs.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -141,6 +146,7 @@ export function CecchinoV3Page() {
                 >
                   #{r.id} · Fase {r.phase}
                   {r.exam_passed == null ? '' : r.exam_passed ? ' · ✓' : ' · ✗'}
+                  {!r.exam_passed && r.user_decision?.accepted ? ' accettata' : ''}
                 </button>
               )
             })}
@@ -178,7 +184,7 @@ export function CecchinoV3Page() {
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" className="pi-btn" disabled={busy} onClick={() => void start()}>
-                Avvia calcolo Fase 2
+                Avvia calcolo Fase {NEXT_PHASE}
               </button>
               {latest?.status === 'failed' && (
                 <span className="text-xs" style={{ color: '#fca5a5' }}>

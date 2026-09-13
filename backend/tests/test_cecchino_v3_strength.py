@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 import numpy as np
@@ -188,3 +189,119 @@ def test_orchestrator_default_is_forza_only():
     ops = Opinions(home={"forza": 1.7, "sot": 0.9, "shots": 1.1}, away={"forza": 1.1, "sot": 1.5, "shots": 1.2})
     home, away = combine(ops, {"intercept": 0.0, "forza": 1.0, "sot": 0.0, "shots": 0.0})
     assert abs(home - 1.7) < 1e-9 and abs(away - 1.1) < 1e-9
+
+
+# --- Fase 3: forma e regole d'esame ---------------------------------------------
+
+
+def _form_match(mid, day, home, away, gh, ga, season="2022/2023", shots=(12, 10)):
+    match_day = date(2022, 8, 1) + timedelta(days=day)
+    return MatchRecord(
+        lab_match_id=mid,
+        competition="Serie A",
+        group="italy",
+        season_label=season,
+        match_date=match_day,
+        kickoff_at=None,
+        day=(match_day - date(2000, 1, 1)).days,
+        home_team=home,
+        away_team=away,
+        ft_home=gh,
+        ft_away=ga,
+        ht_home=0,
+        ht_away=0,
+        home_shots=shots[0],
+        away_shots=shots[1],
+        home_sot=4,
+        away_sot=3,
+    )
+
+
+def test_form_is_zero_when_results_match_expectations():
+    from app.services.cecchino_v3.form import Expectation, compute_form
+
+    matches = [_form_match(i, i, "A", "B", 1, 1) for i in range(1, 7)]
+    exp = {m.lab_match_id: Expectation(1.0, 1.0, 12.0, 10.0) for m in matches}
+    form = compute_form(matches, exp)
+    last = form[6]
+    assert last.matches_home == 5 and last.matches_away == 5
+    assert abs(last.goals_home) < 1e-12 and abs(last.shots_home) < 1e-12
+
+
+def test_form_rewards_outperformance_and_uses_only_last_five_of_same_season():
+    from app.services.cecchino_v3.constants import FORM_PSEUDO_COUNT
+    from app.services.cecchino_v3.form import Expectation, compute_form
+
+    # stagione precedente: A segna tantissimo (non deve contare)
+    old = [_form_match(100 + i, i, "A", "C", 6, 0, season="2021/2022") for i in range(5)]
+    # stagione in corso: 6 partite, la prima con 5 gol (esce dalle ultime 5), poi 2 gol ciascuna
+    current = [_form_match(1, 400, "A", "B", 5, 0)] + [
+        _form_match(1 + i, 400 + i, "A", "B", 2, 1) for i in range(1, 6)
+    ]
+    target = _form_match(50, 410, "A", "B", 0, 0)
+    matches = old + current + [target]
+    exp = {m.lab_match_id: Expectation(1.0, 1.0, 12.0, 10.0) for m in matches}
+    form = compute_form(matches, exp)[50]
+    pg = FORM_PSEUDO_COUNT["goals"]
+    expected_attack = math.log((10 + pg) / (5 + pg))  # ultime 5: 2 gol a partita contro 1 atteso
+    expected_defence_b = math.log((10 + pg) / (5 + pg))  # B ha subito 2 a partita contro 1 attesa
+    assert abs(form.goals_home - (expected_attack + expected_defence_b)) < 1e-12
+    assert form.matches_home == 5
+
+
+def test_form_ignores_same_day_and_future_results():
+    from app.services.cecchino_v3.form import Expectation, compute_form
+
+    base = [_form_match(i, i // 2, "A" if i % 2 else "C", "B" if i % 2 else "D", 1, 1) for i in range(1, 21)]
+    exp = {m.lab_match_id: Expectation(1.2, 1.0, 12.0, 10.0) for m in base}
+    before = compute_form(base, exp)
+    cut = base[10].day
+    changed = [MatchRecord(**{**m.__dict__, "ft_home": 7 if m.day >= cut else m.ft_home}) for m in base]
+    after = compute_form(changed, exp)
+    for m in base:
+        if m.day <= cut:
+            assert before[m.lab_match_id] == after[m.lab_match_id]
+
+
+def test_orchestrator_learns_adjustment_weight():
+    rng = np.random.default_rng(5)
+    samples = []
+    for _ in range(8000):
+        f_h, f_a = rng.uniform(0.7, 2.2, 2)
+        adj_h, adj_a = rng.normal(0, 0.3, 2)
+        true_h = np.exp(np.log(f_h) + 0.3 * adj_h)
+        true_a = np.exp(np.log(f_a) + 0.3 * adj_a)
+        ops = Opinions(
+            home={"forza": f_h, "sot": f_h, "shots": f_h},
+            away={"forza": f_a, "sot": f_a, "shots": f_a},
+            adjust_home={"form_goals": adj_h, "form_shots": 0.0},
+            adjust_away={"form_goals": adj_a, "form_shots": 0.0},
+        )
+        samples.append((ops, int(rng.poisson(true_h)), int(rng.poisson(true_a))))
+    w = fit_weights(samples, ("form_goals", "form_shots"))
+    assert abs(w["form_goals"] - 0.3) < 0.08
+    assert abs(w["form_shots"]) < 1e-6  # nessuna variazione -> resta al valore a priori
+    home, _ = combine(samples[0][0], w)
+    assert home > 0
+
+
+def test_exam_tolerance_rules():
+    from app.services.cecchino_v3.constants import EXAM_FAMILIES, JUDGE_SEASONS
+    from app.services.cecchino_v3.evaluation import _exam
+
+    def rows(changes):
+        out = []
+        for family in EXAM_FAMILIES:
+            for season, change in zip(JUDGE_SEASONS, changes):
+                out.append({"family": family, "season_label": season, "brier_v3": 0.2 * (1 + change / 100), "brier_prev": 0.2})
+        return out
+
+    calibration = {"FT_1X2": {"v3_pct": 1.0}, "FT_OVER_UNDER": {"v3_pct": 1.0}}
+    # una stagione peggiore dello 0,05% (entro tolleranza), media in calo: passa
+    assert _exam(rows([-0.5, 0.05, -0.3]), calibration, reference="prev", tolerance_pct=0.1)["passed"]
+    # una stagione peggiore dello 0,2%: non passa
+    assert not _exam(rows([-0.5, 0.2, -0.3]), calibration, reference="prev", tolerance_pct=0.1)["passed"]
+    # tutte entro tolleranza ma media in aumento: non passa
+    assert not _exam(rows([0.05, 0.05, -0.02]), calibration, reference="prev", tolerance_pct=0.1)["passed"]
+    # senza tolleranza un pareggio esatto non passa (regola della Fase 2)
+    assert not _exam(rows([0.0, -0.5, -0.5]), calibration, reference="prev")["passed"]

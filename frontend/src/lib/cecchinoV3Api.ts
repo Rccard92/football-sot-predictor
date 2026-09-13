@@ -30,16 +30,19 @@ export type V3Evaluation = {
   exam: {
     passed: boolean
     reference?: 'v2' | 'prev'
+    tolerance_pct?: number | null
     rules: string[]
     accuracy_vs_v2: Array<{
       family: V3Family
       passed: boolean
+      mean_change_pct?: number | null
       seasons: Array<{
         season_label: string
         passed: boolean
         brier_v3: number | null
         brier_v2: number | null
         brier_reference?: number | null
+        change_pct?: number | null
         brier_book: number | null
       }>
     }>
@@ -68,7 +71,14 @@ export type V3Evaluation = {
   calibration_error: Record<string, { v3_pct: number | null }>
 }
 
-export type V3Weights = { intercept: number; forza: number; sot: number; shots: number }
+export type V3Weights = {
+  intercept: number
+  forza: number
+  sot: number
+  shots: number
+  form_goals?: number
+  form_shots?: number
+}
 
 export type V3Run = {
   id: number
@@ -96,6 +106,7 @@ export type V3Run = {
     elapsed_seconds: number
     evaluation: V3Evaluation
     orchestrator_weights?: Record<string, V3Weights>
+    base_orchestrator_weights?: Record<string, V3Weights>
     game_chosen_hyper?: Record<string, Record<string, { xi: number; sigma: number }>>
   } | null
   error: { message?: string } | null
@@ -115,6 +126,7 @@ export type V3RunListItem = {
   engine_version: string
   completed_at: string | null
   exam_passed: boolean | null
+  user_decision?: { accepted: boolean; note: string; decided_at: string } | null
 }
 
 export async function listV3Runs(): Promise<{ items: V3RunListItem[] }> {
