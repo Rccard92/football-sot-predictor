@@ -47,6 +47,13 @@ class MatchRecord:
     away_shots: int | None = None
     home_sot: int | None = None  # tiri in porta
     away_sot: int | None = None
+    home_fouls: int | None = None
+    away_fouls: int | None = None
+    home_yellow: int | None = None
+    away_yellow: int | None = None
+    home_red: int | None = None
+    away_red: int | None = None
+    referee: str | None = None
     # contesto di stagione (stesso campionato)
     home_played: int = 0
     away_played: int = 0
@@ -76,6 +83,13 @@ def load_matches(db: Session) -> list[MatchRecord]:
             CecchinoLabMatch.away_shots,
             CecchinoLabMatch.home_shots_on_target,
             CecchinoLabMatch.away_shots_on_target,
+            CecchinoLabMatch.home_fouls,
+            CecchinoLabMatch.away_fouls,
+            CecchinoLabMatch.home_yellow_cards,
+            CecchinoLabMatch.away_yellow_cards,
+            CecchinoLabMatch.home_red_cards,
+            CecchinoLabMatch.away_red_cards,
+            CecchinoLabMatch.referee,
         )
         .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabMatch.dataset_id)
         .where(CecchinoLabDataset.season_label < LOCKBOX)
@@ -107,11 +121,22 @@ def load_matches(db: Session) -> list[MatchRecord]:
                 away_shots=int(r.away_shots) if r.away_shots is not None else None,
                 home_sot=int(r.home_shots_on_target) if r.home_shots_on_target is not None else None,
                 away_sot=int(r.away_shots_on_target) if r.away_shots_on_target is not None else None,
+                home_fouls=_int_or_none(r.home_fouls),
+                away_fouls=_int_or_none(r.away_fouls),
+                home_yellow=_int_or_none(r.home_yellow_cards),
+                away_yellow=_int_or_none(r.away_yellow_cards),
+                home_red=_int_or_none(r.home_red_cards),
+                away_red=_int_or_none(r.away_red_cards),
+                referee=(r.referee or "").strip() or None,
             )
         )
     matches.sort(key=_chronological_key)
     annotate_season_context(matches)
     return matches
+
+
+def _int_or_none(value: int | None) -> int | None:
+    return int(value) if value is not None else None
 
 
 def _chronological_key(m: MatchRecord) -> tuple:

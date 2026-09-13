@@ -354,3 +354,89 @@ def test_build_adjustments_merges_form_and_calendar():
     only_form = build_adjustments(form)
     assert only_form is not None and only_form.keys == FORM_ADJUSTMENTS
     assert build_adjustments(None) is None
+
+
+# --- Fase 5: disciplina ---------------------------------------------------------
+
+
+def _discipline_match(mid, day, home, away, fouls=(11, 11), cards=((2, 0), (2, 0)), referee=None, goals=(1, 1)):
+    m = _form_match(mid, day, home, away, goals[0], goals[1])
+    return MatchRecord(
+        **{
+            **m.__dict__,
+            "home_fouls": fouls[0],
+            "away_fouls": fouls[1],
+            "home_yellow": cards[0][0],
+            "home_red": cards[0][1],
+            "away_yellow": cards[1][0],
+            "away_red": cards[1][1],
+            "referee": referee,
+        }
+    )
+
+
+def test_discipline_indices_follow_team_versus_division_average():
+    from app.services.cecchino_v3.constants import DISCIPLINE_PSEUDO_MATCHES
+    from app.services.cecchino_v3.discipline import compute_discipline
+    from app.services.cecchino_v3.form import Expectation
+
+    matches = [
+        _discipline_match(1, 0, "A", "B", fouls=(20, 10)),
+        _discipline_match(2, 1, "C", "D", fouls=(10, 20)),
+        _discipline_match(3, 5, "A", "D", fouls=(15, 15)),
+    ]
+    exp = {m.lab_match_id: Expectation(1.0, 1.0, 12.0, 10.0) for m in matches}
+    feats = compute_discipline(matches, exp)
+    # prima partita: nessun dato, tutto nella media a priori
+    assert feats[1].adjust_home["fouls_attack"] == 0.0
+    # terza partita: media divisione con 4 osservazioni reali (media 15) + prior
+    from app.services.cecchino_v3.constants import DISCIPLINE_PRIOR_FOULS
+
+    k = DISCIPLINE_PSEUDO_MATCHES
+    avg = (60 + k * DISCIPLINE_PRIOR_FOULS) / (4 + k)
+    expected_a = math.log((20 + k * avg) / ((1 + k) * avg))
+    expected_d = math.log((20 + k * avg) / ((1 + k) * avg))
+    assert abs(feats[3].adjust_home["fouls_attack"] - expected_a) < 1e-12
+    assert abs(feats[3].adjust_home["fouls_defence"] - expected_d) < 1e-12
+    assert feats[3].adjust_away["fouls_attack"] == feats[3].adjust_home["fouls_defence"]
+
+
+def test_referee_index_uses_only_past_matches_of_that_referee():
+    from app.services.cecchino_v3.constants import REFEREE_PSEUDO_GOALS
+    from app.services.cecchino_v3.discipline import compute_discipline
+    from app.services.cecchino_v3.form import Expectation
+
+    matches = [
+        _discipline_match(1, 0, "A", "B", referee="R1", goals=(3, 3)),
+        _discipline_match(2, 1, "C", "D", referee="R2", goals=(0, 0)),
+        _discipline_match(3, 4, "A", "C", referee="R1", goals=(0, 0)),
+        _discipline_match(4, 4, "B", "D", referee=None),
+    ]
+    exp = {m.lab_match_id: Expectation(1.5, 1.0, 12.0, 10.0) for m in matches}
+    feats = compute_discipline(matches, exp)
+    assert feats[1].adjust_home["referee_goals"] == 0.0
+    expected = math.log((6 + REFEREE_PSEUDO_GOALS) / (2.5 + REFEREE_PSEUDO_GOALS))
+    assert abs(feats[3].adjust_home["referee_goals"] - expected) < 1e-12
+    assert feats[3].adjust_away["referee_goals"] == feats[3].adjust_home["referee_goals"]
+    assert feats[4].adjust_home["referee_goals"] == 0.0
+    # cambiare i risultati dal giorno 4 in poi non cambia nulla dei giorni <= 4
+    changed = [MatchRecord(**{**m.__dict__, "ft_home": 9, "home_fouls": 40}) if m.day >= 4 else m for m in matches]
+    after = compute_discipline(changed, exp)
+    for m in matches:
+        assert feats[m.lab_match_id] == after[m.lab_match_id]
+
+
+def test_build_adjustments_with_discipline():
+    from app.services.cecchino_v3.calendar_features import compute_calendar
+    from app.services.cecchino_v3.constants import CALENDAR_ADJUSTMENTS, DISCIPLINE_ADJUSTMENTS, FORM_ADJUSTMENTS
+    from app.services.cecchino_v3.discipline import compute_discipline
+    from app.services.cecchino_v3.form import Expectation, compute_form
+    from app.services.cecchino_v3.service import build_adjustments
+
+    matches = [_discipline_match(i, i * 3, "A" if i % 2 else "B", "B" if i % 2 else "A") for i in range(1, 7)]
+    annotate_season_context(matches)
+    exp = {m.lab_match_id: Expectation(1.0, 1.0, 12.0, 10.0) for m in matches}
+    adj = build_adjustments(compute_form(matches, exp), compute_calendar(matches), compute_discipline(matches, exp))
+    assert adj is not None
+    assert adj.keys == FORM_ADJUSTMENTS + CALENDAR_ADJUSTMENTS + DISCIPLINE_ADJUSTMENTS
+    assert set(adj.away[4]) == set(adj.keys)

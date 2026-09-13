@@ -24,9 +24,10 @@ const PHASE_TITLES: Record<number, string> = {
   2: 'Fase 2 · Forza + Gioco + orchestratore',
   3: 'Fase 3 · Forza + Gioco + Forma',
   4: 'Fase 4 · Forza + Gioco + Forma + Calendario',
+  5: 'Fase 5 · Forza + Gioco + Forma + Calendario + Disciplina',
 }
 
-const NEXT_PHASE = 4
+const NEXT_PHASE = 5
 
 const POLL_MS = 10000
 
@@ -129,7 +130,8 @@ export function CecchinoV3Page() {
           attesi; l&apos;orchestratore combina le opinioni con pesi imparati sulla stagione precedente. Dalla Fase
           3 lo specialista Forma confronta le ultime 5 partite di ogni squadra con quanto era atteso prima di
           ciascuna, per gol e tiri fatti e subiti. Dalla Fase 4 lo specialista Calendario considera i giorni di
-          riposo delle due squadre e le ultime 5 giornate.
+          riposo delle due squadre e le ultime 5 giornate. Dalla Fase 5 lo specialista Disciplina considera falli e
+          cartellini delle squadre e lo storico gol dell&apos;arbitro.
         </p>
         {runs.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">

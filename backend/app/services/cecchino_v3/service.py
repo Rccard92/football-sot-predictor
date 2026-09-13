@@ -5,6 +5,7 @@ Fase 1: solo specialista Forza.
 Fase 2: Forza + specialista Gioco (tiri in porta, tiri) + orchestratore.
 Fase 3: Fase 2 + specialista Forma (correzioni nell'orchestratore).
 Fase 4: Fase 3 + specialista Calendario (riposo e fase della stagione).
+Fase 5: Fase 4 + specialista Disciplina (falli, cartellini, arbitro).
 """
 
 from __future__ import annotations
@@ -41,12 +42,17 @@ from app.services.cecchino_data_lab.revision_resolve import revision_as_source_f
 from app.services.cecchino_v3.constants import (
     CALENDAR_ADJUSTMENTS,
     CONVERSION_PSEUDO_COUNT,
+    DISCIPLINE_ADJUSTMENTS,
+    DISCIPLINE_PRIOR_CARDS,
+    DISCIPLINE_PRIOR_FOULS,
+    DISCIPLINE_PSEUDO_MATCHES,
     COUNTRY_GROUPS,
     DEFAULT_HYPER,
     ENGINE_VERSION,
     ENGINE_VERSION_PHASE2,
     ENGINE_VERSION_PHASE3,
     ENGINE_VERSION_PHASE4,
+    ENGINE_VERSION_PHASE5,
     EXAM_TOLERANCE_PCT,
     FINAL_PHASE_MATCHES,
     FORM_ADJUSTMENTS,
@@ -64,11 +70,13 @@ from app.services.cecchino_v3.constants import (
     REST_CAP_DAYS,
     REST_FLOOR_DAYS,
     REST_REFERENCE_DAYS,
+    REFEREE_PSEUDO_GOALS,
     WARMUP_SEASON,
     Hyper,
 )
 from app.services.cecchino_v3.calendar_features import CalendarFeatures, compute_calendar
 from app.services.cecchino_v3.data import MatchRecord, group_matches, load_matches
+from app.services.cecchino_v3.discipline import DisciplineFeatures, compute_discipline
 from app.services.cecchino_v3.form import Expectation, FormFeatures, compute_form
 from app.services.cecchino_v3.markets import market_outcomes, market_probabilities, score_matrix
 from app.services.cecchino_v3.orchestrator import Opinions, combine, default_weights, fit_weights
@@ -123,6 +131,7 @@ _ENGINE_BY_PHASE = {
     2: ENGINE_VERSION_PHASE2,
     3: ENGINE_VERSION_PHASE3,
     4: ENGINE_VERSION_PHASE4,
+    5: ENGINE_VERSION_PHASE5,
 }
 
 
@@ -168,6 +177,17 @@ def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
                 "rest_cap_days": REST_CAP_DAYS,
                 "rest_reference_days": REST_REFERENCE_DAYS,
                 "calendar_limit": "solo partite di campionato: coppe e partite europee non accorciano il riposo",
+            }
+        )
+    if phase >= 5:
+        config.update(
+            {
+                "discipline_adjustments": list(DISCIPLINE_ADJUSTMENTS),
+                "discipline_pseudo_matches": DISCIPLINE_PSEUDO_MATCHES,
+                "discipline_prior_fouls": DISCIPLINE_PRIOR_FOULS,
+                "discipline_prior_cards": DISCIPLINE_PRIOR_CARDS,
+                "referee_pseudo_goals": REFEREE_PSEUDO_GOALS,
+                "discipline_limit": "arbitro disponibile solo per i campionati inglesi",
             }
         )
     return config
@@ -373,19 +393,23 @@ class Adjustments:
 def build_adjustments(
     form: dict[int, FormFeatures] | None,
     calendar: dict[int, CalendarFeatures] | None = None,
+    discipline: dict[int, DisciplineFeatures] | None = None,
 ) -> Adjustments | None:
     """Unisce le correzioni degli specialisti attivi; una partita entra solo se
     ha tutte le correzioni richieste."""
-    if form is None and calendar is None:
+    sources: list[dict[int, Any]] = [src for src in (form, calendar, discipline) if src is not None]
+    if not sources:
         return None
     keys: tuple[str, ...] = ()
     if form is not None:
         keys += FORM_ADJUSTMENTS
     if calendar is not None:
         keys += CALENDAR_ADJUSTMENTS
-    ids = set(form) if form is not None else set(calendar or {})
-    if form is not None and calendar is not None:
-        ids &= set(calendar)
+    if discipline is not None:
+        keys += DISCIPLINE_ADJUSTMENTS
+    ids = set(sources[0])
+    for src in sources[1:]:
+        ids &= set(src)
     home: dict[int, dict[str, float]] = {}
     away: dict[int, dict[str, float]] = {}
     for mid in ids:
@@ -398,6 +422,9 @@ def build_adjustments(
         if calendar is not None:
             h.update(calendar[mid].adjust_home)
             a.update(calendar[mid].adjust_away)
+        if discipline is not None:
+            h.update(discipline[mid].adjust_home)
+            a.update(discipline[mid].adjust_away)
         home[mid] = h
         away[mid] = a
     return Adjustments(keys=keys, home=home, away=away)
@@ -496,6 +523,7 @@ def _specialists_payload(
     weights: dict[str, float],
     form: FormFeatures | None,
     calendar: CalendarFeatures | None = None,
+    discipline: DisciplineFeatures | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "forza": {"home": round(f.lambda_home, 5), "away": round(f.lambda_away, 5)},
@@ -525,6 +553,8 @@ def _specialists_payload(
             "rest_days_away": calendar.rest_days_away,
             "final_phase": calendar.final_phase,
         }
+    if discipline is not None:
+        payload["discipline"] = dict(discipline.detail)
     return payload
 
 
@@ -716,6 +746,8 @@ def _execute_run(run_id: int) -> None:
             base_weights: dict[str, dict[str, float]] = {}
             form: dict[int, FormFeatures] | None = None
             calendar: dict[int, CalendarFeatures] | None = None
+            discipline: dict[int, DisciplineFeatures] | None = None
+            expectations: dict[int, Expectation] = {}
             adjustments: Adjustments | None = None
             final_weights: dict[str, dict[str, float]] = {}
             if phase >= 2:
@@ -727,15 +759,16 @@ def _execute_run(run_id: int) -> None:
                 base_weights = _orchestrator_weights(matches, forza, game, chosen_forza, chosen_game)
             if phase >= 3:
                 _progress(db, run_id, 85.0, "Forma: rendimento recente rispetto alle attese")
-                form = compute_form(
-                    matches,
-                    _base_expectations(matches, forza, game, chosen_forza, chosen_game, base_weights),
-                )
+                expectations = _base_expectations(matches, forza, game, chosen_forza, chosen_game, base_weights)
+                form = compute_form(matches, expectations)
             if phase >= 4:
                 _progress(db, run_id, 85.5, "Calendario: riposo e fase della stagione")
                 calendar = compute_calendar(matches)
+            if phase >= 5:
+                _progress(db, run_id, 85.7, "Disciplina: falli, cartellini e arbitro")
+                discipline = compute_discipline(matches, expectations)
             if phase >= 3:
-                adjustments = build_adjustments(form, calendar)
+                adjustments = build_adjustments(form, calendar, discipline)
                 final_weights = _orchestrator_weights(
                     matches, forza, game, chosen_forza, chosen_game, adjustments
                 )
@@ -764,6 +797,7 @@ def _execute_run(run_id: int) -> None:
                         weights,
                         form.get(m.lab_match_id) if form is not None else None,
                         calendar.get(m.lab_match_id) if calendar is not None else None,
+                        discipline.get(m.lab_match_id) if discipline is not None else None,
                     )
                 final[m.lab_match_id] = FinalPrediction(
                     lambda_home=lam_h,

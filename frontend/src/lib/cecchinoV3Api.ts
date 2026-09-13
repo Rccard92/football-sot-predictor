@@ -81,6 +81,10 @@ export type V3Weights = {
   rest_attack?: number
   rest_defence?: number
   final_phase?: number
+  fouls_attack?: number
+  fouls_defence?: number
+  cards_defence?: number
+  referee_goals?: number
 }
 
 export type V3Run = {

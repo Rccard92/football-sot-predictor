@@ -402,6 +402,7 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
   const seasons = Object.keys(weights).sort()
   const hasForm = seasons.some((s) => weights[s].form_goals != null)
   const hasCalendar = seasons.some((s) => weights[s].rest_attack != null)
+  const hasDiscipline = seasons.some((s) => weights[s].fouls_attack != null)
   const cell = (v: number) => (
     <span className="font-semibold" style={{ color: Math.abs(v) < 0.05 ? 'var(--pi-muted)' : 'var(--pi-text)' }}>
       {v.toFixed(3)}
@@ -415,7 +416,8 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
         non vedono mai i risultati di quella stagione. Nel rodaggio vale solo la Forza. I pesi della Forma
         moltiplicano lo scarto recente rispetto alle attese: 0 vuol dire che la forma non sposta la previsione. I
         pesi del Calendario dicono quanto contano i giorni di riposo di chi attacca e di chi difende e se nelle
-        ultime 5 giornate i gol attesi cambiano.
+        ultime 5 giornate i gol attesi cambiano. I pesi della Disciplina misurano l&apos;effetto di falli e cartellini
+        delle squadre e dello storico gol dell&apos;arbitro (disponibile solo per i campionati inglesi).
       </p>
       <div className="pi-scroll">
         <table className="pi-table">
@@ -430,6 +432,10 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
               {hasCalendar && <th>Riposo · attacco</th>}
               {hasCalendar && <th>Riposo · difesa</th>}
               {hasCalendar && <th>Ultime 5 giornate</th>}
+              {hasDiscipline && <th>Falli · attacco</th>}
+              {hasDiscipline && <th>Falli · difesa</th>}
+              {hasDiscipline && <th>Cartellini · difesa</th>}
+              {hasDiscipline && <th>Arbitro · gol</th>}
               <th>Correzione di livello</th>
             </tr>
           </thead>
@@ -445,6 +451,10 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
                 {hasCalendar && <td className="tabular-nums">{cell(weights[s].rest_attack ?? 0)}</td>}
                 {hasCalendar && <td className="tabular-nums">{cell(weights[s].rest_defence ?? 0)}</td>}
                 {hasCalendar && <td className="tabular-nums">{cell(weights[s].final_phase ?? 0)}</td>}
+                {hasDiscipline && <td className="tabular-nums">{cell(weights[s].fouls_attack ?? 0)}</td>}
+                {hasDiscipline && <td className="tabular-nums">{cell(weights[s].fouls_defence ?? 0)}</td>}
+                {hasDiscipline && <td className="tabular-nums">{cell(weights[s].cards_defence ?? 0)}</td>}
+                {hasDiscipline && <td className="tabular-nums">{cell(weights[s].referee_goals ?? 0)}</td>}
                 <td className="tabular-nums">{cell(weights[s].intercept)}</td>
               </tr>
             ))}

@@ -15,7 +15,8 @@ ENGINE_VERSION = "cecchino_v3_phase1_strength_v1"
 ENGINE_VERSION_PHASE2 = "cecchino_v3_phase2_game_v1"
 ENGINE_VERSION_PHASE3 = "cecchino_v3_phase3_form_v1"
 ENGINE_VERSION_PHASE4 = "cecchino_v3_phase4_calendar_v1"
-PHASES: tuple[int, ...] = (1, 2, 3, 4)
+ENGINE_VERSION_PHASE5 = "cecchino_v3_phase5_discipline_v1"
+PHASES: tuple[int, ...] = (1, 2, 3, 4, 5)
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).
@@ -184,3 +185,15 @@ REST_FLOOR_DAYS = 2
 REST_CAP_DAYS = 10
 REST_REFERENCE_DAYS = 7
 CALENDAR_ADJUSTMENTS: tuple[str, ...] = ("rest_attack", "rest_defence", "final_phase")
+
+# --- Fase 5: specialista Disciplina (dichiarato prima dei risultati) ---------
+# Falli e cartellini (giallo 1, rosso 2) di squadra nella stagione in corso
+# rispetto alla media della divisione, con 5 partite "nella media" a priori;
+# arbitro (solo campionati inglesi nei dati): gol nelle sue partite passate
+# rispetto ai gol attesi, con 20 gol a priori. Stessa regola d'esame con
+# tolleranza, rispetto alla Fase 4.
+DISCIPLINE_PSEUDO_MATCHES = 5.0
+DISCIPLINE_PRIOR_FOULS = 11.5  # falli per squadra a partita
+DISCIPLINE_PRIOR_CARDS = 2.1  # cartellini pesati per squadra a partita
+REFEREE_PSEUDO_GOALS = 20.0
+DISCIPLINE_ADJUSTMENTS: tuple[str, ...] = ("fouls_attack", "fouls_defence", "cards_defence", "referee_goals")
