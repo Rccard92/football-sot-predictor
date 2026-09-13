@@ -78,6 +78,9 @@ export type V3Weights = {
   shots: number
   form_goals?: number
   form_shots?: number
+  rest_attack?: number
+  rest_defence?: number
+  final_phase?: number
 }
 
 export type V3Run = {

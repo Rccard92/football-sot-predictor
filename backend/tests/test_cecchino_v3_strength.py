@@ -305,3 +305,52 @@ def test_exam_tolerance_rules():
     assert not _exam(rows([0.05, 0.05, -0.02]), calibration, reference="prev", tolerance_pct=0.1)["passed"]
     # senza tolleranza un pareggio esatto non passa (regola della Fase 2)
     assert not _exam(rows([0.0, -0.5, -0.5]), calibration, reference="prev")["passed"]
+
+
+# --- Fase 4: calendario ---------------------------------------------------------
+
+
+def test_rest_score_limits_and_reference():
+    from app.services.cecchino_v3.calendar_features import rest_score
+
+    assert abs(rest_score(7)) < 1e-12
+    assert rest_score(1) == rest_score(2) < rest_score(3)
+    assert rest_score(10) == rest_score(40) == rest_score(None) > rest_score(9)
+
+
+def test_calendar_rest_days_and_final_phase():
+    from app.services.cecchino_v3.calendar_features import compute_calendar, rest_score
+
+    matches = [
+        _form_match(1, 0, "A", "B", 1, 0),
+        _form_match(2, 3, "C", "A", 0, 0),  # A riposa 3 giorni, C debutta
+        _form_match(3, 10, "A", "C", 2, 2),  # A 7 giorni, C 7 giorni
+    ]
+    annotate_season_context(matches)
+    cal = compute_calendar(matches)
+    assert cal[1].rest_days_home is None and cal[1].rest_days_away is None
+    assert cal[2].rest_days_home is None and cal[2].rest_days_away == 3
+    assert cal[3].rest_days_home == 7 and cal[3].rest_days_away == 7
+    # lato casa della partita 2: attacca C (senza precedenti), difende A (3 giorni)
+    assert cal[2].adjust_home["rest_attack"] == rest_score(None)
+    assert cal[2].adjust_home["rest_defence"] == rest_score(3)
+    assert cal[2].adjust_away["rest_attack"] == rest_score(3)
+    assert cal[3].adjust_home["final_phase"] == (1.0 if matches[2].phase == "final" else 0.0)
+
+
+def test_build_adjustments_merges_form_and_calendar():
+    from app.services.cecchino_v3.calendar_features import compute_calendar
+    from app.services.cecchino_v3.constants import CALENDAR_ADJUSTMENTS, FORM_ADJUSTMENTS
+    from app.services.cecchino_v3.form import Expectation, compute_form
+    from app.services.cecchino_v3.service import build_adjustments
+
+    matches = [_form_match(i, i * 3, "A" if i % 2 else "B", "B" if i % 2 else "A", 1, 1) for i in range(1, 9)]
+    annotate_season_context(matches)
+    form = compute_form(matches, {m.lab_match_id: Expectation(1.0, 1.0, 12.0, 10.0) for m in matches})
+    cal = compute_calendar(matches)
+    adj = build_adjustments(form, cal)
+    assert adj is not None and adj.keys == FORM_ADJUSTMENTS + CALENDAR_ADJUSTMENTS
+    assert set(adj.home[5]) == set(FORM_ADJUSTMENTS + CALENDAR_ADJUSTMENTS)
+    only_form = build_adjustments(form)
+    assert only_form is not None and only_form.keys == FORM_ADJUSTMENTS
+    assert build_adjustments(None) is None

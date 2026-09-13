@@ -4,6 +4,7 @@ con lo stesso schema dei job gia' usati da Pattern Insights.
 Fase 1: solo specialista Forza.
 Fase 2: Forza + specialista Gioco (tiri in porta, tiri) + orchestratore.
 Fase 3: Fase 2 + specialista Forma (correzioni nell'orchestratore).
+Fase 4: Fase 3 + specialista Calendario (riposo e fase della stagione).
 """
 
 from __future__ import annotations
@@ -38,12 +39,14 @@ from app.models.cecchino_v3 import (
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.revision_resolve import revision_as_source_fields
 from app.services.cecchino_v3.constants import (
+    CALENDAR_ADJUSTMENTS,
     CONVERSION_PSEUDO_COUNT,
     COUNTRY_GROUPS,
     DEFAULT_HYPER,
     ENGINE_VERSION,
     ENGINE_VERSION_PHASE2,
     ENGINE_VERSION_PHASE3,
+    ENGINE_VERSION_PHASE4,
     EXAM_TOLERANCE_PCT,
     FINAL_PHASE_MATCHES,
     FORM_ADJUSTMENTS,
@@ -58,9 +61,13 @@ from app.services.cecchino_v3.constants import (
     ORCHESTRATOR_DEFAULT_WEIGHTS,
     PHASES,
     PRIOR_GOALS_PER_STAT,
+    REST_CAP_DAYS,
+    REST_FLOOR_DAYS,
+    REST_REFERENCE_DAYS,
     WARMUP_SEASON,
     Hyper,
 )
+from app.services.cecchino_v3.calendar_features import CalendarFeatures, compute_calendar
 from app.services.cecchino_v3.data import MatchRecord, group_matches, load_matches
 from app.services.cecchino_v3.form import Expectation, FormFeatures, compute_form
 from app.services.cecchino_v3.markets import market_outcomes, market_probabilities, score_matrix
@@ -111,7 +118,12 @@ def run_to_dict(run: CecchinoV3Run) -> dict[str, Any]:
     }
 
 
-_ENGINE_BY_PHASE = {1: ENGINE_VERSION, 2: ENGINE_VERSION_PHASE2, 3: ENGINE_VERSION_PHASE3}
+_ENGINE_BY_PHASE = {
+    1: ENGINE_VERSION,
+    2: ENGINE_VERSION_PHASE2,
+    3: ENGINE_VERSION_PHASE3,
+    4: ENGINE_VERSION_PHASE4,
+}
 
 
 def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
@@ -146,6 +158,16 @@ def _config(phase: int, baseline_run_id: int | None) -> dict[str, Any]:
                 "form_pseudo_count": dict(FORM_PSEUDO_COUNT),
                 "form_adjustments": list(FORM_ADJUSTMENTS),
                 "exam_tolerance_pct": EXAM_TOLERANCE_PCT,
+            }
+        )
+    if phase >= 4:
+        config.update(
+            {
+                "calendar_adjustments": list(CALENDAR_ADJUSTMENTS),
+                "rest_floor_days": REST_FLOOR_DAYS,
+                "rest_cap_days": REST_CAP_DAYS,
+                "rest_reference_days": REST_REFERENCE_DAYS,
+                "calendar_limit": "solo partite di campionato: coppe e partite europee non accorciano il riposo",
             }
         )
     return config
@@ -339,13 +361,46 @@ class FinalPrediction:
     specialists: dict[str, Any] | None
 
 
-def _form_adjust(form: FormFeatures | None) -> tuple[dict[str, float], dict[str, float]]:
-    if form is None:
-        return {}, {}
-    return (
-        {"form_goals": form.goals_home, "form_shots": form.shots_home},
-        {"form_goals": form.goals_away, "form_shots": form.shots_away},
-    )
+@dataclass(frozen=True)
+class Adjustments:
+    """Correzioni in scala logaritmica per l'orchestratore, per partita e lato."""
+
+    keys: tuple[str, ...]
+    home: dict[int, dict[str, float]]
+    away: dict[int, dict[str, float]]
+
+
+def build_adjustments(
+    form: dict[int, FormFeatures] | None,
+    calendar: dict[int, CalendarFeatures] | None = None,
+) -> Adjustments | None:
+    """Unisce le correzioni degli specialisti attivi; una partita entra solo se
+    ha tutte le correzioni richieste."""
+    if form is None and calendar is None:
+        return None
+    keys: tuple[str, ...] = ()
+    if form is not None:
+        keys += FORM_ADJUSTMENTS
+    if calendar is not None:
+        keys += CALENDAR_ADJUSTMENTS
+    ids = set(form) if form is not None else set(calendar or {})
+    if form is not None and calendar is not None:
+        ids &= set(calendar)
+    home: dict[int, dict[str, float]] = {}
+    away: dict[int, dict[str, float]] = {}
+    for mid in ids:
+        h: dict[str, float] = {}
+        a: dict[str, float] = {}
+        if form is not None:
+            fm = form[mid]
+            h.update({"form_goals": fm.goals_home, "form_shots": fm.shots_home})
+            a.update({"form_goals": fm.goals_away, "form_shots": fm.shots_away})
+        if calendar is not None:
+            h.update(calendar[mid].adjust_home)
+            a.update(calendar[mid].adjust_away)
+        home[mid] = h
+        away[mid] = a
+    return Adjustments(keys=keys, home=home, away=away)
 
 
 def _opinions(
@@ -355,7 +410,7 @@ def _opinions(
     game: dict[str, dict[str, dict[int, GamePrediction]]],
     chosen_forza: dict[str, Hyper],
     chosen_game: dict[str, dict[str, Hyper]],
-    form: dict[int, FormFeatures] | None = None,
+    adjustments: Adjustments | None = None,
 ) -> Opinions | None:
     f = forza[chosen_forza[season].key].get(m.lab_match_id)
     if f is None:
@@ -368,10 +423,11 @@ def _opinions(
             return None
         home[stat] = gp.lambda_home
         away[stat] = gp.lambda_away
-    if form is None:
+    if adjustments is None:
         return Opinions(home=home, away=away)
-    adjust_home, adjust_away = _form_adjust(form.get(m.lab_match_id))
-    if not adjust_home:
+    adjust_home = adjustments.home.get(m.lab_match_id)
+    adjust_away = adjustments.away.get(m.lab_match_id)
+    if adjust_home is None or adjust_away is None:
         return None
     return Opinions(home=home, away=away, adjust_home=adjust_home, adjust_away=adjust_away)
 
@@ -382,26 +438,26 @@ def _orchestrator_weights(
     game: dict[str, dict[str, dict[int, GamePrediction]]],
     chosen_forza: dict[str, Hyper],
     chosen_game: dict[str, dict[str, Hyper]],
-    form: dict[int, FormFeatures] | None = None,
+    adjustments: Adjustments | None = None,
 ) -> dict[str, dict[str, float]]:
     """Pesi per la stagione S dalle previsioni della stagione S-1, fatte con gli
     stessi specialisti (e parametri) che si useranno nella stagione S."""
-    adjustments = FORM_ADJUSTMENTS if form is not None else ()
+    keys = adjustments.keys if adjustments is not None else ()
     seasons = sorted({m.season_label for m in matches})
     weights: dict[str, dict[str, float]] = {}
     for idx, season in enumerate(seasons):
         if idx == 0:
-            weights[season] = default_weights(adjustments)
+            weights[season] = default_weights(keys)
             continue
         previous = seasons[idx - 1]
         samples = []
         for m in matches:
             if m.season_label != previous or not m.eval_eligible:
                 continue
-            ops = _opinions(m, season, forza, game, chosen_forza, chosen_game, form)
+            ops = _opinions(m, season, forza, game, chosen_forza, chosen_game, adjustments)
             if ops is not None:
                 samples.append((ops, m.ft_home, m.ft_away))
-        weights[season] = fit_weights(samples, adjustments)
+        weights[season] = fit_weights(samples, keys)
     return weights
 
 
@@ -439,6 +495,7 @@ def _specialists_payload(
     chosen_game: dict[str, dict[str, Hyper]],
     weights: dict[str, float],
     form: FormFeatures | None,
+    calendar: CalendarFeatures | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "forza": {"home": round(f.lambda_home, 5), "away": round(f.lambda_away, 5)},
@@ -461,6 +518,12 @@ def _specialists_payload(
             "matches_home": form.matches_home,
             "matches_away": form.matches_away,
             **form.detail,
+        }
+    if calendar is not None:
+        payload["calendar"] = {
+            "rest_days_home": calendar.rest_days_home,
+            "rest_days_away": calendar.rest_days_away,
+            "final_phase": calendar.final_phase,
         }
     return payload
 
@@ -652,7 +715,9 @@ def _execute_run(run_id: int) -> None:
             game_tables: dict[str, Any] = {}
             base_weights: dict[str, dict[str, float]] = {}
             form: dict[int, FormFeatures] | None = None
-            form_weights: dict[str, dict[str, float]] = {}
+            calendar: dict[int, CalendarFeatures] | None = None
+            adjustments: Adjustments | None = None
+            final_weights: dict[str, dict[str, float]] = {}
             if phase >= 2:
                 for stat in GAME_STATS:
                     chosen_game[stat], game_tables[stat] = _select_by_previous_season(
@@ -666,7 +731,14 @@ def _execute_run(run_id: int) -> None:
                     matches,
                     _base_expectations(matches, forza, game, chosen_forza, chosen_game, base_weights),
                 )
-                form_weights = _orchestrator_weights(matches, forza, game, chosen_forza, chosen_game, form)
+            if phase >= 4:
+                _progress(db, run_id, 85.5, "Calendario: riposo e fase della stagione")
+                calendar = compute_calendar(matches)
+            if phase >= 3:
+                adjustments = build_adjustments(form, calendar)
+                final_weights = _orchestrator_weights(
+                    matches, forza, game, chosen_forza, chosen_game, adjustments
+                )
 
             final: dict[int, FinalPrediction] = {}
             for m in matches:
@@ -677,10 +749,10 @@ def _execute_run(run_id: int) -> None:
                 lam_h, lam_a = f.lambda_home, f.lambda_away
                 specialists: dict[str, Any] | None = None
                 if phase >= 2:
-                    ops = _opinions(m, season, forza, game, chosen_forza, chosen_game, form)
+                    ops = _opinions(m, season, forza, game, chosen_forza, chosen_game, adjustments)
                     if ops is None:
                         continue
-                    weights = form_weights[season] if phase >= 3 else base_weights[season]
+                    weights = final_weights[season] if phase >= 3 else base_weights[season]
                     lam_h, lam_a = combine(ops, weights)
                     specialists = _specialists_payload(
                         m,
@@ -691,6 +763,7 @@ def _execute_run(run_id: int) -> None:
                         chosen_game,
                         weights,
                         form.get(m.lab_match_id) if form is not None else None,
+                        calendar.get(m.lab_match_id) if calendar is not None else None,
                     )
                 final[m.lab_match_id] = FinalPrediction(
                     lambda_home=lam_h,
@@ -740,7 +813,7 @@ def _execute_run(run_id: int) -> None:
                     for stat, chosen in chosen_game.items()
                 }
                 summary["game_hyper_table"] = game_tables
-                summary["orchestrator_weights"] = form_weights if phase >= 3 else base_weights
+                summary["orchestrator_weights"] = final_weights if phase >= 3 else base_weights
             if phase >= 3:
                 summary["base_orchestrator_weights"] = base_weights
 

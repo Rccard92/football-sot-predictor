@@ -14,7 +14,8 @@ from app.services.cecchino_data_lab.run_v2_scope import LOCKBOX_SEASON
 ENGINE_VERSION = "cecchino_v3_phase1_strength_v1"
 ENGINE_VERSION_PHASE2 = "cecchino_v3_phase2_game_v1"
 ENGINE_VERSION_PHASE3 = "cecchino_v3_phase3_form_v1"
-PHASES: tuple[int, ...] = (1, 2, 3)
+ENGINE_VERSION_PHASE4 = "cecchino_v3_phase4_calendar_v1"
+PHASES: tuple[int, ...] = (1, 2, 3, 4)
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).
@@ -174,3 +175,12 @@ FORM_ADJUSTMENTS: tuple[str, ...] = ("form_goals", "form_shots")
 # 2) in ogni famiglia errore piu' basso in media sulle stagioni di giudizio;
 # 3) calibrazione entro EXAM_MAX_CALIBRATION_ERROR_PCT.
 EXAM_TOLERANCE_PCT = 0.1
+
+# --- Fase 4: specialista Calendario (dichiarato prima dei risultati) ---------
+# Giorni di riposo limitati tra 2 e 10 e misurati rispetto a una settimana;
+# fase finale = ultime FINAL_PHASE_MATCHES giornate. Stessa regola d'esame
+# con tolleranza della Fase 3, rispetto alla Fase 3.
+REST_FLOOR_DAYS = 2
+REST_CAP_DAYS = 10
+REST_REFERENCE_DAYS = 7
+CALENDAR_ADJUSTMENTS: tuple[str, ...] = ("rest_attack", "rest_defence", "final_phase")
