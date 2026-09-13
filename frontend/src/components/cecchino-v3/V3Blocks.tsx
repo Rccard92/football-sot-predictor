@@ -38,6 +38,16 @@ const TOOLTIP_STYLE = {
 
 const FAMILIES: V3Family[] = ['FT_1X2', 'DOUBLE_CHANCE', 'FT_OVER_UNDER', 'HT_1X2']
 
+const STABILITY_LABELS: Record<string, string> = {
+  promoted_attack: 'promosse, attacco',
+  promoted_defence: 'promosse, difesa',
+  relegated_attack: 'retrocesse, attacco',
+  relegated_defence: 'retrocesse, difesa',
+  calibration_alpha_minus_1: 'calibrazione, allargamento differenze',
+  calibration_beta: 'calibrazione, spostamento casa/ospite',
+  calibration_gamma: 'calibrazione, livello gol',
+}
+
 function signed(v: number | null | undefined, d = 1): string {
   if (v == null) return '—'
   return `${v > 0 ? '+' : ''}${v.toFixed(d)}%`
@@ -146,6 +156,20 @@ export function ExamBlock({ evaluation, phase = 1 }: { evaluation: V3Evaluation;
                 )}
                 <td>
                   <PassChip passed={f.passed} />
+                </td>
+              </tr>
+            ))}
+            {(exam.stability ?? []).map((row) => (
+              <tr key={`stab-${row.name}`}>
+                <td className="font-semibold">Stabilita' · {STABILITY_LABELS[row.name] ?? row.name}</td>
+                {evaluation.judge_seasons.map((s) => (
+                  <td key={s} className="tabular-nums">
+                    {row.values[s] == null ? '—' : Number(row.values[s]).toFixed(3)}
+                  </td>
+                ))}
+                {exam.tolerance_pct != null && <td />}
+                <td>
+                  <PassChip passed={row.passed} />
                 </td>
               </tr>
             ))}
@@ -461,6 +485,86 @@ export function OrchestratorBlock({ run }: { run: V3Run }) {
           </tbody>
         </table>
       </div>
+    </Section>
+  )
+}
+
+export function RefinementBlock({ run }: { run: V3Run }) {
+  const promotion = run.summary?.promotion_parameters
+  const calibration = run.summary?.calibration
+  if (!promotion && !calibration) return null
+  const promotionNames = ['promoted_attack', 'promoted_defence', 'relegated_attack', 'relegated_defence']
+  const promotionSeasons = promotion
+    ? Array.from(new Set(Object.values(promotion).flatMap((v) => Object.keys(v)))).sort()
+    : []
+  const calibrationSeasons = calibration ? Object.keys(calibration).sort() : []
+  return (
+    <Section title="Rifinitura del motore" note="Neopromosse, retrocesse e calibrazione">
+      {promotion && (
+        <div className="mb-4">
+          <p className="mb-2 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
+            Correzione (scala logaritmica) applicata nella prima stagione dopo un cambio di divisione, media della
+            stagione nelle piramidi con piu&apos; divisioni. Attacco negativo = segna meno del previsto; difesa negativa =
+            concede di piu&apos;.
+          </p>
+          <div className="pi-scroll">
+            <table className="pi-table">
+              <thead>
+                <tr>
+                  <th>Parametro</th>
+                  {promotionSeasons.map((s) => (
+                    <th key={s}>{s}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {promotionNames
+                  .filter((n) => promotion[n])
+                  .map((n) => (
+                    <tr key={n}>
+                      <td className="font-semibold">{STABILITY_LABELS[n]}</td>
+                      {promotionSeasons.map((s) => (
+                        <td key={s} className="tabular-nums">
+                          {promotion[n][s] == null ? '—' : promotion[n][s].toFixed(3)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {calibration && (
+        <div>
+          <p className="mb-2 max-w-4xl text-xs leading-relaxed" style={{ color: 'var(--pi-muted)' }}>
+            Calibrazione di ogni stagione, stimata sulla stagione precedente: allargamento delle differenze di forza
+            (1 = nessuno), spostamento verso casa e livello dei gol (0 = nessuno).
+          </p>
+          <div className="pi-scroll">
+            <table className="pi-table">
+              <thead>
+                <tr>
+                  <th>Stagione</th>
+                  <th>Allargamento differenze</th>
+                  <th>Spostamento casa/ospite</th>
+                  <th>Livello gol</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calibrationSeasons.map((s) => (
+                  <tr key={s}>
+                    <td className="font-semibold">{s}</td>
+                    <td className="tabular-nums">{calibration[s].alpha.toFixed(3)}</td>
+                    <td className="tabular-nums">{calibration[s].beta.toFixed(3)}</td>
+                    <td className="tabular-nums">{calibration[s].gamma.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </Section>
   )
 }

@@ -16,7 +16,36 @@ ENGINE_VERSION_PHASE2 = "cecchino_v3_phase2_game_v1"
 ENGINE_VERSION_PHASE3 = "cecchino_v3_phase3_form_v1"
 ENGINE_VERSION_PHASE4 = "cecchino_v3_phase4_calendar_v1"
 ENGINE_VERSION_PHASE5 = "cecchino_v3_phase5_discipline_v1"
-PHASES: tuple[int, ...] = (1, 2, 3, 4, 5)
+ENGINE_VERSION_PHASE6 = "cecchino_v3_phase6_promotion_v1"
+ENGINE_VERSION_PHASE7 = "cecchino_v3_phase7_calibration_v1"
+PHASES: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
+
+
+@dataclass(frozen=True)
+class PhaseFeatures:
+    """Componenti attive in ogni fase."""
+
+    game: bool = False
+    form: bool = False
+    calendar: bool = False
+    discipline: bool = False
+    promotion: bool = False
+    calibration: bool = False
+
+
+# La Fase 5 (Disciplina) non e' stata adottata: le fasi 6 e 7 ripartono dalla
+# Fase 4, modello di riferimento.
+PHASE_FEATURES: dict[int, PhaseFeatures] = {
+    1: PhaseFeatures(),
+    2: PhaseFeatures(game=True),
+    3: PhaseFeatures(game=True, form=True),
+    4: PhaseFeatures(game=True, form=True, calendar=True),
+    5: PhaseFeatures(game=True, form=True, calendar=True, discipline=True),
+    6: PhaseFeatures(game=True, form=True, calendar=True, promotion=True),
+    7: PhaseFeatures(game=True, form=True, calendar=True, promotion=True, calibration=True),
+}
+# Termine di paragone dell'esame di ogni fase.
+PHASE_BASELINE: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 6}
 
 # --- Stagioni -----------------------------------------------------------------
 # 2021/22: rodaggio (il modello impara, non entra nel giudizio).
@@ -197,3 +226,28 @@ DISCIPLINE_PRIOR_FOULS = 11.5  # falli per squadra a partita
 DISCIPLINE_PRIOR_CARDS = 2.1  # cartellini pesati per squadra a partita
 REFEREE_PSEUDO_GOALS = 20.0
 DISCIPLINE_ADJUSTMENTS: tuple[str, ...] = ("fouls_attack", "fouls_defence", "cards_defence", "referee_goals")
+
+# --- Passo 1 della rifinitura (dichiarato prima dei risultati) ---------------
+# Fase 6 - neopromosse e retrocesse: 4 parametri (attacco/difesa di chi e'
+# salito o sceso di divisione rispetto alla stagione precedente), attivi per
+# tutta la prima stagione nella nuova divisione, stimati dentro Forza e Gioco
+# dalle partite passate; a priori 0 con deviazione 0,5.
+PROMOTION_PRIOR_PRECISION = 4.0
+# Fase 7 - calibrazione: sui gol attesi dell'orchestratore
+#   s = log(casa) - log(ospite)  (differenza di forza)
+#   m = (log(casa) + log(ospite)) / 2  (livello gol)
+#   s' = alpha * s + beta ;  m' = m + gamma
+# stimati sui risultati esatti (verosimiglianza Dixon-Coles) delle previsioni
+# fuori campione della stagione precedente, non calibrate; identita' nel rodaggio.
+CALIBRATION_ALPHA_BOUNDS = (0.5, 2.0)
+CALIBRATION_SHIFT_BOUNDS = (-0.5, 0.5)
+
+# --- Regola d'esame rigorosa (approvata dall'utente, valida dalla Fase 6) ----
+# Oltre a tolleranza e calibrazione:
+# - su 1X2 finale e Over/Under miglioramento medio di almeno lo 0,05%;
+# - parametri stabili: nessun cambio di segno tra le stagioni di giudizio
+#   (valori con |v| < 0,01 considerati zero).
+EXAM_STRICT_FROM_PHASE = 6
+EXAM_MAIN_FAMILIES: tuple[str, ...] = ("FT_1X2", "FT_OVER_UNDER")
+EXAM_MIN_MEAN_GAIN_PCT = 0.05
+EXAM_STABILITY_NEUTRAL = 0.01

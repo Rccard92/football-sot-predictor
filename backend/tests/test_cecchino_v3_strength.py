@@ -441,3 +441,158 @@ def test_build_adjustments_with_discipline():
     assert adj is not None
     assert adj.keys == FORM_ADJUSTMENTS + CALENDAR_ADJUSTMENTS + DISCIPLINE_ADJUSTMENTS
     assert set(adj.away[4]) == set(adj.keys)
+
+
+# --- Rifinitura: promosse/retrocesse, calibrazione, esame rigoroso ------------
+
+
+def _pyramid_match(mid, season, day, competition, home, away, gh=1, ga=1):
+    m = _form_match(mid, day, home, away, gh, ga, season=season)
+    return MatchRecord(**{**m.__dict__, "competition": competition, "group": "england"})
+
+
+def test_mover_flags_detect_promotion_and_relegation():
+    from app.services.cecchino_v3.walkforward import mover_flags
+
+    div_index = {"Premier League": 0, "Championship": 1}
+    matches = [
+        _pyramid_match(1, "2021/2022", 0, "Premier League", "Big", "Down"),
+        _pyramid_match(2, "2021/2022", 1, "Championship", "Up", "Stay"),
+        _pyramid_match(3, "2022/2023", 400, "Premier League", "Up", "Big"),
+        _pyramid_match(4, "2022/2023", 401, "Championship", "Down", "New"),
+    ]
+    home, away = mover_flags(matches, div_index)
+    assert home[0].tolist() == [0.0, 0.0] and away[0].tolist() == [0.0, 0.0]  # prima stagione
+    assert home[2].tolist() == [1.0, 0.0]  # Up promossa in Premier
+    assert away[2].tolist() == [0.0, 0.0]  # Big resta in Premier
+    assert home[3].tolist() == [0.0, 1.0]  # Down retrocessa
+    assert away[3].tolist() == [0.0, 0.0]  # New non era nel dataset
+
+
+def test_movers_without_moves_gives_same_expected_goals():
+    from app.services.cecchino_v3.strength_model import expected_goals
+
+    _, arr, n_teams, n_div, _ = _simulate()
+    window = WindowData(
+        home=arr[:, 0],
+        away=arr[:, 1],
+        division=arr[:, 2],
+        home_goals=arr[:, 3].astype(float),
+        away_goals=arr[:, 4].astype(float),
+        weight=np.ones(len(arr)),
+    )
+    team_div = team_divisions(window, n_teams=n_teams, n_divisions=n_div, fallback=np.zeros(n_teams, dtype=int))
+    newcomer = np.zeros(n_teams)
+    base_layout = ParamLayout(n_divisions=n_div, n_teams=n_teams)
+    beta0 = fit_strength(base_layout, window, team_division=team_div, newcomer=newcomer, sigma=0.4)
+    zeros = np.zeros((len(arr), 2))
+    mover_layout = ParamLayout(n_divisions=n_div, n_teams=n_teams, movers=True)
+    window_m = WindowData(**{**window.__dict__, "home_move": zeros, "away_move": zeros})
+    beta1 = fit_strength(mover_layout, window_m, team_division=team_div, newcomer=newcomer, sigma=0.4)
+
+    h0, a0 = expected_goals(
+        base_layout, beta0, division=arr[:, 2], home=arr[:, 0], away=arr[:, 1],
+        team_division=team_div, newcomer=newcomer,
+    )
+    h1, a1 = expected_goals(
+        mover_layout, beta1, division=arr[:, 2], home=arr[:, 0], away=arr[:, 1],
+        team_division=team_div, newcomer=newcomer, home_move=zeros, away_move=zeros,
+    )
+    assert np.max(np.abs(h0 - h1)) < 1e-8 and np.max(np.abs(a0 - a1)) < 1e-8
+    assert abs(beta1[mover_layout.promoted_att]) < 1e-12  # nessun caso: resta al valore a priori
+
+
+def test_fit_estimates_promotion_penalty():
+    rng = np.random.default_rng(21)
+    n_teams = 20
+    rows, home_flags, away_flags = [], [], []
+    for _ in range(10):
+        for h in range(n_teams):
+            for a in range(n_teams):
+                if h == a:
+                    continue
+                h_up, a_up = float(h < 4), float(a < 4)  # 4 squadre promosse
+                lh = np.exp(0.35 - 0.3 * h_up + 0.2 * a_up)
+                la = np.exp(0.10 - 0.3 * a_up + 0.2 * h_up)
+                rows.append((h, a, 0, rng.poisson(lh), rng.poisson(la)))
+                home_flags.append((h_up, 0.0))
+                away_flags.append((a_up, 0.0))
+    arr = np.array(rows)
+    layout = ParamLayout(n_divisions=1, n_teams=n_teams, movers=True)
+    window = WindowData(
+        home=arr[:, 0],
+        away=arr[:, 1],
+        division=arr[:, 2],
+        home_goals=arr[:, 3].astype(float),
+        away_goals=arr[:, 4].astype(float),
+        weight=np.ones(len(arr)),
+        home_move=np.array(home_flags),
+        away_move=np.array(away_flags),
+    )
+    beta = fit_strength(
+        layout, window, team_division=np.zeros(n_teams, dtype=int), newcomer=np.zeros(n_teams), sigma=0.05
+    )
+    # attacco piu' debole (-0,3) e difesa piu' debole (concede +0,2 -> parametro -0,2)
+    assert -0.45 < beta[layout.promoted_att] < -0.15
+    assert -0.35 < beta[layout.promoted_def] < -0.05
+
+
+def test_calibration_identity_and_recovery():
+    from app.services.cecchino_v3.calibration import (
+        IDENTITY,
+        Calibration,
+        CalibrationSample,
+        apply_calibration,
+        fit_calibration,
+    )
+
+    h_id, a_id = apply_calibration(1.7, 0.9, IDENTITY)
+    assert abs(h_id - 1.7) < 1e-12 and abs(a_id - 0.9) < 1e-12
+
+    rng = np.random.default_rng(8)
+    true = Calibration(alpha=1.3, beta=0.05, gamma=-0.04)
+    samples = []
+    for _ in range(12000):
+        lh, la = rng.uniform(0.6, 2.2), rng.uniform(0.5, 1.8)
+        th, ta = apply_calibration(lh, la, true)
+        samples.append(CalibrationSample(lh, la, 0.0, int(rng.poisson(th)), int(rng.poisson(ta))))
+    fitted = fit_calibration(samples)
+    assert abs(fitted.alpha - 1.3) < 0.08
+    assert abs(fitted.beta - 0.05) < 0.04
+    assert abs(fitted.gamma + 0.04) < 0.03
+    # mercati ancora coerenti dopo la calibrazione
+    h, a = apply_calibration(1.5, 1.0, fitted)
+    p = market_probabilities(h, a, -0.05, 0.45)
+    assert abs(p["HOME"] + p["DRAW"] + p["AWAY"] - 1.0) < 1e-9
+    assert fit_calibration([]) == IDENTITY
+
+
+def test_exam_strict_rules():
+    from app.services.cecchino_v3.constants import EXAM_FAMILIES, JUDGE_SEASONS
+    from app.services.cecchino_v3.evaluation import _exam
+
+    def rows(changes_by_family):
+        out = []
+        for family in EXAM_FAMILIES:
+            for season, change in zip(JUDGE_SEASONS, changes_by_family.get(family, [-0.1, -0.1, -0.1])):
+                out.append(
+                    {"family": family, "season_label": season, "brier_v3": 0.2 * (1 + change / 100), "brier_prev": 0.2}
+                )
+        return out
+
+    cal = {"FT_1X2": {"v3_pct": 1.0}, "FT_OVER_UNDER": {"v3_pct": 1.0}}
+    stable = {"x": dict(zip(JUDGE_SEASONS, [0.2, 0.15, 0.005]))}
+    good = rows({})
+
+    def passed(by_season, stability):
+        return _exam(by_season, cal, reference="prev", tolerance_pct=0.1, strict=True, stability=stability)["passed"]
+
+    assert passed(good, stable)
+    # guadagno medio sotto lo 0,05% su 1X2: non passa
+    assert not passed(rows({"FT_1X2": [-0.04, -0.03, -0.05]}), stable)
+    # la soglia minima vale solo per 1X2 e Over/Under
+    assert passed(rows({"HT_1X2": [-0.01, -0.02, -0.01]}), stable)
+    # parametro che cambia segno: non passa
+    assert not passed(good, {"x": dict(zip(JUDGE_SEASONS, [0.2, -0.15, 0.1]))})
+    # regola rigorosa senza parametri da controllare: non passa
+    assert not passed(good, None)

@@ -20,7 +20,10 @@ from app.services.cecchino_v3.constants import (
     CALIBRATION_BINS,
     EXAM_CALIBRATION_FAMILIES,
     EXAM_FAMILIES,
+    EXAM_MAIN_FAMILIES,
     EXAM_MAX_CALIBRATION_ERROR_PCT,
+    EXAM_MIN_MEAN_GAIN_PCT,
+    EXAM_STABILITY_NEUTRAL,
     JUDGE_SEASONS,
     LOCKBOX,
     MARKET_FAMILY,
@@ -156,6 +159,8 @@ def build_evaluation(
     *,
     baseline_run_id: int | None = None,
     tolerance_pct: float | None = None,
+    strict: bool = False,
+    stability: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """tolerance_pct: se indicata (dalla Fase 3), una stagione passa se l'errore
     non supera il riferimento di oltre tolerance_pct e la famiglia passa solo se
@@ -233,7 +238,14 @@ def build_evaluation(
             )
 
     reference = "prev" if baseline_run_id is not None else "v2"
-    exam = _exam(by_season, calibration_error, reference=reference, tolerance_pct=tolerance_pct)
+    exam = _exam(
+        by_season,
+        calibration_error,
+        reference=reference,
+        tolerance_pct=tolerance_pct,
+        strict=strict,
+        stability=stability,
+    )
     return {
         "warmup_season": WARMUP_SEASON,
         "judge_seasons": list(JUDGE_SEASONS),
@@ -263,6 +275,8 @@ def _exam(
     *,
     reference: str,
     tolerance_pct: float | None = None,
+    strict: bool = False,
+    stability: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     ref_key = "brier_v2" if reference == "v2" else "brier_prev"
     factor = 1.0 + (tolerance_pct or 0.0) / 100.0
@@ -300,8 +314,17 @@ def _exam(
         passed = all(s["passed"] for s in seasons)
         if tolerance_pct is not None:
             passed = passed and mean_change is not None and mean_change < 0
+        min_gain = EXAM_MIN_MEAN_GAIN_PCT if strict and family in EXAM_MAIN_FAMILIES else None
+        if min_gain is not None:
+            passed = passed and mean_change is not None and mean_change <= -min_gain
         families.append(
-            {"family": family, "passed": passed, "mean_change_pct": mean_change, "seasons": seasons}
+            {
+                "family": family,
+                "passed": passed,
+                "mean_change_pct": mean_change,
+                "min_mean_gain_pct": min_gain,
+                "seasons": seasons,
+            }
         )
     calibration = [
         {
@@ -324,12 +347,43 @@ def _exam(
             f"di oltre il {tolerance_pct:g}%",
             f"In ogni famiglia, errore piu' basso {_REFERENCE_LABELS[reference]} in media sulle stagioni di giudizio",
         ]
+    if strict:
+        rules.append(
+            f"Su 1X2 finale e Over/Under miglioramento medio di almeno lo {EXAM_MIN_MEAN_GAIN_PCT:g}%"
+        )
+        rules.append(
+            "Parametri stabili: nessun cambio di segno tra le stagioni di giudizio "
+            f"(valori sotto {EXAM_STABILITY_NEUTRAL:g} considerati zero)"
+        )
     rules.append(f"Errore di calibrazione V3 <= {EXAM_MAX_CALIBRATION_ERROR_PCT} punti su 1X2 finale e Over/Under")
+    stability_rows = _stability_rows(stability) if strict else []
+    # con la regola rigorosa i parametri da controllare devono esserci
+    stability_ok = (bool(stability_rows) and all(r["passed"] for r in stability_rows)) if strict else True
     return {
-        "passed": all(f["passed"] for f in families) and all(c["passed"] for c in calibration),
+        "passed": all(f["passed"] for f in families) and all(c["passed"] for c in calibration) and stability_ok,
+        "strict": strict,
+        "stability": stability_rows,
         "reference": reference,
         "tolerance_pct": tolerance_pct,
         "accuracy_vs_v2": families,
         "calibration": calibration,
         "rules": rules,
     }
+
+
+def _stability_rows(stability: dict[str, dict[str, float]] | None) -> list[dict[str, Any]]:
+    """Un parametro e' stabile se ha un valore per ogni stagione di giudizio e i
+    valori non trascurabili (|v| >= EXAM_STABILITY_NEUTRAL) hanno tutti lo stesso segno."""
+    rows: list[dict[str, Any]] = []
+    for name, per_season in (stability or {}).items():
+        values = [per_season.get(season) for season in JUDGE_SEASONS]
+        complete = all(v is not None for v in values)
+        signs = {1 if v > 0 else -1 for v in values if v is not None and abs(v) >= EXAM_STABILITY_NEUTRAL}
+        rows.append(
+            {
+                "name": name,
+                "values": {season: per_season.get(season) for season in JUDGE_SEASONS},
+                "passed": complete and len(signs) <= 1,
+            }
+        )
+    return rows

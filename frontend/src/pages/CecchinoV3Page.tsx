@@ -6,6 +6,7 @@ import {
   CompetitionBlock,
   ExamBlock,
   OrchestratorBlock,
+  RefinementBlock,
   RunDetailsBlock,
 } from '../components/cecchino-v3/V3Blocks'
 import {
@@ -25,9 +26,11 @@ const PHASE_TITLES: Record<number, string> = {
   3: 'Fase 3 · Forza + Gioco + Forma',
   4: 'Fase 4 · Forza + Gioco + Forma + Calendario',
   5: 'Fase 5 · Forza + Gioco + Forma + Calendario + Disciplina',
+  6: 'Fase 6 · Fase 4 + neopromosse e retrocesse',
+  7: 'Fase 7 · Fase 6 + calibrazione',
 }
 
-const NEXT_PHASE = 5
+const NEXT_PHASE = 6
 
 const POLL_MS = 10000
 
@@ -211,6 +214,7 @@ export function CecchinoV3Page() {
             <ExamBlock evaluation={evaluation} phase={shownPhase} />
             <AccuracyBlock evaluation={evaluation} />
             <OrchestratorBlock run={shown} />
+            <RefinementBlock run={shown} />
             <CalibrationBlock evaluation={evaluation} />
             <CompetitionBlock evaluation={evaluation} />
             <RunDetailsBlock run={shown} />

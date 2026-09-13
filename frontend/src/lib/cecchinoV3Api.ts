@@ -31,11 +31,14 @@ export type V3Evaluation = {
     passed: boolean
     reference?: 'v2' | 'prev'
     tolerance_pct?: number | null
+    strict?: boolean
+    stability?: Array<{ name: string; values: Record<string, number | null>; passed: boolean }>
     rules: string[]
     accuracy_vs_v2: Array<{
       family: V3Family
       passed: boolean
       mean_change_pct?: number | null
+      min_mean_gain_pct?: number | null
       seasons: Array<{
         season_label: string
         passed: boolean
@@ -114,6 +117,8 @@ export type V3Run = {
     evaluation: V3Evaluation
     orchestrator_weights?: Record<string, V3Weights>
     base_orchestrator_weights?: Record<string, V3Weights>
+    promotion_parameters?: Record<string, Record<string, number>>
+    calibration?: Record<string, { alpha: number; beta: number; gamma: number }>
     game_chosen_hyper?: Record<string, Record<string, { xi: number; sigma: number }>>
   } | null
   error: { message?: string } | null

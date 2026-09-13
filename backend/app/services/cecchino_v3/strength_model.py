@@ -16,6 +16,10 @@ dove d e' la divisione della partita e, per ogni squadra i,
 - nuova(i): squadra entrata nel dataset dopo la prima stagione (arriva da una
   lega che non abbiamo); nc_att/nc_def e' lo scarto medio di queste squadre.
 - a, b: scarto della singola squadra, trattenuto verso 0 con deviazione sigma.
+- solo con movers=True (dalla Fase 6): nella prima stagione dopo un cambio di
+  divisione si aggiungono prom_att/rel_att all'attacco e prom_def/rel_def alla
+  difesa della squadra promossa o retrocessa (stimati dai casi passati, a
+  priori 0). Con movers=False il modello e' identico alle fasi precedenti.
 
 Stima: massima verosimiglianza di Poisson pesata per tempo (ogni partita pesa
 exp(-xi * giorni)), penalizzata, con il metodo di Newton. La funzione e'
@@ -30,6 +34,7 @@ import numpy as np
 
 from app.services.cecchino_v3.constants import (
     HT_SHARE_PSEUDO_GOALS,
+    PROMOTION_PRIOR_PRECISION,
     PRIOR_HOME_ADVANTAGE,
     PRIOR_HT_SHARE,
     PRIOR_LOG_GOALS,
@@ -39,6 +44,7 @@ from app.services.cecchino_v3.constants import (
 )
 
 _WIDTH = 8  # colonne non nulle per osservazione
+_WIDTH_MOVERS = 12  # con i parametri di promozione/retrocessione
 _MAX_NEWTON_ITER = 30
 _NEWTON_TOL = 1e-6
 _MAX_STEP = 1.0
@@ -54,6 +60,7 @@ _PREC_NEWCOMER = 4.0
 class ParamLayout:
     n_divisions: int
     n_teams: int
+    movers: bool = False
 
     @property
     def mu(self) -> np.ndarray:
@@ -78,15 +85,45 @@ class ParamLayout:
     def nc_def(self) -> int:
         return 4 * self.n_divisions - 1
 
+    @property
+    def _mover_block(self) -> int:
+        return 4 if self.movers else 0
+
+    @property
+    def promoted_att(self) -> int:
+        return 4 * self.n_divisions
+
+    @property
+    def relegated_att(self) -> int:
+        return 4 * self.n_divisions + 1
+
+    @property
+    def promoted_def(self) -> int:
+        return 4 * self.n_divisions + 2
+
+    @property
+    def relegated_def(self) -> int:
+        return 4 * self.n_divisions + 3
+
+    def mover_indices(self) -> dict[str, int]:
+        if not self.movers:
+            return {}
+        return {
+            "promoted_attack": self.promoted_att,
+            "promoted_defence": self.promoted_def,
+            "relegated_attack": self.relegated_att,
+            "relegated_defence": self.relegated_def,
+        }
+
     def team_att(self, team: np.ndarray) -> np.ndarray:
-        return 4 * self.n_divisions + team
+        return 4 * self.n_divisions + self._mover_block + team
 
     def team_def(self, team: np.ndarray) -> np.ndarray:
-        return 4 * self.n_divisions + self.n_teams + team
+        return 4 * self.n_divisions + self._mover_block + self.n_teams + team
 
     @property
     def size(self) -> int:
-        return 4 * self.n_divisions + 2 * self.n_teams
+        return 4 * self.n_divisions + self._mover_block + 2 * self.n_teams
 
     def prior_mean(self, log_level: float = PRIOR_LOG_GOALS) -> np.ndarray:
         m = np.zeros(self.size)
@@ -102,6 +139,8 @@ class ParamLayout:
         p[self.nc_att] = _PREC_NEWCOMER
         p[self.nc_def] = _PREC_NEWCOMER
         p[4 * self.n_divisions :] = 1.0 / (sigma * sigma)
+        if self.movers:
+            p[4 * self.n_divisions : 4 * self.n_divisions + 4] = PROMOTION_PRIOR_PRECISION
         return p
 
 
@@ -115,6 +154,9 @@ class WindowData:
     home_goals: np.ndarray
     away_goals: np.ndarray
     weight: np.ndarray  # peso temporale
+    # (n, 2): [promossa, retrocessa] nella stagione di quella partita (solo movers)
+    home_move: np.ndarray | None = None
+    away_move: np.ndarray | None = None
 
 
 def _observation_design(
@@ -126,11 +168,14 @@ def _observation_design(
     team_division: np.ndarray,
     newcomer: np.ndarray,
     is_home: bool,
+    attacker_move: np.ndarray | None = None,
+    defender_move: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Colonne e coefficienti (n, 8) del predittore lineare di un lato."""
+    """Colonne e coefficienti (n, 8 o 12) del predittore lineare di un lato."""
     n = attacker.shape[0]
-    cols = np.zeros((n, _WIDTH), dtype=np.int64)
-    coef = np.zeros((n, _WIDTH))
+    width = _WIDTH_MOVERS if layout.movers else _WIDTH
+    cols = np.zeros((n, width), dtype=np.int64)
+    coef = np.zeros((n, width))
 
     cols[:, 0] = layout.mu[division]
     coef[:, 0] = 1.0
@@ -153,6 +198,18 @@ def _observation_design(
     coef[:, 6] = -newcomer[defender]
     cols[:, 7] = layout.team_def(defender)
     coef[:, 7] = -1.0
+
+    if layout.movers:
+        if attacker_move is None or defender_move is None:
+            raise ValueError("con movers=True servono le indicazioni di promozione/retrocessione")
+        cols[:, 8] = layout.promoted_att
+        coef[:, 8] = attacker_move[:, 0]
+        cols[:, 9] = layout.relegated_att
+        coef[:, 9] = attacker_move[:, 1]
+        cols[:, 10] = layout.promoted_def
+        coef[:, 10] = -defender_move[:, 0]
+        cols[:, 11] = layout.relegated_def
+        coef[:, 11] = -defender_move[:, 1]
     return cols, coef
 
 
@@ -195,6 +252,8 @@ def fit_strength(
         team_division=team_division,
         newcomer=newcomer,
         is_home=True,
+        attacker_move=window.home_move,
+        defender_move=window.away_move,
     )
     cols_a, coef_a = _observation_design(
         layout,
@@ -204,6 +263,8 @@ def fit_strength(
         team_division=team_division,
         newcomer=newcomer,
         is_home=False,
+        attacker_move=window.away_move,
+        defender_move=window.home_move,
     )
     cols = np.vstack([cols_h, cols_a])
     coef = np.vstack([coef_h, coef_a])
@@ -244,6 +305,8 @@ def expected_goals(
     away: np.ndarray,
     team_division: np.ndarray,
     newcomer: np.ndarray,
+    home_move: np.ndarray | None = None,
+    away_move: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Gol attesi casa e ospite per le partite indicate."""
     cols_h, coef_h = _observation_design(
@@ -254,6 +317,8 @@ def expected_goals(
         team_division=team_division,
         newcomer=newcomer,
         is_home=True,
+        attacker_move=home_move,
+        defender_move=away_move,
     )
     cols_a, coef_a = _observation_design(
         layout,
@@ -263,6 +328,8 @@ def expected_goals(
         team_division=team_division,
         newcomer=newcomer,
         is_home=False,
+        attacker_move=away_move,
+        defender_move=home_move,
     )
     eta_h = np.einsum("ij,ij->i", coef_h, beta[cols_h])
     eta_a = np.einsum("ij,ij->i", coef_a, beta[cols_a])
