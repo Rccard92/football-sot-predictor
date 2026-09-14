@@ -205,7 +205,7 @@ def refresh_book_odds_for_fixture(
             provider_source=PROVIDER_API_FOOTBALL,
         ),
         "book_policy_version": CECCHINO_BOOK_POLICY_VERSION,
-        "policy_label": "Betfair primario · Bet365 fallback",
+        "policy_label": "Bet365 primario · Betfair fallback",
         "selection_sources": selection_sources,
         "before": before,
         "after": after,

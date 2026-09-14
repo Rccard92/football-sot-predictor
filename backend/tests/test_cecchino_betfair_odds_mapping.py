@@ -101,7 +101,7 @@ def test_first_half_winner_maps_draw_pt():
     draw_pt = next(r for r in rows if r["selection_key"] == SEL_DRAW_PT)
     assert draw_pt["normalized_market"] == MARKET_1X2_FH
     assert draw_pt["odds_value"] == 2.0
-    assert draw_pt["provenance"]["source"] == "betfair_raw_first_half_match_winner"
+    assert draw_pt["provenance"]["source"] == "bet365_raw_first_half_match_winner"
 
 
 def test_half_time_result_x_maps_draw_pt():
@@ -127,7 +127,7 @@ def test_fh_payload_includes_draw_pt():
     markets = payload["bookmakers"][0]["markets"]
     assert markets["MATCH_WINNER_1X2_FIRST_HALF"][SEL_DRAW_PT] == 2.05
     prov = payload["provenance_by_selection"][SEL_DRAW_PT]
-    assert prov["source"] == "betfair_raw_first_half_match_winner"
+    assert prov["source"] == "bet365_raw_first_half_match_winner"
 
 
 def test_double_chance_raw_mapping():
@@ -155,7 +155,7 @@ def test_dc_derived_when_raw_missing():
     bm = payload["bookmakers"][0]
     assert bm["dc_derived"][SEL_ONE_X] is True
     prov = payload["provenance_by_selection"][SEL_ONE_X]
-    assert prov["source"] == "derived_from_betfair_1x2"
+    assert prov["source"] == "derived_from_bet365_1x2"
 
 
 def test_1x2_source_betfair_raw_match_winner():
@@ -164,7 +164,7 @@ def test_1x2_source_betfair_raw_match_winner():
         {bid: _payload(_bet("Match Winner", 1, [("Home", "2.0"), ("Draw", "3.2"), ("Away", "4.0")]))},
     )
     prov = payload["provenance_by_selection"][SEL_HOME]
-    assert prov["source"] == "betfair_raw_match_winner"
+    assert prov["source"] == "bet365_raw_match_winner"
     assert prov["raw_market_name"] == "Match Winner"
 
 
@@ -210,7 +210,7 @@ def test_kpi_debug_json_betfair_only():
     )
     db = MagicMock()
     out = build_kpi_debug_json(row, db)
-    assert out["bookmaker"]["provider_bookmaker_id"] == 3
+    assert out["bookmaker"]["provider_bookmaker_id"] == 8
     assert out["bookmaker"]["name"] in ("Bet365", "Book")
     assert out["bookmaker"]["odds_fetched_at"]
     assert out["bookmaker"]["is_cached"] is True

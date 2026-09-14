@@ -42,7 +42,7 @@ def _raw_payload(*bets: dict, extra_bets: list[dict] | None = None) -> list[dict
 
 def _snapshot_from_raw(raw: list[dict], *, home: float, draw: float, away: float) -> dict:
     snap = {
-        "bookmakers": {"Bet365": {"HOME": home, "DRAW": draw, "AWAY": away}},
+        "bookmakers": {"Betfair": {"HOME": home, "DRAW": draw, "AWAY": away}},
         "raw_by_bookmaker_id": {str(_BETFAIR_ID): raw},
     }
     return attach_scan_odds_meta(snap, from_cache=True)
@@ -146,7 +146,7 @@ def test_refresh_does_not_call_other_bookmaker_ids(db):
 
     odds_by_book = mock_fetch.return_value[0]
     assert set(odds_by_book.keys()) == {_BETFAIR_ID}
-    assert 8 not in odds_by_book
+    assert 3 not in odds_by_book
     assert 4 not in odds_by_book
 
 

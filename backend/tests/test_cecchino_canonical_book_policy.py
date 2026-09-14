@@ -108,7 +108,7 @@ def test_case_a_betfair_over_beats_bet365():
     assert row["quota_book"] == 1.80
     assert row["bookmaker_name"] == "Bet365"
     assert row["book_fallback_used"] is False
-    assert row["provider_bookmaker_id"] == 3
+    assert row["provider_bookmaker_id"] == 8
 
 
 # --- CASO B ---
@@ -132,7 +132,7 @@ def test_case_b_bet365_fallback_over():
     assert row["quota_book"] == 1.36
     assert row["bookmaker_name"] == "Betfair"
     assert row["book_fallback_used"] is True
-    assert row["provider_bookmaker_id"] == 8
+    assert row["provider_bookmaker_id"] == 3
 
 
 # --- CASO C ---
@@ -253,7 +253,7 @@ def test_case_h_no_bet365_specific_when_betfair_covers(monkeypatch):
         {
             "bookmakers": [
                 {
-                    "id": 3,
+                    "id": 8,
                     "name": "Bet365",
                     "bets": [
                         {
@@ -335,7 +335,7 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
         {
             "bookmakers": [
                 {
-                    "id": 3,
+                    "id": 8,
                     "name": "Bet365",
                     "bets": [
                         {
@@ -510,8 +510,8 @@ def test_extract_both_books_from_fixture_wide():
     raw = [
         {
             "bookmakers": [
-                {"id": 3, "name": "Bet365", "bets": []},
-                {"id": 8, "name": "Betfair", "bets": []},
+                {"id": 8, "name": "Bet365", "bets": []},
+                {"id": 3, "name": "Betfair", "bets": []},
                 {"id": 4, "name": "Pinnacle", "bets": []},
             ],
         },
@@ -538,7 +538,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
         {
             "bookmakers": [
                 {
-                    "id": 3,
+                    "id": 8,
                     "name": "Bet365",
                     "bets": [
                         {
@@ -553,7 +553,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
                     ],
                 },
                 {
-                    "id": 8,
+                    "id": 3,
                     "name": "Betfair",
                     "bets": [
                         {
@@ -618,7 +618,7 @@ def test_01_1_true_fallback_after_betfair_specific_miss(monkeypatch):
         {
             "bookmakers": [
                 {
-                    "id": 3,
+                    "id": 8,
                     "name": "Bet365",
                     "bets": [
                         {
@@ -723,7 +723,7 @@ def test_01_1_no_useless_specific_calls_when_betfair_covers(monkeypatch):
     ]
     client = MagicMock()
     client.get_fixture_odds_by_fixture.return_value = [
-        {"bookmakers": [{"id": 3, "name": "Bet365", "bets": bets_full}]},
+        {"bookmakers": [{"id": 8, "name": "Bet365", "bets": bets_full}]},
     ]
     metrics = ScanRunMetrics()
     fetch_fixture_odds_for_cecchino_bookmakers(
@@ -738,7 +738,7 @@ def test_01_1_legacy_snapshot_betfair_only_readable():
     from app.services.cecchino.cecchino_today_odds_meta import extract_1x2_from_snapshot
 
     legacy = {
-        "bookmakers": {"Bet365": {"HOME": 1.80, "DRAW": 3.20, "AWAY": 4.50}},
+        "bookmakers": {"Betfair": {"HOME": 1.80, "DRAW": 3.20, "AWAY": 4.50}},
     }
     extracted = extract_1x2_from_snapshot(legacy)
     assert extracted["HOME"] == 1.80
@@ -770,7 +770,7 @@ def test_01_1_api_calls_used_counts_three(monkeypatch):
         {
             "bookmakers": [
                 {
-                    "id": 3,
+                    "id": 8,
                     "name": "Bet365",
                     "bets": [
                         {

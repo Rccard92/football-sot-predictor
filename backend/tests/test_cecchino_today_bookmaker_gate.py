@@ -62,7 +62,7 @@ def test_missing_betfair_excludes():
     ok, _, reason, blocking = verify_complete_1x2_odds({})
     assert not ok
     assert reason == "missing_bookmaker"
-    assert any("missing_bookmaker:Betfair" in b for b in blocking)
+    assert any("missing_bookmaker:Bet365" in b for b in blocking)
 
 
 def test_betfair_without_1x2_excludes():
@@ -84,7 +84,7 @@ def test_betfair_without_1x2_excludes():
     ok, _, reason, blocking = verify_complete_1x2_odds({bid: partial})
     assert not ok
     assert reason == "missing_1x2_market"
-    assert any("missing_selection:Betfair" in b for b in blocking)
+    assert any("missing_selection:Bet365" in b for b in blocking)
 
 
 def test_bet365_fills_missing_away():

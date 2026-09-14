@@ -492,7 +492,7 @@ def build_cecchino_kpi_panel_v2_betfair(
         or CECCHINO_BOOK_POLICY_VERSION,
         "bookmaker": {
             "name": "Book",
-            "policy_label": "Betfair primario · Bet365 fallback",
+            "policy_label": "Bet365 primario · Betfair fallback",
             "primary_name": CECCHINO_PRIMARY_BOOKMAKER["name"],
             "primary_provider_bookmaker_id": int(
                 CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"],

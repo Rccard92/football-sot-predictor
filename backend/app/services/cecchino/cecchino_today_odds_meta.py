@@ -115,7 +115,7 @@ def bookmaker_meta_block(
         "last_betfair_refresh_at": m.get("last_betfair_refresh_at") or m.get("last_book_refresh_at"),
         "is_cached": m.get("is_cached"),
         "book_policy_version": m.get("book_policy_version") or CECCHINO_BOOK_POLICY_VERSION,
-        "policy_label": "Betfair primario · Bet365 fallback",
+        "policy_label": "Bet365 primario · Betfair fallback",
     }
 
 

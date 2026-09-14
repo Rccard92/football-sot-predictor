@@ -141,8 +141,8 @@ def test_kpi_v2_columns_and_version():
     assert panel["version"] == KPI_V2_VERSION
     assert panel.get("mapping_version") == "kpi_markets_v31_phase1"
     assert panel["bookmaker"]["name"] == "Book"
-    assert panel["bookmaker"]["policy_label"] == "Betfair primario · Bet365 fallback"
-    assert panel["bookmaker"]["provider_bookmaker_id"] == 3
+    assert panel["bookmaker"]["policy_label"] == "Bet365 primario · Betfair fallback"
+    assert panel["bookmaker"]["provider_bookmaker_id"] == 8
     assert panel["book_policy_version"] == "bet365_primary_betfair_fallback_v2"
     cols = panel["columns"]
     assert "quota_book" in cols
