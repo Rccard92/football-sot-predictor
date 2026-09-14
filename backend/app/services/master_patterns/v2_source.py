@@ -13,10 +13,14 @@ from app.services.master_patterns.constants import (
     MARKET_LABELS,
     MIN_SAMPLE,
     MODEL_V2,
+    SYNTHETIC_TARGETS,
     TARGET_MARKET,
     VERIFY_SEASONS,
 )
 from app.services.master_patterns.orientation import orient_season, synthetic_market_label
+
+
+_SYNTHETIC_BASE_LABELS = {key: label for key, label, _ in SYNTHETIC_TARGETS}
 
 
 def _f(v: Any) -> float | None:
@@ -118,7 +122,9 @@ def load_v2_patterns(db: Session) -> tuple[list[dict[str, Any]], dict[str, Any]]
             "market_label": (
                 MARKET_LABELS.get(d["target_key"], d["target_label"])
                 if is_market
-                else synthetic_market_label(d["target_label"], threshold, direction)
+                else synthetic_market_label(
+                    _SYNTHETIC_BASE_LABELS.get(d["target_key"], d["target_label"]), threshold, direction
+                )
             ),
             "conditions": list(d["filters_json"] or []),
             "conditions_text": d["filters_text_human"],
