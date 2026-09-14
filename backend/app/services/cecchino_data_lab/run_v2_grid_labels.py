@@ -75,15 +75,22 @@ TARGET_LABELS: dict[str, str] = {
 }
 
 
-def humanize_atom(column: str, value: str) -> str:
+# In V2.5 due pilastri Equilibrio misurano cose diverse dalla V2 (stesso campo JSON).
+V25_COLUMN_LABELS: dict[str, str] = {
+    "balance_f36_class": "Equilibrio tra 1 e 2",
+    "balance_gap_coherence_class": "Coerenza picchetti / modello gol",
+}
+
+
+def humanize_atom(column: str, value: str, *, v25: bool = False) -> str:
     if column == "pre_signal_active":
         return "Segnale Cecchino attivo"
-    label = COLUMN_LABELS.get(column, column)
+    label = (V25_COLUMN_LABELS.get(column) if v25 else None) or COLUMN_LABELS.get(column, column)
     return f"{label}: {humanize_value(value)}"
 
 
-def humanize_combo(filters_json: list[dict[str, Any]]) -> str:
-    return " + ".join(humanize_atom(f["column"], f["value"]) for f in filters_json)
+def humanize_combo(filters_json: list[dict[str, Any]], *, v25: bool = False) -> str:
+    return " + ".join(humanize_atom(f["column"], f["value"], v25=v25) for f in filters_json)
 
 
 def target_label(target_key: str, threshold: float | None = None) -> str:

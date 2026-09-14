@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.cecchino_data_lab.run_v2_grid_labels import humanize_combo
 from app.services.master_patterns.constants import (
     DISCOVERY_SEASON,
     MARKET_LABELS,
@@ -133,7 +134,9 @@ def load_v2_patterns(db: Session, model: str = MODEL_V2) -> tuple[list[dict[str,
                 )
             ),
             "conditions": list(d["filters_json"] or []),
-            "conditions_text": d["filters_text_human"],
+            "conditions_text": (
+                humanize_combo(list(d["filters_json"] or []), v25=True) if model == MODEL_V25 else d["filters_text_human"]
+            ),
             "seasons": {DISCOVERY_SEASON: discovery if is_market else orient_season(discovery, direction)},
         }
 

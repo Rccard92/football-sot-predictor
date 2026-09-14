@@ -33,6 +33,16 @@ VALUE_LABELS: dict[str, str] = {
     "transition": "transizione",
     "imbalance": "squilibrio",
     "strong_imbalance": "forte squilibrio",
+    # classi V2.5 di Convinzione e Coerenza
+    "very_weak": "molto debole",
+    "weak": "debole",
+    "moderate": "moderata",
+    "strong": "forte",
+    "very_strong": "molto forte",
+    "not_confirmed": "non confermata",
+    "partial": "parziale",
+    "confirmed": "confermata",
+    "strongly_confirmed": "fortemente confermata",
     "true": "attivo",
 }
 
