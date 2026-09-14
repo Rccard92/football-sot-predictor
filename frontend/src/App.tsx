@@ -16,6 +16,7 @@ import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasa
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { RoadmapPage } from './pages/RoadmapPage'
 import { MasterPatternPage } from './pages/MasterPatternPage'
+import { LiveObservationPage } from './pages/LiveObservationPage'
 
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route path="/roadmap" element={<RoadmapPage />} />
           <Route path="/master-pattern" element={<MasterPatternPage />} />
+          <Route path="/osservazione-live" element={<LiveObservationPage />} />
           <Route path="/cecchino-lab/pattern-lab" element={<CecchinoLabPatternLabPage />} />
           <Route
             path="/cecchino-lab/historical-scans/:runId/kpi-signals"

@@ -13,6 +13,7 @@ const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
 const MONITORAGGIO_SEGNO_1_PATH = '/monitoraggio-segno-1'
 const MASTER_PATTERN_PATH = '/master-pattern'
 const ROADMAP_PATH = '/roadmap'
+const LIVE_OBSERVATION_PATH = '/osservazione-live'
 
 export function Layout() {
   const location = useLocation()
@@ -28,6 +29,7 @@ export function Layout() {
     location.pathname === MONITORAGGIO_SEGNO_1_PATH ||
     location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`) ||
     location.pathname === MASTER_PATTERN_PATH ||
+    location.pathname === LIVE_OBSERVATION_PATH ||
     location.pathname === ROADMAP_PATH
 
   const contentClass = isFullWidthWorkspace

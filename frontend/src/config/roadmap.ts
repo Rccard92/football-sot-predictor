@@ -120,6 +120,8 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: 'Pattern Master V2: servono le classi dei moduli V2 calcolate come nella RUN V2', status: 'da_fare' },
       { text: "Statistiche squadra (tiri, corner, cartellini) per tutte le competizioni: oggi presenti solo per poche partite, la maggior parte dei pattern resta non verificabile", status: 'da_fare' },
       { text: 'Bet Builder: sezione pattern accesi in osservazione con esito a fine partita (non giocate automatiche)', status: 'fatto' },
+      { text: 'Scansione notturna: i rifiuti per troppe richieste (429) non escludono piu partite, quote del giorno lette a pagine, secondo passaggio di recupero', status: 'fatto' },
+      { text: "Giro automatico del mattino per le quote pubblicate dopo le 23:00: pronto, da attivare con conferma dell'utente", status: 'da_fare' },
     ],
     doneWhen: 'Su ogni partita vedi tre analisi e i segnali dei pattern, anche per i mercati senza quota.',
   },
@@ -127,11 +129,13 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     id: 7,
     title: 'Osservazione in live',
     goal: 'Misurare nel tempo motori e pattern sulle partite reali.',
-    status: 'da_fare',
+    status: 'in_corso',
     dependsOn: [5, 6],
     tasks: [
-      { text: 'Rendimento di ogni motore (precisione) nel tempo', status: 'da_fare' },
-      { text: 'Rendimento di ogni pattern Master acceso in live (giocate, vinte, ROI)', status: 'da_fare' },
+      { text: 'Pagina Osservazione live: precisione di ogni motore giorno per giorno sulle stesse partite, con Bet365 come metro di paragone', status: 'fatto' },
+      { text: 'Rendimento dei pattern Master accesi in live, raggruppati per mercato (segnali, vinti, % live contro storico, ROI)', status: 'fatto' },
+      { text: 'Pattern accesi raggruppati anche in Cecchino Today e Bet Builder (un segnale per mercato con i pattern concordi)', status: 'fatto' },
+      { text: 'Verifica con alcune settimane di dati reali: i pattern confermano lo storico?', status: 'da_fare' },
     ],
     doneWhen: 'Una pagina mostra, giornata dopo giornata, chi conferma e chi no.',
   },
@@ -178,6 +182,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-14',
+    text: "Step 7 avviato: pagina Osservazione live (motori giorno per giorno contro Bet365, pattern per mercato con esito live e storico, concordanza). Scansione delle 23:00 corretta: le partite venivano escluse quando API-Football rifiutava le richieste (limite al minuto condiviso tra produzione e staging) e le quote si leggevano una partita alla volta.",
+  },
   {
     date: '2026-09-14',
     text: "Quote: Bet365 fonte principale per tutti i modelli, Betfair riferimento. Eleggibili solo partite con quote reali Bet365 su 1X2 e Over/Under 2.5. Collegamento dati notturno attivo: statistiche squadra a blocchi da 20 partite e linee Bet365 a .5 salvate per ogni partita.",

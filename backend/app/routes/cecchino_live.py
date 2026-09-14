@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.core.admin_session import require_admin_session
 from app.core.database import get_db
-from app.models.cecchino_live_prediction import CecchinoLivePrediction
+from app.models.cecchino_live_prediction import LIVE_STATUS_SETTLED, CecchinoLivePrediction
+from app.services.cecchino_live.observation import group_active_patterns, group_outcome, observation_dashboard
 from app.services.cecchino_live.registry import record_predictions, settle_predictions
 from app.services.cecchino_live.summary import live_summary
 
@@ -104,8 +105,21 @@ def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> 
         .order_by(CecchinoLivePrediction.kickoff, CecchinoLivePrediction.id)
     ).all()
     out = []
+    groups = []
     for r in rows:
         patterns = (r.modules_json or {}).get("patterns") or {}
+        for g in group_active_patterns(patterns.get("active")):
+            groups.append({
+                "today_fixture_id": int(r.today_fixture_id),
+                "kickoff": r.kickoff.isoformat() if r.kickoff else None,
+                "league_name": r.league_name,
+                "home_team_name": r.home_team_name,
+                "away_team_name": r.away_team_name,
+                "model": r.model,
+                "status": r.status,
+                "group": g,
+                "result": group_outcome(r, g) if r.status == LIVE_STATUS_SETTLED else None,
+            })
         for p in patterns.get("active") or []:
             if p["target_type"] == "market":
                 result = ((r.result_json or {}).get("markets") or {}).get(p["target_key"])
@@ -122,7 +136,17 @@ def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> 
                 "pattern": p,
                 "result": result,
             })
-    return JSONResponse(content=jsonable_encoder({"scan_date": scan_date.isoformat(), "items": out}))
+    return JSONResponse(content=jsonable_encoder({"scan_date": scan_date.isoformat(), "items": out, "groups": groups}))
+
+
+@router.get("/observation-dashboard")
+def observation_dashboard_route(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Osservazione live: precisione dei motori e rendimento dei pattern Master nel tempo."""
+    return JSONResponse(content=jsonable_encoder(observation_dashboard(db, date_from=date_from, date_to=date_to)))
 
 
 @router.get("/summary")

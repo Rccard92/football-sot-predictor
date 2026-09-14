@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getLiveObservation, type LiveObservationItem } from '../../lib/cecchinoLiveApi'
+import { Link } from 'react-router-dom'
+import { getLiveObservation, groupLabel, type LiveObservationGroupItem } from '../../lib/cecchinoLiveApi'
 import { MARKET_LABELS } from '../../lib/masterPatternApi'
 import { formatFetchError } from '../../utils/formatFetchError'
 
@@ -8,9 +9,9 @@ function signed(v: number | null | undefined, suffix = '%'): string {
   return `${v > 0 ? '+' : ''}${v.toLocaleString('it-IT', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}${suffix}`
 }
 
-/** Pattern Master V2.5 accesi nel giorno: in osservazione, mai aggiunti al carrello. */
+/** Pattern Master V2.5 accesi nel giorno, un segnale per mercato: in osservazione, mai aggiunti al carrello. */
 export function BetBuilderPatternObservation({ date }: { date: string }) {
-  const [items, setItems] = useState<LiveObservationItem[] | null>(null)
+  const [items, setItems] = useState<LiveObservationGroupItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -19,7 +20,7 @@ export function BetBuilderPatternObservation({ date }: { date: string }) {
     setItems(null)
     setError(null)
     getLiveObservation(date)
-      .then((d) => alive && setItems(d.items))
+      .then((d) => alive && setItems(d.groups ?? []))
       .catch((e) => alive && setError(formatFetchError(e)))
     return () => {
       alive = false
@@ -42,7 +43,7 @@ export function BetBuilderPatternObservation({ date }: { date: string }) {
           </span>
         </span>
         <span className="text-xs font-medium tabular-nums text-slate-600">
-          {error ? 'errore' : items == null ? '…' : `${count} ${count === 1 ? 'pattern' : 'pattern'}`}
+          {error ? 'errore' : items == null ? '…' : `${count} ${count === 1 ? 'segnale' : 'segnali'}`}
         </span>
       </button>
       {open && (
@@ -52,51 +53,59 @@ export function BetBuilderPatternObservation({ date }: { date: string }) {
             <p className="text-sm text-slate-500">Nessun pattern acceso sulle partite registrate di questa giornata.</p>
           )}
           {items && items.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                    <th className="py-2 pr-2 font-medium">Partita</th>
-                    <th className="py-2 pr-2 font-medium">Mercato</th>
-                    <th className="py-2 pr-2 font-medium">Condizioni</th>
-                    <th className="py-2 pr-2 text-right font-medium">Storico</th>
-                    <th className="py-2 pr-2 text-right font-medium">Quota</th>
-                    <th className="py-2 font-medium">Esito</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it) => {
-                    const p = it.pattern
-                    const isMarket = p.target_type === 'market'
-                    return (
-                      <tr key={`${it.today_fixture_id}-${p.id}`} className="border-b border-slate-100 align-top">
-                        <td className="py-2 pr-2">
-                          <div className="font-medium text-slate-900">
-                            {it.home_team_name} – {it.away_team_name}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {it.league_name}
-                            {it.kickoff ? ` · ${new Date(it.kickoff).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-2 font-medium text-slate-900">
-                          {isMarket ? (MARKET_LABELS[p.target_key] ?? p.market_label) : p.market_label}
-                        </td>
-                        <td className="py-2 pr-2 text-xs text-slate-600">{p.conditions_text}</td>
-                        <td className="py-2 pr-2 text-right text-xs tabular-nums text-slate-700">
-                          {isMarket ? `ROI ${signed(p.roi_pct)}` : `scarto ${signed(p.avg_deviation_pct, ' pt')}`}
-                          <div className="text-slate-500">{p.total_n} partite</div>
-                        </td>
-                        <td className="py-2 pr-2 text-right tabular-nums">{p.quota_book ?? '—'}</td>
-                        <td className="py-2 text-slate-700">
-                          {it.result?.won == null ? (it.status === 'settled' ? '—' : 'In attesa') : it.result.won ? 'Vinta' : 'Persa'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <p className="mb-2 text-xs text-slate-500">
+                Un segnale = un mercato su una partita, con il numero di pattern concordi.{' '}
+                <Link to="/osservazione-live" className="font-medium text-slate-700 underline">
+                  Andamento nel tempo
+                </Link>
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                      <th className="py-2 pr-2 font-medium">Partita</th>
+                      <th className="py-2 pr-2 font-medium">Mercato</th>
+                      <th className="py-2 pr-2 text-right font-medium">Pattern</th>
+                      <th className="py-2 pr-2 text-right font-medium">Storico</th>
+                      <th className="py-2 pr-2 text-right font-medium">Quota</th>
+                      <th className="py-2 font-medium">Esito</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it) => {
+                      const g = it.group
+                      const isMarket = g.target_type === 'market'
+                      return (
+                        <tr key={`${it.today_fixture_id}-${g.key}`} className="border-b border-slate-100 align-top">
+                          <td className="py-2 pr-2">
+                            <div className="font-medium text-slate-900">
+                              {it.home_team_name} – {it.away_team_name}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {it.league_name}
+                              {it.kickoff ? ` · ${new Date(it.kickoff).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                            </div>
+                          </td>
+                          <td className="py-2 pr-2 font-medium text-slate-900">{groupLabel(g, MARKET_LABELS)}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums text-slate-700">{g.patterns_count}</td>
+                          <td className="py-2 pr-2 text-right text-xs tabular-nums text-slate-700">
+                            {isMarket
+                              ? `miglior ROI ${signed(g.hist_roi_pct_best)}`
+                              : `${g.hist_win_rate_pct == null ? '—' : Math.round(g.hist_win_rate_pct)}% · scarto ${signed(g.hist_deviation_pct, ' pt')}`}
+                          </td>
+                          <td className="py-2 pr-2 text-right tabular-nums">{isMarket ? (g.quota_book ?? '—') : '—'}</td>
+                          <td className="py-2 text-slate-700">
+                            {it.result?.won == null ? (it.status === 'settled' ? '—' : 'In attesa') : it.result.won ? 'Vinta' : 'Persa'}
+                            {it.result?.actual != null && <span className="text-xs text-slate-500"> ({it.result.actual})</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

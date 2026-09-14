@@ -116,31 +116,104 @@ function SourceBadge({ p }: { p: LiveModelPrediction }) {
   return <span className={todayBadgeMuted}>Anteprima non registrata</span>
 }
 
+type PatternGroupView = {
+  key: string
+  first: LivePatternSignal
+  patterns: LivePatternSignal[]
+}
+
+/** Stesso mercato, linea e direzione = un solo segnale (come nell'osservazione live). */
+function groupPatternSignals(patterns: LivePatternSignal[]): PatternGroupView[] {
+  const map = new Map<string, PatternGroupView>()
+  for (const p of patterns) {
+    const key = `${p.target_type}|${p.target_key}|${p.threshold ?? ''}|${p.direction ?? 1}`
+    const g = map.get(key)
+    if (g) g.patterns.push(p)
+    else map.set(key, { key, first: p, patterns: [p] })
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      Number(a.first.target_type !== 'market') - Number(b.first.target_type !== 'market') ||
+      b.patterns.length - a.patterns.length,
+  )
+}
+
+function meanOf(values: (number | null)[]): number | null {
+  const v = values.filter((x): x is number => x != null)
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+}
+
+const PATTERN_GROUPS_VISIBLE = 12
+const PATTERNS_PER_GROUP_VISIBLE = 5
+
 function PatternList({ patterns }: { patterns: LivePatternSignal[] }) {
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
   if (patterns.length === 0) {
     return <p className="text-sm text-slate-500">Nessun pattern Master acceso su questa partita.</p>
   }
+  const groups = groupPatternSignals(patterns)
+  const visible = showAll ? groups : groups.slice(0, PATTERN_GROUPS_VISIBLE)
   return (
-    <ul className="divide-y divide-slate-100">
-      {patterns.map((p) => {
-        const isMarket = p.target_type === 'market'
-        return (
-          <li key={p.id} className="py-2.5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-sm font-semibold text-slate-900">
-                {isMarket ? (MARKET_LABELS[p.target_key] ?? p.market_label) : p.market_label}
-              </span>
-              <span className="text-xs tabular-nums text-slate-600">
-                {isMarket
-                  ? `ROI ${signed(p.roi_pct)} · ${p.total_n} partite · quota media ${num(p.avg_quota)}${p.quota_book ? ` · quota oggi ${num(p.quota_book)}` : ''}`
-                  : `${num(p.win_rate_pct, 0)}% · scarto ${signed(p.avg_deviation_pct, 1, ' pt')} · ${p.total_n} partite`}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500">{p.conditions_text}</p>
-          </li>
-        )
-      })}
-    </ul>
+    <div>
+      <p className="mb-2 text-xs text-slate-500">
+        {groups.length} {groups.length === 1 ? 'mercato' : 'mercati'} · i pattern sullo stesso mercato e linea contano come un solo segnale
+      </p>
+      <ul className="divide-y divide-slate-100">
+        {visible.map((g) => {
+          const p = g.first
+          const isMarket = p.target_type === 'market'
+          const open = openKey === g.key
+          const bestRoi = isMarket ? Math.max(...g.patterns.map((x) => x.roi_pct ?? -Infinity)) : null
+          const winRate = meanOf(g.patterns.map((x) => x.win_rate_pct))
+          const deviation = meanOf(g.patterns.map((x) => x.avg_deviation_pct))
+          return (
+            <li key={g.key} className="py-2.5">
+              <button
+                type="button"
+                onClick={() => setOpenKey(open ? null : g.key)}
+                aria-expanded={open}
+                className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left"
+              >
+                <span className="text-sm font-semibold text-slate-900">
+                  {isMarket ? (MARKET_LABELS[p.target_key] ?? p.market_label) : p.market_label}
+                  <span className={`${todayBadgeActive} ml-2`}>
+                    {g.patterns.length} {g.patterns.length === 1 ? 'pattern' : 'pattern concordi'}
+                  </span>
+                </span>
+                <span className="text-xs tabular-nums text-slate-600">
+                  {isMarket
+                    ? `miglior ROI storico ${signed(Number.isFinite(bestRoi) ? bestRoi : null)}${p.quota_book ? ` · quota oggi ${num(p.quota_book)}` : ''}`
+                    : `${num(winRate, 0)}% storico · scarto ${signed(deviation, 1, ' pt')}`}
+                </span>
+              </button>
+              {open && (
+                <ul className="mt-2 space-y-1.5 border-l-2 border-slate-100 pl-3">
+                  {g.patterns.slice(0, PATTERNS_PER_GROUP_VISIBLE).map((x) => (
+                    <li key={x.id} className="text-xs text-slate-600">
+                      <span className="tabular-nums text-slate-800">
+                        {isMarket ? `ROI ${signed(x.roi_pct)}` : `${num(x.win_rate_pct, 0)}%`} · {x.total_n} partite
+                      </span>{' '}
+                      — {x.conditions_text}
+                    </li>
+                  ))}
+                  {g.patterns.length > PATTERNS_PER_GROUP_VISIBLE && (
+                    <li className="text-xs text-slate-400">
+                      e altri {g.patterns.length - PATTERNS_PER_GROUP_VISIBLE} pattern con condizioni simili
+                    </li>
+                  )}
+                </ul>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {groups.length > PATTERN_GROUPS_VISIBLE && (
+        <button type="button" onClick={() => setShowAll((s) => !s)} className="mt-2 text-xs font-medium text-slate-700 underline">
+          {showAll ? 'Mostra meno' : `Mostra tutti i ${groups.length} mercati`}
+        </button>
+      )}
+    </div>
   )
 }
 
