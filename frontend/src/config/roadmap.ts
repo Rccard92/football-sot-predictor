@@ -176,6 +176,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-14',
+    text: "Step 5 avviato: registro previsioni live attivo (V2 e V2.5 congelate prima del calcio d'inizio, esiti a fine partita), primo giorno 9 partite. Acquistabilita' V2.5 corretta (doppia chance e peso del Cecchino) e RUN V2.5 ricalcolata: 87 pattern con quota (79 attesi dal caso). V3 in live in attesa di decisione sui dati.",
+  },
+  {
+    date: '2026-09-14',
     text: 'Step 4 fatto: RUN V2.5 sulle 5 stagioni, piu precisa della V2 in ogni stagione (errore -1/-2,5%) e con circa 700 partite analizzabili in piu a stagione. Master Pattern V2.5: 86 pattern con quota (82 attesi dal caso), 12.234 senza quota (39 attesi dal caso).',
   },
   {
