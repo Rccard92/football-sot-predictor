@@ -1,4 +1,4 @@
-import { PatternInsightsShell, Section } from '../components/pattern-insights/PatternInsightsShell'
+import { PageShell, Section } from '../components/layout/PageShell'
 import {
   ROADMAP_RULES,
   ROADMAP_STEPS,
@@ -30,7 +30,7 @@ export function RoadmapPage() {
   const done = ROADMAP_STEPS.filter((s) => s.status === 'fatto').length
   const current = ROADMAP_STEPS.find((s) => s.status === 'in_corso')
   return (
-    <PatternInsightsShell>
+    <PageShell>
       <header className="mb-5">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-bold tracking-tight">Roadmap Cecchino · V2 · V2.5 · V3</h1>
@@ -90,6 +90,6 @@ export function RoadmapPage() {
           </ul>
         </Section>
       </div>
-    </PatternInsightsShell>
+    </PageShell>
   )
 }

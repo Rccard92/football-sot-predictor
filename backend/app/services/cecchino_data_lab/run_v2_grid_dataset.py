@@ -214,6 +214,45 @@ _CLOSING_QUOTE_SQL: dict[str, str] = {
 }
 
 
+# Probabilita' senza margine della quota di chiusura, per mercato.
+def _inv_p(col: str) -> str:
+    return f"(1.0/NULLIF({col}, 0))"
+
+
+def _fair_pair(over: str, under: str) -> tuple[str, str]:
+    o, u = _inv_p(over), _inv_p(under)
+    return f"({o} / NULLIF({o} + {u}, 0))", f"({u} / NULLIF({o} + {u}, 0))"
+
+
+_H, _D, _A = _inv_p("m.bet365_closing_home"), _inv_p("m.bet365_closing_draw"), _inv_p("m.bet365_closing_away")
+_HTH, _HTD, _HTA = _inv_p("m.bet365_ht_home"), _inv_p("m.bet365_ht_draw"), _inv_p("m.bet365_ht_away")
+_T1X2 = f"({_H} + {_D} + {_A})"
+_THT = f"({_HTH} + {_HTD} + {_HTA})"
+_O05, _U05 = _fair_pair("m.bet365_over_05", "m.bet365_under_05")
+_O15, _U15 = _fair_pair("m.bet365_over_15", "m.bet365_under_15")
+_O25, _U25 = _fair_pair("m.bet365_closing_over_25", "m.bet365_closing_under_25")
+_O35, _U35 = _fair_pair("m.bet365_over_35", "m.bet365_under_35")
+
+_FAIR_PROB_SQL: dict[str, str] = {
+    "HOME": f"({_H} / NULLIF({_T1X2}, 0))",
+    "DRAW": f"({_D} / NULLIF({_T1X2}, 0))",
+    "AWAY": f"({_A} / NULLIF({_T1X2}, 0))",
+    "ONE_X": f"(({_H} + {_D}) / NULLIF({_T1X2}, 0))",
+    "X_TWO": f"(({_D} + {_A}) / NULLIF({_T1X2}, 0))",
+    "ONE_TWO": f"(({_H} + {_A}) / NULLIF({_T1X2}, 0))",
+    "OVER_0_5": _O05,
+    "UNDER_0_5": _U05,
+    "OVER_1_5": _O15,
+    "UNDER_1_5": _U15,
+    "OVER_2_5": _O25,
+    "UNDER_2_5": _U25,
+    "OVER_3_5": _O35,
+    "UNDER_3_5": _U35,
+    "HOME_PT": f"({_HTH} / NULLIF({_THT}, 0))",
+    "DRAW_PT": f"({_HTD} / NULLIF({_THT}, 0))",
+    "AWAY_PT": f"({_HTA} / NULLIF({_THT}, 0))",
+}
+
 def load_market_raw(
     db: Session, *, run_id: int, market_key: str, odds_mode: str = ODDS_MODE_CLOSING
 ) -> list[dict]:

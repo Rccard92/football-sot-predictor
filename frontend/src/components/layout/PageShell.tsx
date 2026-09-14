@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react'
 
-/** Tema locale Pattern Insights — pannello scuro isolato dal tema chiaro
- * dell'app, come fa Cecchino Lab. Nessuna dipendenza dal suo shell: questa
- * e' una sezione separata e deve poter vivere da sola. */
-export function PatternInsightsShell({ children }: { children: ReactNode }) {
+/** Pannello scuro condiviso delle pagine Master Pattern e Roadmap, isolato dal tema chiaro dell'app. */
+export function PageShell({ children }: { children: ReactNode }) {
   return (
     <div className="pi-root">
       <style>{`
@@ -142,53 +140,4 @@ export function Section({
       {children}
     </section>
   )
-}
-
-export function Kpi({
-  label,
-  value,
-  hint,
-  tone = 'default',
-}: {
-  label: string
-  value: string
-  hint?: string
-  tone?: 'default' | 'pos' | 'neg' | 'warn' | 'accent'
-}) {
-  const color =
-    tone === 'pos'
-      ? 'var(--pi-pos)'
-      : tone === 'neg'
-        ? 'var(--pi-neg)'
-        : tone === 'warn'
-          ? 'var(--pi-warn)'
-          : tone === 'accent'
-            ? 'var(--pi-accent)'
-            : 'var(--pi-text)'
-  return (
-    <div className="pi-kpi">
-      <div
-        className="text-[10px] font-semibold uppercase tracking-wider"
-        style={{ color: 'var(--pi-muted)' }}
-      >
-        {label}
-      </div>
-      <div className="mt-1 text-2xl font-bold tabular-nums" style={{ color }}>
-        {value}
-      </div>
-      {hint ? (
-        <div className="mt-0.5 text-[11px]" style={{ color: 'var(--pi-muted)' }}>
-          {hint}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/** Sfondo a intensita' per le celle numeriche delle tabelle "heatmap". */
-export function heatBg(value: number | null | undefined, max: number, positive = true): string {
-  if (value == null || max <= 0) return 'transparent'
-  const ratio = Math.min(1, Math.abs(value) / max)
-  const rgb = positive ? '53,224,196' : '248,113,113'
-  return `rgba(${rgb},${(ratio * 0.28).toFixed(3)})`
 }

@@ -1,7 +1,7 @@
-"""Calcolo e lettura degli indici a 360 gradi (Passo 2).
+"""Calcolo degli indici a 360 gradi per partita (Passo 2).
 
-Sorgente: il calcolo V3 segnato come modello di riferimento. Gli indici sono
-salvati per partita con i controlli di coerenza C1-C4 nel riepilogo.
+Sorgente: il calcolo V3 indicato o il modello di riferimento. Gli indici sono
+salvati per partita, con controlli di coerenza ed esame dell'affidabilita' nel riepilogo.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import insert, select, text
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -24,22 +24,17 @@ from app.models.cecchino_v3 import (
     V3_STATUS_PENDING,
     V3_STATUS_RUNNING,
     CecchinoV3IndexRun,
-    CecchinoV3MarketPrediction,
     CecchinoV3MatchIndex,
-    CecchinoV3MatchPrediction,
     CecchinoV3Run,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.revision_resolve import revision_as_source_fields
-from app.services.cecchino_data_lab.run_v2_grid_dataset import _CLOSING_QUOTE_SQL
-from app.services.cecchino_data_lab.run_v2_market_scoreboard import _FAIR_PROB_SQL
 from app.services.cecchino_v3.constants import (
     INDEX_CLASS_EDGES,
     INDEX_CLASSES,
     INDEX_ENGINE_VERSION,
     INDEX_MIN_HISTORY,
     JUDGE_SEASONS,
-    MARKET_KEYS,
     RELIABILITY_COMPONENTS,
     RELIABILITY_FORM_NEUTRAL,
     RELIABILITY_HIGH,
@@ -53,6 +48,7 @@ from app.services.cecchino_v3.discipline import compute_discipline
 from app.services.cecchino_v3.form import Expectation
 from app.services.cecchino_v3.indices import IndexInput, coherence_checks, compute_indices
 from app.services.cecchino_v3.reliability import compute_reliability, reliability_exam, sign_support_table
+from app.services.cecchino_v3.runs import includes_lockbox, reference_model_run
 from app.services.cecchino_v3.walkforward import divisions_for, mover_flags
 
 logger = logging.getLogger(__name__)
@@ -82,17 +78,6 @@ def index_run_to_dict(run: CecchinoV3IndexRun) -> dict[str, Any]:
     }
 
 
-def _reference_run(db: Session) -> CecchinoV3Run | None:
-    for run in db.scalars(
-        select(CecchinoV3Run)
-        .where(CecchinoV3Run.status == V3_STATUS_COMPLETED)
-        .order_by(CecchinoV3Run.completed_at.desc())
-    ):
-        if (run.config_json or {}).get("reference_model"):
-            return run
-    return None
-
-
 def _config(source_run_id: int) -> dict[str, Any]:
     return {
         "engine_version": INDEX_ENGINE_VERSION,
@@ -116,13 +101,6 @@ def _config(source_run_id: int) -> dict[str, Any]:
     }
 
 
-def _includes_lockbox(run: CecchinoV3Run) -> bool:
-    from app.services.cecchino_v3.constants import PHASE_FEATURES
-
-    phase = int((run.config_json or {}).get("phase") or 1)
-    return bool(PHASE_FEATURES.get(phase) and PHASE_FEATURES[phase].lockbox)
-
-
 def start_index_run(db: Session, source_run_id: int | None = None) -> dict[str, Any]:
     active = db.scalars(
         select(CecchinoV3IndexRun).where(CecchinoV3IndexRun.status.in_(V3_ACTIVE_STATUSES))
@@ -131,7 +109,7 @@ def start_index_run(db: Session, source_run_id: int | None = None) -> dict[str, 
         raise CecchinoLabImportError(
             "duplicate_active_run", f"Esiste gia' un calcolo indici in corso (id={active.id})", status_code=409
         )
-    source = db.get(CecchinoV3Run, source_run_id) if source_run_id is not None else _reference_run(db)
+    source = db.get(CecchinoV3Run, source_run_id) if source_run_id is not None else reference_model_run(db)
     if source is None or source.status != V3_STATUS_COMPLETED:
         raise CecchinoLabImportError(
             "reference_missing", "Calcolo V3 sorgente non trovato o non completato", status_code=400
@@ -237,7 +215,7 @@ def _execute(run_id: int) -> None:
         try:
             _set_step(db, run_id, "Caricamento partite e previsioni del modello di riferimento")
             source_run = db.get(CecchinoV3Run, source_run_id)
-            matches = load_matches(db, include_lockbox=_includes_lockbox(source_run))
+            matches = load_matches(db, include_lockbox=includes_lockbox(source_run))
             source = _load_source(db, source_run_id)
             matches = [m for m in matches if m.lab_match_id in source]
 
@@ -347,197 +325,3 @@ def _execute(run_id: int) -> None:
         db.close()
         with _lock:
             _active_threads.pop(run_id, None)
-
-
-# --- lettura per la pagina "Partita per partita" --------------------------------------
-
-
-def match_filters(db: Session) -> dict[str, Any]:
-    run = _latest_completed_index_run(db)
-    if run is None:
-        return {"index_run": None, "competitions": [], "seasons": []}
-    competitions = db.scalars(
-        select(CecchinoV3MatchIndex.competition_name)
-        .where(CecchinoV3MatchIndex.index_run_id == run.id)
-        .distinct()
-        .order_by(CecchinoV3MatchIndex.competition_name)
-    ).all()
-    seasons = db.scalars(
-        select(CecchinoV3MatchIndex.season_label)
-        .where(CecchinoV3MatchIndex.index_run_id == run.id)
-        .distinct()
-        .order_by(CecchinoV3MatchIndex.season_label.desc())
-    ).all()
-    return {"index_run": index_run_to_dict(run), "competitions": list(competitions), "seasons": list(seasons)}
-
-
-def list_matches(
-    db: Session,
-    *,
-    competition: str | None,
-    season_label: str | None,
-    team: str | None,
-    reliability_class: str | None,
-    limit: int,
-    offset: int,
-) -> dict[str, Any]:
-    run = _latest_completed_index_run(db)
-    if run is None:
-        return {"index_run": None, "total": 0, "items": []}
-    mi = CecchinoV3MatchIndex
-    filters = [mi.index_run_id == run.id]
-    if competition:
-        filters.append(mi.competition_name == competition)
-    if season_label:
-        filters.append(mi.season_label == season_label)
-    if team:
-        pattern = f"%{team.strip()}%"
-        filters.append(mi.home_team.ilike(pattern) | mi.away_team.ilike(pattern))
-    if reliability_class:
-        filters.append(mi.reliability_class == reliability_class)
-    total = int(db.scalar(select(func.count(mi.id)).where(*filters)) or 0)
-    rows = db.scalars(
-        select(mi).where(*filters).order_by(mi.kickoff_at.desc(), mi.lab_match_id.desc()).limit(limit).offset(offset)
-    ).all()
-    predictions = {
-        int(p.lab_match_id): p
-        for p in db.scalars(
-            select(CecchinoV3MatchPrediction).where(
-                CecchinoV3MatchPrediction.run_id == run.source_run_id,
-                CecchinoV3MatchPrediction.lab_match_id.in_([int(r.lab_match_id) for r in rows] or [-1]),
-            )
-        ).all()
-    }
-    probabilities: dict[int, dict[str, float]] = {}
-    if predictions:
-        by_prediction = {int(p.id): mid for mid, p in predictions.items()}
-        for mk in db.scalars(
-            select(CecchinoV3MarketPrediction).where(
-                CecchinoV3MarketPrediction.match_prediction_id.in_(list(by_prediction)),
-                CecchinoV3MarketPrediction.market_key.in_(("HOME", "DRAW", "AWAY", "OVER_2_5")),
-            )
-        ).all():
-            probabilities.setdefault(by_prediction[int(mk.match_prediction_id)], {})[mk.market_key] = float(
-                mk.probability
-            )
-    items = []
-    for r in rows:
-        idx = r.indices_json
-        pred = predictions.get(int(r.lab_match_id))
-        probs = probabilities.get(int(r.lab_match_id), {})
-        items.append(
-            {
-                "lab_match_id": int(r.lab_match_id),
-                "kickoff_at": r.kickoff_at.isoformat() if r.kickoff_at else None,
-                "competition": r.competition_name,
-                "season_label": r.season_label,
-                "home_team": r.home_team,
-                "away_team": r.away_team,
-                "score": f"{pred.ft_home_goals}-{pred.ft_away_goals}" if pred else None,
-                "eval_eligible": bool(pred.eval_eligible) if pred else None,
-                "phase": pred.phase if pred else None,
-                "prob_home": probs.get("HOME"),
-                "prob_draw": probs.get("DRAW"),
-                "prob_away": probs.get("AWAY"),
-                "prob_over_2_5": probs.get("OVER_2_5"),
-                "reliability": float(r.reliability) if r.reliability is not None else None,
-                "reliability_class": r.reliability_class,
-                "equilibrio": idx["equilibrio"],
-                "pareggio": idx["pareggio"],
-                "intensita_goal": idx["intensita_goal"],
-            }
-        )
-    return {"index_run": index_run_to_dict(run), "total": total, "items": items}
-
-
-def _book_odds(db: Session, lab_match_id: int) -> dict[str, dict[str, float | None]]:
-    columns = []
-    for mk in MARKET_KEYS:
-        if mk in _CLOSING_QUOTE_SQL:
-            columns.append(f'({_CLOSING_QUOTE_SQL[mk]})::double precision AS "q_{mk}"')
-        if mk in _FAIR_PROB_SQL:
-            columns.append(f'({_FAIR_PROB_SQL[mk]})::double precision AS "f_{mk}"')
-    row = db.execute(
-        text(f"SELECT {', '.join(columns)} FROM cecchino_lab_matches m WHERE m.id = :id"), {"id": lab_match_id}
-    ).first()
-    if row is None:
-        return {}
-    data = dict(row._mapping)
-    return {
-        mk: {
-            "closing_odds": round(data[f"q_{mk}"], 3) if data.get(f"q_{mk}") else None,
-            "fair_probability": round(data[f"f_{mk}"], 4) if data.get(f"f_{mk}") is not None else None,
-        }
-        for mk in MARKET_KEYS
-    }
-
-
-def match_detail(db: Session, lab_match_id: int) -> dict[str, Any]:
-    run = _latest_completed_index_run(db)
-    if run is None:
-        raise CecchinoLabImportError("indices_missing", "Indici non ancora calcolati", status_code=404)
-    index_row = db.scalars(
-        select(CecchinoV3MatchIndex).where(
-            CecchinoV3MatchIndex.index_run_id == run.id, CecchinoV3MatchIndex.lab_match_id == lab_match_id
-        )
-    ).first()
-    pred = db.scalars(
-        select(CecchinoV3MatchPrediction).where(
-            CecchinoV3MatchPrediction.run_id == run.source_run_id,
-            CecchinoV3MatchPrediction.lab_match_id == lab_match_id,
-        )
-    ).first()
-    if index_row is None or pred is None:
-        raise CecchinoLabImportError("match_not_found", "Partita non trovata", status_code=404)
-    markets = {
-        mk.market_key: {"probability": float(mk.probability), "won": mk.won}
-        for mk in db.scalars(
-            select(CecchinoV3MarketPrediction).where(CecchinoV3MarketPrediction.match_prediction_id == pred.id)
-        ).all()
-    }
-    book = _book_odds(db, lab_match_id)
-    return {
-        "index_run_id": int(run.id),
-        "source_run_id": int(run.source_run_id),
-        "reliability_passed": bool((run.summary_json or {}).get("reliability_passed")),
-        "match": {
-            "lab_match_id": lab_match_id,
-            "kickoff_at": pred.kickoff_at.isoformat() if pred.kickoff_at else None,
-            "competition": pred.competition_name,
-            "season_label": pred.season_label,
-            "home_team": pred.home_team,
-            "away_team": pred.away_team,
-            "phase": pred.phase,
-            "eval_eligible": pred.eval_eligible,
-            "home_played": pred.home_played,
-            "away_played": pred.away_played,
-            "home_remaining": pred.home_remaining,
-            "away_remaining": pred.away_remaining,
-        },
-        "model": {
-            "lambda_home": float(pred.lambda_home),
-            "lambda_away": float(pred.lambda_away),
-            "rho": float(pred.rho),
-            "ht_share": float(pred.ht_share),
-            "home_evidence": float(pred.home_evidence),
-            "away_evidence": float(pred.away_evidence),
-            "specialists": pred.specialists_json,
-        },
-        "markets": [
-            {
-                "market_key": mk,
-                "probability": markets.get(mk, {}).get("probability"),
-                "model_odds": (
-                    round(1.0 / markets[mk]["probability"], 3)
-                    if markets.get(mk, {}).get("probability")
-                    else None
-                ),
-                "closing_odds": book.get(mk, {}).get("closing_odds"),
-                "fair_probability": book.get(mk, {}).get("fair_probability"),
-                "won": markets.get(mk, {}).get("won"),
-            }
-            for mk in MARKET_KEYS
-        ],
-        "indices": index_row.indices_json,
-        "result": {"ft": f"{pred.ft_home_goals}-{pred.ft_away_goals}"},
-    }

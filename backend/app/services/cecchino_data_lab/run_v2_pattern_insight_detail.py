@@ -151,6 +151,25 @@ def _rows_for(
     return synthetic_rows_from_raw(raw, binners, threshold)
 
 
+def _completed_validations(db: Session, insight_run_id: int) -> list[CecchinoRunV2PatternValidationRun]:
+    """Ultima verifica completata per ogni stagione, in ordine di stagione."""
+    runs = db.scalars(
+        select(CecchinoRunV2PatternValidationRun)
+        .where(
+            CecchinoRunV2PatternValidationRun.insight_run_id == insight_run_id,
+            CecchinoRunV2PatternValidationRun.status == STATUS_COMPLETED,
+        )
+        .order_by(
+            CecchinoRunV2PatternValidationRun.season_label,
+            CecchinoRunV2PatternValidationRun.completed_at.desc(),
+        )
+    ).all()
+    latest_by_season: dict[str, CecchinoRunV2PatternValidationRun] = {}
+    for r in runs:
+        latest_by_season.setdefault(r.season_label or str(r.id), r)
+    return sorted(latest_by_season.values(), key=lambda r: r.season_label or "")
+
+
 def _baseline(rows: list[RunV2GridRow]) -> float | None:
     return round(sum(1 for r in rows if r.won) / len(rows) * 100.0, 3) if rows else None
 
@@ -195,10 +214,6 @@ def get_candidate_detail(
             ),
         }
     ]
-
-    from app.services.cecchino_data_lab.run_v2_pattern_validation_analytics import (
-        _completed_validations,
-    )
 
     vruns = _completed_validations(db, int(insight_run.id))
     seen_runs: set[int] = set()

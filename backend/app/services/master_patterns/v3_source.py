@@ -20,11 +20,11 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_v3 import V3_STATUS_COMPLETED, CecchinoV3Pattern, CecchinoV3PatternRun
 from app.services.cecchino_data_lab.run_v2_scope import tier_of
 from app.services.cecchino_v3.data import MatchRecord, load_matches
-from app.services.cecchino_v3.evaluator import MarketRow, book_probabilities
-from app.services.cecchino_v3.final_service import _final_model_run, _reference_model_run
-from app.services.cecchino_v3.markets import market_outcomes
+from app.services.cecchino_v3.evaluator import MarketRow
+from app.services.cecchino_v3.market_data import load_market_rows
 from app.services.cecchino_v3.pattern_service import _index_run_for, load_contexts
 from app.services.cecchino_v3.patterns import PATTERN_COLUMNS, MarketMatrix, MatchContext, NullModel, build_matrices
+from app.services.cecchino_v3.runs import final_model_run, reference_model_run
 from app.services.cecchino_v3.synthetic_patterns import (
     StatMatrix,
     SyntheticRow,
@@ -49,25 +49,6 @@ from app.services.master_patterns.labels import condition_label, conditions_text
 from app.services.master_patterns.orientation import orient_season, synthetic_market_label
 from app.services.master_patterns.scoring import market_verdict
 
-_ODDS_COLUMNS: dict[str, str] = {
-    "home": "bet365_closing_home",
-    "draw": "bet365_closing_draw",
-    "away": "bet365_closing_away",
-    "over_25": "bet365_closing_over_25",
-    "under_25": "bet365_closing_under_25",
-    "over_05": "bet365_over_05",
-    "under_05": "bet365_under_05",
-    "over_15": "bet365_over_15",
-    "under_15": "bet365_under_15",
-    "over_35": "bet365_over_35",
-    "under_35": "bet365_under_35",
-    "ht_home": "bet365_ht_home",
-    "ht_draw": "bet365_ht_draw",
-    "ht_away": "bet365_ht_away",
-    "dc_1x": "bet365_dc_1x",
-    "dc_x2": "bet365_dc_x2",
-    "dc_12": "bet365_dc_12",
-}
 _ACTUAL_COLUMNS: dict[str, tuple[str, str]] = {
     "shots": ("home_shots", "away_shots"),
     "sot": ("home_shots_on_target", "away_shots_on_target"),
@@ -80,8 +61,8 @@ _ACTUAL_COLUMNS: dict[str, tuple[str, str]] = {
 
 
 def v3_source(db: Session) -> dict[str, Any] | None:
-    final = _final_model_run(db)
-    reference = _reference_model_run(db)
+    final = final_model_run(db)
+    reference = reference_model_run(db)
     if final is None or reference is None:
         return None
     index_run = _index_run_for(db, int(final.id))
@@ -104,73 +85,6 @@ def v3_source(db: Session) -> dict[str, Any] | None:
 
 def _matches(db: Session) -> dict[int, MatchRecord]:
     return {m.lab_match_id: m for m in load_matches(db, include_lockbox=True)}
-
-
-def load_market_rows_for(
-    db: Session, final_run_id: int, matches: dict[int, MatchRecord], market_keys: Sequence[str] | None = None
-) -> list[MarketRow]:
-    params: dict[str, Any] = {"run_id": final_run_id}
-    market_filter = ""
-    if market_keys is not None:
-        market_filter = "AND mk.market_key = ANY(:keys)"
-        params["keys"] = list(market_keys)
-    probabilities: dict[int, dict[str, float]] = defaultdict(dict)
-    for r in db.execute(
-        text(
-            f"""
-            SELECT mk.lab_match_id, mk.market_key, mk.probability
-            FROM cecchino_v3_market_predictions mk
-            WHERE mk.run_id = :run_id {market_filter}
-            """
-        ),
-        params,
-    ):
-        probabilities[int(r.lab_match_id)][r.market_key] = float(r.probability)
-    columns = ", ".join(f"m.{col} AS {key}" for key, col in _ODDS_COLUMNS.items())
-    rows: list[MarketRow] = []
-    odds_rows = db.execute(
-        text(
-            f"""
-            SELECT m.id, {columns}
-            FROM cecchino_lab_matches m
-            JOIN cecchino_v3_match_predictions mp ON mp.lab_match_id = m.id AND mp.run_id = :run_id
-            """
-        ),
-        {"run_id": final_run_id},
-    )
-    for r in odds_rows:
-        data = dict(r._mapping)
-        mid = int(data.pop("id"))
-        m = matches.get(mid)
-        if m is None or mid not in probabilities:
-            continue
-        book = book_probabilities({k: (float(v) if v is not None else None) for k, v in data.items()})
-        outcomes = market_outcomes(m.ft_home, m.ft_away, m.ht_home, m.ht_away)
-        for key, p_v3 in probabilities[mid].items():
-            won = outcomes.get(key)
-            if won is None or key not in book:
-                continue
-            quoted, p_book = book[key]
-            rows.append(
-                MarketRow(
-                    lab_match_id=mid,
-                    season_label=m.season_label,
-                    competition=m.competition,
-                    tier=tier_of(m.competition),
-                    match_date=m.match_date,
-                    phase=m.phase,
-                    eligible=m.eval_eligible,
-                    home_team=m.home_team,
-                    away_team=m.away_team,
-                    market_key=key,
-                    p_v3=p_v3,
-                    p_book=p_book,
-                    odds=quoted,
-                    won=bool(won),
-                )
-            )
-    rows.sort(key=lambda r: (r.match_date, r.lab_match_id, r.market_key))
-    return rows
 
 
 def load_synthetic_rows(db: Session, final_run_id: int, matches: dict[int, MatchRecord]) -> list[SyntheticRow]:
@@ -267,7 +181,7 @@ def _labelled(conditions: Sequence[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def build_v3_market_patterns(db: Session, source: dict[str, Any], matches: dict[int, MatchRecord]) -> list[dict[str, Any]]:
-    rows = load_market_rows_for(db, source["final_model_run_id"], matches)
+    rows = load_market_rows(db, source["final_model_run_id"], include_lockbox=True, matches=matches)
     contexts = load_contexts(db, source["index_run_id"])
     matrices = build_matrices(rows, contexts, source["market_edges"])
     stored = db.scalars(
@@ -400,7 +314,9 @@ def v3_detail(db: Session, pattern: dict[str, Any], build_summary: dict[str, Any
     contexts: dict[int, MatchContext] = load_contexts(db, source["index_run_id"])
     items: list[dict[str, Any]] = []
     if pattern["target_type"] == TARGET_MARKET:
-        rows = load_market_rows_for(db, source["final_model_run_id"], matches, [pattern["target_key"]])
+        rows = load_market_rows(
+            db, source["final_model_run_id"], include_lockbox=True, market_keys=[pattern["target_key"]], matches=matches
+        )
         matrix = build_matrices(rows, contexts, source["market_edges"]).get(pattern["target_key"])
         if matrix is None:
             return []

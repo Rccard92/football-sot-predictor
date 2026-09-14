@@ -1,4 +1,4 @@
-"""Calcolo e lettura dei pattern V3 (Passo 3c) e del movimento di mercato (3b),
+"""Calcolo dei pattern V3 (Passo 3c) e del movimento di mercato (3b),
 con il confronto diretto con la ricerca pattern della V2."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import insert, select, text
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -40,9 +40,8 @@ from app.services.cecchino_v3.constants import (
     PATTERN_REFINEMENT_BASES,
     V2_INSIGHT_ODDS_MODE,
 )
-from app.services.cecchino_v3.evaluator import MarketRow, book_probabilities
-from app.services.cecchino_v3.evaluator_service import load_market_rows
-from app.services.cecchino_v3.index_service import _reference_run
+from app.services.cecchino_v3.evaluator import MarketRow
+from app.services.cecchino_v3.market_data import load_market_rows, load_opening
 from app.services.cecchino_v3.patterns import (
     VERDICT_CONFIRMED,
     MarketMatrix,
@@ -59,6 +58,7 @@ from app.services.cecchino_v3.patterns import (
     validate,
     validation_tally,
 )
+from app.services.cecchino_v3.runs import reference_model_run
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def start_pattern_run(db: Session) -> dict[str, Any]:
         raise CecchinoLabImportError(
             "duplicate_active_run", f"Esiste gia' una ricerca pattern in corso (id={active.id})", status_code=409
         )
-    source = _reference_run(db)
+    source = reference_model_run(db)
     if source is None:
         raise CecchinoLabImportError("reference_missing", "Nessun modello V3 di riferimento", status_code=400)
     index_run = _index_run_for(db, int(source.id))
@@ -199,26 +199,6 @@ def load_contexts(db: Session, index_run_id: int) -> dict[int, MatchContext]:
             form_diff=form_diff,
             rest_diff=r.rest_diff,
         )
-    return out
-
-
-def load_opening(db: Session, source_run_id: int) -> dict[tuple[int, str], OpeningQuote]:
-    out: dict[tuple[int, str], OpeningQuote] = {}
-    for r in db.execute(
-        text(
-            """
-            SELECT m.id, m.bet365_home AS home, m.bet365_draw AS draw, m.bet365_away AS away,
-                   m.bet365_over_25 AS over_25, m.bet365_under_25 AS under_25
-            FROM cecchino_lab_matches m
-            JOIN cecchino_v3_match_predictions mp ON mp.lab_match_id = m.id AND mp.run_id = :run_id
-            """
-        ),
-        {"run_id": source_run_id},
-    ):
-        odds = {k: (float(v) if v is not None else None) for k, v in dict(r._mapping).items() if k != "id"}
-        for market, (quoted, p_book) in book_probabilities(odds).items():
-            if market in ("HOME", "DRAW", "AWAY", "OVER_2_5", "UNDER_2_5"):
-                out[(int(r.id), market)] = OpeningQuote(odds=quoted, p_book=p_book)
     return out
 
 
@@ -481,49 +461,3 @@ def _execute(run_id: int) -> None:
         db.close()
         with _lock:
             _active_threads.pop(run_id, None)
-
-
-# --- lettura -------------------------------------------------------------------------------
-
-
-def list_patterns(
-    db: Session,
-    *,
-    market_key: str | None,
-    only: str | None,
-    limit: int,
-    offset: int,
-) -> dict[str, Any]:
-    run = _latest_completed(db)
-    if run is None:
-        return {"pattern_run_id": None, "total": 0, "items": []}
-    p = CecchinoV3Pattern
-    filters = [p.pattern_run_id == run.id]
-    if market_key:
-        filters.append(p.market_key == market_key)
-    if only == "confirmed_all":
-        filters.append(p.confirmed_all.is_(True))
-    elif only == "frozen":
-        filters.append(p.frozen.is_(True))
-    total = int(db.scalar(select(func.count(p.id)).where(*filters)) or 0)
-    rows = db.scalars(
-        select(p).where(*filters).order_by(p.discovery_roi.desc(), p.id).limit(limit).offset(offset)
-    ).all()
-    return {
-        "pattern_run_id": int(run.id),
-        "total": total,
-        "items": [
-            {
-                "id": int(r.id),
-                "market_key": r.market_key,
-                "size": r.size,
-                "conditions": r.conditions_json,
-                "discovery_n": r.discovery_n,
-                "discovery_roi": float(r.discovery_roi),
-                "seasons": r.seasons_json,
-                "confirmed_all": r.confirmed_all,
-                "frozen": r.frozen,
-            }
-            for r in rows
-        ],
-    }

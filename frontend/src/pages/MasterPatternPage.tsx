@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PatternInsightsShell, Section } from '../components/pattern-insights/PatternInsightsShell'
+import { PageShell, Section } from '../components/layout/PageShell'
 import {
   MARKET_LABELS,
   SEASONS,
@@ -353,7 +353,7 @@ export function MasterPatternPage() {
   }
 
   return (
-    <PatternInsightsShell>
+    <PageShell>
       <header className="mb-5">
         <h1 className="text-xl font-bold tracking-tight">Master Pattern</h1>
         <p className="mt-1 text-xs" style={{ color: TEXT_MUTED }}>
@@ -604,6 +604,6 @@ export function MasterPatternPage() {
       </div>
 
       {detailId != null && <DetailPanel id={detailId} onClose={() => setDetailId(null)} />}
-    </PatternInsightsShell>
+    </PageShell>
   )
 }

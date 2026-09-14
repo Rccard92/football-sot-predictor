@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -11,7 +10,6 @@ import numpy as np
 from app.services.cecchino_v3.constants import (
     EVALUATOR_MAX_PLAYS_PER_DAY,
     JUDGE_SEASONS,
-    STRATEGY_MAIN,
     WARMUP_SEASON,
 )
 from app.services.cecchino_v3.evaluator import (
@@ -156,33 +154,3 @@ def test_playability_exam():
     bad = plays(JUDGE_SEASONS[0], 50, 70) + plays(JUDGE_SEASONS[1], 60, 60) + plays(JUDGE_SEASONS[2], 60, 60)
     assert not playability_exam(bad, JUDGE_SEASONS)["G1"]
 
-
-def test_run_evaluator_end_to_end_is_serializable():
-    from app.services.cecchino_v3.evaluator_service import run_evaluator
-
-    rng = np.random.default_rng(5)
-    rows = []
-    mid = 1
-    for s_idx, season in enumerate(SEASONS):
-        for k in range(650):
-            p = rng.dirichlet((4, 2.5, 3))
-            p_over = float(rng.uniform(0.35, 0.65))
-            result = rng.choice(3, p=p)
-            over = bool(rng.random() < p_over)
-            phase = "final" if k % 10 == 0 else "mid"
-            common = dict(season=season, day=s_idx * 400 + k // 8, phase=phase)
-            for key, pk, won in (("HOME", p[0], result == 0), ("DRAW", p[1], result == 1), ("AWAY", p[2], result == 2),
-                                 ("OVER_2_5", p_over, over), ("UNDER_2_5", 1 - p_over, not over)):
-                noisy = float(np.clip(pk + rng.normal(0, 0.03), 0.02, 0.98))
-                rows.append(_row(mid, key, odds=round(0.94 / pk, 3), p_v3=noisy, p_book=float(pk), won=bool(won), **common))
-            mid += 1
-    summary, strategies = run_evaluator(rows)
-    json.dumps(summary)
-    assert summary["matches"] == 650 * len(SEASONS)
-    assert {e["family"] for e in summary["information_exam"]} == {"FT_1X2", "OU_2_5"}
-    assert set(summary["strategies"]) == set(strategies)
-    for plays in strategies.values():
-        assert all(p.row.season_label in JUDGE_SEASONS for p in plays)
-        assert len({p.row.lab_match_id for p in plays}) == len(plays)
-    assert all(p.p_eval is not None for p in strategies[STRATEGY_MAIN])
-    assert len(summary["edge_grid"]) == 5

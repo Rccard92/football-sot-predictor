@@ -51,14 +51,16 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
   {
     id: 2,
     title: 'Pulizia delle pagine di test',
-    goal: "Togliere dal menu e dal codice le pagine di test, lasciando un tool ordinato.",
-    status: 'da_fare',
+    goal: "Togliere dal menu e dal codice (frontend e backend) pagine e funzioni che non servono piu', lasciando un tool ordinato.",
+    status: 'in_corso',
     dependsOn: [1],
     tasks: [
-      { text: "Elenco delle pagine da togliere, da confermare con l'utente", status: 'da_fare' },
-      { text: 'Rimozione da menu e codice (i dati storici restano nel database)', status: 'da_fare' },
+      { text: "Elenco delle pagine da tenere confermato dall'utente", status: 'fatto' },
+      { text: 'Rimossi Pattern Insights e le 4 pagine V3 di test: pagine, API e servizi dedicati (i dati restano nel database)', status: 'fatto' },
+      { text: "Analisi del resto del codice non piu' usato, elenco da confermare con l'utente", status: 'da_fare' },
+      { text: "Decidere se la pagina Cecchino (analisi singola) serve ancora", status: 'da_fare' },
     ],
-    doneWhen: 'Nel menu restano solo Cecchino Today, Bet Builder, Master Pattern, Roadmap e le pagine scelte.',
+    doneWhen: 'Nel menu e nel codice restano solo le pagine scelte e cio che serve a loro e ai motori.',
   },
   {
     id: 3,
@@ -138,6 +140,18 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     doneWhen: 'Statistiche e formazioni disponibili nelle schede partita.',
   },
   {
+    id: 10,
+    title: 'Dashboard home',
+    goal: 'Una home piu strutturata con le partite da analizzare e le statistiche dei risultati (per ora la home resta Cecchino Today).',
+    status: 'da_fare',
+    dependsOn: [7],
+    tasks: [
+      { text: "Definire con l'utente contenuti e metriche della dashboard", status: 'da_fare' },
+      { text: 'Realizzazione della dashboard', status: 'da_fare' },
+    ],
+    doneWhen: 'Entrando nel tool si vedono partite del giorno e andamento dei risultati in un colpo solo.',
+  },
+  {
     id: 9,
     title: 'Messa in produzione',
     goal: 'Uscita unica del tool completo, dopo verifica su staging.',
@@ -164,5 +178,9 @@ export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-14',
     text: 'Step 1 fatto: pagina Master Pattern con V2 (78 pattern con quota, 5.259 senza quota) e V3 (24 con quota, 2.959 senza quota), dettaglio partite al clic.',
+  },
+  {
+    date: '2026-09-14',
+    text: 'Step 2 avviato: rimossi Pattern Insights e le pagine V3 di test (frontend, API e servizi). Aggiunti alla roadmap la dashboard home e la decisione sulla pagina Cecchino.',
   },
 ]

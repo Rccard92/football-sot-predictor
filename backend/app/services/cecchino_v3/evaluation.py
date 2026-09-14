@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.services.cecchino_data_lab.run_v2_market_scoreboard import _FAIR_PROB_SQL
+from app.services.cecchino_data_lab.run_v2_grid_dataset import _FAIR_PROB_SQL
 from app.services.cecchino_data_lab.run_v2_scope import TOP_TIER_COMPETITIONS
 from app.services.cecchino_v3.constants import (
     CALIBRATION_BINS,
