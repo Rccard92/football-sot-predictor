@@ -13,6 +13,7 @@ from app.routes import (
     cecchino_lab,
     cecchino_run_v2,
     cecchino_run_v25,
+    cecchino_live,
     cecchino_v3,
     master_pattern,
     cecchino_home_wins,
@@ -66,4 +67,6 @@ api_router.include_router(cecchino_run_v2.router)
 api_router.include_router(cecchino_run_v2.admin_router)
 api_router.include_router(cecchino_run_v25.router)
 api_router.include_router(cecchino_run_v25.admin_router)
+api_router.include_router(cecchino_live.router)
+api_router.include_router(cecchino_live.admin_router)
 api_router.include_router(cecchino_home_wins.router)

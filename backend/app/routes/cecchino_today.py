@@ -528,6 +528,12 @@ def cecchino_today_update_results(
         scan_date=req.target_date,
         timezone=req.timezone,
     )
+    try:
+        from app.services.cecchino_live.registry import settle_predictions
+
+        payload["live_registry_settlement"] = settle_predictions(db)
+    except Exception:  # noqa: BLE001 - il registro non blocca l'aggiornamento risultati
+        db.rollback()
     status_code = 200 if payload.get("status") == "ok" else 422
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 

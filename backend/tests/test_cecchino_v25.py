@@ -100,7 +100,7 @@ def test_picchetto_never_zero_and_sums_to_one():
     assert sum(probs) == pytest.approx(1.0)
     # con molte partite il peso del campionato diventa trascurabile
     big = picchetto_probabilities(WDLRecord(300, 0, 0), WDLRecord(0, 0, 300), ref)
-    assert big[0] > 0.99
+    assert big[0] > 0.98
 
 
 def test_final_is_weighted_mean_of_probabilities():

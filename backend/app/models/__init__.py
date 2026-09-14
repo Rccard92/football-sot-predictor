@@ -61,6 +61,7 @@ from app.models.cecchino_run_v2_pattern_insight import (
     CecchinoRunV2PatternValidationRun,
 )
 from app.models.cecchino_master_pattern import CecchinoMasterPattern, CecchinoMasterPatternBuild
+from app.models.cecchino_live_prediction import CecchinoLivePrediction
 from app.models.cecchino_v3 import (
     CecchinoV3EvaluatorPlay,
     CecchinoV3EvaluatorRun,
@@ -165,6 +166,7 @@ __all__ = [
     "CecchinoV3FinalRun",
     "CecchinoMasterPatternBuild",
     "CecchinoMasterPattern",
+    "CecchinoLivePrediction",
     "Competition",
     "Fixture",
     "FixtureLineup",

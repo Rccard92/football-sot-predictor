@@ -366,6 +366,22 @@ def _mark_skipped_concurrent(
     }
 
 
+def _run_live_registry(db: Session, job: CecchinoTodayScanJob, job_id: str) -> None:
+    """Registro previsioni live (V2, V2.5): mai bloccante per la scansione."""
+    try:
+        from app.services.cecchino_live.registry import record_predictions, settle_predictions
+
+        summary = record_predictions(db, scan_date=job.scan_date)
+        settled = settle_predictions(db)
+        logger.info("CecchinoTodayJob job_id=%s live_registry=%s settled=%s", job_id, summary, settled)
+    except Exception:  # noqa: BLE001
+        logger.exception("CecchinoTodayJob job_id=%s live registry fallito", job_id)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _run_goal_intensity_preview(db: Session, job: CecchinoTodayScanJob, job_id: str) -> None:
     try:
         from app.models.cecchino_today_fixture import (
@@ -596,6 +612,7 @@ def _execute_scan_job_body(
             (report.get("result_summary") or {}).get("duration_seconds"),
         )
         _run_goal_intensity_preview(db, job, job_id)
+        _run_live_registry(db, job, job_id)
         outcome = {
             "status": JOB_STATUS_COMPLETED,
             "job_id": job_id,
