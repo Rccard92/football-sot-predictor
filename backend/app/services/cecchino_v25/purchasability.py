@@ -108,7 +108,8 @@ def build_purchasability_v25(
         key = row["market_key"]
         family = CORE_MARKET_BY_KEY[key].family
         p_cec, p_book, quota = row.get("prob_cecchino"), row.get("prob_book_fair"), row.get("quota_book")
-        if p_cec is None or p_book is None or quota is None:
+        # quota ricavata dall'1X2 senza margine: non e' una quota giocabile, niente punteggio
+        if p_cec is None or p_book is None or quota is None or row.get("quota_book_derived"):
             markets.append(
                 {
                     "market_key": key,

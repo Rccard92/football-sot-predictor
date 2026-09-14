@@ -89,6 +89,7 @@ def build_kpi_panel_v25(
                 "prob_cecchino": round(p, 6) if p is not None else None,
                 "quota_cecchino": round(1.0 / p, 4) if p else None,
                 "quota_book": quota_book,
+                "quota_book_derived": bool((strict_by_market.get(key) or {}).get("is_derived")),
                 "prob_book_fair": round(p_fair, 6) if p_fair is not None else None,
                 "vantaggio_prob": vantaggio,
                 "edge_pct": edge,
