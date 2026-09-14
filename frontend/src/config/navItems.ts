@@ -28,6 +28,7 @@ export const NAV_CECCHINO: NavItem[] = [
   { to: '/cecchino', label: 'Cecchino', icon: 'crosshair', section: 'cecchino' },
   { to: '/cecchino-today', label: 'Cecchino Today', icon: 'calendar', section: 'cecchino' },
   { to: '/bet-builder', label: 'Bet Builder', icon: 'target', section: 'cecchino' },
+  { to: '/master-pattern', label: 'Master Pattern', icon: 'flask', section: 'cecchino' },
   { to: '/cecchino-lab', label: 'Cecchino Lab', icon: 'database', section: 'cecchino' },
   { to: '/pattern-insights', label: 'Pattern Insights', icon: 'flask', section: 'cecchino' },
   { to: '/cecchino-v3', label: 'Cecchino V3', icon: 'flask', section: 'cecchino' },
