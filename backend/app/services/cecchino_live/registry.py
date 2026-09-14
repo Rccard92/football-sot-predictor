@@ -105,6 +105,31 @@ def v25_payload(pre: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return markets, modules
 
 
+def v25_pattern_signals(
+    db: Session, fixture: Fixture, markets: dict[str, Any], modules: dict[str, Any]
+) -> dict[str, Any]:
+    """Pattern Master V2.5 accesi sulla partita (statistiche extra dove disponibili)."""
+    from app.services.cecchino_live.live_extra_stats import delta_classes, live_extra_features
+    from app.services.cecchino_live.pattern_signals import evaluate_patterns, load_winners, v25_features
+
+    build_id, patterns, discovery_run = load_winners(db, MODEL_V25)
+    if build_id is None or discovery_run is None:
+        return {"status": "master_pattern_missing"}
+    extra = live_extra_features(db, fixture)
+    delta = delta_classes(extra, discovery_run_id=discovery_run)
+    result = evaluate_patterns(patterns, features=v25_features(modules, delta), markets=markets)
+    return {
+        "status": "ok",
+        "master_build_id": build_id,
+        "extra_stats": {
+            "prior_matches": extra.get("prior_matches"),
+            "prior_matches_with_stats": extra.get("prior_matches_with_stats"),
+            "delta_classes_available": sum(1 for v in delta.values() if v is not None),
+        },
+        **result,
+    }
+
+
 def _upsert(
     db: Session,
     row: CecchinoTodayFixture,
@@ -176,6 +201,7 @@ def record_predictions(db: Session, *, scan_date: date, now: datetime | None = N
             with db.begin_nested():
                 pre = compute_v25_live(db, fixture, row.kpi_panel_json)
                 markets, modules = v25_payload(pre)
+                modules["patterns"] = v25_pattern_signals(db, fixture, markets, modules)
                 state = _upsert(
                     db, row, model=MODEL_V25, engine_version=V25_ENGINE_VERSION,
                     markets=markets, modules=modules,
