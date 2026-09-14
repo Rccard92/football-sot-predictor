@@ -304,15 +304,13 @@ def list_patterns(
         return {"build": None, "total": 0, "items": [], "markets": []}
     mp = CecchinoMasterPattern
     base = [mp.build_id == build.id, mp.target_type == target_type]
+    market_column = mp.market_label if target_type == TARGET_SYNTHETIC else mp.target_key
     markets = db.execute(
-        select(mp.market_label if target_type == TARGET_SYNTHETIC else mp.target_key, func.count(mp.id))
-        .where(*base)
-        .group_by(1)
-        .order_by(1)
+        select(market_column, func.count(mp.id)).where(*base).group_by(market_column).order_by(market_column)
     ).all()
     filters = list(base)
     if market:
-        filters.append((mp.market_label if target_type == TARGET_SYNTHETIC else mp.target_key) == market)
+        filters.append(market_column == market)
     if min_matches:
         filters.append(mp.total_n >= min_matches)
     if min_quota is not None:
