@@ -46,20 +46,31 @@ def _now() -> datetime:
 
 
 class Budget:
-    """Contatore ufficiale API-Football letto prima di ogni blocco."""
+    """Contatore ufficiale API-Football letto prima di ogni blocco, piu' le chiamate fatte qui:
+    il contatore ufficiale si aggiorna con ritardo, quindi vale il piu' alto dei due."""
 
     def __init__(self, client: ApiFootballClient) -> None:
         self.client = client
         self.used: int | None = None
         self.limit: int = DAILY_LIMIT
+        self.start: int | None = None
+        self.own_calls = 0
 
     def refresh(self) -> None:
         try:
             requests = (self.client.get("status").get("response") or {}).get("requests") or {}
-            self.used = int(requests.get("current") or 0)
+            official = int(requests.get("current") or 0)
+            if self.start is None:
+                self.start = official
+            self.used = max(official, self.start + self.own_calls)
             self.limit = int(requests.get("limit_day") or DAILY_LIMIT)
         except Exception:  # noqa: BLE001 - senza contatore si procede con prudenza
             logger.warning("data_connector: status API-Football non leggibile", exc_info=True)
+
+    def spent(self, calls: int = 1) -> None:
+        self.own_calls += calls
+        if self.used is not None:
+            self.used += calls
 
     def can_spend(self, calls: int = 1) -> bool:
         if self.used is None:
@@ -77,6 +88,7 @@ def refresh_coverage(db: Session, client: ApiFootballClient, budget: Budget) -> 
     if not budget.can_spend():
         return {"status": "skipped_budget"}
     items = client.get("leagues", {"current": "true"}).get("response") or []
+    budget.spent(1)
     now = _now()
     n = 0
     for item in items:
@@ -159,6 +171,7 @@ def ensure_previous_season(
         league_name=comp.name,
         league_country=comp.country,
     )
+    budget.spent(2)
     for t in client.get_teams(int(comp.provider_league_id), prev_year):
         safe_upsert_team_from_api_item(db, ingest, t)
     n = 0
@@ -231,8 +244,7 @@ def fetch_fixture_batches(
         chunk = api_ids[start : start + BATCH_SIZE]
         items = client.get("fixtures", {"ids": "-".join(str(i) for i in chunk)}).get("response") or []
         counts["calls"] += 1
-        if budget.used is not None:
-            budget.used += 1
+        budget.spent(1)
         now = _now()
         for item in items:
             api_id = int(((item.get("fixture") or {}).get("id")) or 0)
@@ -304,4 +316,5 @@ def run_data_connector(db: Session, *, scan_date, client: ApiFootballClient | No
     out["batches"] = fetch_fixture_batches(db, client, budget, targets)
     budget.refresh()
     out["budget_end"] = budget.used
+    out["calls_made"] = budget.own_calls
     return out
