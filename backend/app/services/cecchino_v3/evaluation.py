@@ -46,7 +46,7 @@ def _base_cte(with_baseline: bool) -> str:
     WITH v2_runs AS (
         SELECT DISTINCT ON (summary_json->>'season_label') id
         FROM cecchino_run_v2_runs
-        WHERE status = 'completed' AND run_scope = 'full'
+        WHERE status = 'completed' AND run_scope = 'full' AND run_version = 'cecchino_run_v2'
           AND summary_json->>'season_label' < :lockbox
         ORDER BY summary_json->>'season_label', completed_at DESC
     ),

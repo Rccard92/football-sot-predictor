@@ -303,9 +303,13 @@ def run_v2_to_dict(run: CecchinoRunV2Run) -> dict[str, Any]:
 
 
 def list_runs_v2(db: Session, *, limit: int = 50) -> list[dict[str, Any]]:
+    from app.services.cecchino_data_lab.run_v2.constants import RUN_V2_VERSION
+
+    # Le RUN V2.5 condividono le tabelle: l'elenco V2 mostra solo le RUN V2.
     runs = list(
         db.scalars(
             select(CecchinoRunV2Run)
+            .where(CecchinoRunV2Run.run_version == RUN_V2_VERSION)
             .order_by(CecchinoRunV2Run.id.desc())
             .limit(int(limit))
         ).all()
