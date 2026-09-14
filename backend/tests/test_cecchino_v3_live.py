@@ -63,6 +63,20 @@ def test_annotate_context_uses_full_season_calendar():
     assert target.phase == PHASE_MID
 
 
+def test_annotate_context_with_incomplete_calendar_uses_previous_season_length():
+    def fx(i, comp, day, status):
+        return SimpleNamespace(id=i, competition_id=comp, home_team_id=1 if i % 2 else 2, away_team_id=2 if i % 2 else 1,
+                               status=status, kickoff_at=datetime(2025, 1, 1, tzinfo=timezone.utc) + timedelta(days=day))
+    fixtures = [fx(k, 1, k * 7, "FT") for k in range(1, 31)]  # stagione precedente: 30 partite a squadra
+    fixtures += [fx(100 + k, 2, 400 + k * 7, "FT") for k in range(23)]  # in corso: 23 giocate, calendario futuro assente
+    fixtures.append(fx(200, 2, 400 + 23 * 7, "NS"))
+    day = date(2025, 1, 1) + timedelta(days=400 + 23 * 7)
+    target = _record(200, day, "2", "1", "2026")
+    _annotate_context([target], fixtures, {1: "2025", 2: "2026"})
+    assert (target.home_played, target.home_remaining) == (23, 7)
+    assert target.phase == PHASE_MID
+
+
 def test_predict_records_on_synthetic_league_gives_coherent_probabilities():
     rng = random.Random(7)
     teams = [str(t) for t in range(1, 9)]

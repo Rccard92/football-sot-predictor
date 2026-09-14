@@ -196,8 +196,22 @@ def build_records(db: Session, comp: Competition, target_ids: set[int]) -> _Buil
     )
 
 
+def _expected_matches_per_team(calendar: dict[tuple[str, str], list[Any]], season: str, seasons: list[str]) -> int:
+    """Partite a squadra nella stagione: il database ha solo le prossime partite gia' scaricate,
+    quindi la lunghezza viene dalla stagione precedente dello stesso campionato (conclusa) o, se
+    manca, dal girone di andata e ritorno."""
+    idx = seasons.index(season)
+    if idx > 0:
+        previous = [len(v) for (s, _), v in calendar.items() if s == seasons[idx - 1]]
+        if previous:
+            previous.sort()
+            return previous[len(previous) // 2]
+    teams = sum(1 for (s, _) in calendar if s == season)
+    return max(2 * (teams - 1), 1)
+
+
 def _annotate_context(records: list[MatchRecord], fixtures: list[Fixture], season_of: dict[int, str]) -> None:
-    """Giocate prima (partite finite) e rimanenti (calendario completo, questa inclusa)."""
+    """Giocate prima (partite finite) e rimanenti (questa inclusa) sulla lunghezza attesa della stagione."""
     calendar: dict[tuple[str, str], list[tuple[datetime, int, bool]]] = defaultdict(list)
     for f in fixtures:
         if f.status in _EXCLUDED_CALENDAR_STATUSES or f.kickoff_at is None:
@@ -206,14 +220,16 @@ def _annotate_context(records: list[MatchRecord], fixtures: list[Fixture], seaso
         done = f.status in FINISHED_STATUSES
         for team in (str(f.home_team_id), str(f.away_team_id)):
             calendar[(season, team)].append((f.kickoff_at, int(f.id), done))
+    seasons = sorted(set(season_of.values()))
+    expected = {s: _expected_matches_per_team(calendar, s, seasons) for s in seasons}
     position: dict[tuple[str, str], dict[int, tuple[int, int]]] = {}
     for key, items in calendar.items():
         items.sort()
         played = 0
-        total = len(items)
+        total = max(len(items), expected[key[0]])
         per: dict[int, tuple[int, int]] = {}
         for idx, (_, fid, done) in enumerate(items):
-            per[fid] = (played, total - idx)
+            per[fid] = (played, max(total - idx, 1))
             if done:
                 played += 1
         position[key] = per
