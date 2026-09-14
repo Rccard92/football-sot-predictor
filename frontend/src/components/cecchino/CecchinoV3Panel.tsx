@@ -1,6 +1,6 @@
 import type { LiveModelPrediction, V3IndexBlock } from '../../lib/cecchinoLiveApi'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
-import { Badge, KpiPanel, SourceBadge, Stat, useLiveFixture } from './CecchinoV25Panel'
+import { Badge, KpiPanel, PatternPanel, SourceBadge, Stat, useLiveFixture } from './CecchinoV25Panel'
 
 /** Scheda V3 estesa in Cecchino Today: stessi blocchi e stessa grafica di V2 e V2.5. */
 
@@ -253,23 +253,6 @@ function IndicesPanel({ p }: { p: LiveModelPrediction }) {
   )
 }
 
-function PatternsPending() {
-  return (
-    <section className={`${todayCard} ${todayCardPadding}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className={todaySectionTitle}>Pattern Master V3 accesi</h3>
-          <p className={todaySectionSubtitle}>Situazioni vincenti 4/4 della V3, ritrovate in questa partita.</p>
-        </div>
-        <Badge tone="amber">In arrivo</Badge>
-      </div>
-      <p className="mt-3 text-sm text-slate-600">
-        I pattern V3 usano le soglie calcolate nella ricerca sul Lab: il loro collegamento in live è il prossimo passo.
-      </p>
-    </section>
-  )
-}
-
 export function CecchinoV3Panel({ todayFixtureId }: { todayFixtureId: number }) {
   const { data, error, loading } = useLiveFixture(todayFixtureId)
   if (loading) return <div className={`${todayCard} ${todayCardPadding} h-48 animate-pulse`} aria-busy="true" />
@@ -319,7 +302,10 @@ export function CecchinoV3Panel({ todayFixtureId }: { todayFixtureId: number }) 
       <KpiPanel p={p} title="PANNELLO KPI V3" showPurchasability={false} />
       <SpecialistsPanel p={p} />
       <IndicesPanel p={p} />
-      <PatternsPending />
+      <PatternPanel p={p} title="Pattern Master V3 accesi" model="V3" />
+      <p className="text-[11px] text-slate-500">
+        Pattern V3 con la condizione &quot;livello&quot; (campionati top o minori del Lab) non sono verificabili sui campionati API-Football e restano spenti.
+      </p>
     </div>
   )
 }

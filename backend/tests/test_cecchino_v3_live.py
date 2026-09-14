@@ -112,6 +112,33 @@ def test_predict_records_on_synthetic_league_gives_coherent_probabilities():
     assert "equilibrio" in fin["indices"]
 
 
+def test_v3_pattern_condition_values_market_and_synthetic():
+    from app.services.cecchino_v3_live.patterns import _base_features, condition_values
+
+    result = {
+        "probabilities": {"HOME": 0.5, "DRAW": 0.28, "AWAY": 0.22, "OVER_2_5": 0.55},
+        "lambda_home": 1.6, "lambda_away": 1.0, "rho": -0.05, "phase": "mid",
+        "specialists": {
+            "forza": {"home": 1.6, "away": 1.0}, "sot": {"home": 1.5, "away": 1.1, "volume_home": 5.0, "volume_away": 3.5},
+            "shots": {"home": 1.7, "away": 0.9, "volume_home": 14.0, "volume_away": 10.0},
+        },
+        "indices": {
+            "equilibrio": {"class": "basso"}, "pareggio": {"class": "medio"}, "intensita_goal": {"class": None},
+            "forma": {"home": {"gioco": 0.2}, "away": {"gioco": -0.1}}, "calendario": {"rest_diff": 3},
+        },
+    }
+    base = _base_features(result)
+    assert base["categories"]["segno_agenti"] == "3"
+    assert base["categories"]["riposo"] == "piu_riposo_casa" and base["categories"]["livello"] is None
+    markets = {"HOME": {"probability": 0.5, "prob_book_fair": 0.45, "quota_book": 2.1}}
+    edges = {"HOME": {"prob_v3": [0.3, 0.4, 0.45, 0.55], "v3_vs_book": [-0.05, 0.0, 0.03, 0.06], "quota": [1.6, 2.0, 2.4, 3.0], "forma": [-0.2, -0.05, 0.05, 0.2]}}
+    v = condition_values({"target_type": "market", "target_key": "HOME"}, base, markets, edges, {})
+    assert (v["prob_v3"], v["v3_vs_book"], v["quota"], v["forma"]) == ("Q4", "Q4", "Q3", "Q5")
+    syn = {"total_shots": {"volume_atteso": [18.0, 21.0, 23.0, 26.0], "forma": [-0.2, -0.05, 0.05, 0.2]}}
+    s = condition_values({"target_type": "synthetic", "target_key": "total_shots"}, base, {}, {}, syn)
+    assert s["volume_atteso"] == "Q4" and s["intensita_goal"] is None
+
+
 def test_v3_payload_uses_real_bet365_quotes_and_no_purchasability():
     probs = {k: 0.0 for k in ("HOME", "DRAW", "AWAY", "ONE_X", "X_TWO", "ONE_TWO", "HOME_PT", "DRAW_PT", "AWAY_PT",
                               "OVER_0_5", "UNDER_0_5", "OVER_1_5", "UNDER_1_5", "OVER_2_5", "UNDER_2_5", "OVER_3_5", "UNDER_3_5")}

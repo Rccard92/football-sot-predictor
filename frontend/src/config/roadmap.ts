@@ -109,7 +109,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: 'V3 estesa · prova di identità: sulle partite del Lab il nuovo calcolo rifà la run finale #11 (1.372 partite, differenza massima 0,000005)', status: 'fatto' },
       { text: 'V3 estesa · registro previsioni, anteprima, esiti a fine partita, Osservazione live con confronto a tre motori', status: 'fatto' },
       { text: 'V3 estesa · scheda in Cecchino Today con la grafica di V2 e V2.5 (Pannello KPI, Specialisti, Indici)', status: 'fatto' },
-      { text: 'V3 estesa · Pattern Master V3 accesi in live (soglie della ricerca Lab da ricostruire)', status: 'da_fare' },
+      { text: 'V3 estesa · Pattern Master V3 accesi in live con le soglie salvate della ricerca Lab (la condizione "livello" non è verificabile fuori dai 16 campionati del Lab)', status: 'fatto' },
     ],
     doneWhen: 'Ogni partita del giorno ha tre previsioni salvate e, a fine partita, i loro esiti.',
   },

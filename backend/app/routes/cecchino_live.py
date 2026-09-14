@@ -120,6 +120,9 @@ def _v3_preview(db: Session, today_fixture_id: int) -> dict:
                 "history": res.get("history"),
             }
         markets, modules = v3_payload(res, today.kpi_panel_json)
+        from app.services.cecchino_v3_live.patterns import v3_pattern_signals
+
+        modules["patterns"] = v3_pattern_signals(db, res, markets)
         return {
             "model": "V3",
             "status": "preview",
@@ -140,7 +143,7 @@ def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> 
     """Pattern Master accesi sulle partite del giorno (osservazione: nessuna giocata automatica)."""
     rows = db.scalars(
         select(CecchinoLivePrediction)
-        .where(CecchinoLivePrediction.scan_date == scan_date, CecchinoLivePrediction.model == "V2.5")
+        .where(CecchinoLivePrediction.scan_date == scan_date, CecchinoLivePrediction.model.in_(("V2.5", "V3")))
         .order_by(CecchinoLivePrediction.kickoff, CecchinoLivePrediction.id)
     ).all()
     out = []

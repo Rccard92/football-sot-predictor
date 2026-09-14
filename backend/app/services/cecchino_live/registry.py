@@ -278,6 +278,7 @@ def _record_v3(
     """V3 estesa sulle partite non iniziate dei campionati con statistiche (un campionato alla volta)."""
     from app.services.cecchino_v3_live.engine import compute_for_fixtures
     from app.services.cecchino_v3_live.params import ENGINE_VERSION as V3_ENGINE_VERSION
+    from app.services.cecchino_v3_live.patterns import v3_pattern_signals
 
     upcoming = [r for r in rows if (_aware(r.kickoff) or now) > now and r.local_fixture_id]
     fixtures = [f for f in (db.get(Fixture, int(r.local_fixture_id)) for r in upcoming) if f is not None]
@@ -298,6 +299,7 @@ def _record_v3(
         try:
             with db.begin_nested():
                 markets, modules = v3_payload(res, row.kpi_panel_json)
+                modules["patterns"] = v3_pattern_signals(db, res, markets)
                 state = _upsert(
                     db, row, model=MODEL_V3, engine_version=V3_ENGINE_VERSION,
                     markets=markets, modules=modules, eligible=bool(res.get("eligible")), now=now,

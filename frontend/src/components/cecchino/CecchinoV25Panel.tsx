@@ -534,7 +534,15 @@ function meanOf(values: (number | null)[]): number | null {
 const PATTERN_GROUPS_VISIBLE = 12
 const PATTERNS_PER_GROUP_VISIBLE = 5
 
-function PatternPanel({ p }: { p: LiveModelPrediction }) {
+export function PatternPanel({
+  p,
+  title = 'Pattern Master V2.5 accesi',
+  model = 'V2.5',
+}: {
+  p: LiveModelPrediction
+  title?: string
+  model?: string
+}) {
   const patterns = p.modules?.patterns
   const extra = patterns?.extra_stats
   const [openKey, setOpenKey] = useState<string | null>(null)
@@ -547,7 +555,7 @@ function PatternPanel({ p }: { p: LiveModelPrediction }) {
     <section className={`${todayCard} ${todayCardPadding}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className={todaySectionTitle}>Pattern Master V2.5 accesi</h3>
+          <h3 className={todaySectionTitle}>{title}</h3>
           <p className={todaySectionSubtitle}>Situazioni che nelle 4 stagioni 2022/23–2025/26 hanno sempre funzionato, ritrovate in questa partita.</p>
         </div>
         <Badge tone="amber">In osservazione</Badge>
@@ -565,7 +573,7 @@ function PatternPanel({ p }: { p: LiveModelPrediction }) {
       </details>
 
       {patterns?.status !== 'ok' ? (
-        <p className="mt-3 text-sm text-slate-500">Pattern Master V2.5 non disponibili.</p>
+        <p className="mt-3 text-sm text-slate-500">Pattern Master {model} non disponibili.</p>
       ) : (
         <>
           <div className="mt-3 grid grid-cols-3 gap-2">
