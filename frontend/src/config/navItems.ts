@@ -43,6 +43,7 @@ export const NAV_CECCHINO: NavItem[] = [
 export const NAV_MAIN: NavItem[] = [
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },
+  { to: '/roadmap', label: 'Roadmap', icon: 'book-open', section: 'main' },
 ]
 
 export const NAV_TECH: NavItem[] = [
