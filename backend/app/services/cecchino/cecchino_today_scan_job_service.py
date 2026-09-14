@@ -367,10 +367,24 @@ def _mark_skipped_concurrent(
 
 
 def _run_live_registry(db: Session, job: CecchinoTodayScanJob, job_id: str) -> None:
-    """Registro previsioni live (V2, V2.5): mai bloccante per la scansione."""
+    """Collegamento dati API-Football + registro previsioni live (V2, V2.5): mai bloccante per la scansione."""
     try:
+        from app.services.cecchino_live.bet365_lines import store_lines_for_scan_date
+        from app.services.cecchino_live.data_connector import run_data_connector
         from app.services.cecchino_live.registry import record_predictions, settle_predictions
 
+        try:
+            connector = run_data_connector(db, scan_date=job.scan_date)
+            logger.info("CecchinoTodayJob job_id=%s data_connector=%s", job_id, connector)
+        except Exception:  # noqa: BLE001 - senza dati nuovi il registro lavora con quelli presenti
+            logger.exception("CecchinoTodayJob job_id=%s data connector fallito", job_id)
+            db.rollback()
+        try:
+            lines = store_lines_for_scan_date(db, scan_date=job.scan_date)
+            logger.info("CecchinoTodayJob job_id=%s bet365_lines=%s", job_id, lines)
+        except Exception:  # noqa: BLE001
+            logger.exception("CecchinoTodayJob job_id=%s linee Bet365 fallite", job_id)
+            db.rollback()
         summary = record_predictions(db, scan_date=job.scan_date)
         settled = settle_predictions(db)
         logger.info("CecchinoTodayJob job_id=%s live_registry=%s settled=%s", job_id, summary, settled)

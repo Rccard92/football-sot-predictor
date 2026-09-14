@@ -87,6 +87,26 @@ def history_for(db: Session, target: Fixture) -> list[SimpleNamespace]:
     return [_proxy(f) for f in rows]
 
 
+def previous_season_counts(db: Session, target: Fixture):
+    """Riferimento della stagione precedente dello stesso campionato (scaricata dal collegamento dati)."""
+    from app.models import Competition
+
+    comp = db.get(Competition, int(target.competition_id)) if target.competition_id else None
+    if comp is None:
+        return None
+    prev = db.scalar(
+        select(Competition).where(
+            Competition.provider_league_id == comp.provider_league_id, Competition.season == int(comp.season) - 1
+        )
+    )
+    if prev is None:
+        return None
+    rows = db.scalars(
+        select(Fixture).where(Fixture.competition_id == prev.id, Fixture.status.in_(FINISHED_STATUSES))
+    ).all()
+    return counts_from_matches([_proxy(f) for f in rows]) if rows else None
+
+
 def strict_quotes_from_kpi(kpi_panel: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for row in (kpi_panel or {}).get("rows") or []:
@@ -105,7 +125,9 @@ def compute_v25_live(db: Session, target: Fixture, kpi_panel: dict[str, Any] | N
     target_proxy = _proxy(target)
     ordered = sorted(history + [target_proxy], key=lambda p: (p.kickoff_at or datetime.min, p.id))
     contexts = build_lab_prematch_contexts(competition_ordered=ordered, target=target_proxy)
-    league = build_reference(current=counts_from_matches(history), previous=None, global_pool=None)
+    league = build_reference(
+        current=counts_from_matches(history), previous=previous_season_counts(db, target), global_pool=None
+    )
     quote_bundle = {"strict_by_market": strict_quotes_from_kpi(kpi_panel)}
     item = SimpleNamespace(match=SimpleNamespace(home_team="home", away_team="away", kickoff_at=target.kickoff_at))
     pre = compute_prematch_v25(

@@ -62,6 +62,7 @@ from app.models.cecchino_run_v2_pattern_insight import (
 )
 from app.models.cecchino_master_pattern import CecchinoMasterPattern, CecchinoMasterPatternBuild
 from app.models.cecchino_live_prediction import CecchinoLivePrediction
+from app.models.api_football_data import ApiFootballFixtureFetch, ApiFootballLeagueCoverage, CecchinoBet365MarketLine
 from app.models.cecchino_v3 import (
     CecchinoV3EvaluatorPlay,
     CecchinoV3EvaluatorRun,
@@ -167,6 +168,9 @@ __all__ = [
     "CecchinoMasterPatternBuild",
     "CecchinoMasterPattern",
     "CecchinoLivePrediction",
+    "ApiFootballLeagueCoverage",
+    "ApiFootballFixtureFetch",
+    "CecchinoBet365MarketLine",
     "Competition",
     "Fixture",
     "FixtureLineup",

@@ -142,7 +142,9 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     status: 'da_fare',
     dependsOn: [5],
     tasks: [
-      { text: 'Valutazione API: copertura, dati disponibili, costi', status: 'da_fare' },
+      { text: 'Valutazione API: copertura, dati disponibili, costi (piano Pro 7.500 chiamate al giorno, blocchi da 20 partite)', status: 'fatto' },
+      { text: 'Collegamento notturno: copertura campionati, stagione precedente, statistiche squadra e arbitro a blocchi, linee Bet365 a .5', status: 'fatto' },
+      { text: "Possibile seconda lettura quote Bet365 qualche ora prima del calcio d'inizio (mercati tiri/corner/cartellini che escono tardi): da valutare dopo i primi dati", status: 'da_fare' },
       { text: "Rifare il cron formazioni pre-match: in staging e' disattivato, in produzione gira ancora sul vecchio codice", status: 'da_fare' },
       { text: 'Integrazione nelle schede e, se utile, nei motori (come nuova versione misurata in live)', status: 'da_fare' },
     ],
@@ -176,6 +178,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-14',
+    text: "Quote: Bet365 fonte principale per tutti i modelli, Betfair riferimento. Eleggibili solo partite con quote reali Bet365 su 1X2 e Over/Under 2.5. Collegamento dati notturno attivo: statistiche squadra a blocchi da 20 partite e linee Bet365 a .5 salvate per ogni partita.",
+  },
   {
     date: '2026-09-14',
     text: "Step 5 avviato: registro previsioni live attivo (V2 e V2.5 congelate prima del calcio d'inizio, esiti a fine partita), primo giorno 9 partite. Acquistabilita' V2.5 corretta (doppia chance e peso del Cecchino) e RUN V2.5 ricalcolata: 87 pattern con quota (79 attesi dal caso). V3 in live in attesa di decisione sui dati.",

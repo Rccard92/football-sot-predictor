@@ -379,6 +379,30 @@ def _check_kpi_1x2_complete(kpi_panel: dict[str, Any] | None) -> tuple[bool, lis
     return True, [], kpi_panel.get("bookmaker_status") or "available"
 
 
+# Soglia quote (policy v2, 2026-09-14): la partita e' eleggibile per V2, V2.5 e V3 solo con quote
+# REALI del bookmaker principale (Bet365) su 1X2 e Over/Under 2.5. Senza quota reale non si puo'
+# distinguere un valore vero da una quota che semplicemente non esiste.
+_CORE_ODDS_KEYS = ("HOME", "DRAW", "AWAY", "OVER_2_5", "UNDER_2_5")
+
+
+def check_primary_book_core_odds(kpi_panel: dict[str, Any] | None) -> list[str]:
+    """Selezioni core senza quota reale del bookmaker principale (lista vuota = soglia superata)."""
+    from app.services.cecchino.cecchino_constants import CECCHINO_PRIMARY_BOOKMAKER
+
+    primary = str(CECCHINO_PRIMARY_BOOKMAKER["name"])
+    rows = (kpi_panel or {}).get("rows") or []
+    by_key = {r.get("market_key"): r for r in rows if isinstance(r, dict)}
+    missing: list[str] = []
+    for key in _CORE_ODDS_KEYS:
+        row = by_key.get(key) or {}
+        book = _num(row.get("quota_book"))
+        name = row.get("bookmaker_name")
+        derived = bool(row.get("derived_quote") or row.get("not_real_book_quote") or row.get("book_fallback_used"))
+        if book is None or book <= 1.0 or derived or (name is not None and str(name) != primary):
+            missing.append(key)
+    return missing
+
+
 def build_cecchino_debug(cecchino_output: dict[str, Any] | None) -> dict[str, Any]:
     final = (cecchino_output or {}).get("final") or {}
     missing_picchetto: list[str] = []
@@ -571,6 +595,17 @@ def validate_cecchino_today_final_eligibility(
             eligibility_status=ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE,
             eligibility_reason=_reason_message(ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE, kpi_missing),
             blocking_reasons=[f"kpi_missing:{m}" for m in kpi_missing],
+            warnings=soft_warnings,
+            import_info=import_info,
+        )
+
+    core_missing = check_primary_book_core_odds(kpi_panel)
+    if core_missing:
+        return FinalEligibilityResult(
+            is_eligible=False,
+            eligibility_status=ELIGIBILITY_EXCLUDED_MISSING_1X2,
+            eligibility_reason=f"Quote reali Bet365 mancanti su 1X2 / Over-Under 2.5: {', '.join(core_missing)}",
+            blocking_reasons=[f"core_odds_missing:{m}" for m in core_missing],
             warnings=soft_warnings,
             import_info=import_info,
         )

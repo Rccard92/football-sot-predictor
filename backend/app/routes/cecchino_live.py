@@ -107,7 +107,10 @@ def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> 
     for r in rows:
         patterns = (r.modules_json or {}).get("patterns") or {}
         for p in patterns.get("active") or []:
-            result = ((r.result_json or {}).get("markets") or {}).get(p["target_key"]) if p["target_type"] == "market" else None
+            if p["target_type"] == "market":
+                result = ((r.result_json or {}).get("markets") or {}).get(p["target_key"])
+            else:
+                result = ((r.result_json or {}).get("patterns") or {}).get(str(p["id"]))
             out.append({
                 "today_fixture_id": int(r.today_fixture_id),
                 "kickoff": r.kickoff.isoformat() if r.kickoff else None,

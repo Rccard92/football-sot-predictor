@@ -10,20 +10,22 @@ CECCHINO_DELTA_STRONG_THRESHOLD = 31
 PROVIDER_API_FOOTBALL = "api_football"
 
 # Book policy Today / KPI / Signals / V3.1 / Bet Builder (canonical Book)
-CECCHINO_BOOK_POLICY_VERSION = "betfair_primary_bet365_fallback_v1"
+# v2 (2026-09-14): Bet365 fonte principale (tutti i mercati, anche tiri/corner/cartellini),
+# Betfair riferimento per le sole selezioni mancanti.
+CECCHINO_BOOK_POLICY_VERSION = "bet365_primary_betfair_fallback_v2"
 
 CECCHINO_PRIMARY_BOOKMAKER: dict[str, str | int] = {
-    "provider_source": PROVIDER_API_FOOTBALL,
-    "provider_bookmaker_id": 3,
-    "name": "Betfair",
-    "slug": "betfair",
-}
-
-CECCHINO_FALLBACK_BOOKMAKER: dict[str, str | int] = {
     "provider_source": PROVIDER_API_FOOTBALL,
     "provider_bookmaker_id": 8,
     "name": "Bet365",
     "slug": "bet365",
+}
+
+CECCHINO_FALLBACK_BOOKMAKER: dict[str, str | int] = {
+    "provider_source": PROVIDER_API_FOOTBALL,
+    "provider_bookmaker_id": 3,
+    "name": "Betfair",
+    "slug": "betfair",
 }
 
 CECCHINO_CANONICAL_BOOKMAKERS: list[dict[str, str | int]] = [
@@ -36,7 +38,7 @@ CECCHINO_CANONICAL_BOOKMAKER_IDS: list[int] = [
     int(CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"]),
 ]
 
-# Alias legacy: primary Book (Betfair). NON significa "unico bookmaker".
+# Alias legacy: primary Book (Bet365 dalla policy v2). NON significa "unico bookmaker".
 CECCHINO_BOOKMAKER: dict[str, str | int] = CECCHINO_PRIMARY_BOOKMAKER
 
 # Legacy: id primary usato storicamente come "required". Non implica che Bet365 sia obbligatorio.

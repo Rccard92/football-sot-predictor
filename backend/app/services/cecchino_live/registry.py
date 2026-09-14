@@ -11,7 +11,7 @@ Regole:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -230,6 +230,67 @@ def _final_score(row: CecchinoTodayFixture) -> SimpleNamespace | None:
     )
 
 
+def _score_from_fixture(fixture: Fixture | None) -> SimpleNamespace | None:
+    """Risultato dalla fixture locale (aggiornata dal collegamento dati notturno)."""
+    if fixture is None or (fixture.status or "") not in FINISHED_STATUSES:
+        return None
+    if fixture.goals_home is None or fixture.goals_away is None:
+        return None
+    ht = (((fixture.raw_json or {}).get("score") or {}).get("halftime")) or {}
+    return SimpleNamespace(
+        ft_home_goals=fixture.goals_home,
+        ft_away_goals=fixture.goals_away,
+        ht_home_goals=ht.get("home"),
+        ht_away_goals=ht.get("away"),
+    )
+
+
+_STAT_FIELDS = {
+    "shots": ("total_shots", "shots"),
+    "sot": ("shots_on_target",),
+    "corners": ("corner_kicks",),
+    "yellow_cards": ("yellow_cards",),
+}
+
+
+def _actual_stats(db: Session, fixture: Fixture | None) -> dict[str, float] | None:
+    """Statistiche reali della partita (stesse chiavi dei bersagli senza quota), se disponibili."""
+    if fixture is None:
+        return None
+    from app.models.fixture_team_stat import FixtureTeamStat
+
+    rows = {int(s.team_id): s for s in db.scalars(select(FixtureTeamStat).where(FixtureTeamStat.fixture_id == fixture.id)).all()}
+    home, away = rows.get(int(fixture.home_team_id)), rows.get(int(fixture.away_team_id))
+    if home is None or away is None:
+        return None
+    out: dict[str, float] = {}
+    for name, columns in _STAT_FIELDS.items():
+        h = next((getattr(home, c) for c in columns if getattr(home, c, None) is not None), None)
+        a = next((getattr(away, c) for c in columns if getattr(away, c, None) is not None), None)
+        if h is None or a is None:
+            continue
+        out[f"home_{name}"] = float(h)
+        out[f"away_{name}"] = float(a)
+        out[f"total_{name}"] = float(h) + float(a)
+    return out or None
+
+
+def _synthetic_pattern_outcomes(pred: CecchinoLivePrediction, actuals: dict[str, float] | None) -> dict[str, Any]:
+    """Esito dei pattern senza quota accesi: valore reale sopra/sotto la soglia nella direzione del pattern."""
+    out: dict[str, Any] = {}
+    active = (((pred.modules_json or {}).get("patterns") or {}).get("active")) or []
+    for p in active:
+        if p.get("target_type") != "synthetic":
+            continue
+        value = (actuals or {}).get(str(p.get("target_key")))
+        if value is None or p.get("threshold") is None:
+            out[str(p["id"])] = {"won": None, "actual": None}
+            continue
+        over = value > float(p["threshold"])
+        out[str(p["id"])] = {"won": over if int(p.get("direction") or 1) >= 0 else not over, "actual": value}
+    return out
+
+
 def settle_predictions(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     now = now or _now()
     open_rows = db.scalars(
@@ -241,7 +302,8 @@ def settle_predictions(db: Session, *, now: datetime | None = None) -> dict[str,
     settled = 0
     for pred in open_rows:
         row = db.get(CecchinoTodayFixture, int(pred.today_fixture_id))
-        score = _final_score(row) if row is not None else None
+        fixture = db.get(Fixture, int(pred.local_fixture_id)) if pred.local_fixture_id else None
+        score = (_final_score(row) if row is not None else None) or _score_from_fixture(fixture)
         if score is None:
             continue
         result = match_result_from_lab_match(score)
@@ -250,15 +312,38 @@ def settle_predictions(db: Session, *, now: datetime | None = None) -> dict[str,
             outcome = evaluate_market_outcome_v2(key, result)
             won = outcome.get("won")
             markets[key] = {"won": won, "profit": flat_stake_profit(won=won, quota=m.get("quota_book"))}
+        actuals = _actual_stats(db, fixture)
         pred.result_json = {
             "score": {
                 "ft_home": score.ft_home_goals, "ft_away": score.ft_away_goals,
                 "ht_home": score.ht_home_goals, "ht_away": score.ht_away_goals,
             },
             "markets": markets,
+            "stats": actuals,
+            "patterns": _synthetic_pattern_outcomes(pred, actuals),
         }
         pred.status = LIVE_STATUS_SETTLED
         pred.settled_at = now
         settled += 1
+
+    # statistiche arrivate dopo la chiusura (es. risultati aggiornati a mano prima della notte)
+    late = 0
+    recent = db.scalars(
+        select(CecchinoLivePrediction).where(
+            CecchinoLivePrediction.status == LIVE_STATUS_SETTLED,
+            CecchinoLivePrediction.kickoff > now - timedelta(days=4),
+        )
+    ).all()
+    for pred in recent:
+        result = dict(pred.result_json or {})
+        if result.get("stats") is not None or not pred.local_fixture_id:
+            continue
+        actuals = _actual_stats(db, db.get(Fixture, int(pred.local_fixture_id)))
+        if actuals is None:
+            continue
+        result["stats"] = actuals
+        result["patterns"] = _synthetic_pattern_outcomes(pred, actuals)
+        pred.result_json = result
+        late += 1
     db.commit()
-    return {"open_checked": len(open_rows), "settled": settled}
+    return {"open_checked": len(open_rows), "settled": settled, "stats_completed_later": late}

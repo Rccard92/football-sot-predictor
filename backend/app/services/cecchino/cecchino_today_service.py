@@ -226,7 +226,7 @@ _COMPETITION_EXCLUDED_STATUSES = frozenset(
     },
 )
 
-_BOOKMAKER_NAMES = ("Betfair",)
+_BOOKMAKER_NAMES = ("Bet365",)  # bookmaker principale (policy v2)
 
 
 def _mapping_blocking_reasons(exc: Exception) -> list[str]:
@@ -3003,7 +3003,7 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
         if missing:
             return f"Esclusa perché manca {' / '.join(missing)}"
     labels = {
-        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Esclusa perché manca mercato 1X2 completo su Betfair",
+        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Esclusa perché mancano quote reali Bet365 su 1X2 o Over/Under 2.5",
         ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS: "Esclusa perché statistiche insufficienti",
         ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO: "Esclusa perché un picchetto Cecchino obbligatorio non è calcolabile",
         ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY: "Esclusa per probabilità zero su 1/X/2",
