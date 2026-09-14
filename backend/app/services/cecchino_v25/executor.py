@@ -149,11 +149,12 @@ def seed_calibrator_from_previous_run(db: Session, calibrator: PurchasabilityCal
             """
             SELECT id FROM cecchino_run_v2_runs
             WHERE run_version = :v AND module_policy_json->>'season_label' = :s
+              AND module_policy_json->>'engine_version' = :e
               AND status IN ('completed', 'completed_with_warnings')
             ORDER BY id DESC LIMIT 1
             """
         ),
-        {"v": RUN_V25_VERSION, "s": prev},
+        {"v": RUN_V25_VERSION, "s": prev, "e": ENGINE_VERSION},
     ).scalar()
     if run_id is None:
         return None

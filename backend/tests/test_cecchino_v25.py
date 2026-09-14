@@ -241,3 +241,32 @@ def test_signal_quotas_mapped_to_v2_scale(monkeypatch):
     assert mapped["q1"] == pytest.approx(3.0)
     assert mapped["qx"] == pytest.approx(4.5)
     assert mapped["q2"] == pytest.approx(4.0)
+
+
+def test_double_chance_fair_uses_its_own_quotes_when_complete():
+    strict = {
+        "HOME": {"value": 2.0}, "DRAW": {"value": 3.4}, "AWAY": {"value": 4.0},
+        "ONE_X": {"value": 1.25}, "X_TWO": {"value": 1.8}, "ONE_TWO": {"value": 1.3},
+    }
+    fair = fair_probabilities(strict)
+    assert fair["ONE_X"] + fair["X_TWO"] + fair["ONE_TWO"] == pytest.approx(2.0)
+    assert fair["X_TWO"] == pytest.approx(2 * (1 / 1.8) / (1 / 1.25 + 1 / 1.8 + 1 / 1.3))
+    strict["X_TWO"] = {"value": 1.8, "is_derived": True}
+    derived = fair_probabilities(strict)
+    assert derived["X_TWO"] == pytest.approx(derived["DRAW"] + derived["AWAY"])
+
+
+def test_purchasability_never_bets_against_cecchino():
+    rng = np.random.default_rng(5)
+    calibrator = PurchasabilityCalibrator()
+    for i in range(2000):
+        true_p = rng.uniform(0.2, 0.8)
+        p_book = float(np.clip(true_p + rng.normal(0, 0.02), 0.05, 0.95))
+        # Cecchino rumoroso e sistematicamente sbagliato: il modello libero darebbe peso negativo
+        p_cec = float(np.clip(1.0 - true_p + rng.normal(0, 0.05), 0.05, 0.95))
+        calibrator.add(family="FT_1X2", p_book=p_book, p_cec=p_cec, won=bool(rng.random() < true_p), lab_match_id=i)
+    calibrator.refresh()
+    assert calibrator.model("FT_1X2")["c"] == 0.0
+    low = calibrator.corrected_probability("FT_1X2", 0.5, 0.1)
+    high = calibrator.corrected_probability("FT_1X2", 0.5, 0.9)
+    assert low == pytest.approx(high)

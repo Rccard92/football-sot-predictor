@@ -4,7 +4,7 @@ from __future__ import annotations
 
 RUN_V25_VERSION = "cecchino_run_v25"
 RUN_V25_CONFIRM_TOKEN = "RUN_CECCHINO_RUN_V25"
-ENGINE_VERSION = "cecchino_v25_engine_v1"
+ENGINE_VERSION = "cecchino_v25_engine_v2"
 
 # --- statistiche di campionato -------------------------------------------------------------
 # La stagione precedente dello stesso campionato entra nel riferimento di campionato

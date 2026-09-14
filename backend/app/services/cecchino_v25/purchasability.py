@@ -68,7 +68,12 @@ class PurchasabilityCalibrator:
             if data.fit is not None and n - data.fitted_at_n < PURCHASABILITY_REFIT_EVERY:
                 continue
             x = design(np.array(data.p_book), np.array(data.p_cec))
-            data.fit = fit_logistic(x, np.array(data.won), np.array(data.match_ids))
+            fit = fit_logistic(x, np.array(data.won), np.array(data.match_ids))
+            if fit.coef[2] < 0:
+                # il Cecchino puo' solo aggiungere informazione nella sua direzione: un peso
+                # negativo (mai significativo nello storico) significherebbe giocargli contro
+                fit.coef = np.array([fit.coef[0], fit.coef[1], 0.0])
+            data.fit = fit
             data.fitted_at_n = n
 
     def rows(self, family: str) -> int:

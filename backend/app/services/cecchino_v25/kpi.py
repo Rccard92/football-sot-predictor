@@ -41,8 +41,10 @@ def _odd(entry: dict[str, Any] | None) -> float | None:
 def fair_probabilities(strict_by_market: dict[str, dict[str, Any]]) -> dict[str, float]:
     """Probabilita' del book senza margine, famiglia per famiglia (solo famiglie complete).
 
-    Doppia chance: dalla terna 1X2 senza margine (le quote DC reali hanno un margine
-    proprio e spesso manca un lato).
+    Doppia chance: dalle sue stesse quote quando la terna e' completa (somma delle
+    probabilita' riportata a 2); solo se manca un lato, dalla terna 1X2. Nei file storici
+    1X2 e doppia chance sono rilevati in momenti diversi: ricavare la DC dall'1X2 creava
+    un valore atteso fittizio.
     """
     out: dict[str, float] = {}
     for family in _FAMILIES_EXCLUSIVE:
@@ -53,7 +55,15 @@ def fair_probabilities(strict_by_market: dict[str, dict[str, Any]]) -> dict[str,
         total = sum(inv)
         for k, v in zip(family, inv):
             out[k] = v / total
-    if all(k in out for k in ("HOME", "DRAW", "AWAY")):
+    dc_keys = ("ONE_X", "X_TWO", "ONE_TWO")
+    dc_odds = [_odd(strict_by_market.get(k)) for k in dc_keys]
+    dc_real = all(o is not None and not (strict_by_market.get(k) or {}).get("is_derived") for k, o in zip(dc_keys, dc_odds))
+    if dc_real:
+        inv = [1.0 / o for o in dc_odds]  # type: ignore[operator]
+        total = sum(inv)
+        for k, v in zip(dc_keys, inv):
+            out[k] = 2.0 * v / total
+    elif all(k in out for k in ("HOME", "DRAW", "AWAY")):
         out["ONE_X"] = out["HOME"] + out["DRAW"]
         out["X_TWO"] = out["DRAW"] + out["AWAY"]
         out["ONE_TWO"] = out["HOME"] + out["AWAY"]

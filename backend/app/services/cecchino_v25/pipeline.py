@@ -17,7 +17,7 @@ from typing import Any, Callable
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.services.cecchino_v25.constants import RUN_V25_CONFIRM_TOKEN, RUN_V25_VERSION
+from app.services.cecchino_v25.constants import ENGINE_VERSION, RUN_V25_CONFIRM_TOKEN, RUN_V25_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,12 @@ def _completed_run(db: Session, season: str) -> int | None:
             """
             SELECT id FROM cecchino_run_v2_runs
             WHERE run_version = :v AND module_policy_json->>'season_label' = :s
+              AND module_policy_json->>'engine_version' = :e
               AND status IN ('completed', 'completed_with_warnings')
             ORDER BY id DESC LIMIT 1
             """
         ),
-        {"v": RUN_V25_VERSION, "s": season},
+        {"v": RUN_V25_VERSION, "s": season, "e": ENGINE_VERSION},
     ).scalar()
 
 
