@@ -82,10 +82,14 @@ class Settings(BaseSettings):
     cecchino_auto_scan_max_runtime_minutes: int = 120
     cecchino_auto_scan_transient_attempts: int = 2
     cecchino_auto_scan_transient_retry_delay_seconds: int = 60
-    # Giro del mattino sulla giornata in corso: raccoglie le quote pubblicate dopo le 23.
+    # Scansione serale sulla giornata successiva (23:00 / 23:50).
+    cecchino_auto_scan_evening_enabled: bool = True
+    # Scansione del mattino sulla giornata in corso, con recupero se fallisce.
     cecchino_auto_scan_morning_enabled: bool = False
-    cecchino_auto_scan_morning_hour: int = 7
-    cecchino_auto_scan_morning_minute: int = 30
+    cecchino_auto_scan_morning_hour: int = 6
+    cecchino_auto_scan_morning_minute: int = 0
+    cecchino_auto_scan_morning_recovery_hour: int = 6
+    cecchino_auto_scan_morning_recovery_minute: int = 45
 
     # Acquistabilità operativa (default V3; V3.1 solo post GO_FINAL via JSON runtime)
     operational_purchasability_version: str = "v3"

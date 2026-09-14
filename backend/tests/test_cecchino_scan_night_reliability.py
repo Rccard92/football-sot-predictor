@@ -9,7 +9,12 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from app.jobs.cecchino_auto_scan import SLOT_MORNING, SLOT_PRIMARY, resolve_auto_scan_slot
+from app.jobs.cecchino_auto_scan import (
+    SLOT_MORNING,
+    SLOT_MORNING_RECOVERY,
+    SLOT_PRIMARY,
+    resolve_auto_scan_slot,
+)
 from app.services import api_football_client as afc
 from app.services.api_football_client import ApiFootballClient, ApiFootballError, ApiFootballRateLimited
 from app.services.cecchino.cecchino_today_odds_fetch import (
@@ -188,3 +193,31 @@ def test_morning_slot_window():
     assert _slot(7, 30, morning=False) is None
     assert _slot(23, 0) == SLOT_PRIMARY
     assert _slot(12, 0) is None
+
+
+def _slot_06(hh: int, mm: int, *, evening: bool) -> str | None:
+    now = datetime(2026, 9, 15, hh, mm, tzinfo=ZoneInfo(ROME))
+    return resolve_auto_scan_slot(
+        now,
+        timezone_name=ROME,
+        primary_hour=23,
+        primary_minute=0,
+        recovery_hour=23,
+        recovery_minute=50,
+        window_minutes=10,
+        morning_hour=6,
+        morning_minute=0,
+        morning_recovery_hour=6,
+        morning_recovery_minute=45,
+        evening_enabled=evening,
+    )
+
+
+def test_morning_only_schedule_disables_evening_slots():
+    assert _slot_06(6, 2, evening=False) == SLOT_MORNING
+    assert _slot_06(6, 45, evening=False) == SLOT_MORNING_RECOVERY
+    assert _slot_06(7, 0, evening=False) is None
+    assert _slot_06(5, 0, evening=False) is None
+    assert _slot_06(23, 0, evening=False) is None
+    assert _slot_06(23, 50, evening=False) is None
+    assert _slot_06(23, 0, evening=True) == SLOT_PRIMARY
