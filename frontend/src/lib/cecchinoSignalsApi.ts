@@ -41,7 +41,6 @@ export function parseMonitoringVersion(raw: string | null | undefined): Monitori
 }
 
 export const CURRENT_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v3_draw_dfg_decimal2'
-export const PREVIOUS_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v2_draw_dfg'
 export const LEGACY_SIGNAL_FORMULA_VERSION = 'cecchino_signals_matrix_v1_legacy'
 
 /** Monitoraggio operativo: solo formula corrente V3 (nessuna selezione Legacy/Tutte). */
@@ -59,10 +58,6 @@ export const ACQUISITION_FILTER_OPTIONS = [
   { value: 'legacy_unclassified', label: 'Legacy non classificati' },
   { value: 'all', label: 'Tutti i SI grezzi' },
 ] as const
-
-export type SignalFormulaVersionFilter =
-  (typeof SIGNAL_FORMULA_VERSION_OPTIONS)[number]['value']
-export type AcquisitionFilter = (typeof ACQUISITION_FILTER_OPTIONS)[number]['value']
 
 export type SignalsDiagnostics = {
   date_from: string
@@ -293,18 +288,6 @@ export async function getCecchinoSignalsSummary(
     `/api/admin/cecchino/signals/summary${qs(
       signalsFilterQueryParams(filters, { includeDiagnostics: true }),
     )}`,
-  )
-}
-
-export async function getCecchinoSignalsDiagnostics(params: {
-  date_from: string
-  date_to: string
-}): Promise<SignalsDiagnostics> {
-  return adminGetJson<SignalsDiagnostics>(
-    `/api/admin/cecchino/signals/diagnostics${qs({
-      date_from: params.date_from,
-      date_to: params.date_to,
-    })}`,
   )
 }
 

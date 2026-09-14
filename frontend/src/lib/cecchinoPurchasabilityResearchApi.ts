@@ -166,13 +166,6 @@ export async function getPurchasabilityDataset(
   return adminGetJson(`/api/admin/cecchino/research/purchasability/dataset?${q}`)
 }
 
-export async function getPurchasabilityMarkets(
-  filters: Pick<PurchasabilityAuditFilters, 'date_from' | 'date_to'> = {},
-): Promise<{ version: string; markets: PurchasabilityMarketRow[] }> {
-  const q = qs(filters)
-  return adminGetJson(`/api/admin/cecchino/research/purchasability/markets${q ? `?${q}` : ''}`)
-}
-
 export const PURCHASABILITY_EXPORT_PATHS: Record<PurchasabilityExportKind, string> = {
   audit_summary: '/api/admin/cecchino/research/purchasability/export/audit_summary',
   variable_registry: '/api/admin/cecchino/research/purchasability/export/variable_registry',

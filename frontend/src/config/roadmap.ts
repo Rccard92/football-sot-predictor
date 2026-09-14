@@ -57,8 +57,12 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     tasks: [
       { text: "Elenco delle pagine da tenere confermato dall'utente", status: 'fatto' },
       { text: 'Rimossi Pattern Insights e le 4 pagine V3 di test: pagine, API e servizi dedicati (i dati restano nel database)', status: 'fatto' },
-      { text: "Analisi del resto del codice non piu' usato, elenco da confermare con l'utente", status: 'da_fare' },
-      { text: "Decidere se la pagina Cecchino (analisi singola) serve ancora", status: 'da_fare' },
+      { text: "Analisi del resto del codice non piu' usato, elenco confermato dall'utente", status: 'fatto' },
+      { text: "Pagina Cecchino (analisi singola) tolta: /cecchino porta a Cecchino Today, motore e dati intatti", status: 'fatto' },
+      { text: 'Rimosse le parti sicure: file frontend mai usati, 15 gruppi di API senza chiamanti, moduli orfani, test e script una tantum, file spazzatura', status: 'fatto' },
+      { text: 'Tolti il pannello debug SportAPI rotto della pagina Admin e la rotta classifiche doppia', status: 'fatto' },
+      { text: "Parti 'da verificare' (API di ricerca Goal Intensity v5, vecchia dashboard storica, backfill SportAPI, export V35): verifica una per una con l'utente", status: 'da_fare' },
+      { text: 'Vecchio motore SOT: oggi usato dalla scansione di Cecchino Today, da staccare con un intervento dedicato', status: 'da_fare' },
     ],
     doneWhen: 'Nel menu e nel codice restano solo le pagine scelte e cio che serve a loro e ai motori.',
   },
@@ -135,6 +139,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     dependsOn: [5],
     tasks: [
       { text: 'Valutazione API: copertura, dati disponibili, costi', status: 'da_fare' },
+      { text: "Rifare il cron formazioni pre-match: in staging e' disattivato, in produzione gira ancora sul vecchio codice", status: 'da_fare' },
       { text: 'Integrazione nelle schede e, se utile, nei motori (come nuova versione misurata in live)', status: 'da_fare' },
     ],
     doneWhen: 'Statistiche e formazioni disponibili nelle schede partita.',
@@ -182,5 +187,9 @@ export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-14',
     text: 'Step 2 avviato: rimossi Pattern Insights e le pagine V3 di test (frontend, API e servizi). Aggiunti alla roadmap la dashboard home e la decisione sulla pagina Cecchino.',
+  },
+  {
+    date: '2026-09-14',
+    text: 'Step 2: pagina Cecchino tolta, rimosse le parti sicure (circa 160 file tra frontend, API, servizi, test e script), cron formazioni disattivato in staging. Restano da verificare le parti dubbie.',
   },
 ]

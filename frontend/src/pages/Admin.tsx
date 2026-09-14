@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useState } from 'react'
 import {
   AdminHttpError,
   DEFAULT_SEASON,
@@ -20,7 +19,6 @@ import {
 
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
 import { ContextBanner } from '../components/ContextBanner'
-import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
 
@@ -147,9 +145,6 @@ function ActionButton({
 export function Admin() {
   const { selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
-  const [searchParams] = useSearchParams()
-  const sportapiFixtureRef = searchParams.get('sportapi_fixture') ?? undefined
-  const sportapiSectionRef = useRef<HTMLDivElement | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<OpResult | null>(null)
 
@@ -347,15 +342,6 @@ export function Admin() {
             ))}
           </div>
         </Section>
-
-        <div ref={sportapiSectionRef}>
-          <Section
-            title="3 — SportAPI Debug"
-            subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers."
-          >
-            <SportApiDebugPanel initialFixtureRef={sportapiFixtureRef} />
-          </Section>
-        </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">Risultato ultima operazione</h2>

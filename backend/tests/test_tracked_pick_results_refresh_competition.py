@@ -90,20 +90,6 @@ def test_refresh_competition_not_found_returns_404(mock_svc_cls, mock_settings):
     assert "999" in response.json()["detail"]
 
 
-@patch("app.routes.admin_betting_picks.get_settings")
-@patch("app.routes.admin_betting_picks.TrackedPickResultsRefreshService")
-def test_legacy_serie_a_value_error_returns_422(mock_svc_cls, mock_settings):
-    mock_settings.return_value.api_football_key = "test-key"
-    mock_svc_cls.return_value.refresh_results.side_effect = ValueError(
-        "Stagione 2026 non trovata per la lega configurata: eseguire prima il bootstrap.",
-    )
-
-    response = client.post("/api/admin/betting-picks/serie-a/2026/refresh-results", json={})
-
-    assert response.status_code == 422
-    assert "Stagione 2026" in response.json()["detail"]
-
-
 def test_refresh_results_for_competition_empty_picks():
     comp = MagicMock(spec=Competition)
     comp.id = 2

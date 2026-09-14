@@ -25,7 +25,6 @@ export type NavItem = {
 }
 
 export const NAV_CECCHINO: NavItem[] = [
-  { to: '/cecchino', label: 'Cecchino', icon: 'crosshair', section: 'cecchino' },
   { to: '/cecchino-today', label: 'Cecchino Today', icon: 'calendar', section: 'cecchino' },
   { to: '/bet-builder', label: 'Bet Builder', icon: 'target', section: 'cecchino' },
   { to: '/master-pattern', label: 'Master Pattern', icon: 'flask', section: 'cecchino' },

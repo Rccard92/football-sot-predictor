@@ -251,25 +251,6 @@ function qs(filters: PurchasabilityStatFilters): string {
   return s ? `?${s}` : ''
 }
 
-/** @deprecated Solo Console/debug — il FE usa i job async. */
-export function statisticalResearchTimeoutMs(bootstrapIterations?: number | null): number {
-  const iterations = bootstrapIterations ?? 200
-  if (iterations > 500) return 1_200_000
-  if (iterations > 200) return 600_000
-  return 300_000
-}
-
-/** @deprecated Solo Console/debug — non usare nel flusso UI. */
-export async function getPurchasabilityStatisticalResearch(
-  filters: PurchasabilityStatFilters = {},
-): Promise<PurchasabilityStatisticalResearchResponse> {
-  const timeoutMs = statisticalResearchTimeoutMs(filters.bootstrap_iterations)
-  return adminGetJson(
-    `/api/admin/cecchino/research/purchasability/statistical-research${qs(filters)}`,
-    { timeoutMs },
-  )
-}
-
 export async function startPurchasabilityStatisticalJob(
   filters: PurchasabilityStatFilters = {},
 ): Promise<PurchasabilityResearchJobStartResponse> {

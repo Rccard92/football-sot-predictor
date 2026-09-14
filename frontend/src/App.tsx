@@ -5,7 +5,6 @@ import { Admin } from './pages/Admin'
 import { DataHealth } from './pages/DataHealth'
 import { Changelog } from './pages/Changelog'
 import { Bookmakers } from './pages/Bookmakers'
-import { CecchinoPage } from './pages/CecchinoPage'
 import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoringPage'
 import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
 import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
@@ -32,7 +31,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<CecchinoTodayPage />} />
-          <Route path="/cecchino" element={<CecchinoPage />} />
+          <Route path="/cecchino" element={<Navigate to="/cecchino-today" replace />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />

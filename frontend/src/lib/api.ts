@@ -1,7 +1,6 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
 import type { SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../types/sportapi'
-import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
 
@@ -568,23 +567,6 @@ export type ApiFootballFixtureMarketsDebugResponse = {
   message?: string
 }
 
-export async function getApiFootballFixtureMarketsDebug(params: {
-  fixture_id?: number
-  provider_fixture_id?: number
-  provider_source?: string
-  bookmaker_ids?: string
-}): Promise<ApiFootballFixtureMarketsDebugResponse> {
-  const q = new URLSearchParams()
-  if (params.fixture_id != null) q.set('fixture_id', String(params.fixture_id))
-  if (params.provider_fixture_id != null) q.set('provider_fixture_id', String(params.provider_fixture_id))
-  if (params.provider_source) q.set('provider_source', params.provider_source)
-  if (params.bookmaker_ids) q.set('bookmaker_ids', params.bookmaker_ids)
-  const suffix = q.toString() ? `?${q.toString()}` : ''
-  return adminGetJson<ApiFootballFixtureMarketsDebugResponse>(
-    `/api/admin/bookmakers/fixture-markets-debug${suffix}`,
-  )
-}
-
 export type BookmakerRawOddsValue = {
   raw_value: string
   normalized_selection: string
@@ -826,23 +808,6 @@ export type SportApiOddsDiscoveryResponse = {
   normalized_markets?: SportApiNormalizedMarket[]
   snapshot_id?: number | null
   comparison?: SportApiOddsDiscoveryComparison
-}
-
-export async function postSportApiOddsDiscovery(
-  body: {
-    fixture_id?: number | null
-    api_fixture_id?: number | null
-    sportapi_event_id?: number | null
-    provider_id?: number
-    save_snapshot?: boolean
-  },
-  opts?: AdminRequestOpts,
-): Promise<SportApiOddsDiscoveryResponse> {
-  return adminPostJson<SportApiOddsDiscoveryResponse>(
-    '/api/admin/bookmakers/sportapi/odds-discovery',
-    body,
-    opts,
-  )
 }
 
 export const SPORTAPI_DEFAULT_PROVIDER_SLUG = 'sisal-italy-affiliate'
@@ -1514,22 +1479,6 @@ export async function adminIngestTeamStats(season: number, opts?: AdminRequestOp
 
 export async function getPlayerMatchDbSummary(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminGetJson<unknown>(`/api/admin/debug/serie-a/${season}/player-db-summary`, opts)
-}
-
-export type PlayerProfilesLimit = 5 | 10 | 15 | 25 | 'all'
-
-export async function getFixturePlayerProfiles(
-  fixtureId: number,
-  opts?: { season?: number; limit?: PlayerProfilesLimit },
-): Promise<FixturePlayerProfilesResponse> {
-  const base = getApiBase()
-  const q = new URLSearchParams()
-  if (opts?.season != null) q.set('season', String(opts.season))
-  if (opts?.limit != null) q.set('limit', opts.limit === 'all' ? 'all' : String(opts.limit))
-  const qs = q.toString()
-  const path = `/api/debug/sot/fixture/${fixtureId}/player-profiles${qs ? `?${qs}` : ''}`
-  const res = await fetch(`${base}${path}`)
-  return (await res.json()) as FixturePlayerProfilesResponse
 }
 
 export async function adminIngestPlayerStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {

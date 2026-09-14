@@ -1,2 +1,0 @@
-from .core_sot_service import SotPredictionV03CoreSotService
-

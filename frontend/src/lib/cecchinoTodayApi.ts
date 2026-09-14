@@ -1181,8 +1181,6 @@ export type CecchinoPurchasabilityV36SnapshotStatus =
   | 'absent'
   | 'present_but_invalid'
 
-export type V36SnapshotStatus = CecchinoPurchasabilityV36SnapshotStatus
-
 export type CecchinoPurchasabilityV36ItemStatus = 'score' | 'gate_failed' | 'not_calculable'
 
 export type CecchinoPurchasabilityV36StructuralRelation = {
@@ -1212,8 +1210,6 @@ export type V36StructuralBlock = {
   reason?: string | null
   support_mode?: string | null
 }
-
-export type CecchinoPurchasabilityV36StructuralBlock = V36StructuralBlock
 
 export type CecchinoPurchasabilityV36ComponentBlock = {
   component?: string
@@ -1271,8 +1267,6 @@ export type V36Reference = {
   class?: string | null
 }
 
-export type CecchinoPurchasabilityV36Reference = V36Reference
-
 export type V36Components = {
   executable_value?: CecchinoPurchasabilityV36ComponentBlock | null
   market_disagreement?: CecchinoPurchasabilityV36ComponentBlock | null
@@ -1280,8 +1274,6 @@ export type V36Components = {
   structural_coherence?: CecchinoPurchasabilityV36ComponentBlock | null
   information_quality?: CecchinoPurchasabilityV36ComponentBlock | null
 }
-
-export type CecchinoPurchasabilityV36Components = V36Components
 
 export type V36Item = {
   market_key: string
@@ -1306,8 +1298,6 @@ export type V36Item = {
   formula_version?: string | null
   formula_freeze_sha256?: string | null
 }
-
-export type CecchinoPurchasabilityV36Item = V36Item
 
 export type V36Snapshot = {
   snapshot_version?: string | null
@@ -1334,8 +1324,6 @@ export type V36Snapshot = {
   pre_match_only?: boolean
   warnings?: string[]
 }
-
-export type CecchinoPurchasabilityV36Snapshot = V36Snapshot
 
 /** Indexer V3.6 (Structural V2) per market_key. */
 export function indexPurchasabilityV36ByMarketKey(
@@ -1382,21 +1370,6 @@ export type CecchinoBetfairRefreshResponse = {
   warnings?: string[]
   message?: string
   code?: string
-}
-
-export type CecchinoBetfairMarketsJsonResponse = {
-  status: string
-  fixture?: Record<string, unknown>
-  bookmaker?: CecchinoOddsMeta & { name?: string; provider_bookmaker_id?: number }
-  odds_fetched_at?: string | null
-  last_betfair_refresh_at?: string | null
-  is_cached?: boolean | null
-  api_calls_used?: number
-  markets?: Array<Record<string, unknown>>
-  raw_payload?: Record<string, unknown>
-  manual_comparison_note?: { message?: string }
-  warnings?: string[]
-  message?: string
 }
 
 export type CecchinoPicchettiWeightsBlock = Record<string, number | string>
@@ -2356,39 +2329,6 @@ export async function getCecchinoTodayDetail(todayFixtureId: number): Promise<Ce
   return requestJson<CecchinoTodayDetailResponse>(`/api/cecchino/today/${todayFixtureId}`)
 }
 
-export type CecchinoKpiDebugJsonResponse = {
-  status: string
-  fixture?: {
-    today_fixture_id: number
-    local_fixture_id: number | null
-    provider_fixture_id: number
-    home_team: string | null
-    away_team: string | null
-    kickoff: string | null
-  }
-  bookmaker?: {
-    provider_source: string
-    provider_bookmaker_id: number
-    name: string
-  }
-  kpi_panel?: CecchinoKpiV2Panel
-  icm_analysis?: CecchinoIcmAnalysis
-  balance_analysis?: CecchinoBalanceAnalysis
-  betfair_odds_used?: Record<string, unknown>
-  cecchino_odds_used?: Record<string, unknown>
-  raw_betfair_markets_used?: Array<Record<string, unknown>>
-  warnings?: string[]
-  message?: string
-}
-
-export async function getCecchinoKpiDebugJson(
-  todayFixtureId: number,
-): Promise<CecchinoKpiDebugJsonResponse> {
-  return requestJson<CecchinoKpiDebugJsonResponse>(
-    `/api/cecchino/today/${todayFixtureId}/kpi-debug-json`,
-  )
-}
-
 export type CecchinoKpiExplanationInput = {
   key: string
   label: string
@@ -2558,26 +2498,6 @@ export function triggerV36EvaluationBundleDownload(
   URL.revokeObjectURL(url)
 }
 
-export type CecchinoPurchasabilityV35AuditExport = {
-  contract_version: string
-  generated_at: string
-  fixture: Record<string, unknown>
-  snapshot_identity: Record<string, unknown>
-  frozen_config: Record<string, unknown>
-  candidate_registry: Record<string, unknown>
-  relation_registry: unknown[]
-  market_order: string[]
-  markets: Record<string, unknown>
-}
-
-export async function getPurchasabilityV35AuditExport(
-  todayFixtureId: number,
-): Promise<CecchinoPurchasabilityV35AuditExport> {
-  return requestJson<CecchinoPurchasabilityV35AuditExport>(
-    `/api/cecchino/today/${todayFixtureId}/purchasability-v35-audit-export`,
-  )
-}
-
 export type CecchinoPurchasabilityV36AuditExport = {
   contract_version: string
   generated_at: string
@@ -2626,9 +2546,6 @@ export function triggerDailyPurchasabilityV35AuditDownload(blob: Blob, scanDate:
   a.click()
   URL.revokeObjectURL(url)
 }
-
-export const V35_LIVE_EXPERIMENT_V1_START_DATE = '2026-08-20'
-export const V35_LIVE_EXPERIMENT_V1_END_DATE = '2026-08-26'
 
 export async function downloadPurchasabilityV35AnalysisExport(
   dateFrom: string,
@@ -3146,16 +3063,6 @@ export async function refreshBetfairOdds(
   return cecchinoPostJson<CecchinoBetfairRefreshResponse>(
     `/api/cecchino/today/${todayFixtureId}/refresh-betfair-odds`,
     { force: opts.force ?? true, rebuild_kpi: opts.rebuild_kpi ?? true },
-  )
-}
-
-export async function getBetfairMarketsJson(
-  todayFixtureId: number,
-  force = false,
-): Promise<CecchinoBetfairMarketsJsonResponse> {
-  const q = force ? '?force=true' : '?force=false'
-  return requestJson<CecchinoBetfairMarketsJsonResponse>(
-    `/api/cecchino/today/${todayFixtureId}/betfair-markets-json${q}`,
   )
 }
 

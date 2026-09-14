@@ -402,16 +402,6 @@ export async function getBalanceEmpiricalHealth(
   )
 }
 
-export async function getBalanceEmpiricalSummary(
-  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
-    source_cohort?: string
-  },
-): Promise<Record<string, unknown>> {
-  return adminGetJson(
-    `${BASE}/balance-v5/empirical/summary?${balanceEmpiricalQuery(filters)}`,
-  )
-}
-
 export async function getBalanceEmpiricalCardinality(
   filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
     source_cohort?: string
@@ -424,21 +414,6 @@ export async function getBalanceEmpiricalCardinality(
 
 export async function getBalanceEmpiricalTargetContract(): Promise<Record<string, unknown>> {
   return adminGetJson(`${BASE}/balance-v5/empirical/target-contract`)
-}
-
-export async function getBalanceEmpiricalRows(
-  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
-    source_cohort?: string
-    evaluation_status?: string
-    limit?: number
-    offset?: number
-  },
-): Promise<{ items?: unknown[]; total?: number }> {
-  const p = new URLSearchParams(balanceEmpiricalQuery(filters))
-  if (filters.evaluation_status) p.set('evaluation_status', filters.evaluation_status)
-  if (filters.limit != null) p.set('limit', String(filters.limit))
-  if (filters.offset != null) p.set('offset', String(filters.offset))
-  return adminGetJson(`${BASE}/balance-v5/empirical/rows?${p.toString()}`)
 }
 
 export async function planBalanceEmpiricalSync(body: {
@@ -737,15 +712,6 @@ export async function getBalanceReadinessDecisionContract(): Promise<BalanceRead
 }
 
 export const BALANCE_V5_GOVERNANCE_DECISION_CONFIRM = 'CONFIRM_BALANCE_V5_GOVERNANCE_DECISION'
-
-export async function refreshBalanceReadiness(body?: {
-  date_from?: string | null
-  date_to?: string | null
-  competition_id?: number | null
-}): Promise<Record<string, unknown>> {
-  const { adminPostJson } = await import('./api')
-  return adminPostJson('/api/admin/cecchino/module-monitoring/balance-v5/readiness/refresh', body || {})
-}
 
 export async function recordBalanceGovernanceDecision(body: {
   decision: string

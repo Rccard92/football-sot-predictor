@@ -2,7 +2,6 @@ from fastapi import APIRouter
 
 from app.routes import (
     api_usage,
-    cecchino,
     cecchino_admin,
     cecchino_kpi_signals,
     cecchino_module_monitoring,
@@ -17,32 +16,18 @@ from app.routes import (
     master_pattern,
     cecchino_home_wins,
     admin,
-    admin_betting_picks,
     admin_bookmakers,
     admin_competition_bookmakers,
     admin_competition_ingest,
     admin_competitions,
-    admin_referees,
     admin_debug_player_db,
     admin_data_health,
-    admin_debug_api_football_catalog,
-    admin_debug_player_stats,
-    admin_debug_offensive_variables,
-    admin_debug_expected_goals,
     admin_debug_team_shot_stats,
-    admin_features_player_season_profiles,
     admin_ingest,
-    admin_pipeline,
-    admin_refresh,
     admin_session_auth,
     admin_sportapi,
     competitions,
-    features,
     health,
-    h2h,
-    ingestion,
-    match_context,
-    standings,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -50,27 +35,16 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(api_usage.router)
 api_router.include_router(admin_debug_player_db.router)
-api_router.include_router(admin_debug_player_stats.router)
-api_router.include_router(admin_debug_api_football_catalog.router)
-api_router.include_router(admin_debug_offensive_variables.router)
-api_router.include_router(admin_debug_expected_goals.router)
 api_router.include_router(admin_debug_team_shot_stats.router)
 api_router.include_router(admin_ingest.router)
-api_router.include_router(admin_features_player_season_profiles.router)
-api_router.include_router(admin_pipeline.router)
-api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
 api_router.include_router(admin_session_auth.router)
 api_router.include_router(admin_sportapi.router)
-api_router.include_router(admin_referees.router)
-api_router.include_router(admin_betting_picks.router)
 api_router.include_router(admin_bookmakers.router)
 api_router.include_router(admin_competition_bookmakers.router)
 api_router.include_router(admin_competitions.router)
 api_router.include_router(admin_competition_ingest.router)
 api_router.include_router(competitions.router)
-api_router.include_router(cecchino.router)
-api_router.include_router(cecchino.admin_router)
 api_router.include_router(cecchino_admin.router)
 api_router.include_router(cecchino_kpi_signals.router)
 api_router.include_router(cecchino_kpi_signals.admin_router)
@@ -90,8 +64,3 @@ api_router.include_router(cecchino_lab.admin_router)
 api_router.include_router(cecchino_run_v2.router)
 api_router.include_router(cecchino_run_v2.admin_router)
 api_router.include_router(cecchino_home_wins.router)
-api_router.include_router(ingestion.router)
-api_router.include_router(features.router)
-api_router.include_router(h2h.router)
-api_router.include_router(standings.router)
-api_router.include_router(match_context.router)

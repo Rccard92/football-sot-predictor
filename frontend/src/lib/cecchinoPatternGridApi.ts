@@ -103,10 +103,6 @@ export async function getPatternGridRun(runId: number): Promise<PatternGridRun> 
   return requestJson(`/api/admin/cecchino/research/pattern-grid/runs/${runId}`)
 }
 
-export async function getPatternGridCandidates(runId: number): Promise<PatternGridCandidate[]> {
-  return requestJson(`/api/admin/cecchino/research/pattern-grid/runs/${runId}/candidates`)
-}
-
 export async function cancelPatternGridRun(runId: number): Promise<PatternGridRun> {
   return requestJson(`/api/admin/cecchino/research/pattern-grid/runs/${runId}/cancel`, {
     method: 'POST',

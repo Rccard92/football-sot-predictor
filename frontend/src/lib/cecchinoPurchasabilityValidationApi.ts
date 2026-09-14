@@ -132,16 +132,6 @@ export async function getPurchasabilityValidationReadiness(
   return adminGetJson(`${BASE}/readiness${qs(filters)}`)
 }
 
-export async function getPurchasabilityValidationRows(
-  filters: PurchasabilityValidationFilters & { limit?: number; offset?: number },
-): Promise<{ total: number; items: Array<Record<string, unknown>> }> {
-  const p = new URLSearchParams(qs(filters).replace(/^\?/, ''))
-  if (filters.limit != null) p.set('limit', String(filters.limit))
-  if (filters.offset != null) p.set('offset', String(filters.offset))
-  const s = p.toString()
-  return adminGetJson(`${BASE}/rows${s ? `?${s}` : ''}`)
-}
-
 export function buildPurchasabilityValidationExportUrl(
   filters: PurchasabilityValidationFilters,
 ): string {
