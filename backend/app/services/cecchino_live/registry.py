@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_V2 = "V2"
 MODEL_V25 = "V2.5"
+MODEL_V3 = "V3"
 V2_ENGINE_VERSION = "cecchino_today_v2"
 ELIGIBLE = "eligible"
 
@@ -117,6 +118,44 @@ def v25_payload(pre: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         "eligibility": pre["eligibility"].get("status"),
         "history_matches": pre.get("history_matches"),
         "league_reference": pre.get("league_reference"),
+    }
+    return markets, modules
+
+
+def v3_payload(result: dict[str, Any], kpi_panel: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Mercati (probabilita' V3 contro quote reali Bet365 del pannello KPI) e dettaglio del modello."""
+    from app.services.cecchino_live.v25_live import strict_quotes_from_kpi
+    from app.services.cecchino_v25.kpi import build_kpi_panel_v25
+
+    panel = build_kpi_panel_v25(probabilities=result["probabilities"], strict_by_market=strict_quotes_from_kpi(kpi_panel))
+    markets = {
+        r["market_key"]: {
+            "probability": r.get("prob_cecchino"),
+            "quota_cecchino": r.get("quota_cecchino"),
+            "quota_book": r.get("quota_book"),
+            "prob_book_fair": r.get("prob_book_fair"),
+            "rating": r.get("rating"),
+            "vantaggio_prob": r.get("vantaggio_prob"),
+            "edge_pct": r.get("edge_pct"),
+            "buyability_score": None,
+            "buyability_class": None,
+            "signal_active": False,
+        }
+        for r in panel["rows"]
+    }
+    modules = {
+        "engine_label": "V3 estesa",
+        "expected_goals": {"home": result.get("lambda_home"), "away": result.get("lambda_away")},
+        "rho": result.get("rho"),
+        "ht_share": result.get("ht_share"),
+        "phase": result.get("phase"),
+        "played": {"home": result.get("played_home"), "away": result.get("played_away")},
+        "evidence": {"home": result.get("home_evidence"), "away": result.get("away_evidence")},
+        "specialists": result.get("specialists"),
+        "indices": result.get("indices"),
+        "history": result.get("history"),
+        "params": result.get("params"),
+        "eligibility": "ok" if result.get("eligible") else "early_season",
     }
     return markets, modules
 
@@ -228,7 +267,45 @@ def record_predictions(db: Session, *, scan_date: date, now: datetime | None = N
             logger.exception("live registry V2.5 fallita today_fixture_id=%s", row.id)
             errors.append(f"{row.id}: {exc!s}"[:200])
     db.commit()
+    _record_v3(db, rows, now=now, counts=counts, errors=errors)
+    db.commit()
     return {"scan_date": scan_date.isoformat(), "fixtures": len(rows), "counts": counts, "errors": errors[:20]}
+
+
+def _record_v3(
+    db: Session, rows: list[CecchinoTodayFixture], *, now: datetime, counts: dict[str, int], errors: list[str]
+) -> None:
+    """V3 estesa sulle partite non iniziate dei campionati con statistiche (un campionato alla volta)."""
+    from app.services.cecchino_v3_live.engine import compute_for_fixtures
+    from app.services.cecchino_v3_live.params import ENGINE_VERSION as V3_ENGINE_VERSION
+
+    upcoming = [r for r in rows if (_aware(r.kickoff) or now) > now and r.local_fixture_id]
+    fixtures = [f for f in (db.get(Fixture, int(r.local_fixture_id)) for r in upcoming) if f is not None]
+    if not fixtures:
+        return
+    try:
+        results = compute_for_fixtures(db, fixtures)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("live registry V3 fallita")
+        errors.append(f"V3: {exc!s}"[:200])
+        return
+    for row in upcoming:
+        res = results.get(int(row.local_fixture_id)) or {}
+        status = str(res.get("status") or "missing")
+        if status != "ok":
+            counts[f"v3_{status}"] = counts.get(f"v3_{status}", 0) + 1
+            continue
+        try:
+            with db.begin_nested():
+                markets, modules = v3_payload(res, row.kpi_panel_json)
+                state = _upsert(
+                    db, row, model=MODEL_V3, engine_version=V3_ENGINE_VERSION,
+                    markets=markets, modules=modules, eligible=bool(res.get("eligible")), now=now,
+                )
+            counts[f"v3_{state}"] = counts.get(f"v3_{state}", 0) + 1
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("live registry V3 fallita today_fixture_id=%s", row.id)
+            errors.append(f"{row.id} V3: {exc!s}"[:200])
 
 
 def _final_score(row: CecchinoTodayFixture) -> SimpleNamespace | None:

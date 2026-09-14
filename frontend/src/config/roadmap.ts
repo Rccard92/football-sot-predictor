@@ -104,7 +104,12 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     tasks: [
       { text: 'Calcolo V2.5 dopo ogni scansione di Cecchino Today (storico della competizione, quote del pannello KPI)', status: 'fatto' },
       { text: 'Registro previsioni V2 e V2.5: congelate prima del calcio di inizio, esiti a partita finita, riepilogo precisione e rendimento', status: 'fatto' },
-      { text: "V3 in live: servono i risultati live nel Lab e il collegamento nomi squadra (decisione con l'utente)", status: 'da_fare' },
+      { text: "V3 estesa (decisione utente): modello V3 del Lab con parametri congelati, su tutti i campionati dove API-Football dà tiri e tiri in porta", status: 'fatto' },
+      { text: 'V3 estesa · dati: partite e statistiche squadra da API-Football (stagione in corso e precedente), squadre riconosciute per id, nessun abbinamento nomi', status: 'fatto' },
+      { text: 'V3 estesa · prova di identità: sulle partite del Lab il nuovo calcolo rifà la run finale #11 (1.372 partite, differenza massima 0,000005)', status: 'fatto' },
+      { text: 'V3 estesa · registro previsioni, anteprima, esiti a fine partita, Osservazione live con confronto a tre motori', status: 'fatto' },
+      { text: 'V3 estesa · scheda in Cecchino Today con la grafica di V2 e V2.5 (Pannello KPI, Specialisti, Indici)', status: 'fatto' },
+      { text: 'V3 estesa · Pattern Master V3 accesi in live (soglie della ricerca Lab da ricostruire)', status: 'da_fare' },
     ],
     doneWhen: 'Ogni partita del giorno ha tre previsioni salvate e, a fine partita, i loro esiti.',
   },
@@ -183,6 +188,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-15',
+    text: "V3 estesa online su staging: modello V3 del Lab (parametri congelati, identico alla run finale) calcolato su tutti i campionati con tiri e tiri in porta di API-Football. Sulle partite del 15/09: 13 su 25 coperte, le altre in campionati senza statistiche. Registro previsioni e Osservazione live includono la V3.",
+  },
   {
     date: '2026-09-14',
     text: "Step 7 avviato: pagina Osservazione live (motori giorno per giorno contro Bet365, pattern per mercato con esito live e storico, concordanza). Scansione delle 23:00 corretta: le partite venivano escluse quando API-Football rifiutava le richieste (limite al minuto condiviso tra produzione e staging) e le quote si leggevano una partita alla volta.",

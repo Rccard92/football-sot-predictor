@@ -169,6 +169,21 @@ def _engine_block(preds_by_fixture: list[dict[str, CecchinoLivePrediction]], mod
     return {m: {fam: acc.to_dict() for fam, acc in fams.items()} for m, fams in accs.items()}
 
 
+BASE_MODELS = ("V2", "V2.5")
+
+
+def _base_comparison(
+    by_fixture: dict[int, dict[str, CecchinoLivePrediction]], models: list[str]
+) -> dict[str, Any] | None:
+    """V2 contro V2.5 su tutte le loro partite chiuse: la V3 c'e' solo dove ci sono statistiche,
+    quindi il confronto a tre riduce il campione dei due motori storici."""
+    base = [m for m in BASE_MODELS if m in models]
+    if len(base) < 2 or len(models) == len(base):
+        return None
+    fixtures = [f for f in by_fixture.values() if all(m in f for m in base)]
+    return {"models": base, "fixtures": len(fixtures), "engines": _engine_block(fixtures, base)}
+
+
 # ---------------------------------------------------------------------------
 # Cruscotto
 # ---------------------------------------------------------------------------
@@ -359,6 +374,7 @@ def observation_dashboard(db: Session, *, date_from: date | None = None, date_to
             "signals_closed": sum(g["won"] + g["lost"] for g in group_list),
         },
         "engines": _engine_block(common, models),
+        "engines_base": _base_comparison(by_fixture, models),
         "engines_daily": daily_engines,
         "pattern_groups": group_list,
         "patterns": pattern_list[:300],

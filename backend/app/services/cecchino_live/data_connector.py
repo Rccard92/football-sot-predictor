@@ -307,8 +307,25 @@ def run_data_connector(db: Session, *, scan_date, client: ApiFootballClient | No
         previous[key] = previous.get(key, 0) + 1
     out["previous_season"] = previous
 
-    covered = [c.id for c in competitions if stats_covered(db, int(c.provider_league_id), int(c.season))]
-    out["competitions"] = {"scanned": len(competitions), "with_statistics": len(covered)}
+    covered_comps = [c for c in competitions if stats_covered(db, int(c.provider_league_id), int(c.season))]
+    covered = [c.id for c in covered_comps]
+    # stagione precedente dei campionati coperti: storico dei tiri per la V3 (le partite recenti
+    # vengono prima perche' l'elenco e' ordinato per data decrescente)
+    previous_ids = [
+        int(p.id)
+        for c in covered_comps
+        for p in db.scalars(
+            select(Competition).where(
+                Competition.provider_league_id == c.provider_league_id, Competition.season == int(c.season) - 1
+            )
+        ).all()
+    ]
+    covered = covered + previous_ids
+    out["competitions"] = {
+        "scanned": len(competitions),
+        "with_statistics": len(covered_comps),
+        "previous_seasons_for_statistics": len(previous_ids),
+    }
     targets = _registry_fixtures_to_close(db)
     target_ids = {int(f.id) for f in targets}
     targets += [f for f in _fixtures_missing_stats(db, covered, MAX_FIXTURES_PER_RUN) if int(f.id) not in target_ids]

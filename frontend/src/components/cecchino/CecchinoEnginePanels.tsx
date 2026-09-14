@@ -1,13 +1,12 @@
-import { todayCard, todayCardPadding, todaySectionTitle } from './cecchinoTodayStyles'
-
 export { CecchinoV25Panel } from './CecchinoV25Panel'
+export { CecchinoV3Panel } from './CecchinoV3Panel'
 
 export type EngineTab = 'V2' | 'V2.5' | 'V3'
 
 const TABS: { key: EngineTab; label: string; hint: string }[] = [
   { key: 'V2', label: 'V2', hint: 'Cecchino attuale' },
   { key: 'V2.5', label: 'V2.5', hint: 'Moduli corretti' },
-  { key: 'V3', label: 'V3', hint: 'In arrivo' },
+  { key: 'V3', label: 'V3', hint: 'Estesa · campionati con statistiche' },
 ]
 
 export function EngineTabBar({ value, onChange }: { value: EngineTab; onChange: (t: EngineTab) => void }) {
@@ -31,18 +30,6 @@ export function EngineTabBar({ value, onChange }: { value: EngineTab; onChange: 
           </button>
         )
       })}
-    </div>
-  )
-}
-
-export function CecchinoV3Panel() {
-  return (
-    <div className={`${todayCard} ${todayCardPadding}`}>
-      <h3 className={todaySectionTitle}>Cecchino V3</h3>
-      <p className="mt-2 text-sm text-slate-600">
-        La V3 in live arriva dopo il collegamento automatico tra API-Football e il Lab (squadre, campionati e risultati della
-        nuova stagione). Fino ad allora le sue previsioni non vengono calcolate né registrate.
-      </p>
     </div>
   )
 }

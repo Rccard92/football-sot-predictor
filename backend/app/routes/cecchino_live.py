@@ -93,7 +93,46 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
                 items[MODEL_V25] = {"model": MODEL_V25, "status": "error", "source": "anteprima", "error": str(exc)[:300]}
             finally:
                 db.rollback()
+    if "V3" not in items:
+        items["V3"] = _v3_preview(db, int(today_fixture_id))
     return JSONResponse(content=jsonable_encoder({"today_fixture_id": int(today_fixture_id), "models": items}))
+
+
+def _v3_preview(db: Session, today_fixture_id: int) -> dict:
+    """V3 estesa calcolata al momento (anteprima non registrata) o motivo per cui non c'e'."""
+    from app.models import Fixture
+    from app.models.cecchino_today_fixture import CecchinoTodayFixture
+    from app.services.cecchino_live.registry import v3_payload
+    from app.services.cecchino_v3_live.engine import compute_for_fixtures
+
+    today = db.get(CecchinoTodayFixture, today_fixture_id)
+    fixture = db.get(Fixture, int(today.local_fixture_id)) if today and today.local_fixture_id else None
+    if fixture is None:
+        return {"model": "V3", "status": "unavailable", "source": "anteprima", "reason": "no_fixture"}
+    try:
+        res = compute_for_fixtures(db, [fixture]).get(int(fixture.id)) or {}
+        if res.get("status") != "ok":
+            return {
+                "model": "V3",
+                "status": "unavailable",
+                "source": "anteprima",
+                "reason": res.get("status") or "not_computable",
+                "history": res.get("history"),
+            }
+        markets, modules = v3_payload(res, today.kpi_panel_json)
+        return {
+            "model": "V3",
+            "status": "preview",
+            "source": "anteprima_non_registrata",
+            "eligible": bool(res.get("eligible")),
+            "engine_version": res.get("engine_version"),
+            "markets": markets,
+            "modules": modules,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"model": "V3", "status": "error", "source": "anteprima", "error": str(exc)[:300]}
+    finally:
+        db.rollback()
 
 
 @router.get("/observation")

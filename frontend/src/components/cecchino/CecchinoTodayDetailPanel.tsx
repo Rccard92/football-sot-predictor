@@ -100,7 +100,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       <EngineTabBar value={engine} onChange={setEngine} />
 
       {engine === 'V2.5' && todayFixtureId != null && <CecchinoV25Panel todayFixtureId={todayFixtureId} />}
-      {engine === 'V3' && <CecchinoV3Panel />}
+      {engine === 'V3' && todayFixtureId != null && <CecchinoV3Panel todayFixtureId={todayFixtureId} />}
 
       {engine === 'V2' && (
       <>

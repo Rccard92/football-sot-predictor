@@ -62,7 +62,57 @@ export type LiveGoalPillar = {
   label?: string | null
 }
 
+export type V3IndexBlock = {
+  value?: number | null
+  class?: string | null
+  percentile?: number | null
+  favourite?: string | null
+  gap_pp?: number | null
+  prob?: number | null
+  league_draw_rate?: number | null
+  delta_pp?: number | null
+  total?: number | null
+  home?: number | null
+  away?: number | null
+  league_goals_avg?: number | null
+  ratio?: number | null
+  p_over_2_5?: number | null
+}
+
+export type V3Specialists = {
+  forza?: { home: number | null; away: number | null }
+  sot?: { home: number | null; away: number | null; volume_home: number | null; volume_away: number | null }
+  shots?: { home: number | null; away: number | null; volume_home: number | null; volume_away: number | null }
+  weights?: Record<string, number>
+  form?: Record<string, number | null>
+  calendar?: { rest_days_home: number | null; rest_days_away: number | null; final_phase: boolean }
+}
+
+export type V3History = {
+  matches_current_season?: number
+  matches_previous_season?: number
+  matches_with_statistics?: number
+  statistics_share?: number
+  team_matches_with_statistics?: [number, number]
+}
+
 export type LiveModules = {
+  engine_label?: string
+  rho?: number | null
+  ht_share?: number | null
+  phase?: string | null
+  played?: { home: number | null; away: number | null }
+  evidence?: { home: number | null; away: number | null }
+  specialists?: V3Specialists
+  indices?: {
+    equilibrio?: V3IndexBlock
+    pareggio?: V3IndexBlock
+    intensita_goal?: V3IndexBlock
+    forma?: { home?: { gioco: number; risultati: number; matches: number | null } | null; away?: { gioco: number; risultati: number; matches: number | null } | null }
+    calendario?: { rest_days_home: number | null; rest_days_away: number | null; rest_diff: number | null; final_phase: boolean }
+  }
+  history?: V3History
+  params?: { source_run_id?: number | null; season?: string; engine_version?: string }
   balance_classes?: Record<string, string | null> | null
   goal_intensity_classes?: Record<string, string | null> | null
   goal_intensity_final?: string | null
@@ -77,7 +127,9 @@ export type LiveModules = {
 
 export type LiveModelPrediction = {
   model: string
-  status: 'open' | 'settled' | 'void' | 'preview' | 'error'
+  status: 'open' | 'settled' | 'void' | 'preview' | 'error' | 'unavailable'
+  reason?: string
+  history?: V3History | null
   source: 'registro' | 'anteprima_non_registrata' | 'anteprima'
   eligible?: boolean
   engine_version?: string
@@ -193,6 +245,7 @@ export type ObservationDashboard = {
     signals_closed: number
   }
   engines: EngineMetrics
+  engines_base?: { models: string[]; fixtures: number; engines: EngineMetrics } | null
   engines_daily: {
     scan_date: string
     fixtures: number

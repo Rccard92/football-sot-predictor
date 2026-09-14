@@ -80,7 +80,7 @@ function cls(v: string | null | undefined): string {
   return v ? (CLASS_LABELS[v] ?? v) : '—'
 }
 
-function useLiveFixture(todayFixtureId: number) {
+export function useLiveFixture(todayFixtureId: number) {
   const [data, setData] = useState<LiveFixtureResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -99,7 +99,7 @@ function useLiveFixture(todayFixtureId: number) {
   return { data, error, loading }
 }
 
-function SourceBadge({ p }: { p: LiveModelPrediction }) {
+export function SourceBadge({ p }: { p: LiveModelPrediction }) {
   if (p.source === 'registro') {
     const frozen = p.frozen_at ? new Date(p.frozen_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }) : '—'
     return (
@@ -111,7 +111,7 @@ function SourceBadge({ p }: { p: LiveModelPrediction }) {
   return <span className={todayBadgeMuted}>Anteprima non registrata</span>
 }
 
-function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'amber' | 'emerald' | 'sky' | 'dark' }) {
+export function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'amber' | 'emerald' | 'sky' | 'dark' }) {
   const tones = {
     slate: 'bg-slate-100 text-slate-700',
     amber: 'bg-amber-50 text-amber-900 ring-1 ring-amber-200',
@@ -198,7 +198,7 @@ function PurchasabilityCard({ markets }: { markets: Record<string, LiveMarket> }
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
@@ -220,7 +220,15 @@ function ResultCell({ won }: { won: boolean | null | undefined }) {
   )
 }
 
-function KpiPanel({ p }: { p: LiveModelPrediction }) {
+export function KpiPanel({
+  p,
+  title = 'PANNELLO KPI V2.5',
+  showPurchasability = true,
+}: {
+  p: LiveModelPrediction
+  title?: string
+  showPurchasability?: boolean
+}) {
   const markets = p.markets ?? {}
   const results = p.result?.markets ?? {}
   const rows = MARKET_ORDER.filter((k) => markets[k])
@@ -229,7 +237,7 @@ function KpiPanel({ p }: { p: LiveModelPrediction }) {
   return (
     <section className="overflow-hidden rounded-xl border border-slate-300 shadow-md">
       <div className="bg-[#1e3a5f] px-4 py-3">
-        <h3 className="text-center text-sm font-bold tracking-wide text-white sm:text-left sm:text-base">PANNELLO KPI V2.5</h3>
+        <h3 className="text-center text-sm font-bold tracking-wide text-white sm:text-left sm:text-base">{title}</h3>
         <p className="mt-1 text-center text-[10px] text-slate-300 sm:text-left sm:text-xs">
           Book · Bet365 · probabilità Bet365 senza margine · valore atteso = guadagno medio per 1 € giocato alla quota Bet365
         </p>
@@ -247,7 +255,7 @@ function KpiPanel({ p }: { p: LiveModelPrediction }) {
               <th className={`${th} w-[10%]`}>Vant. Prob.</th>
               <th className={`${th} w-[10%]`}>Valore atteso</th>
               <th className={`${th} w-[8%]`}>Rating</th>
-              <th className={`${th} w-[14%]`}>Acquistabilità</th>
+              {showPurchasability && <th className={`${th} w-[14%]`}>Acquistabilità</th>}
               <th className="w-[10%] px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">Esito</th>
             </tr>
           </thead>
@@ -277,16 +285,18 @@ function KpiPanel({ p }: { p: LiveModelPrediction }) {
                       <span className="text-slate-500">—</span>
                     )}
                   </td>
-                  <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                    {m.buyability_score != null ? (
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${purchasabilityV31BadgeClass(m.buyability_class)}`}>
-                        <span className="tabular-nums">{m.buyability_score}</span>
-                        <span>{m.buyability_class}</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </td>
+                  {showPurchasability && (
+                    <td className="border-r border-slate-500/40 px-1.5 py-2.5">
+                      {m.buyability_score != null ? (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${purchasabilityV31BadgeClass(m.buyability_class)}`}>
+                          <span className="tabular-nums">{m.buyability_score}</span>
+                          <span>{m.buyability_class}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-1.5 py-2.5">
                     <ResultCell won={results[k]?.won} />
                   </td>

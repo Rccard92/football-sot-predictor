@@ -402,6 +402,14 @@ export function LiveObservationPage() {
               <div className="space-y-4">
                 <EngineTable engines={data.engines} models={data.models} book={data.book_reference} />
                 <CumulativeBrierChart data={data.engines_daily} models={data.models} book={data.book_reference} />
+                {data.engines_base && data.engines_base.fixtures > 0 && (
+                  <div>
+                    <p className="mb-2 text-[11px]" style={{ color: TEXT_MUTED }}>
+                      {data.engines_base.models.join(' e ')} su tutte le loro partite chiuse ({data.engines_base.fixtures}): la V3 c&apos;è solo nei campionati con statistiche.
+                    </p>
+                    <EngineTable engines={data.engines_base.engines} models={data.engines_base.models} book={data.book_reference} />
+                  </div>
+                )}
               </div>
             )}
           </Section>
