@@ -23,7 +23,7 @@ const MODELS: ModelCode[] = ['V2', 'V2.5', 'V3']
 
 const MODEL_DESCRIPTIONS: Record<ModelCode, string> = {
   V2: 'Cecchino V2 · RUN V2',
-  'V2.5': 'V2 con moduli migliorati · in costruzione',
+  'V2.5': 'V2 con moduli corretti · RUN V2.5',
   V3: 'Agenti e orchestratore',
 }
 

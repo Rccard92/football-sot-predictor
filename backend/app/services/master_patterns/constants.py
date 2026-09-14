@@ -26,7 +26,7 @@ MODEL_V2 = "V2"
 MODEL_V25 = "V2.5"
 MODEL_V3 = "V3"
 MODELS: tuple[str, ...] = (MODEL_V2, MODEL_V25, MODEL_V3)
-BUILDABLE_MODELS: tuple[str, ...] = (MODEL_V2, MODEL_V3)
+BUILDABLE_MODELS: tuple[str, ...] = (MODEL_V2, MODEL_V25, MODEL_V3)
 
 TARGET_MARKET = "market"
 TARGET_SYNTHETIC = "synthetic"

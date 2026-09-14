@@ -1,5 +1,6 @@
-"""Pattern V2 per la Master Pattern: letti dalle verifiche Pattern Insights gia' salvate
-(analisi a quota di chiusura, scoperta 2021/22, verifiche 2022/23-2025/26)."""
+"""Pattern V2 e V2.5 per la Master Pattern: letti dalle verifiche Pattern Insights gia' salvate
+(analisi a quota di chiusura, scoperta 2021/22, verifiche 2022/23-2025/26). Stesso protocollo
+per i due motori: cambia solo la RUN di partenza (run_version)."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from app.services.master_patterns.constants import (
     MARKET_LABELS,
     MIN_SAMPLE,
     MODEL_V2,
+    MODEL_V25,
     SYNTHETIC_TARGETS,
     TARGET_MARKET,
     VERIFY_SEASONS,
@@ -22,21 +24,25 @@ from app.services.master_patterns.orientation import orient_season, synthetic_ma
 
 _SYNTHETIC_BASE_LABELS = {key: label for key, label, _ in SYNTHETIC_TARGETS}
 
+RUN_VERSION_BY_MODEL = {MODEL_V2: "cecchino_run_v2", MODEL_V25: "cecchino_run_v25"}
+
 
 def _f(v: Any) -> float | None:
     return float(v) if v is not None else None
 
 
-def latest_closing_insight(db: Session) -> dict[str, Any] | None:
+def latest_closing_insight(db: Session, model: str = MODEL_V2) -> dict[str, Any] | None:
     row = db.execute(
         text(
             """
             SELECT i.id, i.run_v2_run_id, i.engine_version
             FROM cecchino_run_v2_pattern_insight_runs i
-            WHERE i.status = 'completed' AND i.odds_mode = 'closing'
+            JOIN cecchino_run_v2_runs r ON r.id = i.run_v2_run_id
+            WHERE i.status = 'completed' AND i.odds_mode = 'closing' AND r.run_version = :version
             ORDER BY i.completed_at DESC LIMIT 1
             """
-        )
+        ),
+        {"version": RUN_VERSION_BY_MODEL[model]},
     ).first()
     return dict(row._mapping) if row else None
 
@@ -75,11 +81,11 @@ def _season_stats(r: dict[str, Any], verdict: str | None, null_p: float | None) 
     }
 
 
-def load_v2_patterns(db: Session) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Tutti i pattern V2 (con le stagioni), piu' i riferimenti della sorgente."""
-    insight = latest_closing_insight(db)
+def load_v2_patterns(db: Session, model: str = MODEL_V2) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Tutti i pattern del motore (con le stagioni), piu' i riferimenti della sorgente."""
+    insight = latest_closing_insight(db, model)
     if insight is None:
-        return [], {"error": "Nessuna analisi Pattern Insights a quota di chiusura"}
+        return [], {"error": f"Nessuna analisi Pattern Insights {model} a quota di chiusura"}
     runs = validation_runs(db, int(insight["id"]))
     missing = [s for s in VERIFY_SEASONS if s not in runs]
     source = {
@@ -87,7 +93,7 @@ def load_v2_patterns(db: Session) -> tuple[list[dict[str, Any]], dict[str, Any]]
         "discovery_run_v2_run_id": int(insight["run_v2_run_id"]),
         "validation_run_ids": runs,
         "missing_seasons": missing,
-        "engine_version": f"run_v2|pattern_insight_{insight['engine_version']}",
+        "engine_version": f"{RUN_VERSION_BY_MODEL[model]}|pattern_insight_{insight['engine_version']}",
     }
     if missing:
         return [], source
@@ -112,7 +118,7 @@ def load_v2_patterns(db: Session) -> tuple[list[dict[str, Any]], dict[str, Any]]
         threshold = _f(d["threshold"])
         discovery = _season_stats(d, "discovery", None)
         candidates[int(d["id"])] = {
-            "model": MODEL_V2,
+            "model": model,
             "source_ref": int(d["id"]),
             "target_type": d["target_type"],
             "target_key": d["target_key"],

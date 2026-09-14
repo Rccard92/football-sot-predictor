@@ -31,6 +31,7 @@ from app.services.master_patterns.constants import (
     MASTER_ENGINE_VERSION,
     MIN_SAMPLE,
     MODEL_V2,
+    MODEL_V25,
     MODEL_V3,
     MODELS,
     SYNTHETIC_CONFIRM_DEVIATION_PCT,
@@ -69,7 +70,7 @@ def build_to_dict(build: CecchinoMasterPatternBuild) -> dict[str, Any]:
     }
 
 
-def start_build(db: Session, model: str) -> dict[str, Any]:
+def start_build(db: Session, model: str, *, spawn: bool = True) -> dict[str, Any]:
     if model not in BUILDABLE_MODELS:
         raise CecchinoLabImportError("invalid_model", f"Modello non calcolabile: {model}", status_code=400)
     active = db.scalars(
@@ -89,6 +90,10 @@ def start_build(db: Session, model: str) -> dict[str, Any]:
     db.add(build)
     db.commit()
     db.refresh(build)
+    if not spawn:
+        _execute(int(build.id))
+        db.refresh(build)
+        return build_to_dict(build)
     with _lock:
         t = threading.Thread(target=_execute, args=(int(build.id),), name=f"master-pattern-{build.id}", daemon=True)
         _active_threads[int(build.id)] = t
@@ -189,13 +194,13 @@ def _execute(build_id: int) -> None:
         db.commit()
         try:
             summary: dict[str, Any] = {}
-            if model == MODEL_V2:
+            if model in (MODEL_V2, MODEL_V25):
                 from app.services.master_patterns.v2_source import load_v2_patterns
 
-                _set_step(db, build_id, "Lettura pattern e verifiche V2")
-                patterns, source = load_v2_patterns(db)
+                _set_step(db, build_id, f"Lettura pattern e verifiche {model}")
+                patterns, source = load_v2_patterns(db, model)
                 if source.get("missing_seasons") or source.get("error"):
-                    raise RuntimeError(f"Sorgente V2 incompleta: {source}")
+                    raise RuntimeError(f"Sorgente {model} incompleta: {source}")
                 engine_version = source["engine_version"]
             else:
                 from app.services.master_patterns.v3_source import (
@@ -386,7 +391,7 @@ def pattern_detail(db: Session, pattern_id: int) -> dict[str, Any]:
     if pattern is None:
         raise CecchinoLabImportError("pattern_not_found", "Pattern non trovato", status_code=404)
     build = db.get(CecchinoMasterPatternBuild, int(pattern.build_id))
-    if pattern.model == MODEL_V2:
+    if pattern.model in (MODEL_V2, MODEL_V25):
         seasons = _v2_detail(db, pattern)
     elif pattern.model == MODEL_V3:
         from app.services.master_patterns.v3_source import v3_detail

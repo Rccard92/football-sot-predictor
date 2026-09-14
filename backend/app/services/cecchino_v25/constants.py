@@ -18,7 +18,7 @@ LEAGUE_MIN_SAMPLE = 60.0
 # --- picchetti 1X2 ---------------------------------------------------------------------------
 # Partite "virtuali" con le frequenze del campionato aggiunte a ogni picchetto: con
 # poche partite la stima resta vicina al campionato e nessun esito vale mai 0.
-PICCHETTI_PRIOR_MATCHES = 4.0
+PICCHETTI_PRIOR_MATCHES = 8.0
 
 # --- gol -------------------------------------------------------------------------------------
 BLEND_POISSON = 0.65

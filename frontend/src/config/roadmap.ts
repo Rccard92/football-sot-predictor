@@ -82,15 +82,16 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
   {
     id: 4,
     title: 'Cecchino V2.5',
-    goal: 'Stessa struttura e stesse schede della V2, con moduli riscritti per essere piu precisi.',
-    status: 'da_fare',
+    goal: 'Stessa struttura e stessi calcoli della V2, con gli errori corretti (la V2 resta congelata).',
+    status: 'in_corso',
     dependsOn: [3],
     tasks: [
-      { text: 'Analisi dei moduli V2: cosa dovrebbero fare, cosa fanno, dove sbagliano (con i numeri dello storico)', status: 'da_fare' },
-      { text: "Progetto dei moduli migliorati, approvato dall'utente prima del codice", status: 'da_fare' },
-      { text: 'Implementazione modulo per modulo con esame di precisione fissato prima dei risultati', status: 'da_fare' },
-      { text: 'RUN V2.5 sulle 5 stagioni', status: 'da_fare' },
-      { text: 'Ricerca pattern V2.5 (con e senza quota) e inserimento nella Master Pattern', status: 'da_fare' },
+      { text: 'Analisi dei moduli V2: cosa dovrebbero fare, cosa fanno, dove sbagliano (con i numeri dello storico)', status: 'fatto' },
+      { text: "Progetto dei moduli corretti, approvato dall'utente prima del codice", status: 'fatto' },
+      { text: 'Moduli V2.5 scritti e testati: picchetti, gol, KPI, Equilibrio, Intensita Goal, Acquistabilita, segnali', status: 'fatto' },
+      { text: 'Taratura una tantum sul solo 2021/22 (costanti e scale congelate, nessun risultato nelle scale)', status: 'fatto' },
+      { text: 'RUN V2.5 sulle 5 stagioni (una sola volta, alla fine)', status: 'in_corso' },
+      { text: 'Ricerca pattern V2.5 (scoperta 2021/22, verifiche 2022/23-2025/26) e inserimento nella Master Pattern', status: 'da_fare' },
     ],
     doneWhen: 'La V2.5 ha previsioni storiche, pattern 4/4 in pagina e confronto di precisione con V2 e V3.',
   },
@@ -172,6 +173,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-14',
+    text: "Step 4: V2.5 scritta con gli stessi calcoli della V2 corretti. Trovati nella RUN V2: Equilibrio con 3 pilastri su 4 vuoti, Acquistabilita' senza classe sul 90% delle righe, 11% delle partite escluse per probabilita' zero, Under 0.5 primo tempo di campionato sempre 0. V2 congelata.",
+  },
   {
     date: '2026-09-14',
     text: "Roadmap concordata con l'utente e pubblicata. Produzione una sola volta alla fine; Master Pattern con mercati con e senza quota.",
