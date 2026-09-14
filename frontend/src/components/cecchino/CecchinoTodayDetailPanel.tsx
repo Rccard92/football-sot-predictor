@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalReliabilityForFixture'
 import type {
@@ -15,6 +15,7 @@ import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
+import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
 
 type Props = {
   detail: CecchinoTodayDetailResponse
@@ -46,6 +47,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   const scanDate = detail.scan_date
   const competitionId = detail.competition_id
   const todayFixtureId = detail.today_fixture_id ?? detail.id
+  const [engine, setEngine] = useState<EngineTab>('V2')
   const hasKpi = Boolean(detail.kpi_panel_v2 ?? detail.kpi_panel)
   const canFetch = hasKpi && Boolean(scanDate) && detail.status === 'ok'
 
@@ -95,6 +97,13 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     <div className="space-y-5">
       <CecchinoTodayDetailHeader detail={detail} />
 
+      <EngineTabBar value={engine} onChange={setEngine} />
+
+      {engine === 'V2.5' && <CecchinoV25Panel todayFixtureId={todayFixtureId} />}
+      {engine === 'V3' && <CecchinoV3Panel />}
+
+      {engine === 'V2' && (
+      <>
       <CecchinoPurchasabilityV36Panel
         key={`v36-${todayFixtureId}`}
         snapshot={detail.purchasability_preview_v35_v2}
@@ -172,6 +181,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           providerFixtureId={detail.provider_fixture_id}
           signalContract={detail.signal_contract ?? null}
         />
+      )}
+
+      </>
       )}
 
       {(blockingWarnings.length > 0 || dataNotes.length > 0) && (

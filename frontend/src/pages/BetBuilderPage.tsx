@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BetBuilderPatternObservation } from '../components/bet-builder/BetBuilderPatternObservation'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { BetBuilderFilters } from '../components/bet-builder/BetBuilderFilters'
@@ -378,6 +379,8 @@ export function BetBuilderPage() {
         opportunitiesTotal={data?.summary.opportunities_total}
         hideDateNav={view === 'results'}
       />
+
+      {view === 'pre-match' ? <BetBuilderPatternObservation date={selectedDate} /> : null}
 
       {loading ? (
         <div
