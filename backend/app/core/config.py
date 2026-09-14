@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     api_football_safe_stop_remaining: int = 500  # deprecato: non interrompe più la scan
     cecchino_odds_bookmaker_fallback: bool = True
     cecchino_odds_negative_cache_hours: int = 6
+    # Gate Phase A: senza 1X2 reale del bookmaker primario la partita non è eleggibile,
+    # quindi niente chiamata di fallback a quel punto (il fallback resta in Phase B).
+    cecchino_gate_requires_primary_1x2: bool = True
+    # Quote del giorno lette a pagine (odds?date) prima delle chiamate per singola partita.
+    cecchino_day_odds_listing_enabled: bool = True
     cecchino_league_stats_cache_hours: int = 12
     cecchino_league_stats_cache_hours_ok: int = 24
     cors_origins: str = (
@@ -77,6 +82,10 @@ class Settings(BaseSettings):
     cecchino_auto_scan_max_runtime_minutes: int = 120
     cecchino_auto_scan_transient_attempts: int = 2
     cecchino_auto_scan_transient_retry_delay_seconds: int = 60
+    # Giro del mattino sulla giornata in corso: raccoglie le quote pubblicate dopo le 23.
+    cecchino_auto_scan_morning_enabled: bool = False
+    cecchino_auto_scan_morning_hour: int = 7
+    cecchino_auto_scan_morning_minute: int = 30
 
     # Acquistabilità operativa (default V3; V3.1 solo post GO_FINAL via JSON runtime)
     operational_purchasability_version: str = "v3"

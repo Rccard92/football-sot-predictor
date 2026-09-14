@@ -53,6 +53,8 @@ EXIT_BUDGET = 4
 
 SLOT_PRIMARY = "primary"
 SLOT_RECOVERY = "recovery"
+# Giro del mattino sulla giornata in corso: quote pubblicate dopo la scansione delle 23.
+SLOT_MORNING = "morning"
 
 _abort_requested = False
 
@@ -109,8 +111,10 @@ def resolve_auto_scan_slot(
     recovery_hour: int,
     recovery_minute: int,
     window_minutes: int,
+    morning_hour: int | None = None,
+    morning_minute: int | None = None,
 ) -> str | None:
-    """Restituisce ``primary``, ``recovery`` o ``None`` (fuori finestra)."""
+    """Restituisce ``primary``, ``recovery``, ``morning`` o ``None`` (fuori finestra)."""
     local = _aware_now(now, timezone_name)
     now_minutes = _minutes_of_day(local.hour, local.minute)
     primary_center = _minutes_of_day(primary_hour, primary_minute)
@@ -126,6 +130,9 @@ def resolve_auto_scan_slot(
         return SLOT_PRIMARY
     if in_recovery:
         return SLOT_RECOVERY
+    if morning_hour is not None and morning_minute is not None:
+        if _in_window(now_minutes, _minutes_of_day(morning_hour, morning_minute), window_minutes):
+            return SLOT_MORNING
     return None
 
 
@@ -572,6 +579,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         target_date = resolve_target_scan_date(now, timezone_name=timezone_name)
 
+    morning_enabled = getattr(settings, "cecchino_auto_scan_morning_enabled", False) is True
     slot = resolve_auto_scan_slot(
         now,
         timezone_name=timezone_name,
@@ -580,7 +588,12 @@ def main(argv: list[str] | None = None) -> int:
         recovery_hour=settings.cecchino_auto_scan_recovery_hour,
         recovery_minute=settings.cecchino_auto_scan_recovery_minute,
         window_minutes=settings.cecchino_auto_scan_window_minutes,
+        morning_hour=settings.cecchino_auto_scan_morning_hour if morning_enabled else None,
+        morning_minute=settings.cecchino_auto_scan_morning_minute if morning_enabled else None,
     )
+    if slot == SLOT_MORNING and not args.target_date:
+        # Il mattino aggiorna la giornata in corso, non quella successiva.
+        target_date = local_date
 
     if args.scheduled and not args.force_run:
         if not settings.cecchino_auto_scan_enabled:

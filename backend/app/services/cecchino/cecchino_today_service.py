@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import CecchinoTodayFixture, Competition, Fixture
 from app.models.cecchino_today_fixture import (
     ELIGIBILITY_DISCOVERED,
@@ -187,8 +188,10 @@ from app.services.cecchino.cecchino_today_final_eligibility import (
 )
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
 from app.services.cecchino.cecchino_today_odds_fetch import (
+    STRATEGY_ODDS_FETCH_ERROR,
     enrich_fixture_odds_full_canonical,
     fetch_fixture_odds_for_cecchino_1x2_gate,
+    prefetch_day_primary_odds,
     write_negative_odds_cache,
 )
 from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta, read_odds_meta
@@ -211,6 +214,9 @@ logger = logging.getLogger(__name__)
 
 ProgressReporter = Callable[..., None]
 SCAN_BATCH_SIZE = 10
+# Errori di lettura quote (429/rete): passaggi extra a fine giro, dopo una pausa.
+ODDS_FETCH_RETRY_ROUNDS = 2
+ODDS_FETCH_RETRY_COOLDOWN_S = 65.0
 
 _BOOK_REASON_TO_STATUS = {
     "missing_bookmaker": ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
@@ -1028,12 +1034,39 @@ def run_scan(
         "skipped": 0,
     }
 
-    for batch_start in range(0, total, SCAN_BATCH_SIZE):
+    # Quote del bookmaker primario per l'intera giornata a pagine: evita una chiamata
+    # per partita (e i 429 che ne derivano). Le partite non in elenco restano sulla
+    # chiamata singola, quindi l'elenco non può escludere nulla.
+    day_odds: dict[int, list[dict[str, Any]]] = {}
+    if client is None and get_settings().cecchino_day_odds_listing_enabled:
+        _emit_progress(progress, current_step="fetching_odds")
+        try:
+            day_odds, day_odds_info = prefetch_day_primary_odds(
+                af_client,
+                scan_date=resolved_date,
+                timezone_name=timezone,
+                metrics=run_metrics,
+            )
+            run_metrics.day_odds_listing = day_odds_info
+        except ApiFootballQuotaExhausted:
+            day_odds = {}
+        except Exception:
+            logger.exception("day odds listing failed scan_date=%s", resolved_date)
+            day_odds = {}
+
+    # Partite con quote non lette per errore API (429/rete): nuovo passaggio a fine giro.
+    odds_retry_items: list[dict[str, Any]] = []
+    odds_retry_round = 0
+    work_items: list[dict[str, Any]] = list(raw_items)
+    odds_fetch_errors_final = 0
+
+    while work_items:
         if provider_quota_stopped:
             break
-        batch = raw_items[batch_start : batch_start + SCAN_BATCH_SIZE]
-        for item in batch:
-            fixtures_checked += 1
+        is_retry_round = odds_retry_round > 0
+        for item in work_items:
+            if not is_retry_round:
+                fixtures_checked += 1
             api_fid: int | None = None
             try:
                 brief = _item_brief(item)
@@ -1115,9 +1148,10 @@ def run_scan(
                         )
                     continue
 
-                after_filter_count += 1
-                run_metrics.after_competition_filter = after_filter_count
-                run_metrics.fixtures_after_competition_gate = after_filter_count
+                if not is_retry_round:
+                    after_filter_count += 1
+                    run_metrics.after_competition_filter = after_filter_count
+                    run_metrics.fixtures_after_competition_gate = after_filter_count
 
                 _emit_progress(progress, current_step="fetching_odds")
                 odds_by_book, odds_warnings, odds_strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_1x2_gate(
@@ -1127,10 +1161,19 @@ def run_scan(
                     scan_date=resolved_date,
                     force_rescan=force_rescan,
                     metrics=run_metrics,
+                    day_odds=day_odds,
                 )
-                odds_checked += 1
-                run_metrics.odds_checked = odds_checked
+                if not is_retry_round:
+                    odds_checked += 1
+                    run_metrics.odds_checked = odds_checked
                 row_warnings.extend(odds_warnings)
+
+                if odds_strategy == STRATEGY_ODDS_FETCH_ERROR:
+                    if odds_retry_round < ODDS_FETCH_RETRY_ROUNDS:
+                        # Riga lasciata in "discovered": verrà rielaborata nel passaggio successivo.
+                        odds_retry_items.append(item)
+                        continue
+                    odds_fetch_errors_final += 1
 
                 if neg_cache_hit:
                     neg_status = ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER
@@ -1181,24 +1224,30 @@ def run_scan(
                             existing_map=existing_rows_by_provider_id,
                         )
                     else:
-                        write_negative_odds_cache(
-                            db,
-                            None,
-                            scan_date=resolved_date,
-                            provider_fixture_id=api_fid,
-                            odds_check_status=bm_reason or "missing_bookmaker",
-                        )
+                        fetch_failed = odds_strategy == STRATEGY_ODDS_FETCH_ERROR
+                        if not fetch_failed:
+                            write_negative_odds_cache(
+                                db,
+                                None,
+                                scan_date=resolved_date,
+                                provider_fixture_id=api_fid,
+                                odds_check_status=bm_reason or "missing_bookmaker",
+                            )
                         _upsert_today_snapshot(
                             db,
                             scan_date=resolved_date,
                             api_item=item,
                             eligibility_status=status,
-                            eligibility_reason=bm_reason,
+                            eligibility_reason=STRATEGY_ODDS_FETCH_ERROR if fetch_failed else bm_reason,
                             bookmaker_status="missing",
                             odds_snapshot=odds_snapshot,
                             warnings=row_warnings,
-                            blocking_reasons=bm_blocking,
-                            odds_check_status=bm_reason or "missing_bookmaker",
+                            blocking_reasons=(
+                                [STRATEGY_ODDS_FETCH_ERROR, *bm_blocking] if fetch_failed else bm_blocking
+                            ),
+                            odds_check_status=(
+                                STRATEGY_ODDS_FETCH_ERROR if fetch_failed else (bm_reason or "missing_bookmaker")
+                            ),
                             odds_checked_at=utc_now(),
                             existing_map=existing_rows_by_provider_id,
                             run_metrics=run_metrics,
@@ -1232,9 +1281,15 @@ def run_scan(
                                 metrics=run_metrics,
                             )
                         row_warnings.extend(boot_warnings)
+                    except ApiFootballQuotaExhausted:
+                        raise
                     except Exception as exc:
                         logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
                         recover_session_if_inactive(db)
+                        if isinstance(exc, ApiFootballError) and odds_retry_round < ODDS_FETCH_RETRY_ROUNDS:
+                            # Import storico non letto per errore API: ritenta nel passaggio successivo.
+                            odds_retry_items.append(item)
+                            continue
                         detail = str(exc)[:200]
                         if was_eligible and protected_row is not None:
                             _preserve_protected_failure(
@@ -1866,7 +1921,8 @@ def run_scan(
                 if msg not in errors:
                     errors.append(msg)
                 # La fixture corrente non è stata completata: non contarla come elaborata.
-                fixtures_checked = max(0, fixtures_checked - 1)
+                if not is_retry_round:
+                    fixtures_checked = max(0, fixtures_checked - 1)
                 logger.warning(
                     "CecchinoTodayJob provider_quota_exhausted job_id=%s fixture=%s endpoint=%s",
                     job_id,
@@ -1946,6 +2002,26 @@ def run_scan(
             if provider_quota_stopped:
                 break
 
+        if provider_quota_stopped or not odds_retry_items:
+            break
+        # Pausa per far liberare la finestra al minuto, poi nuovo passaggio.
+        db.commit()
+        odds_retry_round += 1
+        logger.warning(
+            "CecchinoTodayJob job_id=%s odds_retry_round=%s fixtures=%s",
+            job_id,
+            odds_retry_round,
+            len(odds_retry_items),
+        )
+        run_metrics.odds_retry_rounds = odds_retry_round
+        run_metrics.odds_retry_fixtures += len(odds_retry_items)
+        time.sleep(ODDS_FETCH_RETRY_COOLDOWN_S)
+        work_items = odds_retry_items
+        odds_retry_items = []
+
+    run_metrics.odds_fetch_errors_final = odds_fetch_errors_final
+    if odds_fetch_errors_final:
+        warnings.append(f"odds_fetch_error_final:{odds_fetch_errors_final}")
     db.commit()
     signal_sync_summary = sync_signals_for_scan_date(db, resolved_date)
     db.commit()

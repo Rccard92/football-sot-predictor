@@ -82,6 +82,10 @@ class ScanRunMetrics:
     bet365_fallback_fixture_count: int = 0  # alias semantico di bet365_fallback_used
     book_still_missing_after_fallback: int = 0  # selection-count ancora N/D
     book_coverage_fixture_count: int = 0  # fixture stats-qualified con full Book coverage
+    day_odds_listing: dict[str, Any] | None = None  # elenco quote giornaliero (pagine, partite)
+    odds_retry_rounds: int = 0  # passaggi extra per errori di lettura quote
+    odds_retry_fixtures: int = 0
+    odds_fetch_errors_final: int = 0  # partite ancora non lette dopo i passaggi extra
     api_calls_total: int = 0
     api_calls: dict[str, int] = field(
         default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0},
@@ -258,6 +262,10 @@ class ScanRunMetrics:
                 self.protected_snapshot_overwrite_blocked
             ),
             "snapshot_eligible_protection_active": True,
+            "day_odds_listing": self.day_odds_listing,
+            "odds_retry_rounds": int(self.odds_retry_rounds),
+            "odds_retry_fixtures": int(self.odds_retry_fixtures),
+            "odds_fetch_errors_final": int(self.odds_fetch_errors_final),
         }
         summary.update(self.book_coverage_fields())
         if provider_items_received is not None:

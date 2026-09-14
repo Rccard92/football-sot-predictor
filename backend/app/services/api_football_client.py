@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 from urllib.parse import urljoin
@@ -16,6 +17,51 @@ logger = logging.getLogger(__name__)
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
 BACKOFF_BASE_S = 0.5
+
+# Limite al minuto per chiave (300 sul piano Pro), condiviso da tutti i servizi
+# che usano la stessa chiave. Un 429 non è mai "dato assente": si attende che la
+# finestra del minuto si liberi e si ritenta.
+RATE_LIMIT_WAITS_S = (5.0, 10.0, 15.0, 20.0, 30.0, 30.0)
+RATE_LIMIT_LOW_WATERMARK = 12
+RATE_LIMIT_LOW_SLEEP_S = 6.0
+_MINUTE_REMAINING_HEADER = "x-ratelimit-remaining"
+_rate_state_lock = threading.Lock()
+_rate_state: dict[str, float | None] = {"remaining": None, "observed_at": 0.0}
+
+
+def _observe_minute_remaining(headers: dict[str, str]) -> None:
+    raw = headers.get(_MINUTE_REMAINING_HEADER)
+    if raw is None:
+        return
+    try:
+        remaining = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return
+    with _rate_state_lock:
+        _rate_state["remaining"] = remaining
+        _rate_state["observed_at"] = time.monotonic()
+
+
+def _pace_before_request() -> None:
+    """Rallenta se l'ultima risposta indicava la finestra al minuto quasi esaurita."""
+    with _rate_state_lock:
+        remaining = _rate_state["remaining"]
+        observed_at = float(_rate_state["observed_at"] or 0.0)
+    if remaining is None or remaining > RATE_LIMIT_LOW_WATERMARK:
+        return
+    if time.monotonic() - observed_at > 60.0:
+        return
+    time.sleep(RATE_LIMIT_LOW_SLEEP_S)
+    with _rate_state_lock:
+        # Dopo la pausa la prossima risposta aggiorna il valore reale.
+        _rate_state["remaining"] = None
+
+
+def _rate_limit_wait_seconds(resp: httpx.Response, wait_index: int) -> float:
+    ra = resp.headers.get("Retry-After")
+    if ra and ra.strip().isdigit():
+        return max(1.0, min(60.0, float(ra)))
+    return RATE_LIMIT_WAITS_S[min(wait_index, len(RATE_LIMIT_WAITS_S) - 1)]
 
 _QUOTA_REMAINING_HEADERS = (
     "x-ratelimit-requests-remaining",
@@ -36,6 +82,10 @@ _QUOTA_EXHAUSTED_MESSAGE_FRAGMENTS = (
 
 class ApiFootballError(Exception):
     """Errore chiamata API-Football (HTTP o payload)."""
+
+
+class ApiFootballRateLimited(ApiFootballError):
+    """Limite al minuto ancora attivo dopo tutte le attese: dato non letto, non assente."""
 
 
 class ApiFootballQuotaExhausted(ApiFootballError):
@@ -206,8 +256,12 @@ class ApiFootballClient:
         url = urljoin(self._base_url, path)
         query = {k: v for k, v in (params or {}).items() if v is not None}
         last_exc: Exception | None = None
+        attempt = 0
+        rate_limit_waits = 0
 
-        for attempt in range(1, MAX_RETRIES + 1):
+        while attempt < MAX_RETRIES:
+            attempt += 1
+            _pace_before_request()
             started = time.perf_counter()
             try:
                 with httpx.Client(timeout=self._timeout) as client:
@@ -221,6 +275,10 @@ class ApiFootballClient:
                     attempt,
                     list(query.keys()),
                 )
+                try:
+                    _observe_minute_remaining(_header_map(resp))
+                except Exception:
+                    pass
 
                 # Controlla quota provider prima dei retry transienti.
                 errors_preview: Any = None
@@ -239,12 +297,26 @@ class ApiFootballClient:
                     query=query,
                 )
 
+                if resp.status_code == 429:
+                    # Limite al minuto: attese dedicate che non consumano i ritentativi.
+                    if rate_limit_waits < len(RATE_LIMIT_WAITS_S):
+                        wait = _rate_limit_wait_seconds(resp, rate_limit_waits)
+                        rate_limit_waits += 1
+                        attempt -= 1
+                        logger.warning(
+                            "api_football rate limited %s wait=%.0fs n=%s",
+                            path,
+                            wait,
+                            rate_limit_waits,
+                        )
+                        time.sleep(wait)
+                        continue
+                    raise ApiFootballRateLimited(
+                        f"HTTP 429: limite al minuto API-Football ancora attivo su {path}",
+                    )
+
                 if resp.status_code in TRANSIENT_STATUS and attempt < MAX_RETRIES:
                     wait = BACKOFF_BASE_S * (2 ** (attempt - 1))
-                    if resp.status_code == 429:
-                        ra = resp.headers.get("Retry-After")
-                        if ra and ra.isdigit():
-                            wait = float(ra)
                     time.sleep(wait)
                     continue
 
@@ -273,7 +345,7 @@ class ApiFootballClient:
                     duration_ms=elapsed_ms,
                 )
                 return data
-            except ApiFootballQuotaExhausted:
+            except (ApiFootballQuotaExhausted, ApiFootballRateLimited):
                 raise
             except httpx.HTTPStatusError as e:
                 last_exc = e

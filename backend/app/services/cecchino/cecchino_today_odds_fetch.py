@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import CecchinoTodayFixture
 from app.models.cecchino_today_fixture import PROVIDER_API_FOOTBALL
-from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.api_football_client import (
+    ApiFootballClient,
+    ApiFootballError,
+    ApiFootballQuotaExhausted,
+)
 from app.services.cecchino.cecchino_canonical_book_payload import build_single_bookmaker_payload
 from app.services.cecchino.cecchino_canonical_book_resolver import (
     CANONICAL_BOOK_SELECTION_KEYS,
@@ -35,6 +39,12 @@ _BETFAIR_ID = int(CECCHINO_PRIMARY_BOOKMAKER["provider_bookmaker_id"])
 _BETFAIR_NAME = str(CECCHINO_PRIMARY_BOOKMAKER["name"])
 _BET365_ID = int(CECCHINO_FALLBACK_BOOKMAKER["provider_bookmaker_id"])
 _BET365_NAME = str(CECCHINO_FALLBACK_BOOKMAKER["name"])
+# Nota: dalla policy v2 _BETFAIR_* indica il bookmaker PRIMARIO (Bet365) e
+# _BET365_* il fallback (Betfair); i nomi storici restano per compatibilità test.
+
+ODDS_FETCH_ERROR_PREFIX = "odds_fetch_error:"
+STRATEGY_ODDS_FETCH_ERROR = "odds_fetch_error"
+STRATEGY_DAY_LISTING = "day_listing"
 
 
 def _utcnow() -> datetime:
@@ -259,10 +269,78 @@ def _fetch_bookmaker_only(
         if metrics is not None:
             metrics.api_calls["odds"] = metrics.api_calls.get("odds", 0) + 1
             metrics.sync_api_calls_total()
+    except ApiFootballQuotaExhausted:
+        raise
     except ApiFootballError as exc:
-        warnings.append(f"fixture {api_fixture_id} {bookmaker_name}: {exc}")
+        # Errore di lettura (es. 429): la quota non è "assente", è "non letta".
+        warnings.append(f"{ODDS_FETCH_ERROR_PREFIX}fixture {api_fixture_id} {bookmaker_name}: {exc}")
         odds_by_book[bookmaker_id] = []
     return odds_by_book, warnings
+
+
+def has_odds_fetch_error(warnings: list[str] | None) -> bool:
+    return any(str(w).startswith(ODDS_FETCH_ERROR_PREFIX) for w in (warnings or []))
+
+
+def prefetch_day_primary_odds(
+    client: ApiFootballClient,
+    *,
+    scan_date: date,
+    timezone_name: str,
+    metrics: ScanRunMetrics | None = None,
+    max_pages: int = 400,
+) -> tuple[dict[int, list[dict[str, Any]]], dict[str, Any]]:
+    """Quote del bookmaker primario per tutte le partite del giorno (odds?date, 10 per pagina).
+
+    Stesso payload di odds?fixture&bookmaker. Una partita assente dall'elenco non è
+    considerata senza quote: resta la chiamata per singola partita.
+    """
+    by_fixture: dict[int, list[dict[str, Any]]] = {}
+    info: dict[str, Any] = {"pages": 0, "total_pages": None, "complete": False, "error": None}
+    page = 1
+    while page <= max_pages:
+        try:
+            body = client.get(
+                "odds",
+                {
+                    "date": scan_date.isoformat(),
+                    "bookmaker": _BETFAIR_ID,
+                    "timezone": timezone_name,
+                    "page": page,
+                },
+            )
+        except ApiFootballQuotaExhausted:
+            raise
+        except ApiFootballError as exc:
+            info["error"] = str(exc)[:200]
+            break
+        if not isinstance(body, dict):
+            break
+        if metrics is not None:
+            metrics.api_calls["odds"] = metrics.api_calls.get("odds", 0) + 1
+            metrics.sync_api_calls_total()
+        info["pages"] = page
+        for item in body.get("response") or []:
+            if not isinstance(item, dict):
+                continue
+            fid = (item.get("fixture") or {}).get("id")
+            books = [
+                bm
+                for bm in item.get("bookmakers") or []
+                if isinstance(bm, dict) and int(bm.get("id") or 0) == _BETFAIR_ID
+            ]
+            if fid is None or not books:
+                continue
+            by_fixture[int(fid)] = [{**item, "bookmakers": books}]
+        paging = body.get("paging") or {}
+        total = int(paging.get("total") or 1)
+        info["total_pages"] = total
+        if page >= total:
+            info["complete"] = True
+            break
+        page += 1
+    info["fixtures"] = len(by_fixture)
+    return by_fixture, info
 
 
 def _fetch_betfair_only(
@@ -336,14 +414,19 @@ def fetch_fixture_odds_for_cecchino_1x2_gate(
     scan_date: date | None = None,
     force_rescan: bool = False,
     metrics: ScanRunMetrics | None = None,
+    day_odds: dict[int, list[dict[str, Any]]] | None = None,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str], str, bool]:
     """Phase A — gate Book 1X2 economico per Cecchino Today scan.
 
-    Preferisce UNA call Betfair bookmaker-specific; Bet365 solo se 1X2 BF incompleto.
+    Usa prima l'elenco quote del giorno (``day_odds``, zero chiamate); altrimenti UNA
+    call bookmaker-specific sul primario. Fallback in Phase A solo se la policy non
+    richiede 1X2 reale del primario. Un errore di lettura ritorna la strategia
+    ``odds_fetch_error`` (mai negative cache): la partita va ritentata, non esclusa.
     Non registra book coverage (fase intermedia): le metriche full Book vanno in Phase B.
     Ritorna (odds_by_book, warnings, strategy, negative_cache_hit).
     """
     settings = get_settings()
+    requires_primary = getattr(settings, "cecchino_gate_requires_primary_1x2", False) is True
 
     if not force_rescan and db is not None and scan_date is not None:
         neg_hit, neg_row, neg_status = check_negative_odds_cache(
@@ -369,14 +452,30 @@ def fetch_fixture_odds_for_cecchino_1x2_gate(
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     did_bet365 = False
 
-    # Primary Today path: Betfair bookmaker-specific (no fixture-wide).
-    bf_odds, bf_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
-    warnings.extend(bf_warn)
-    for bid, payload in bf_odds.items():
-        if payload:
-            odds_by_book[bid] = payload
+    from_listing = False
+    listed = (day_odds or {}).get(int(api_fixture_id))
+    if listed:
+        odds_by_book[_BETFAIR_ID] = list(listed)
+        from_listing = True
+    else:
+        # Primary Today path: bookmaker-specific sul primario (no fixture-wide).
+        bf_odds, bf_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
+        warnings.extend(bf_warn)
+        for bid, payload in bf_odds.items():
+            if payload:
+                odds_by_book[bid] = payload
 
-    if settings.cecchino_odds_bookmaker_fallback and _missing_betfair_1x2_selections(odds_by_book):
+    primary_missing_1x2 = bool(_missing_betfair_1x2_selections(odds_by_book))
+    if primary_missing_1x2 and has_odds_fetch_error(warnings):
+        if metrics is not None:
+            metrics.record_odds_strategy(STRATEGY_ODDS_FETCH_ERROR)
+        return odds_by_book, warnings, STRATEGY_ODDS_FETCH_ERROR, False
+
+    if (
+        settings.cecchino_odds_bookmaker_fallback
+        and primary_missing_1x2
+        and not requires_primary
+    ):
         time.sleep(SLEEP_BETWEEN_CALLS_S)
         b365_odds, b365_warn = _fetch_bet365_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(b365_warn)
@@ -397,6 +496,8 @@ def fetch_fixture_odds_for_cecchino_1x2_gate(
 
         if did_bet365:
             strategy = "betfair_1x2_with_bet365_fallback"
+        elif from_listing:
+            strategy = STRATEGY_DAY_LISTING
         else:
             strategy = "betfair_1x2"
         if metrics is not None:
