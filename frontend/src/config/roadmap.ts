@@ -40,7 +40,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     tasks: [
       { text: 'Salvare il risultato di ogni pattern V3 sul 2025/26 (per la V2 i dati ci sono gia)', status: 'fatto' },
       { text: 'Ricerca pattern V3 sui mercati senza quota (tiri, corner, cartellini) con lo stesso metodo della V2', status: 'fatto' },
-      { text: 'Pagina con 3 riquadri (V2 · V2.5 in costruzione · V3), filtri e tabella dei pattern 4/4', status: 'fatto' },
+      { text: 'Pagina con 3 riquadri (V2 · V2.5 · V3), filtri e tabella dei pattern 4/4', status: 'fatto' },
       { text: 'Mercati con quota (profitto, ROI, quota media) e senza quota (frequenza e scostamento dalla media)', status: 'fatto' },
       { text: 'Confronto con quanti pattern vincenti darebbe il caso', status: 'fatto' },
       { text: 'Dettaglio al clic: stagione per stagione ed elenco partite', status: 'fatto' },
@@ -83,15 +83,15 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     id: 4,
     title: 'Cecchino V2.5',
     goal: 'Stessa struttura e stessi calcoli della V2, con gli errori corretti (la V2 resta congelata).',
-    status: 'in_corso',
+    status: 'fatto',
     dependsOn: [3],
     tasks: [
       { text: 'Analisi dei moduli V2: cosa dovrebbero fare, cosa fanno, dove sbagliano (con i numeri dello storico)', status: 'fatto' },
       { text: "Progetto dei moduli corretti, approvato dall'utente prima del codice", status: 'fatto' },
       { text: 'Moduli V2.5 scritti e testati: picchetti, gol, KPI, Equilibrio, Intensita Goal, Acquistabilita, segnali', status: 'fatto' },
       { text: 'Taratura una tantum sul solo 2021/22 (costanti e scale congelate, nessun risultato nelle scale)', status: 'fatto' },
-      { text: 'RUN V2.5 sulle 5 stagioni (una sola volta, alla fine)', status: 'in_corso' },
-      { text: 'Ricerca pattern V2.5 (scoperta 2021/22, verifiche 2022/23-2025/26) e inserimento nella Master Pattern', status: 'da_fare' },
+      { text: 'RUN V2.5 sulle 5 stagioni (una sola volta, alla fine)', status: 'fatto' },
+      { text: 'Ricerca pattern V2.5 (scoperta 2021/22, verifiche 2022/23-2025/26) e inserimento nella Master Pattern', status: 'fatto' },
     ],
     doneWhen: 'La V2.5 ha previsioni storiche, pattern 4/4 in pagina e confronto di precisione con V2 e V3.',
   },
@@ -173,6 +173,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-14',
+    text: 'Step 4 fatto: RUN V2.5 sulle 5 stagioni, piu precisa della V2 in ogni stagione (errore -1/-2,5%) e con circa 700 partite analizzabili in piu a stagione. Master Pattern V2.5: 86 pattern con quota (82 attesi dal caso), 12.234 senza quota (39 attesi dal caso).',
+  },
   {
     date: '2026-09-14',
     text: "Step 4: V2.5 scritta con gli stessi calcoli della V2 corretti. Trovati nella RUN V2: Equilibrio con 3 pilastri su 4 vuoti, Acquistabilita' senza classe sul 90% delle righe, 11% delle partite escluse per probabilita' zero, Under 0.5 primo tempo di campionato sempre 0. V2 congelata.",
