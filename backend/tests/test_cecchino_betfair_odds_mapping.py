@@ -101,7 +101,7 @@ def test_first_half_winner_maps_draw_pt():
     draw_pt = next(r for r in rows if r["selection_key"] == SEL_DRAW_PT)
     assert draw_pt["normalized_market"] == MARKET_1X2_FH
     assert draw_pt["odds_value"] == 2.0
-    assert draw_pt["provenance"]["source"] == "bet365_raw_first_half_match_winner"
+    assert draw_pt["provenance"]["source"] == "betfair_raw_first_half_match_winner"
 
 
 def test_half_time_result_x_maps_draw_pt():

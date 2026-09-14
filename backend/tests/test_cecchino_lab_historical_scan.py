@@ -317,10 +317,10 @@ def test_kpi_panel_no_betfair_provenance():
         "prob_2": 0.3,
     }
     panel = build_historical_kpi_panel_bet365(final_odds=final, match=m, goal_markets={})
-    assert panel["bookmaker"]["name"] == "Betfair"
+    assert panel["bookmaker"]["name"] == "Bet365"
     assert panel["historical_only"] is True
     assert panel["source_builder_version"] == KPI_V2_VERSION
-    assert "Bet365" not in str(panel["bookmaker"])
+    assert "Betfair" not in str(panel["bookmaker"])
     assert CECCHINO_BOOKMAKER["name"] == "Bet365"  # operativo invariato
 
 
