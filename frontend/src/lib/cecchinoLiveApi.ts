@@ -45,10 +45,31 @@ export type LivePatterns = {
   }
 }
 
+export type LiveBalancePillar = {
+  title?: string | null
+  index?: number | null
+  raw_value?: number | null
+  class_key?: string | null
+  class_label?: string | null
+  direction?: string | null
+}
+
+export type LiveGoalPillar = {
+  title?: string | null
+  score?: number | null
+  raw_value?: number | null
+  class_key?: string | null
+  label?: string | null
+}
+
 export type LiveModules = {
   balance_classes?: Record<string, string | null> | null
   goal_intensity_classes?: Record<string, string | null> | null
   goal_intensity_final?: string | null
+  balance_pillars?: Record<string, LiveBalancePillar> | null
+  goal_intensity_pillars?: Record<string, LiveGoalPillar> | null
+  goal_intensity_final_detail?: { key?: string | null; label?: string | null; score?: number | null } | null
+  expected_goals?: { home: number | null; away: number | null } | null
   eligibility?: string | null
   history_matches?: number | null
   patterns?: LivePatterns

@@ -94,10 +94,26 @@ def v25_payload(pre: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
             "signal_active": bool((pre["signal_index"].get(key) or {}).get("signal_active")),
         }
     gi = pre["gi"]
+    goals = pre.get("goals")
     modules = {
         "balance_classes": pre["balance"].get("pillar_classes"),
         "goal_intensity_classes": {k: v.get("class_key") for k, v in (gi.get("pillars") or {}).items()},
         "goal_intensity_final": (gi.get("final_class") or {}).get("key"),
+        # dettaglio per le schede (indice 0-100, valore grezzo, lato) — solo lettura
+        "balance_pillars": {
+            k: {f: v.get(f) for f in ("title", "index", "raw_value", "class_key", "class_label", "direction")}
+            for k, v in (pre["balance"].get("pillars") or {}).items()
+        },
+        "goal_intensity_pillars": {
+            k: {f: v.get(f) for f in ("title", "score", "raw_value", "class_key", "label")}
+            for k, v in (gi.get("pillars") or {}).items()
+        },
+        "goal_intensity_final_detail": gi.get("final_class"),
+        "expected_goals": (
+            {"home": _round(goals.lambda_home, 3), "away": _round(goals.lambda_away, 3)}
+            if goals is not None and getattr(goals, "lambda_home", None) is not None
+            else None
+        ),
         "eligibility": pre["eligibility"].get("status"),
         "history_matches": pre.get("history_matches"),
         "league_reference": pre.get("league_reference"),
