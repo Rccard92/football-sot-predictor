@@ -91,13 +91,13 @@ def test_case_a_betfair_over_beats_bet365():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
             over_under={"Over 2.5": "1.80", "Under 2.5": "2.00"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Home": "1.85", "Draw": "3.30", "Away": "4.20"},
             over_under={"Over 2.5": "1.90", "Under 2.5": "1.95"},
         ),
@@ -106,7 +106,7 @@ def test_case_a_betfair_over_beats_bet365():
     panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
     row = _row_by_key(panel, SEL_OVER_2_5)
     assert row["quota_book"] == 1.80
-    assert row["bookmaker_name"] == "Betfair"
+    assert row["bookmaker_name"] == "Bet365"
     assert row["book_fallback_used"] is False
     assert row["provider_bookmaker_id"] == 3
 
@@ -116,12 +116,12 @@ def test_case_b_bet365_fallback_over():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Home": "1.85", "Draw": "3.30", "Away": "4.20"},
             over_under={"Over 2.5": "1.36", "Under 2.5": "3.10"},
         ),
@@ -130,7 +130,7 @@ def test_case_b_bet365_fallback_over():
     panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
     row = _row_by_key(panel, SEL_OVER_2_5)
     assert row["quota_book"] == 1.36
-    assert row["bookmaker_name"] == "Bet365"
+    assert row["bookmaker_name"] == "Betfair"
     assert row["book_fallback_used"] is True
     assert row["provider_bookmaker_id"] == 8
 
@@ -140,12 +140,12 @@ def test_case_c_bet365_fallback_under():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             over_under={"Under 2.5": "3.00"},
         ),
     }
@@ -153,7 +153,7 @@ def test_case_c_bet365_fallback_under():
     panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
     row = _row_by_key(panel, SEL_UNDER_2_5)
     assert row["quota_book"] == 3.00
-    assert row["bookmaker_name"] == "Bet365"
+    assert row["bookmaker_name"] == "Betfair"
     assert row["book_fallback_used"] is True
 
 
@@ -162,7 +162,7 @@ def test_case_d_both_missing():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         ),
     }
@@ -177,12 +177,12 @@ def test_case_e_mixed_1x2_gate_passes():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Away": "4.50"},
         ),
     }
@@ -190,16 +190,16 @@ def test_case_e_mixed_1x2_gate_passes():
     assert ok
     assert reason is None
     assert blocking == []
-    assert snap["selection_sources"][SEL_HOME] == "Betfair"
-    assert snap["selection_sources"][SEL_DRAW] == "Betfair"
-    assert snap["selection_sources"][SEL_AWAY] == "Bet365"
+    assert snap["selection_sources"][SEL_HOME] == "Bet365"
+    assert snap["selection_sources"][SEL_DRAW] == "Bet365"
+    assert snap["selection_sources"][SEL_AWAY] == "Betfair"
     assert snap["bookmakers"]["Canonical"]["AWAY"] == 4.50
     # Provenance: Betfair non deve contenere quote Bet365
-    bf_snap = snap["bookmakers"].get("Betfair") or {}
+    bf_snap = snap["bookmakers"].get("Bet365") or {}
     assert bf_snap.get("HOME") == 1.80
     assert bf_snap.get("DRAW") == 3.20
     assert bf_snap.get("AWAY") in (None,)
-    assert snap["bookmakers"]["Bet365"]["AWAY"] == 4.50
+    assert snap["bookmakers"]["Betfair"]["AWAY"] == 4.50
 
 
 # --- CASO F ---
@@ -207,17 +207,17 @@ def test_case_f_betfair_error_bet365_complete():
     odds = {
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Home": "2.00", "Draw": "3.10", "Away": "3.80"},
         ),
     }
     ok, snap, reason, _ = verify_complete_1x2_odds(odds)
     assert ok
     assert reason is None
-    assert snap["selection_sources"][SEL_HOME] == "Bet365"
-    assert all(snap["selection_sources"][k] == "Bet365" for k in (SEL_HOME, SEL_DRAW, SEL_AWAY))
-    assert "Betfair" not in snap["bookmakers"]
-    assert "Bet365" in snap["bookmakers"]
+    assert snap["selection_sources"][SEL_HOME] == "Betfair"
+    assert all(snap["selection_sources"][k] == "Betfair" for k in (SEL_HOME, SEL_DRAW, SEL_AWAY))
+    assert "Bet365" not in snap["bookmakers"]
+    assert "Betfair" in snap["bookmakers"]
     assert snap["bookmakers"]["Canonical"]["HOME"] == 2.00
     assert snap["bookmakers"]["Canonical"]["DRAW"] == 3.10
     assert snap["bookmakers"]["Canonical"]["AWAY"] == 3.80
@@ -237,7 +237,7 @@ def test_case_g_betfair_never_replaced():
     assert odd == 1.80
     assert prov is not None
     assert prov["book_fallback_used"] is False
-    assert prov["bookmaker_name"] == "Betfair"
+    assert prov["bookmaker_name"] == "Bet365"
 
 
 # --- CASO H ---
@@ -254,7 +254,7 @@ def test_case_h_no_bet365_specific_when_betfair_covers(monkeypatch):
             "bookmakers": [
                 {
                     "id": 3,
-                    "name": "Betfair",
+                    "name": "Bet365",
                     "bets": [
                         {
                             "id": 1,
@@ -336,7 +336,7 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
             "bookmakers": [
                 {
                     "id": 3,
-                    "name": "Betfair",
+                    "name": "Bet365",
                     "bets": [
                         {
                             "id": 1,
@@ -355,12 +355,12 @@ def test_case_i_one_bet365_specific_call(monkeypatch):
     # Betfair-specific non aggiunge O/U → serve Bet365-specific
     betfair_specific = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
     )
     bet365_specific = _book_raw(
         bookmaker_id=_BET365_ID,
-        bookmaker_name="Bet365",
+        bookmaker_name="Betfair",
         over_under={"Over 2.5": "1.36", "Under 2.5": "3.00"},
     )
     client.get_fixture_odds_by_fixture.return_value = fixture_wide
@@ -397,12 +397,12 @@ def test_case_j_negative_cache_only_after_canonical_fail():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Away": "4.50"},
         ),
     }
@@ -414,7 +414,7 @@ def test_case_j_negative_cache_only_after_canonical_fail():
         {
             _BETFAIR_ID: _book_raw(
                 bookmaker_id=_BETFAIR_ID,
-                bookmaker_name="Betfair",
+                bookmaker_name="Bet365",
                 match_winner={"Home": "1.80"},
             ),
         },
@@ -428,13 +428,13 @@ def test_case_k_offline_rebuild_with_both_raw():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
             over_under={"Over 2.5": "1.80"},
         ),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             over_under={"Under 2.5": "3.00"},
         ),
     }
@@ -454,7 +454,7 @@ def test_case_l_offline_betfair_only_no_invent():
     odds = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         ),
     }
@@ -479,13 +479,13 @@ def test_case_m_bet_builder_signal_only_bet365_provenance():
         "rating_label": "Debole",
         "status": "available",
         "book_source": "bet365_raw_over_under",
-        "bookmaker_name": "Bet365",
+        "bookmaker_name": "Betfair",
         "provider_bookmaker_id": 8,
         "book_fallback_used": True,
     }
     price = build_price_value(kpi_row)
     assert price["quota_book"] == 1.36
-    assert price["bookmaker_name"] == "Bet365"
+    assert price["bookmaker_name"] == "Betfair"
     assert price["book_fallback_used"] is True
     # present dipende dal gate V3.1 (edge/vantaggio); qui edge negativo → non present
     assert price["present"] is False
@@ -510,8 +510,8 @@ def test_extract_both_books_from_fixture_wide():
     raw = [
         {
             "bookmakers": [
-                {"id": 3, "name": "Betfair", "bets": []},
-                {"id": 8, "name": "Bet365", "bets": []},
+                {"id": 3, "name": "Bet365", "bets": []},
+                {"id": 8, "name": "Betfair", "bets": []},
                 {"id": 4, "name": "Pinnacle", "bets": []},
             ],
         },
@@ -539,7 +539,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
             "bookmakers": [
                 {
                     "id": 3,
-                    "name": "Betfair",
+                    "name": "Bet365",
                     "bets": [
                         {
                             "id": 1,
@@ -554,7 +554,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
                 },
                 {
                     "id": 8,
-                    "name": "Bet365",
+                    "name": "Betfair",
                     "bets": [
                         {
                             "id": 5,
@@ -571,7 +571,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
     ]
     betfair_specific = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
         over_under={"Over 2.5": "1.80", "Under 2.5": "2.00"},
     )
@@ -584,7 +584,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
             return betfair_specific
         return _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             over_under={"Over 2.5": "1.90", "Under 2.5": "1.95"},
         )
 
@@ -597,7 +597,7 @@ def test_01_1_betfair_specific_before_fallback_for_ou(monkeypatch):
     panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
     row = _row_by_key(panel, SEL_OVER_2_5)
     assert row["quota_book"] == 1.80
-    assert row["bookmaker_name"] == "Betfair"
+    assert row["bookmaker_name"] == "Bet365"
     assert row["book_fallback_used"] is False
 
 
@@ -619,7 +619,7 @@ def test_01_1_true_fallback_after_betfair_specific_miss(monkeypatch):
             "bookmakers": [
                 {
                     "id": 3,
-                    "name": "Betfair",
+                    "name": "Bet365",
                     "bets": [
                         {
                             "id": 1,
@@ -641,12 +641,12 @@ def test_01_1_true_fallback_after_betfair_specific_miss(monkeypatch):
         if bookmaker_id == _BETFAIR_ID:
             return _book_raw(
                 bookmaker_id=_BETFAIR_ID,
-                bookmaker_name="Betfair",
+                bookmaker_name="Bet365",
                 match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
             )
         return _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             over_under={"Over 2.5": "1.90", "Under 2.5": "1.95"},
         )
 
@@ -660,7 +660,7 @@ def test_01_1_true_fallback_after_betfair_specific_miss(monkeypatch):
     panel = build_cecchino_kpi_panel_v2_betfair(final_odds=_final_odds_ok(), betfair_payload=payload)
     row = _row_by_key(panel, SEL_OVER_2_5)
     assert row["quota_book"] == 1.90
-    assert row["bookmaker_name"] == "Bet365"
+    assert row["bookmaker_name"] == "Betfair"
     assert row["book_fallback_used"] is True
 
 
@@ -723,7 +723,7 @@ def test_01_1_no_useless_specific_calls_when_betfair_covers(monkeypatch):
     ]
     client = MagicMock()
     client.get_fixture_odds_by_fixture.return_value = [
-        {"bookmakers": [{"id": 3, "name": "Betfair", "bets": bets_full}]},
+        {"bookmakers": [{"id": 3, "name": "Bet365", "bets": bets_full}]},
     ]
     metrics = ScanRunMetrics()
     fetch_fixture_odds_for_cecchino_bookmakers(
@@ -738,7 +738,7 @@ def test_01_1_legacy_snapshot_betfair_only_readable():
     from app.services.cecchino.cecchino_today_odds_meta import extract_1x2_from_snapshot
 
     legacy = {
-        "bookmakers": {"Betfair": {"HOME": 1.80, "DRAW": 3.20, "AWAY": 4.50}},
+        "bookmakers": {"Bet365": {"HOME": 1.80, "DRAW": 3.20, "AWAY": 4.50}},
     }
     extracted = extract_1x2_from_snapshot(legacy)
     assert extracted["HOME"] == 1.80
@@ -771,7 +771,7 @@ def test_01_1_api_calls_used_counts_three(monkeypatch):
             "bookmakers": [
                 {
                     "id": 3,
-                    "name": "Betfair",
+                    "name": "Bet365",
                     "bets": [
                         {
                             "id": 1,
@@ -792,12 +792,12 @@ def test_01_1_api_calls_used_counts_three(monkeypatch):
         if bookmaker_id == _BETFAIR_ID:
             return _book_raw(
                 bookmaker_id=_BETFAIR_ID,
-                bookmaker_name="Betfair",
+                bookmaker_name="Bet365",
                 match_winner={"Home": "1.8", "Draw": "3.2", "Away": "4.5"},
             )
         return _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             over_under={"Over 2.5": "1.90"},
         )
 

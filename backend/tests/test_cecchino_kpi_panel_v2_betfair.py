@@ -54,7 +54,7 @@ def _betfair_payload() -> dict:
         "status": "available",
         "bookmakers": [
             {
-                "bookmaker_name": "Betfair",
+                "bookmaker_name": "Bet365",
                 "provider_bookmaker_id": 3,
                 "status": "available",
                 "markets": {
@@ -143,7 +143,7 @@ def test_kpi_v2_columns_and_version():
     assert panel["bookmaker"]["name"] == "Book"
     assert panel["bookmaker"]["policy_label"] == "Betfair primario · Bet365 fallback"
     assert panel["bookmaker"]["provider_bookmaker_id"] == 3
-    assert panel["book_policy_version"] == "betfair_primary_bet365_fallback_v1"
+    assert panel["book_policy_version"] == "bet365_primary_betfair_fallback_v2"
     cols = panel["columns"]
     assert "quota_book" in cols
     assert "rating" in cols

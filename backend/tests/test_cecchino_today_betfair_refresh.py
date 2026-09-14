@@ -37,12 +37,12 @@ def _raw_payload(*bets: dict, extra_bets: list[dict] | None = None) -> list[dict
     all_bets = list(bets)
     if extra_bets:
         all_bets.extend(extra_bets)
-    return [{"bookmakers": [{"id": _BETFAIR_ID, "name": "Betfair", "bets": all_bets}]}]
+    return [{"bookmakers": [{"id": _BETFAIR_ID, "name": "Bet365", "bets": all_bets}]}]
 
 
 def _snapshot_from_raw(raw: list[dict], *, home: float, draw: float, away: float) -> dict:
     snap = {
-        "bookmakers": {"Betfair": {"HOME": home, "DRAW": draw, "AWAY": away}},
+        "bookmakers": {"Bet365": {"HOME": home, "DRAW": draw, "AWAY": away}},
         "raw_by_bookmaker_id": {str(_BETFAIR_ID): raw},
     }
     return attach_scan_odds_meta(snap, from_cache=True)
@@ -223,7 +223,7 @@ def test_betfair_markets_json_from_snapshot_only_betfair(db):
     assert out["api_calls_used"] == 0
     assert "Pinnacle" not in str(out.get("markets"))
     assert out["raw_payload"]["filtered_to_betfair_only"] is True
-    assert out.get("book_policy_version") == "betfair_primary_bet365_fallback_v1"
+    assert out.get("book_policy_version") == "bet365_primary_betfair_fallback_v2"
 
 
 def test_betfair_markets_json_force_fetches_api(db):

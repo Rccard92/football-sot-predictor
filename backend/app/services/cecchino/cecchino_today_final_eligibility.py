@@ -599,7 +599,10 @@ def validate_cecchino_today_final_eligibility(
             import_info=import_info,
         )
 
-    core_missing = check_primary_book_core_odds(kpi_panel)
+    # soglia solo sui pannelli V2 (i pannelli legacy sono snapshot storici, mai ricalcolati)
+    core_missing = (
+        check_primary_book_core_odds(kpi_panel) if _classify_kpi_panel_schema(kpi_panel or {}) == "v2" else []
+    )
     if core_missing:
         return FinalEligibilityResult(
             is_eligible=False,

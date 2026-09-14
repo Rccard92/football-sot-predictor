@@ -142,6 +142,8 @@ def _kpi_panel(**row_overrides) -> dict:
             row(SEL_HOME, "1", 2.1, 2.0),
             row(SEL_DRAW, "X", 3.2, 3.1),
             row(SEL_AWAY, "2", 4.5, 4.4),
+            row("OVER_2_5", "O2.5", 1.95, 1.9),
+            row("UNDER_2_5", "U2.5", 1.95, 1.9),
         ],
         "warnings": [],
     }
@@ -270,11 +272,12 @@ def test_kpi_v2_real_builder_integration_eligible():
         "status": "available",
         "bookmakers": [
             {
-                "bookmaker_name": "Betfair",
-                "provider_bookmaker_id": 3,
+                "bookmaker_name": "Bet365",
+                "provider_bookmaker_id": 8,
                 "status": "available",
                 "markets": {
                     "MATCH_WINNER_1X2": {"HOME": 2.0, "DRAW": 3.1, "AWAY": 4.4},
+                    "OVER_UNDER_GOALS": {"OVER_2_5": 1.9, "UNDER_2_5": 1.9},
                 },
             },
         ],

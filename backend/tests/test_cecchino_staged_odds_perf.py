@@ -98,7 +98,7 @@ def _full_canonical_bf(**extra_ou: str) -> list[dict[str, Any]]:
     }
     return _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         over_under=ou,
         double_chance={"Home/Draw": "1.20", "Draw/Away": "1.90", "Home/Away": "1.35"},
@@ -148,7 +148,7 @@ def test_01_bf_1x2_complete_no_stats_no_enrich_no_b365(monkeypatch):
     client, call_order = _tracking_client()
     bf = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         # O/U incomplete would previously trigger B365 before stats gate
         over_under={"Over 2.5": "1.72"},
@@ -180,12 +180,12 @@ def test_02_bf_1x2_incomplete_b365_fills_no_enrich(monkeypatch):
     client, call_order = _tracking_client()
     bf = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20"},  # AWAY missing
     )
     b365 = _book_raw(
         bookmaker_id=_BET365_ID,
-        bookmaker_name="Bet365",
+        bookmaker_name="Betfair",
         match_winner={"Home": "1.85", "Draw": "3.30", "Away": "4.60"},
     )
 
@@ -241,7 +241,7 @@ def test_04_bf_missing_over_needs_one_b365_keeps_bf_primary(monkeypatch):
     client, call_order = _tracking_client()
     bf = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
         over_under={
             "Over 1.5": "1.25",
@@ -262,7 +262,7 @@ def test_04_bf_missing_over_needs_one_b365_keeps_bf_primary(monkeypatch):
     )
     b365 = _book_raw(
         bookmaker_id=_BET365_ID,
-        bookmaker_name="Bet365",
+        bookmaker_name="Betfair",
         match_winner={"Home": "1.85", "Draw": "3.30", "Away": "4.70"},
         over_under={"Over 2.5": "1.80", "Under 2.5": "2.05"},
     )
@@ -302,9 +302,9 @@ def test_04_bf_missing_over_needs_one_b365_keeps_bf_primary(monkeypatch):
         fallback_provenance=fallback.get("provenance_by_selection"),
     )
     assert home_odd == 1.80
-    assert home_prov["bookmaker_name"] == "Betfair"
+    assert home_prov["bookmaker_name"] == "Bet365"
     assert over_odd == 1.80
-    assert over_prov["bookmaker_name"] == "Bet365"
+    assert over_prov["bookmaker_name"] == "Betfair"
     assert metrics.book_coverage_fixture_count == 1
 
 
@@ -314,12 +314,12 @@ def test_05_b365_from_gate_reused_in_phase_b(monkeypatch):
     client, call_order = _tracking_client()
     bf = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20"},  # AWAY missing → B365 gate
     )
     b365 = _book_raw(
         bookmaker_id=_BET365_ID,
-        bookmaker_name="Bet365",
+        bookmaker_name="Betfair",
         match_winner={"Away": "4.60"},
         over_under={"Over 2.5": "1.80", "Under 2.5": "2.10"},
     )
@@ -352,7 +352,7 @@ def test_06_cache_bf_b365_zero_api(monkeypatch):
         _BETFAIR_ID: _full_canonical_bf(),
         _BET365_ID: _book_raw(
             bookmaker_id=_BET365_ID,
-            bookmaker_name="Bet365",
+            bookmaker_name="Betfair",
             match_winner={"Home": "1.85", "Draw": "3.30", "Away": "4.70"},
         ),
     }
@@ -394,14 +394,14 @@ def test_07_cache_bf_1x2_complete_missing_full_max_one_b365(monkeypatch):
     cached = {
         _BETFAIR_ID: _book_raw(
             bookmaker_id=_BETFAIR_ID,
-            bookmaker_name="Betfair",
+            bookmaker_name="Bet365",
             match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
             # incomplete full canonical
         ),
     }
     b365 = _book_raw(
         bookmaker_id=_BET365_ID,
-        bookmaker_name="Bet365",
+        bookmaker_name="Betfair",
         over_under={"Over 2.5": "1.80", "Under 2.5": "2.10"},
     )
 
@@ -445,7 +445,7 @@ def test_08_call_order_and_count_phase_a_primary(monkeypatch):
     client, call_order = _tracking_client()
     bf = _book_raw(
         bookmaker_id=_BETFAIR_ID,
-        bookmaker_name="Betfair",
+        bookmaker_name="Bet365",
         match_winner={"Home": "1.80", "Draw": "3.20", "Away": "4.50"},
     )
 

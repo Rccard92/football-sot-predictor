@@ -211,7 +211,7 @@ def test_kpi_debug_json_betfair_only():
     db = MagicMock()
     out = build_kpi_debug_json(row, db)
     assert out["bookmaker"]["provider_bookmaker_id"] == 3
-    assert out["bookmaker"]["name"] in ("Betfair", "Book")
+    assert out["bookmaker"]["name"] in ("Bet365", "Book")
     assert out["bookmaker"]["odds_fetched_at"]
     assert out["bookmaker"]["is_cached"] is True
     assert "Pinnacle" not in str(out)

@@ -317,11 +317,11 @@ def test_kpi_panel_no_betfair_provenance():
         "prob_2": 0.3,
     }
     panel = build_historical_kpi_panel_bet365(final_odds=final, match=m, goal_markets={})
-    assert panel["bookmaker"]["name"] == "Bet365"
+    assert panel["bookmaker"]["name"] == "Betfair"
     assert panel["historical_only"] is True
     assert panel["source_builder_version"] == KPI_V2_VERSION
-    assert "Betfair" not in str(panel["bookmaker"])
-    assert CECCHINO_BOOKMAKER["name"] == "Betfair"  # operativo invariato
+    assert "Bet365" not in str(panel["bookmaker"])
+    assert CECCHINO_BOOKMAKER["name"] == "Bet365"  # operativo invariato
 
 
 def test_settlement_real_vs_synthetic_profit_separated():
@@ -372,7 +372,7 @@ def test_confirm_token_constant():
 
 
 def test_today_still_betfair_constant():
-    assert CECCHINO_BOOKMAKER["name"] == "Betfair"
+    assert CECCHINO_BOOKMAKER["name"] == "Bet365"
 
 
 def test_signal_extraction_none_one_many_and_multi_market():
