@@ -135,7 +135,7 @@ function Headline({ overview }: { overview: ObservationModelsOverview }) {
     return {
       road,
       best,
-      text: `${name}: rende di più la ${best.model} — ROI ${signed(best.t.roi_pct)} su ${best.t.closed} giocate chiuse (${best.t.sample}).`,
+      text: `${name}: va meglio la ${best.model} — ROI ${signed(best.t.roi_pct)} su ${best.t.closed} giocate chiuse (${best.t.sample}).`,
     }
   })
   return (
@@ -219,7 +219,9 @@ function ModelCard({ model, m }: { model: string; m: ObservationModelOverview | 
             </RoadBlock>
           ) : (
             <div className="border-t pt-3 text-[15px]" style={{ borderColor: 'var(--pi-border)', color: TEXT_MUTED }}>
-              Indice orchestratore non previsto per la {model} (modello congelato).
+              {model === 'V2'
+                ? 'Indice orchestratore non previsto per la V2 (modello congelato).'
+                : `Nessuna predizione dell'indice ${model} registrata nel periodo: le prime arrivano con le scansioni dal 16/09.`}
             </div>
           )}
           <RoadBlock title="Pattern con quota" t={m.patterns.plays} last7={m.patterns.last7} />

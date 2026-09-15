@@ -60,8 +60,8 @@ describe('LiveObservationPage', () => {
   it('in cima dice quale modello rende di più per indice e per pattern', async () => {
     const { LiveObservationPage } = await import('./LiveObservationPage')
     render(<LiveObservationPage />)
-    await waitFor(() => expect(screen.getByText(/Indice di acquistabilità: rende di più la V3/)).toBeTruthy())
-    expect(screen.getByText(/Pattern con quota: rende di più la V2.5/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/Indice di acquistabilità: va meglio la V3/)).toBeTruthy())
+    expect(screen.getByText(/Pattern con quota: va meglio la V2.5/)).toBeTruthy()
     expect(screen.getByText(/Indice orchestratore non previsto per la V2/)).toBeTruthy()
     // nessun bookmaker come riferimento nella pagina
     expect(screen.queryByText(/riferimento/)).toBeNull()
