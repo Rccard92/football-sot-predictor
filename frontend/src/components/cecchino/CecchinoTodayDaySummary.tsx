@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { CecchinoTodayListSummary, CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
 import { todayBadgeMuted, todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
@@ -6,9 +7,11 @@ type Props = {
   summary: CecchinoTodayListSummary | null
   isScanned: boolean
   activeJob?: CecchinoTodayScanJob | null
+  /** Filtri mostrati nello stesso blocco del riepilogo. */
+  children?: ReactNode
 }
 
-export function CecchinoTodayDaySummary({ selectedDay, summary, isScanned, activeJob }: Props) {
+export function CecchinoTodayDaySummary({ selectedDay, summary, isScanned, activeJob, children }: Props) {
   const isScanning = activeJob?.status === 'queued' || activeJob?.status === 'running'
 
   if (isScanning && activeJob) {
@@ -44,6 +47,7 @@ export function CecchinoTodayDaySummary({ selectedDay, summary, isScanned, activ
         <span className={todayBadgeMuted}>Concluse: {summary.finished_count}</span>
         <span className={todayBadgeMuted}>Escluse: {summary.excluded_count}</span>
       </div>
+      {children ? <div className="mt-4 border-t border-slate-100 pt-4">{children}</div> : null}
     </section>
   )
 }

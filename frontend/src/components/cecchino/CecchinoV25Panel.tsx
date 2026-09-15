@@ -257,7 +257,7 @@ function PurchasabilityCard({ markets, patternMarkets }: { markets: Record<strin
                       {relation === 'confirmed'
                         ? 'Lo stesso mercato è indicato dai Pattern Master V2.5 accesi.'
                         : relation === 'conflict'
-                          ? 'Attenzione: i Pattern Master V2.5 accesi indicano un esito opposto. Vale la predizione del pattern.'
+                          ? 'Attenzione: i Pattern Master V2.5 accesi indicano un esito opposto. Controlla nella predizione se i moduli confermano il pattern.'
                           : patternMarkets.length
                             ? 'I pattern accesi indicano altri mercati, compatibili con questo.'
                             : 'Nessun pattern con quota acceso su questa partita.'}

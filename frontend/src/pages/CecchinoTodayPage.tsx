@@ -19,27 +19,16 @@ import { CecchinoDayTimeline } from '../components/cecchino/CecchinoDayTimeline'
 import { invalidateHistoricalReliabilityCache } from '../lib/historicalReliabilityCache'
 import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../components/cecchino/cecchinoTodayStyles'
 import {
-  downloadDailyPurchasabilityAuditExport,
-  triggerDailyPurchasabilityAuditDownload,
-  downloadV36EvaluationBundle,
-  triggerV36EvaluationBundleDownload,
-  V36_EVALUATION_BUNDLE_DATE_FROM,
-  V36_EVALUATION_BUNDLE_DATE_TO,
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayLatestScanJob,
   getCecchinoTodayList,
   getCecchinoTodayScanJob,
   logCecchinoTodayDebug,
-  refreshBetfairOdds,
-  recomputeCecchino,
-  revalidateCecchinoTodayDay,
   SCAN_JOB_POLL_MS,
   startCecchinoTodayScanDay,
   todayIsoRome,
   updateCecchinoTodayResults,
-  type CecchinoKpiV2Panel,
-  type CecchinoOddsMeta,
   type CecchinoTodayDay,
   type CecchinoTodayDetailResponse,
   type CecchinoTodayListCountry,
@@ -104,75 +93,12 @@ export function CecchinoTodayPage() {
   const [daysLoading, setDaysLoading] = useState(false)
   const [scanDayLoading, setScanDayLoading] = useState(false)
   const [updateResultsLoading, setUpdateResultsLoading] = useState(false)
-  const [revalidateLoading, setRevalidateLoading] = useState(false)
-  const [recomputeLoading, setRecomputeLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
-  const [refreshBetfairLoading, setRefreshBetfairLoading] = useState(false)
-  const [dailyAuditExportLoading, setDailyAuditExportLoading] = useState(false)
-  const [dailyAuditExportError, setDailyAuditExportError] = useState<string | null>(null)
-  const [v36EvaluationBundleLoading, setV36EvaluationBundleLoading] = useState(false)
-  const [v36EvaluationBundleError, setV36EvaluationBundleError] = useState<string | null>(null)
-  const [refreshBetfairMsg, setRefreshBetfairMsg] = useState<{
-    text: string
-    tone: 'ok' | 'warn' | 'err'
-  } | null>(null)
   const pendingFixtureFromUrlRef = useRef<number | null>(null)
   const skipNextSelectedIdResetRef = useRef(false)
-
-  const handleKpiPanelUpdate = useCallback((panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => {
-    setDetail((prev) => {
-      if (!prev || prev.status !== 'ok') return prev
-      const merged: CecchinoKpiV2Panel = {
-        ...panel,
-        odds_meta: oddsMeta ?? panel.odds_meta,
-      }
-      return {
-        ...prev,
-        kpi_panel_v2: merged,
-        kpi_panel: merged,
-      }
-    })
-  }, [])
-
-  const handleRefreshBetfairOdds = useCallback(async () => {
-    if (selectedId == null) return
-    setRefreshBetfairLoading(true)
-    setRefreshBetfairMsg(null)
-    try {
-      const res = await refreshBetfairOdds(selectedId, { force: true, rebuild_kpi: true })
-      if (res.status === 'budget_blocked') {
-        setRefreshBetfairMsg({
-          text: res.message ?? 'Budget API bloccato',
-          tone: 'warn',
-        })
-        return
-      }
-      if (res.status !== 'ok') {
-        setRefreshBetfairMsg({
-          text: res.message ?? 'Refresh quote non riuscito',
-          tone: 'err',
-        })
-        return
-      }
-      if (res.kpi_panel) {
-        handleKpiPanelUpdate(res.kpi_panel, res.bookmaker ?? res.kpi_panel.odds_meta)
-      }
-      setRefreshBetfairMsg({
-        text: res.changed ? 'Quote Book aggiornate' : 'Nessuna variazione quote',
-        tone: res.changed ? 'ok' : 'warn',
-      })
-    } catch (e) {
-      setRefreshBetfairMsg({
-        text: e instanceof Error ? e.message : 'Errore refresh quote Book',
-        tone: 'err',
-      })
-    } finally {
-      setRefreshBetfairLoading(false)
-    }
-  }, [selectedId, handleKpiPanelUpdate])
 
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -476,7 +402,6 @@ export function CecchinoTodayPage() {
   }, [selectedId])
 
   const handleSelectFixture = useCallback((id: number) => {
-    setRefreshBetfairMsg(null)
     setSelectedId(id)
     setFixtureDrawerOpen(false)
   }, [])
@@ -595,88 +520,6 @@ export function CecchinoTodayPage() {
     }
   }
 
-  const handleRevalidateDay = async () => {
-    setActionError(null)
-    setRevalidateLoading(true)
-    try {
-      await revalidateCecchinoTodayDay({ date: selectedDay })
-      await loadDays()
-      await loadList(selectedDay)
-      if (excludedOpen) {
-        await loadExcludedRef.current?.()
-      }
-    } catch (e) {
-      setActionError(formatFetchError(e))
-    } finally {
-      setRevalidateLoading(false)
-    }
-  }
-
-  const handleDownloadDailyAudit = async () => {
-    setDailyAuditExportError(null)
-    setDailyAuditExportLoading(true)
-    try {
-      const blob = await downloadDailyPurchasabilityAuditExport(selectedDay)
-      triggerDailyPurchasabilityAuditDownload(blob, selectedDay)
-    } catch {
-      setDailyAuditExportError('Impossibile generare gli audit Acquistabilità della giornata.')
-    } finally {
-      setDailyAuditExportLoading(false)
-    }
-  }
-
-  const handleDownloadV36EvaluationBundle = async () => {
-    setV36EvaluationBundleError(null)
-    setV36EvaluationBundleLoading(true)
-    try {
-      const blob = await downloadV36EvaluationBundle(
-        V36_EVALUATION_BUNDLE_DATE_FROM,
-        V36_EVALUATION_BUNDLE_DATE_TO,
-      )
-      triggerV36EvaluationBundleDownload(
-        blob,
-        V36_EVALUATION_BUNDLE_DATE_FROM,
-        V36_EVALUATION_BUNDLE_DATE_TO,
-      )
-    } catch {
-      setV36EvaluationBundleError('Impossibile generare il bundle analisi V3.6.')
-    } finally {
-      setV36EvaluationBundleLoading(false)
-    }
-  }
-
-  const RECOMPUTE_WARNING =
-    'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
-
-  const handleRecomputeCecchino = async () => {
-    if (!window.confirm(RECOMPUTE_WARNING)) return
-    setActionError(null)
-    setRecomputeLoading(true)
-    try {
-      const res = await recomputeCecchino({
-        date_from: selectedDay,
-        date_to: selectedDay,
-      })
-      setRefreshBetfairMsg({
-        tone: 'ok',
-        text: `Ricalcolo completato: ${res.fixtures_recomputed}/${res.fixtures_found} partite, ${res.signals_synced} segnali sincronizzati, ${res.signals_evaluated} rivalutati.`,
-      })
-      await loadDays()
-      await loadList(selectedDay)
-      if (selectedId != null) {
-        const data = await getCecchinoTodayDetail(selectedId)
-        setDetail(data)
-      }
-      if (excludedOpen) {
-        await loadExcludedRef.current?.()
-      }
-    } catch (e) {
-      setActionError(formatFetchError(e))
-    } finally {
-      setRecomputeLoading(false)
-    }
-  }
-
   const filteredCountries = useMemo((): CecchinoTodayListCountry[] => {
     if (!list) return []
     const q = searchQuery.trim().toLowerCase()
@@ -779,36 +622,9 @@ export function CecchinoTodayPage() {
         scanDayLoading={scanDayLoading}
         scanInProgress={scanInProgress}
         updateResultsLoading={updateResultsLoading}
-        revalidateLoading={revalidateLoading}
-        recomputeLoading={recomputeLoading}
-        selectedFixtureId={selectedId}
-        refreshBetfairLoading={refreshBetfairLoading}
-        dailyAuditExportLoading={dailyAuditExportLoading}
-        dailyAuditExportError={dailyAuditExportError}
-        v36EvaluationBundleLoading={v36EvaluationBundleLoading}
-        v36EvaluationBundleError={v36EvaluationBundleError}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
-        onRevalidateDay={() => void handleRevalidateDay()}
-        onRecomputeCecchino={isScanned ? () => void handleRecomputeCecchino() : undefined}
-        onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
-        onDownloadDailyAudit={isScanned ? () => void handleDownloadDailyAudit() : undefined}
-        onDownloadV36EvaluationBundle={() => void handleDownloadV36EvaluationBundle()}
       />
-
-      {refreshBetfairMsg && (
-        <p
-          className={`rounded-lg border px-4 py-2 text-sm ${
-            refreshBetfairMsg.tone === 'err'
-              ? 'border-red-200 bg-red-50 text-red-800'
-              : refreshBetfairMsg.tone === 'warn'
-                ? 'border-amber-200 bg-amber-50 text-amber-900'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-900'
-          }`}
-        >
-          {refreshBetfairMsg.text}
-        </p>
-      )}
 
       {actionError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
@@ -831,22 +647,23 @@ export function CecchinoTodayPage() {
         summary={list?.summary ?? null}
         isScanned={isScanned}
         activeJob={activeJob?.scan_date === selectedDay ? activeJob : null}
-      />
-
-      {isScanned && list && (
-        <CecchinoTodayFilters
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          countryFilter={countryFilter}
-          onCountryFilterChange={setCountryFilter}
-          leagueFilter={leagueFilter}
-          onLeagueFilterChange={setLeagueFilter}
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          countries={list.filters.countries}
-          leagues={availableLeagues}
-        />
-      )}
+      >
+        {isScanned && list && (
+          <CecchinoTodayFilters
+            embedded
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            countryFilter={countryFilter}
+            onCountryFilterChange={setCountryFilter}
+            leagueFilter={leagueFilter}
+            onLeagueFilterChange={setLeagueFilter}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            countries={list.filters.countries}
+            leagues={availableLeagues}
+          />
+        )}
+      </CecchinoTodayDaySummary>
 
       <div className={listHidden ? 'grid grid-cols-1' : todayPageGrid}>
         {/* Lista inline solo da 2xl e se non nascosta */}

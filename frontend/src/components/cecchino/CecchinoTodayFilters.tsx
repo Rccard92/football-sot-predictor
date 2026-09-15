@@ -14,6 +14,8 @@ type Props = {
   onSearchQueryChange: (v: string) => void
   countries: string[]
   leagues: string[]
+  /** Dentro il blocco del riepilogo giornata: senza card propria. */
+  embedded?: boolean
 }
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
@@ -34,9 +36,10 @@ export function CecchinoTodayFilters({
   onSearchQueryChange,
   countries,
   leagues,
+  embedded = false,
 }: Props) {
   return (
-    <section className={`${todayCard} ${todayCardPadding} space-y-3`}>
+    <section className={embedded ? 'space-y-3' : `${todayCard} ${todayCardPadding} space-y-3`}>
       <p className="text-sm font-medium text-slate-800">Filtri</p>
       <div className="flex flex-wrap gap-2">
         {STATUS_OPTIONS.map((opt) => (

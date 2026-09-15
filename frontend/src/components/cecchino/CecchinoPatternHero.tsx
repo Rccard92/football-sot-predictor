@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { LiveModelPrediction } from '../../lib/cecchinoLiveApi'
 import { MARKET_LABELS } from '../../lib/masterPatternApi'
+import { moduleVerdict, type ModuleVerdict, type ModuleVerdictKey } from './cecchinoModuleCheck'
 import { v36BadgeClass } from './cecchinoPurchasabilityV36UiUtils'
 import { breakEvenQuota, groupPatternSignals, referencePattern, type PatternRelation } from './cecchinoPatternUtils'
 
@@ -15,6 +16,44 @@ export function PatternRelationBadge({ relation }: { relation: PatternRelation }
     return <span className="inline-flex rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-900 ring-1 ring-red-200">In contrasto col pattern</span>
   }
   return null
+}
+
+const VERDICT_TONE: Record<ModuleVerdictKey, string> = {
+  confirmed: 'bg-emerald-600 text-white',
+  denied: 'bg-orange-600 text-white',
+  mixed: 'bg-amber-300 text-slate-900',
+  neutral: 'bg-slate-600 text-slate-100',
+}
+
+const CHECK_MARK: Record<number, { sign: string; tone: string }> = {
+  1: { sign: '✓', tone: 'text-emerald-300' },
+  0: { sign: '–', tone: 'text-slate-400' },
+  [-1]: { sign: '✗', tone: 'text-orange-300' },
+}
+
+/** Lettura indipendente dei moduli sul mercato del pattern. */
+function ModuleVerdictBlock({ verdict }: { verdict: ModuleVerdict }) {
+  return (
+    <div className="mt-3 rounded-md border border-slate-500/40 bg-[#0f2847]/60 px-2.5 py-2">
+      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${VERDICT_TONE[verdict.key]}`}>
+        {verdict.label}
+      </span>
+      {verdict.checks.length === 0 ? (
+        <p className="mt-1.5 text-xs text-slate-400">Nessun modulo legge questo mercato.</p>
+      ) : (
+        <ul className="mt-1.5 space-y-1">
+          {verdict.checks.map((c) => (
+            <li key={c.name} className="flex gap-1.5 text-xs text-slate-300">
+              <span className={`w-3 shrink-0 font-bold ${CHECK_MARK[c.outcome].tone}`}>{CHECK_MARK[c.outcome].sign}</span>
+              <span>
+                <span className="font-medium text-white">{c.name}</span> · {c.text}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 export type MarketIndex = { score: number | null | undefined; label: string | null | undefined; title: string }
@@ -61,7 +100,7 @@ export function CecchinoPatternHero({
       <div className="bg-[#1e3a5f] px-4 py-3">
         <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PREDIZIONE {model} · PATTERN ACCESI</h3>
         <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
-          Mercati con quota Bet365 indicati dai Pattern Master {model} che valgono in questa partita · riuscita e ROI dello storico
+          Mercati con quota Bet365 indicati dai Pattern Master {model} accesi · per ognuno la lettura indipendente dei moduli: confermato, smentito o discordante
         </p>
       </div>
 
@@ -123,6 +162,8 @@ export function CecchinoPatternHero({
                       </span>
                     )}
                   </div>
+
+                  <ModuleVerdictBlock verdict={moduleVerdict(p, key)} />
 
                   <button
                     type="button"
