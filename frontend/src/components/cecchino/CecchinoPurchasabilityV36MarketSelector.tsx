@@ -1,5 +1,7 @@
 import type { V36Item } from '../../lib/cecchinoTodayApi'
 import { bbOppTabIdle, bbOppTabScroll, bbOppTabSelected } from '../bet-builder/betBuilderStyles'
+import { PatternRelationBadge } from './CecchinoPatternHero'
+import { patternRelation } from './cecchinoPatternUtils'
 import {
   formatV36FinalScore,
   getV36MarketLabel,
@@ -12,6 +14,8 @@ type Props = {
   selectedMarketKey: string
   onSelect: (marketKey: string) => void
   panelId: string
+  /** Mercati indicati dai pattern con quota accesi: segnala conferme e contrasti. */
+  patternMarkets?: string[]
 }
 
 export function CecchinoPurchasabilityV36MarketSelector({
@@ -19,6 +23,7 @@ export function CecchinoPurchasabilityV36MarketSelector({
   selectedMarketKey,
   onSelect,
   panelId,
+  patternMarkets = [],
 }: Props) {
   return (
     <div className="space-y-1.5" data-testid="v36-market-selector">
@@ -60,6 +65,7 @@ export function CecchinoPurchasabilityV36MarketSelector({
                 <span className="text-[10px] tabular-nums text-slate-500">
                   quota {quote != null ? Number(quote).toFixed(2) : 'N/D'}
                 </span>
+                <PatternRelationBadge relation={patternRelation(item.market_key, patternMarkets)} />
               </span>
             </button>
           )

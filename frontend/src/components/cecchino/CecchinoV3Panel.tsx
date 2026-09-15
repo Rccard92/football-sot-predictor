@@ -1,4 +1,5 @@
 import type { LiveModelPrediction, V3IndexBlock } from '../../lib/cecchinoLiveApi'
+import { CecchinoPatternHero } from './CecchinoPatternHero'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 import { Badge, KpiPanel, PatternPanel, SourceBadge, Stat, useLiveFixture } from './CecchinoV25Panel'
 
@@ -298,11 +299,12 @@ export function CecchinoV3Panel({ todayFixtureId }: { todayFixtureId: number }) 
           </p>
         )}
       </section>
+      <CecchinoPatternHero p={p} model="V3" />
       <PurchasabilityInactive />
       <KpiPanel p={p} title="PANNELLO KPI V3" showPurchasability={false} />
       <SpecialistsPanel p={p} />
       <IndicesPanel p={p} />
-      <PatternPanel p={p} title="Pattern Master V3 accesi" model="V3" />
+      <PatternPanel p={p} title="Pattern Master V3 senza quota" model="V3" />
       <p className="text-[11px] text-slate-500">
         Pattern V3 con la condizione &quot;livello&quot; (campionati top o minori del Lab) non sono verificabili sui campionati API-Football e restano spenti.
       </p>

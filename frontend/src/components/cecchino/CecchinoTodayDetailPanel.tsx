@@ -16,7 +16,7 @@ import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGo
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
-import { CecchinoV2Patterns } from './CecchinoV2Patterns'
+import { CecchinoV2PatternHero, CecchinoV2Patterns, useV2PatternMarkets } from './CecchinoV2Patterns'
 
 type Props = {
   detail: CecchinoTodayDetailResponse
@@ -49,6 +49,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   const competitionId = detail.competition_id
   const todayFixtureId = detail.today_fixture_id ?? detail.id
   const [engine, setEngine] = useState<EngineTab>('V2')
+  const v2PatternMarkets = useV2PatternMarkets(todayFixtureId)
   const hasKpi = Boolean(detail.kpi_panel_v2 ?? detail.kpi_panel)
   const canFetch = hasKpi && Boolean(scanDate) && detail.status === 'ok'
 
@@ -105,7 +106,12 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       {engine === 'V2' && (
       <>
+      {todayFixtureId != null && (
+        <CecchinoV2PatternHero todayFixtureId={todayFixtureId} v36ByMarket={purchasabilityV36ByMarketKey} />
+      )}
+
       <CecchinoPurchasabilityV36Panel
+        patternMarkets={v2PatternMarkets}
         key={`v36-${todayFixtureId}`}
         snapshot={detail.purchasability_preview_v35_v2}
         snapshotStatus={detail.purchasability_v35_v2_snapshot_status ?? 'absent'}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import {
   getLiveFixture,
   type LiveBalancePillar,
@@ -6,7 +6,6 @@ import {
   type LiveGoalPillar,
   type LiveMarket,
   type LiveModelPrediction,
-  type LivePatternSignal,
 } from '../../lib/cecchinoLiveApi'
 import { MARKET_LABELS } from '../../lib/masterPatternApi'
 import { formatFetchError } from '../../utils/formatFetchError'
@@ -16,6 +15,11 @@ import {
   purchasabilityV31BadgeClass,
   vantaggioClassName,
 } from './cecchinoKpiUiUtils'
+import { bbOppTabIdle, bbOppTabScroll, bbOppTabSelected } from '../bet-builder/betBuilderStyles'
+import { CecchinoPatternHero, PatternRelationBadge } from './CecchinoPatternHero'
+import { groupPatternSignals, patternMarketKeys, patternRelation } from './cecchinoPatternUtils'
+import { v36BadgeClass } from './cecchinoPurchasabilityV36UiUtils'
+import { PurchasabilityScoreRing } from './PurchasabilityScoreRing'
 import {
   todayBadgeActive,
   todayBadgeMuted,
@@ -80,15 +84,29 @@ function cls(v: string | null | undefined): string {
   return v ? (CLASS_LABELS[v] ?? v) : '—'
 }
 
-export function useLiveFixture(todayFixtureId: number) {
+// una sola lettura per partita anche se più blocchi della scheda la usano
+const LIVE_CACHE_MS = 120_000
+const liveCache = new Map<number, { at: number; promise: Promise<LiveFixtureResponse> }>()
+
+function fetchLiveFixture(id: number): Promise<LiveFixtureResponse> {
+  const hit = liveCache.get(id)
+  if (hit && Date.now() - hit.at < LIVE_CACHE_MS) return hit.promise
+  const promise = getLiveFixture(id)
+  liveCache.set(id, { at: Date.now(), promise })
+  promise.catch(() => liveCache.delete(id))
+  return promise
+}
+
+export function useLiveFixture(todayFixtureId: number | undefined) {
   const [data, setData] = useState<LiveFixtureResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   useEffect(() => {
+    if (todayFixtureId == null) return
     let alive = true
     setLoading(true)
     setError(null)
-    getLiveFixture(todayFixtureId)
+    fetchLiveFixture(todayFixtureId)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(formatFetchError(e)))
       .finally(() => alive && setLoading(false))
@@ -126,73 +144,157 @@ export function Badge({ children, tone = 'slate' }: { children: React.ReactNode;
 // Acquistabilità
 // ---------------------------------------------------------------------------
 
-function PurchasabilityCard({ markets }: { markets: Record<string, LiveMarket> }) {
-  const scored = useMemo(
-    () =>
-      MARKET_ORDER.filter((k) => markets[k]?.buyability_score != null).sort(
-        (a, b) => (markets[b].buyability_score ?? 0) - (markets[a].buyability_score ?? 0),
-      ),
-    [markets],
-  )
+// stessi estremi del backend (cecchino_v25/constants.py): punteggio 0 = valore atteso -12%, 100 = +8%
+const EV_FLOOR = -0.12
+const EV_SPAN = 0.2
+/** Da 60/100 in su il valore atteso corretto con lo storico è positivo: solo questi sono consigliati. */
+const RECOMMENDED_MIN_SCORE = 60
+
+function correctedEv(score: number): number {
+  return EV_FLOOR + (score / 100) * EV_SPAN
+}
+
+function PurchasabilityCard({ markets, patternMarkets }: { markets: Record<string, LiveMarket>; patternMarkets: string[] }) {
+  const panelId = useId()
+  const { recommended, others } = useMemo(() => {
+    const scored = MARKET_ORDER.filter((k) => markets[k]?.buyability_score != null).sort(
+      (a, b) => (markets[b].buyability_score ?? 0) - (markets[a].buyability_score ?? 0),
+    )
+    const recommended = scored.filter((k) => (markets[k].buyability_score ?? 0) >= RECOMMENDED_MIN_SCORE)
+    return { recommended, others: MARKET_ORDER.filter((k) => markets[k] && !recommended.includes(k)) }
+  }, [markets])
   const [selected, setSelected] = useState<string | null>(null)
-  const current = selected && scored.includes(selected) ? selected : scored[0]
+  const current = selected && recommended.includes(selected) ? selected : recommended[0]
   const m = current ? markets[current] : undefined
+  const score = m?.buyability_score ?? null
+  const ev = score != null ? correctedEv(score) : null
+  const pStar = ev != null && m?.quota_book ? (ev + 1) / m.quota_book : null
+  const relation = current ? patternRelation(current, patternMarkets) : null
 
   return (
-    <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
+    <section className={`${todayCard} ${todayCardPadding} space-y-4`} data-testid="purchasability-v25-panel">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità V2.5</h3>
-          <Badge tone="dark">V2.5</Badge>
-          <Badge tone="amber">In osservazione</Badge>
+          <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">V2.5</span>
+          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-amber-200">
+            In osservazione
+          </span>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Scala 0–100 sul valore atteso contro Bet365, corretto con lo storico delle stagioni precedenti. Non è una probabilità di vittoria.
+          Scala 0–100 sul valore atteso alla quota Bet365, corretto con lo storico. Consigliati solo i mercati da {RECOMMENDED_MIN_SCORE}/100 in su
+          (valore atteso positivo). Non è una probabilità di vittoria.
         </p>
       </div>
-      {scored.length === 0 ? (
-        <p className="text-sm text-slate-600">Nessun mercato valutabile: servono quote reali Bet365.</p>
+
+      {recommended.length === 0 ? (
+        <p className="text-sm text-slate-600">
+          Nessun mercato con valore atteso positivo alla quota Bet365: l&apos;indice non consiglia giocate su questa partita.
+        </p>
       ) : (
         <>
-          <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Mercati valutati</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              {scored.map((k) => {
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Mercati consigliati</p>
+            <div className={`${bbOppTabScroll} gap-1.5`} role="tablist" aria-label="Mercati V2.5">
+              {recommended.map((k) => {
                 const it = markets[k]
                 const active = k === current
                 return (
                   <button
                     key={k}
                     type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls={`${panelId}-v25-detail`}
+                    className={active ? bbOppTabSelected : bbOppTabIdle}
                     onClick={() => setSelected(k)}
-                    aria-pressed={active}
-                    className={`rounded-lg border px-2.5 py-2 text-left transition ${
-                      active ? 'border-slate-400 bg-slate-50 ring-2 ring-slate-300' : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
                   >
-                    <p className="text-xs font-semibold text-slate-800">{SEGNO[k] ?? k}</p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold tabular-nums text-slate-900">
-                      {it.buyability_score} / 100
-                      <span className={`rounded px-1.5 py-px text-[9px] font-semibold ${purchasabilityV31BadgeClass(it.buyability_class)}`}>
-                        {it.buyability_class ?? '—'}
+                    <span className="flex flex-col items-start gap-0.5 text-left">
+                      <span className="text-[11px] font-medium">{SEGNO[k] ?? k}</span>
+                      <span className="flex flex-wrap items-center gap-1">
+                        <span className="text-sm font-bold tabular-nums">{Math.round(it.buyability_score ?? 0)} / 100</span>
+                        {it.buyability_class ? <span className={v36BadgeClass(it.buyability_class)}>{it.buyability_class}</span> : null}
                       </span>
-                    </p>
-                    <p className="text-[10px] tabular-nums text-slate-500">quota {num(it.quota_book)}</p>
+                      <span className="text-[10px] tabular-nums text-slate-500">quota {num(it.quota_book)}</span>
+                      <PatternRelationBadge relation={patternRelation(k, patternMarkets)} />
+                    </span>
                   </button>
                 )
               })}
             </div>
           </div>
+
           {m && current && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 sm:grid-cols-5">
-              <Stat label="Mercato" value={MARKET_LABELS[current] ?? SEGNO[current] ?? current} />
-              <Stat label="Prob. Cecchino" value={pct(m.probability)} />
-              <Stat label="Prob. Bet365 senza margine" value={pct(m.prob_book_fair)} />
-              <Stat label="Vantaggio" value={m.vantaggio_prob == null ? '—' : signed(m.vantaggio_prob * 100, 1, ' pt')} />
-              <Stat label="Valore atteso" value={signed(m.edge_pct)} />
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4" id={`${panelId}-v25-detail`} role="tabpanel">
+              <div className="flex flex-wrap items-center gap-4">
+                <PurchasabilityScoreRing score={score} classLabel={m.buyability_class ?? null} size="lg" title="Indice V2.5" testId="v25-score-ring" />
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Mercato</p>
+                  <h4 className="text-base font-bold text-slate-900">{MARKET_LABELS[current] ?? SEGNO[current] ?? current}</h4>
+                </div>
+              </div>
+
+              <details open className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800">Perché questo punteggio</summary>
+                <dl className="mt-3 space-y-2 text-sm text-slate-700">
+                  <div>
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Probabilità</dt>
+                    <dd>
+                      Il Cecchino stima {pct(m.probability)}, Bet365 senza margine {pct(m.prob_book_fair)}. Corretta con quanto il Cecchino ha
+                      davvero aggiunto al book nello storico: {pct(pStar)}.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Valore</dt>
+                    <dd>
+                      Alla quota {num(m.quota_book)} il valore atteso è {signed(ev != null ? ev * 100 : null)} per giocata; quota minima per
+                      essere in profitto {num(pStar ? 1 / pStar : null)}.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Pattern</dt>
+                    <dd>
+                      {relation === 'confirmed'
+                        ? 'Lo stesso mercato è indicato dai Pattern Master V2.5 accesi.'
+                        : relation === 'conflict'
+                          ? 'Attenzione: i Pattern Master V2.5 accesi indicano un esito opposto. Vale la predizione del pattern.'
+                          : patternMarkets.length
+                            ? 'I pattern accesi indicano altri mercati, compatibili con questo.'
+                            : 'Nessun pattern con quota acceso su questa partita.'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Conclusione</dt>
+                    <dd className="font-medium">
+                      Punteggio {Math.round(score ?? 0)}/100 ({m.buyability_class}): valore atteso alla quota Bet365, non una previsione
+                      sull&apos;esito della partita.
+                    </dd>
+                  </div>
+                </dl>
+              </details>
             </div>
           )}
         </>
+      )}
+
+      {others.length > 0 && (
+        <details className="rounded-lg border border-slate-200 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Mercati non consigliati</summary>
+          <ul className="mt-2 space-y-1 text-xs text-slate-600">
+            {others.map((k) => {
+              const it = markets[k]
+              const s = it.buyability_score
+              return (
+                <li key={k}>
+                  {SEGNO[k] ?? k}:{' '}
+                  {s == null
+                    ? 'quota Bet365 non disponibile'
+                    : `${Math.round(s)}/100 — valore atteso ${s <= 0 ? '−12% o peggio' : signed(correctedEv(s) * 100)} alla quota ${num(it.quota_book)}`}
+                </li>
+              )
+            })}
+          </ul>
+        </details>
       )}
     </section>
   )
@@ -510,22 +612,6 @@ function GoalIntensityPanel({ p }: { p: LiveModelPrediction }) {
 // Pattern Master
 // ---------------------------------------------------------------------------
 
-type PatternGroupView = { key: string; first: LivePatternSignal; patterns: LivePatternSignal[] }
-
-/** Stesso mercato, linea e direzione = un solo segnale (come nell'osservazione live). */
-function groupPatternSignals(patterns: LivePatternSignal[]): PatternGroupView[] {
-  const map = new Map<string, PatternGroupView>()
-  for (const p of patterns) {
-    const key = `${p.target_type}|${p.target_key}|${p.threshold ?? ''}|${p.direction ?? 1}`
-    const g = map.get(key)
-    if (g) g.patterns.push(p)
-    else map.set(key, { key, first: p, patterns: [p] })
-  }
-  return [...map.values()].sort(
-    (a, b) => Number(a.first.target_type !== 'market') - Number(b.first.target_type !== 'market') || b.patterns.length - a.patterns.length,
-  )
-}
-
 function meanOf(values: (number | null)[]): number | null {
   const v = values.filter((x): x is number => x != null)
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
@@ -534,9 +620,10 @@ function meanOf(values: (number | null)[]): number | null {
 const PATTERN_GROUPS_VISIBLE = 12
 const PATTERNS_PER_GROUP_VISIBLE = 5
 
+/** Pattern senza quota (tiri, corner, cartellini): in fondo alla scheda, solo osservazione. */
 export function PatternPanel({
   p,
-  title = 'Pattern Master V2.5 accesi',
+  title = 'Pattern Master V2.5 senza quota',
   model = 'V2.5',
 }: {
   p: LiveModelPrediction
@@ -547,7 +634,10 @@ export function PatternPanel({
   const extra = patterns?.extra_stats
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
-  const groups = useMemo(() => groupPatternSignals(patterns?.active ?? []), [patterns])
+  const groups = useMemo(
+    () => groupPatternSignals((patterns?.active ?? []).filter((x) => x.target_type !== 'market')),
+    [patterns],
+  )
   const results = p.result?.markets ?? {}
   const visible = showAll ? groups : groups.slice(0, PATTERN_GROUPS_VISIBLE)
 
@@ -556,7 +646,7 @@ export function PatternPanel({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className={todaySectionTitle}>{title}</h3>
-          <p className={todaySectionSubtitle}>Situazioni che nelle 4 stagioni 2022/23–2025/26 hanno sempre funzionato, ritrovate in questa partita.</p>
+          <p className={todaySectionSubtitle}>Tiri, corner e cartellini: Bet365 non ha quote nello storico, quindi restano solo in osservazione.</p>
         </div>
         <Badge tone="amber">In osservazione</Badge>
       </div>
@@ -565,10 +655,9 @@ export function PatternPanel({
         <summary className="cursor-pointer font-semibold text-slate-700">Come si leggono</summary>
         <ul className="mt-2 list-disc space-y-1 pl-4">
           <li>Un pattern è una combinazione di condizioni dei moduli (per esempio Equilibrio, Intensità Goal, differenze di tiri o corner delle squadre) che è stata vincente in tutte e 4 le stagioni.</li>
-          <li>Qui compaiono solo i pattern le cui condizioni sono tutte vere in questa partita. Se manca un dato (per esempio le statistiche squadra), il pattern non si accende e viene contato tra i non verificabili.</li>
-          <li>Più pattern sullo stesso mercato e linea contano come un solo segnale: il numero indica quanti pattern diversi arrivano alla stessa conclusione.</li>
-          <li>Con quota: ROI storico del pattern migliore alla quota Bet365. Senza quota (tiri, corner, cartellini): percentuale di riuscita storica e scarto rispetto alla media del campionato.</li>
-          <li>Sono in osservazione: l&apos;andamento reale si segue nella pagina Osservazione live prima di usarli per giocare.</li>
+          <li>Qui compaiono solo i pattern senza quota le cui condizioni sono tutte vere in questa partita. I pattern con quota sono la predizione in cima alla scheda.</li>
+          <li>Più pattern sulla stessa statistica e linea contano come un solo segnale: il numero indica quanti pattern diversi arrivano alla stessa conclusione.</li>
+          <li>Percentuale di riuscita storica e scarto rispetto alla media del campionato. Senza quota non si può misurare il profitto: andamento reale in Osservazione live.</li>
         </ul>
       </details>
 
@@ -577,7 +666,7 @@ export function PatternPanel({
       ) : (
         <>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <Stat label="Segnali" value={String(groups.length)} />
+            <Stat label="Segnali senza quota" value={String(groups.length)} />
             <Stat label="Pattern accesi" value={`${patterns.active_count ?? 0} su ${patterns.patterns_total ?? 0}`} />
             <Stat label="Non verificabili" value={String(patterns.unverifiable_count ?? 0)} />
           </div>
@@ -587,7 +676,7 @@ export function PatternPanel({
             </p>
           ) : null}
           {groups.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Nessun pattern Master acceso su questa partita.</p>
+            <p className="mt-3 text-sm text-slate-500">Nessun pattern senza quota acceso su questa partita.</p>
           ) : (
             <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
               {visible.map((g) => {
@@ -681,7 +770,15 @@ export function CecchinoV25Panel({ todayFixtureId }: { todayFixtureId: number })
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Storico delle squadre sotto i minimi della RUN: numeri indicativi.</p>
         )}
       </section>
-      <PurchasabilityCard markets={p.markets} />
+      <CecchinoPatternHero
+        p={p}
+        model="V2.5"
+        indexFor={(k) => {
+          const m = p.markets?.[k]
+          return m?.buyability_score != null ? { score: m.buyability_score, label: m.buyability_class, title: 'Indice V2.5' } : null
+        }}
+      />
+      <PurchasabilityCard markets={p.markets} patternMarkets={patternMarketKeys(p.modules?.patterns?.active)} />
       <KpiPanel p={p} />
       <BalancePanel p={p} />
       <GoalIntensityPanel p={p} />

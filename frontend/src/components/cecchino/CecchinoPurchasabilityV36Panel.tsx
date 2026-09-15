@@ -23,6 +23,8 @@ export type CecchinoPurchasabilityV36PanelProps = {
   itemsByMarket: Record<string, V36Item>
   todayFixtureId?: number
   providerFixtureId?: number | null
+  /** Mercati indicati dai pattern con quota accesi. */
+  patternMarkets?: string[]
 }
 
 function downloadV36AuditBlob(data: unknown, providerFixtureId: number) {
@@ -76,6 +78,7 @@ export function CecchinoPurchasabilityV36Panel({
   itemsByMarket,
   todayFixtureId,
   providerFixtureId,
+  patternMarkets,
 }: CecchinoPurchasabilityV36PanelProps) {
   const panelId = useId()
   const [selectedMarketKey, setSelectedMarketKey] = useState<string | null>(null)
@@ -212,6 +215,7 @@ export function CecchinoPurchasabilityV36Panel({
         selectedMarketKey={effectiveMarketKey ?? scoredItems[0]?.market_key ?? 'HOME'}
         onSelect={setSelectedMarketKey}
         panelId={panelId}
+        patternMarkets={patternMarkets}
       />
 
       {selectedItem && selectedItem.status === 'score' ? (
