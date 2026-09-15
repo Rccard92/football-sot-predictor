@@ -256,6 +256,25 @@ export type ObservationPatternStats = {
   roi_pct: number | null
 }
 
+export type IndexObservationBlock = {
+  predictions: number
+  won: number
+  lost: number
+  pending: number
+  playable: number
+  playable_closed: number
+  profit: number
+  win_rate_pct: number | null
+  roi_pct: number | null
+}
+
+export type IndexObservationModel = {
+  fixtures: number
+  all: IndexObservationBlock
+  by_pattern: Record<'confermate' | 'in_contrasto' | 'altri_pattern' | 'senza_pattern', IndexObservationBlock>
+  by_score: Record<string, IndexObservationBlock>
+}
+
 export type ObservationDashboard = {
   date_from: string | null
   date_to: string | null
@@ -279,6 +298,7 @@ export type ObservationDashboard = {
     cumulative_fixtures: number
     cumulative: EngineMetrics
   }[]
+  purchasability_index?: Record<string, IndexObservationModel>
   pattern_groups: ObservationGroupStats[]
   patterns: ObservationPatternStats[]
   patterns_total: number

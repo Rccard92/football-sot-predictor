@@ -376,9 +376,131 @@ def observation_dashboard(db: Session, *, date_from: date | None = None, date_to
         "engines": _engine_block(common, models),
         "engines_base": _base_comparison(by_fixture, models),
         "engines_daily": daily_engines,
+        "purchasability_index": index_observation(db, rows),
         "pattern_groups": group_list,
         "patterns": pattern_list[:300],
         "patterns_total": len(pattern_list),
         "concordance": list(bands.values()),
         "days": day_list,
     }
+
+
+# ---------------------------------------------------------------------------
+# Indice di Acquistabilita' (orchestratore): predizioni confermate o no dai pattern
+# ---------------------------------------------------------------------------
+
+_RESULT_SETS = {"HOME": {"1"}, "DRAW": {"X"}, "AWAY": {"2"}, "ONE_X": {"1", "X"}, "X_TWO": {"X", "2"}, "ONE_TWO": {"1", "2"}}
+
+
+def _line(key: str) -> float | None:
+    parts = key.split("_")
+    if len(parts) == 3 and parts[0] in ("OVER", "UNDER"):
+        try:
+            return float(f"{parts[1]}.{parts[2]}")
+        except ValueError:
+            return None
+    return None
+
+
+def markets_conflict(a: str, b: str) -> bool:
+    """Due mercati che non possono vincere insieme (stessa regola della scheda Today)."""
+    if a == b:
+        return False
+    base_a, base_b = a.removesuffix("_PT"), b.removesuffix("_PT")
+    if base_a in _RESULT_SETS and base_b in _RESULT_SETS:
+        if a.endswith("_PT") != b.endswith("_PT"):
+            return False
+        return not (_RESULT_SETS[base_a] & _RESULT_SETS[base_b])
+    la, lb = _line(a), _line(b)
+    if la is None or lb is None:
+        return False
+    over = la if a.startswith("OVER") else lb if b.startswith("OVER") else None
+    under = la if a.startswith("UNDER") else lb if b.startswith("UNDER") else None
+    return over is not None and under is not None and under <= over
+
+
+INDEX_SCORE_BANDS = (("70-80", 70.0, 80.0), ("80-90", 80.0, 90.0), ("90 e oltre", 90.0, 101.0))
+
+
+def _index_block() -> dict[str, Any]:
+    return {"predictions": 0, "won": 0, "lost": 0, "pending": 0, "playable": 0, "playable_closed": 0, "profit": 0.0}
+
+
+def _index_add(block: dict[str, Any], won: bool | None, market: dict[str, Any]) -> None:
+    block["predictions"] += 1
+    if won is None:
+        block["pending"] += 1
+    elif won:
+        block["won"] += 1
+    else:
+        block["lost"] += 1
+    if market.get("playable"):
+        block["playable"] += 1
+        quota = market.get("quota")
+        if won is not None and quota:
+            block["playable_closed"] += 1
+            block["profit"] += float(quota) - 1.0 if won else -1.0
+
+
+def _index_finish(block: dict[str, Any]) -> dict[str, Any]:
+    closed = block["won"] + block["lost"]
+    block["win_rate_pct"] = round(100.0 * block["won"] / closed, 1) if closed else None
+    block["roi_pct"] = round(100.0 * block["profit"] / block["playable_closed"], 1) if block["playable_closed"] else None
+    block["profit"] = round(block["profit"], 2)
+    return block
+
+
+def index_observation(db: Session, rows: list[CecchinoLivePrediction]) -> dict[str, Any]:
+    """Predizioni dell'indice registrate prima della partita, divise per conferma dei pattern.
+    Conta solo i pattern costruiti sui moduli (quelli con condizioni sulla quota restano fuori)."""
+    from app.services.cecchino_live.pattern_signals import annotate_book_conditions
+
+    out: dict[str, Any] = {}
+    for r in rows:
+        modules = r.modules_json or {}
+        index = modules.get("purchasability_index") or {}
+        if index.get("status") != "ok" or not index.get("predictions"):
+            continue
+        model = out.setdefault(
+            r.model,
+            {
+                "fixtures": 0,
+                "all": _index_block(),
+                "by_pattern": {k: _index_block() for k in ("confermate", "in_contrasto", "altri_pattern", "senza_pattern")},
+                "by_score": {label: _index_block() for label, _, _ in INDEX_SCORE_BANDS},
+            },
+        )
+        model["fixtures"] += 1
+        patterns = {"active": [dict(p) for p in ((modules.get("patterns") or {}).get("active") or [])]}
+        try:
+            annotate_book_conditions(db, r.model, patterns)
+        except Exception:  # noqa: BLE001 - senza annotazione valgono tutti i pattern di mercato
+            pass
+        pattern_markets = {
+            str(p["target_key"]) for p in patterns["active"] if p.get("target_type") == "market" and not p.get("uses_book")
+        }
+        settled = r.status == LIVE_STATUS_SETTLED
+        for key in index["predictions"]:
+            market = (index.get("markets") or {}).get(key) or {}
+            won = _won(r, key) if settled else None
+            if key in pattern_markets:
+                bucket = "confermate"
+            elif any(markets_conflict(key, pk) for pk in pattern_markets):
+                bucket = "in_contrasto"
+            elif pattern_markets:
+                bucket = "altri_pattern"
+            else:
+                bucket = "senza_pattern"
+            _index_add(model["all"], won, market)
+            _index_add(model["by_pattern"][bucket], won, market)
+            score = float(market.get("score") or 0.0)
+            for label, lo, hi in INDEX_SCORE_BANDS:
+                if lo <= score < hi:
+                    _index_add(model["by_score"][label], won, market)
+    for model in out.values():
+        _index_finish(model["all"])
+        for b in model["by_pattern"].values():
+            _index_finish(b)
+        for b in model["by_score"].values():
+            _index_finish(b)
+    return out

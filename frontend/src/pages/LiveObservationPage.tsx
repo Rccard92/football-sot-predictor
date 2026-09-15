@@ -4,6 +4,8 @@ import {
   getObservationDashboard,
   groupLabel,
   type EngineMetrics,
+  type IndexObservationBlock,
+  type IndexObservationModel,
   type ObservationDashboard,
   type ObservationGroupStats,
 } from '../lib/cecchinoLiveApi'
@@ -246,6 +248,59 @@ function CumulativeBrierChart({ data, models, book }: { data: ObservationDashboa
   )
 }
 
+const INDEX_PATTERN_ROWS: { key: keyof IndexObservationModel['by_pattern']; label: string }[] = [
+  { key: 'confermate', label: 'Confermate da un pattern' },
+  { key: 'in_contrasto', label: 'In contrasto con un pattern' },
+  { key: 'altri_pattern', label: 'Pattern su altri mercati' },
+  { key: 'senza_pattern', label: 'Nessun pattern acceso' },
+]
+
+function IndexRow({ label, b }: { label: string; b: IndexObservationBlock }) {
+  return (
+    <tr>
+      <td>{label}</td>
+      <td className="text-right tabular-nums">{b.predictions}</td>
+      <td className="text-right tabular-nums">
+        {b.won} · {b.lost}
+        {b.pending ? <span style={{ color: TEXT_MUTED }}> · {b.pending} in attesa</span> : null}
+      </td>
+      <td className="text-right tabular-nums">{num(b.win_rate_pct)}</td>
+      <td className="text-right tabular-nums">{b.playable_closed}</td>
+      <td className="text-right tabular-nums" style={{ color: b.roi_pct == null ? undefined : b.roi_pct >= 0 ? COLOR_POS : COLOR_NEG }}>
+        {signed(b.roi_pct)}
+      </td>
+    </tr>
+  )
+}
+
+function IndexTable({ model }: { model: IndexObservationModel }) {
+  return (
+    <div className="pi-scroll" style={{ maxHeight: 'none' }}>
+      <table className="pi-table">
+        <thead>
+          <tr>
+            <th>Predizioni dell&apos;indice</th>
+            <th className="text-right">Predizioni</th>
+            <th className="text-right">Vinte · perse</th>
+            <th className="text-right">% vinte</th>
+            <th className="text-right">Giocabili con esito</th>
+            <th className="text-right">ROI giocabili</th>
+          </tr>
+        </thead>
+        <tbody>
+          <IndexRow label="Tutte" b={model.all} />
+          {INDEX_PATTERN_ROWS.map((r) => (
+            <IndexRow key={r.key} label={r.label} b={model.by_pattern[r.key]} />
+          ))}
+          {Object.entries(model.by_score).map(([label, b]) => (
+            <IndexRow key={label} label={`Punteggio ${label}`} b={b} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function GroupTable({ groups }: { groups: ObservationGroupStats[] }) {
   const [kind, setKind] = useState<'all' | 'market' | 'synthetic'>('all')
   const [onlyClosed, setOnlyClosed] = useState(false)
@@ -410,6 +465,28 @@ export function LiveObservationPage() {
                     <EngineTable engines={data.engines_base.engines} models={data.engines_base.models} book={data.book_reference} />
                   </div>
                 )}
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Indice di Acquistabilità: predizioni e conferma dei pattern"
+            note="Predizioni da 70/100 in su registrate prima della partita · giocabili = quota Bet365 da 1,50 · contano solo i pattern costruiti sui moduli"
+          >
+            {Object.keys(data.purchasability_index ?? {}).length === 0 ? (
+              <p className="text-sm" style={{ color: TEXT_MUTED }}>
+                Nessuna predizione dell&apos;indice registrata nel periodo: le prime arrivano con la prossima scansione.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(data.purchasability_index ?? {}).map(([model, m]) => (
+                  <div key={model}>
+                    <div className="mb-2 text-xs font-semibold" style={{ color: MODEL_COLORS[model] ?? TEXT_MUTED }}>
+                      {model} · {m.fixtures} partite
+                    </div>
+                    <IndexTable model={m} />
+                  </div>
+                ))}
               </div>
             )}
           </Section>
