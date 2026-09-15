@@ -40,6 +40,7 @@ export const NAV_MAIN: NavItem[] = [
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },
   { to: '/roadmap', label: 'Roadmap', icon: 'book-open', section: 'main' },
+  { to: '/guida-modelli', label: 'Guida ai modelli', icon: 'file-text', section: 'main' },
 ]
 
 export const NAV_TECH: NavItem[] = [

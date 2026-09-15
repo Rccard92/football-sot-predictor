@@ -13,6 +13,7 @@ const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
 const MONITORAGGIO_SEGNO_1_PATH = '/monitoraggio-segno-1'
 const MASTER_PATTERN_PATH = '/master-pattern'
 const ROADMAP_PATH = '/roadmap'
+const MODELS_GUIDE_PATH = '/guida-modelli'
 const LIVE_OBSERVATION_PATH = '/osservazione-live'
 
 export function Layout() {
@@ -30,7 +31,8 @@ export function Layout() {
     location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`) ||
     location.pathname === MASTER_PATTERN_PATH ||
     location.pathname === LIVE_OBSERVATION_PATH ||
-    location.pathname === ROADMAP_PATH
+    location.pathname === ROADMAP_PATH ||
+    location.pathname === MODELS_GUIDE_PATH
 
   const contentClass = isFullWidthWorkspace
     ? 'w-full max-w-none px-3 py-4 sm:px-4 lg:px-5'

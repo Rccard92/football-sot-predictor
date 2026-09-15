@@ -15,6 +15,7 @@ import { CecchinoLabPatternLabPage } from './pages/CecchinoLabPatternLabPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { RoadmapPage } from './pages/RoadmapPage'
+import { ModelsGuidePage } from './pages/ModelsGuidePage'
 import { MasterPatternPage } from './pages/MasterPatternPage'
 import { LiveObservationPage } from './pages/LiveObservationPage'
 
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route path="/roadmap" element={<RoadmapPage />} />
+          <Route path="/guida-modelli" element={<ModelsGuidePage />} />
           <Route path="/master-pattern" element={<MasterPatternPage />} />
           <Route path="/osservazione-live" element={<LiveObservationPage />} />
           <Route path="/cecchino-lab/pattern-lab" element={<CecchinoLabPatternLabPage />} />

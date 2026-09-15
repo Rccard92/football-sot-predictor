@@ -193,6 +193,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-15',
+    text: "Cecchino Today ripulito (pulsanti, testata partita, V3.1, audit, diagnostica xG, indice affidabilità segnali), predizione dei pattern con controllo dei moduli in cima alle schede, Intensità Goal V2 con i valori della RUN V2. Nuova pagina Guida ai modelli: come lavorano V2, V2.5 e V3, cosa fanno davvero e gli errori della V2 (tra cui l'Intensità Goal che mescola i campionati, corretta in V2.5 e V3).",
+  },
+  {
+    date: '2026-09-15',
     text: 'Step 6: Pattern Master V2 accesi in live nella scheda V2 di Cecchino Today e nel Bet Builder. Ora tutti e tre i motori (V2, V2.5, V3) accendono i propri pattern Master sulle partite del giorno.',
   },
   {
