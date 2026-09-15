@@ -29,6 +29,8 @@ export type LivePatternSignal = {
   avg_quota: number | null
   avg_deviation_pct: number | null
   quota_book: number | null
+  /** Una condizione usa la quota del bookmaker (acquistabilità, distanza dal book, fascia di quota). */
+  uses_book?: boolean
 }
 
 export type LivePatterns = {

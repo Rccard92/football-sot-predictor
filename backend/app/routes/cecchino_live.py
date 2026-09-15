@@ -108,6 +108,13 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
             registered = items["V2"].get("modules") or {}
             merged = {**preview["modules"], **{k: v for k, v in registered.items() if v}}
             items["V2"] = {**items["V2"], "modules": merged, "modules_source": "anteprima_non_registrata"}
+    from app.services.cecchino_live.pattern_signals import annotate_book_conditions
+
+    for model, item in items.items():
+        try:
+            annotate_book_conditions(db, model, (item.get("modules") or {}).get("patterns"))
+        except Exception:  # noqa: BLE001 - l'annotazione non deve mai rompere la scheda
+            db.rollback()
     return JSONResponse(content=jsonable_encoder({"today_fixture_id": int(today_fixture_id), "models": items}))
 
 

@@ -131,3 +131,27 @@ def v25_features(modules: dict[str, Any], delta: dict[str, str | None]) -> dict[
         "balance_gap_coherence_class": bal.get("gap_coherence"),
         **delta,
     }
+
+
+# Condizioni che usano la quota del bookmaker invece dei soli moduli: la classe di acquistabilita'
+# (costruita sul confronto con il book), la distanza V3 dal book e la fascia di quota. Nella V2 anche
+# la geometria F36 dell'Equilibrio, corretta con la quota X del book.
+BOOK_CONDITION_COLUMNS: dict[str, frozenset[str]] = {
+    "V2": frozenset({"purchasability_class", "balance_f36_class"}),
+    "V2.5": frozenset({"purchasability_class"}),
+    "V3": frozenset({"purchasability_class", "v3_vs_book", "quota"}),
+}
+
+
+def annotate_book_conditions(db: Session, model: str, patterns: dict[str, Any] | None) -> None:
+    """Segna sui pattern accesi (anche registrati prima di questo campo) se una condizione usa la quota del book."""
+    active = (patterns or {}).get("active")
+    columns = BOOK_CONDITION_COLUMNS.get(model)
+    if not active or not columns:
+        return
+    _, winners, _ = load_winners(db, model)
+    by_id = {int(p["id"]): p for p in winners}
+    for p in active:
+        winner = by_id.get(int(p.get("id") or 0))
+        if winner is not None:
+            p["uses_book"] = any(str(c.get("column")) in columns for c in winner["conditions"])

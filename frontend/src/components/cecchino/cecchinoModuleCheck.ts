@@ -2,7 +2,7 @@ import type { LiveModelPrediction } from '../../lib/cecchinoLiveApi'
 
 /**
  * Controllo dei moduli sul mercato indicato da un pattern.
- * I moduli ragionano da soli (probabilità del modello, Intensità Goal, Equilibrio, valore alla quota):
+ * I moduli ragionano da soli (esito più probabile, pareggio, coerenza, Intensità Goal), senza quote del book:
  * qui si legge solo se la loro lettura va nella stessa direzione del pattern o no.
  */
 
@@ -20,9 +20,6 @@ const OUTCOME_NAME: Record<string, string> = { '1': 'la vittoria in casa', X: 'i
 // classi V2/V2.5 (inglese) e V3 (italiano) sulla stessa scala
 const HIGH = new Set(['high', 'very_high', 'alto', 'molto_alto'])
 const LOW = new Set(['low', 'very_low', 'basso', 'molto_basso'])
-
-/** Oltre questo scarto negativo il modello vede il mercato in perdita alla quota Bet365. */
-const EV_LOSS_PCT = -5
 
 function pct(v: number): string {
   return `${(v * 100).toLocaleString('it-IT', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
@@ -101,20 +98,9 @@ function goalCheck(p: LiveModelPrediction, marketKey: string): ModuleCheck | nul
   return { name, outcome: 0, text: 'Gol attesi nella media del campionato.' }
 }
 
-function valueCheck(p: LiveModelPrediction, marketKey: string): ModuleCheck | null {
-  const m = p.markets?.[marketKey]
-  if (!m || m.edge_pct == null || m.probability == null) return null
-  const ev = m.edge_pct
-  const evText = `${ev > 0 ? '+' : ''}${ev.toLocaleString('it-IT', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
-  const name = 'Valore alla quota Bet365'
-  if (ev > 0) return { name, outcome: 1, text: `Con la sua probabilità (${pct(m.probability)}) il modello vede il mercato in profitto: ${evText} per giocata.` }
-  if (ev <= EV_LOSS_PCT) return { name, outcome: -1, text: `Con la sua probabilità (${pct(m.probability)}) il modello vede il mercato in perdita: ${evText} per giocata.` }
-  return { name, outcome: 0, text: `Con la sua probabilità (${pct(m.probability)}) il modello è vicino al pareggio: ${evText} per giocata.` }
-}
-
 export function moduleVerdict(p: LiveModelPrediction | undefined, marketKey: string): ModuleVerdict {
   const checks = p
-    ? [outcomeCheck, drawCheck, coherenceCheck, goalCheck, valueCheck]
+    ? [outcomeCheck, drawCheck, coherenceCheck, goalCheck]
         .map((fn) => fn(p, marketKey))
         .filter((c): c is ModuleCheck => c != null)
     : []

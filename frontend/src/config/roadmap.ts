@@ -129,6 +129,8 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: 'Scansione notturna: i rifiuti per troppe richieste (429) non escludono piu partite, quote del giorno lette a pagine, secondo passaggio di recupero', status: 'fatto' },
       { text: 'Scansione automatica spostata alle 06:00 sulla giornata in corso (staging con recupero alle 06:45, produzione alle 06:00); scansione delle 23:00 spenta', status: 'fatto' },
       { text: 'Scheda V2.5 con la stessa grafica della V2: Acquistabilità, Pannello KPI, pilastri Equilibrio, Intensità Goal e pattern con guida alla lettura', status: 'fatto' },
+      { text: 'Predizione in cima alle schede: pattern con quota, controllo dei moduli senza quote del book, pattern che usano la quota come condizione mostrati a parte', status: 'fatto' },
+      { text: 'Nuovo Indice di Acquistabilità V2.5 e V3 come orchestratore: legge tutti i moduli, stima quanto la giocata può vincere e solo alla fine guarda la quota per decidere se e quanto investire (progetto da approvare)', status: 'in_corso' },
     ],
     doneWhen: 'Su ogni partita vedi tre analisi e i segnali dei pattern, anche per i mercati senza quota.',
   },
@@ -191,6 +193,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-15',
+    text: "Verifica quota del bookmaker: l'obiettivo è vincere, non battere il book. Tolto dal controllo dei moduli il calcolo sulla quota, pattern con condizioni sulla quota separati (14 su 24 V3, 2 su 87 V2.5), Indice di Acquistabilità V2.5 segnato in rifacimento e V3 in costruzione come orchestratore dei moduli, Guida ai modelli riscritta. V2 congelata, non toccata.",
+  },
   {
     date: '2026-09-15',
     text: "Cecchino Today ripulito (pulsanti, testata partita, V3.1, audit, diagnostica xG, indice affidabilità segnali), predizione dei pattern con controllo dei moduli in cima alle schede, Intensità Goal V2 con i valori della RUN V2. Nuova pagina Guida ai modelli: come lavorano V2, V2.5 e V3, cosa fanno davvero e gli errori della V2 (tra cui l'Intensità Goal che mescola i campionati, corretta in V2.5 e V3).",

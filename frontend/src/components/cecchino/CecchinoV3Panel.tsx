@@ -47,11 +47,11 @@ function PurchasabilityInactive() {
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità V3</h3>
         <Badge tone="dark">V3</Badge>
-        <Badge>Non attivo</Badge>
+        <Badge>In costruzione</Badge>
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        Nel Lab nessuna regola di acquisto costruita sulla V3 ha chiuso in profitto alle quote Bet365, quindi l&apos;indice non è attivo. Il valore
-        atteso di ogni mercato resta nel Pannello KPI e il rendimento reale si segue nell&apos;Osservazione live.
+        L&apos;indice della V3 verrà costruito come orchestratore: legge prima specialisti, indici e pattern accesi per stimare quanto la
+        giocata può vincere, e solo alla fine guarda la quota Bet365 per decidere se e quanto investire.
       </p>
     </section>
   )

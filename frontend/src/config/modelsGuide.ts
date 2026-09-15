@@ -2,6 +2,7 @@
  * Guida ai modelli Cecchino (pagina /guida-modelli).
  * Testi pensati per chi non ha mai usato il tool. Numeri aggiornati al 15/09/2026:
  * vanno rivisti quando cambiano le RUN, i Master Pattern o i risultati dell'osservazione live.
+ * Regola: i modelli si giudicano su vittorie e profitto reali, mai sulla distanza dal bookmaker.
  */
 
 export const GUIDE_UPDATED_AT = '15/09/2026'
@@ -19,8 +20,8 @@ export const GUIDE_GLOSSARY: GlossaryItem[] = [
     text: 'La quota sotto la quale una giocata non rende nel lungo periodo: 100 diviso la percentuale di riuscita. Con il 50% di riuscita serve almeno quota 2,00.',
   },
   {
-    term: 'Valore atteso',
-    text: 'Quanto si guadagna (o si perde) in media per ogni euro giocato, se la probabilità è giusta: probabilità × quota − 1. +5% = 5 centesimi guadagnati ogni euro, in media.',
+    term: 'Guadagno atteso',
+    text: 'Quanto si guadagna in media per ogni euro giocato: riuscita × quota − 1. Con il 60% di riuscita a quota 2,00 si guadagnano in media 20 centesimi a euro.',
   },
   {
     term: 'ROI',
@@ -28,7 +29,7 @@ export const GUIDE_GLOSSARY: GlossaryItem[] = [
   },
   {
     term: 'Modulo',
-    text: 'Un pezzo del modello che guarda la partita da un punto di vista: equilibrio tra le squadre, quanti gol aspettarsi, forma recente, ecc.',
+    text: 'Un pezzo del modello che guarda la partita da un punto di vista: equilibrio tra le squadre, quanti gol aspettarsi, forma recente, ecc. I moduli lavorano sui dati delle partite, non sulle quote.',
   },
   {
     term: 'Pattern',
@@ -40,11 +41,11 @@ export const GUIDE_GLOSSARY: GlossaryItem[] = [
   },
   {
     term: 'RUN',
-    text: 'Il modello fatto girare su un\'intera stagione passata, partita per partita, usando solo le informazioni disponibili prima di ogni partita. Serve a vedere come avrebbe funzionato davvero.',
+    text: "Il modello fatto girare su un'intera stagione passata, partita per partita, usando solo le informazioni disponibili prima di ogni partita. Serve a vedere come avrebbe funzionato davvero.",
   },
   {
     term: 'Precisione (Brier)',
-    text: 'Misura quanto le probabilità si avvicinano ai risultati veri. Più è bassa, meglio è. Si usa per confrontare i modelli tra loro e con il bookmaker.',
+    text: 'Misura quanto le probabilità si avvicinano ai risultati veri delle partite. Più è bassa, meglio è. Serve a confrontare i modelli tra loro, non a decidere cosa giocare.',
   },
   {
     term: 'Per caso',
@@ -59,7 +60,7 @@ export const GUIDE_FLOW: { title: string; text: string }[] = [
   },
   {
     title: '2. Partite eleggibili',
-    text: 'Entra solo la partita che ha le quote reali Bet365 di 1X2 e Over/Under 2.5 e abbastanza storico delle due squadre.',
+    text: 'Entra solo la partita che ha le quote reali Bet365 di 1X2 e Over/Under 2.5 (servono per poterla giocare) e abbastanza storico delle due squadre.',
   },
   {
     title: '3. Tre modelli, tre schede',
@@ -67,15 +68,15 @@ export const GUIDE_FLOW: { title: string; text: string }[] = [
   },
   {
     title: '4. La predizione',
-    text: 'In cima a ogni scheda ci sono i Master Pattern con quota che si accendono: sono la giocata indicata dal modello, con riuscita storica, quota minima e quota di oggi.',
+    text: 'In cima a ogni scheda ci sono i Master Pattern con quota che si accendono: sono la giocata indicata dal modello, con riuscita storica, quota minima e quota di oggi. I pattern che usano la quota come condizione sono mostrati a parte.',
   },
   {
     title: '5. Il controllo dei moduli',
-    text: 'Sotto ogni pattern i moduli dicono, ragionando da soli, se sono d\'accordo (confermato), contrari (smentito) o divisi (discordanti).',
+    text: "Sotto ogni pattern i moduli dicono, ragionando da soli e senza quote, se sono d'accordo (confermato), contrari (smentito) o divisi (discordanti).",
   },
   {
     title: '6. Registro e risultati',
-    text: 'Le predizioni vengono salvate prima della partita e non si cambiano più. Dopo la partita si segna l\'esito: così si misura se i modelli fanno guadagnare davvero (pagina Osservazione live).',
+    text: "Le predizioni vengono salvate prima della partita e non si cambiano più. Dopo la partita si segna l'esito: così si misura se i modelli fanno vincere e guadagnare davvero (pagina Osservazione live).",
   },
 ]
 
@@ -94,11 +95,10 @@ export const GUIDE_MODELS: ModelCard[] = [
     key: 'V2',
     name: 'Cecchino V2 · il modello originale',
     status: 'Congelato: non si modifica, serve come termine di paragone',
-    inOneLine: 'Stima le probabilità dagli esiti delle partite passate delle due squadre e le confronta con le quote Bet365.',
+    inOneLine: 'Stima le probabilità dagli esiti delle partite passate delle due squadre e le traduce in quote Cecchino.',
     shouldDo: [
       'Dare per ogni mercato (1X2, doppia chance, primo tempo, Over/Under) una probabilità e una "quota Cecchino".',
-      'Trovare i mercati dove la quota Bet365 è più alta di quanto dovrebbe.',
-      'Accendere segnali SI/NO e un indice di acquistabilità per dire cosa comprare.',
+      'Accendere segnali SI/NO e un indice di acquistabilità per dire cosa giocare.',
     ],
     howItWorks: [
       'Picchetti: in quattro finestre di partite (totali, casa/trasferta, recenti) conta quante volte le squadre hanno vinto, pareggiato e perso.',
@@ -106,8 +106,9 @@ export const GUIDE_MODELS: ModelCard[] = [
       'Moduli: Equilibrio/Squilibrio, Intensità Goal, Indice di Acquistabilità V3.6, Segnali Excel, Pannello KPI con rating.',
     ],
     reallyDoes: [
-      'È meno preciso di Bet365 in ogni tipo di mercato, in ogni stagione e in ogni campionato provato.',
+      'È il meno preciso dei tre modelli sui risultati reali delle partite.',
       'Master Pattern V2 con quota: 78 vincenti in tutte le 4 stagioni, contro circa 69 attesi per puro caso.',
+      "L'indice di acquistabilità V3.6 ha chiuso in perdita in tutte le classi nelle stagioni di verifica.",
       'Ha diversi errori di calcolo, elencati più sotto: sono stati lasciati apposta per poter confrontare "prima" e "dopo".',
     ],
   },
@@ -118,20 +119,20 @@ export const GUIDE_MODELS: ModelCard[] = [
     inOneLine: 'Stessa struttura e stessi moduli della V2, ma con gli errori corretti.',
     shouldDo: [
       'Fare esattamente quello che doveva fare la V2, senza gli errori di calcolo.',
-      'Permettere un confronto pulito: se la V2.5 rende più della V2, il merito è delle correzioni.',
+      'Permettere un confronto pulito: se la V2.5 fa vincere più della V2, il merito è delle correzioni.',
     ],
     howItWorks: [
       'Picchetti: media delle probabilità (sommano sempre a 100%) e poche partite "virtuali" con le medie del campionato quando lo storico è corto.',
       'Gol, attacco, difesa e ritmo sempre rapportati alla media del proprio campionato.',
+      'Equilibrio calcolato solo con i dati del Cecchino, senza quote del bookmaker.',
       'Scale delle classi fissate una volta sola sulla stagione 2021/22: "alta" vuol dire la stessa cosa in ogni stagione e in ogni campionato.',
-      'Indice di acquistabilità: il valore atteso alla quota Bet365, corretto con quanto il Cecchino ha davvero aggiunto al book nelle partite già giocate.',
     ],
     reallyDoes: [
-      'Più preciso della V2 in ogni stagione: 1X2 dall\'1% all\'1,3% meglio, Over/Under dall\'1,1% all\'1,9%. Resta però meno preciso di Bet365.',
+      "Più preciso della V2 sui risultati reali, in ogni stagione: 1X2 dall'1% all'1,3% meglio, Over/Under dall'1,1% all'1,9%.",
       'Circa 700 partite in più per stagione diventano analizzabili (la V2 le scartava per un errore).',
       'Intensità Goal: più alta è la classe, più partite finiscono Over 2.5 (dal 41,9% al 60,0%). Il modulo misura quello che deve misurare.',
       'Master Pattern V2.5 con quota: 87 vincenti contro circa 79 attesi per caso.',
-      'Indice di acquistabilità: nelle stagioni di verifica nessuna classe ha chiuso in profitto (Media −2,9%, Bassa −6,0%). Consiglia solo da 60/100 in su, dove il valore atteso stimato è positivo.',
+      "Indice di acquistabilità: la versione attuale è stata costruita sul confronto tra Cecchino e Bet365 invece che sui moduli, e per questo non si attiva quasi mai. È in rifacimento.",
     ],
   },
   {
@@ -141,21 +142,49 @@ export const GUIDE_MODELS: ModelCard[] = [
     inOneLine: 'Un modello ricostruito da zero: più "specialisti" stimano i gol attesi e un orchestratore li combina.',
     shouldDo: [
       'Stimare le probabilità meglio di V2 e V2.5, usando anche il gioco (tiri) e non solo i risultati.',
-      'Avvicinarsi il più possibile alla precisione di Bet365.',
+      "Dare ai pattern e all'indice di acquistabilità letture della partita più solide: specialisti, indici, forma e calendario.",
     ],
     howItWorks: [
       'Specialista Forza: attacco e difesa delle squadre stimati sui gol.',
       'Specialista Gioco: tiri e tiri in porta attesi, tradotti in gol.',
       'Forma (ultime 5 partite rispetto alle attese) e Calendario (giorni di riposo, ultime giornate).',
       'Orchestratore: combina gli specialisti con pesi imparati sulle stagioni passate e poi congelati.',
-      'Indici: Equilibrio, Pareggio, Intensità goal e Forma, sempre confrontati con lo stesso campionato.',
+      'Indici: Equilibrio, Pareggio, Intensità goal e Forma, sempre confrontati con lo stesso campionato. Nessuna quota del bookmaker entra in questi calcoli.',
     ],
     reallyDoes: [
-      'È di gran lunga il modello più preciso. Sulla stagione 2025/26, usata una sola volta come esame finale: 1X2 5,1% meglio della V2, Over/Under 2,5% meglio.',
-      'La distanza da Bet365 sull\'1X2 scende a +1,7% (la V2 è a +7,2%).',
-      'Però alle quote Bet365 non ha trovato un vantaggio: quando V3 e bookmaker non sono d\'accordo, di solito ha ragione il bookmaker. Per questo l\'indice di acquistabilità V3 non è attivo.',
-      'Master Pattern V3 con quota: 24 vincenti contro circa 28 attesi per caso.',
+      'È di gran lunga il modello più preciso sui risultati reali. Sulla stagione 2025/26, usata una sola volta come esame finale: 1X2 5,1% meglio della V2, Over/Under 2,5% meglio.',
+      'Master Pattern V3 con quota: 24 vincenti contro circa 28 attesi per caso. 14 di questi usano la quota del bookmaker come condizione e nella scheda sono mostrati a parte.',
+      'Indice di acquistabilità: non ancora costruito. Verrà fatto come orchestratore dei suoi moduli.',
       'Dal vivo funziona solo dove API-Football fornisce tiri e tiri in porta: il 15/09 in 13 partite eleggibili su 25.',
+    ],
+  },
+]
+
+export const GUIDE_BOOK_RULE: { title: string; items: string[] }[] = [
+  {
+    title: 'La regola',
+    items: [
+      "L'obiettivo è vincere, non battere il bookmaker. Una quota di valore, se capita, si sfrutta, ma non è il centro del tool.",
+      'I moduli ragionano solo sui dati delle partite (risultati, gol, tiri, forma, calendario), senza guardare le quote.',
+      'La quota entra alla fine: per calcolare il guadagno e decidere se e quanto investire.',
+    ],
+  },
+  {
+    title: 'Dove la quota è usata nel modo giusto',
+    items: [
+      'Regola dei Master Pattern: ROI positivo alle quote reali in 4 stagioni su 4, cioè guadagno vero.',
+      'Quota minima e "quota in profitto" nella predizione: la riuscita storica del pattern confrontata con la quota di oggi.',
+      'Eleggibilità: servono le quote Bet365 per poter giocare la partita.',
+    ],
+  },
+  {
+    title: 'Dove la quota entra ancora nei ragionamenti (da correggere, V2 esclusa perché congelata)',
+    items: [
+      'Indice di acquistabilità V2.5: costruito sul confronto tra Cecchino e Bet365. Da rifare come orchestratore dei moduli.',
+      'Indice di acquistabilità V3: non ancora costruito, verrà fatto con la stessa regola.',
+      'Pattern con condizioni sulla quota: 14 su 24 nella V3 (distanza dal book o fascia di quota), 2 su 87 nella V2.5 (classe di acquistabilità). Mostrati a parte nella predizione.',
+      'Pannello KPI V2.5: il rating contiene vantaggio ed edge rispetto al bookmaker. È solo una tabella di lettura, non decide nulla.',
+      "Nella V2 congelata la quota entra anche nell'Equilibrio (quota X del book) e nell'indice V3.6: restano così per il confronto.",
     ],
   },
 ]
@@ -174,8 +203,8 @@ export const GUIDE_MODULE_CHECK: string[] = [
   'Smentito dai moduli: almeno un modulo va contro e nessuno a favore.',
   'Moduli discordanti: ci sono moduli a favore e moduli contro.',
   'Moduli senza indicazione: nessun modulo si sbilancia.',
-  'Controlli usati: esito più probabile per il modello, credibilità del pareggio, coerenza tra picchetti e modello gol, Intensità Goal (Over/Under), valore alla quota Bet365.',
-  'Il controllo è una prima versione: nei prossimi mesi l\'osservazione live dirà se i pattern confermati rendono più di quelli smentiti.',
+  'Controlli usati, tutti senza quote del bookmaker: esito più probabile per il modello, credibilità del pareggio, coerenza tra picchetti e modello gol, Intensità Goal (Over/Under).',
+  "Il controllo è una prima versione: nei prossimi mesi l'osservazione live dirà se i pattern confermati vincono più di quelli smentiti.",
 ]
 
 export type V2Bug = { module: string; problem: string; effect: string; fix: string }
@@ -195,27 +224,27 @@ export const GUIDE_V2_BUGS: V2Bug[] = [
   },
   {
     module: 'Modello gol',
-    problem: 'Con 1-2 partite giocate il valore della squadra viene preso così com\'è, e l\'affidabilità arriva al massimo già dopo 5-10 partite.',
+    problem: "Con 1-2 partite giocate il valore della squadra viene preso così com'è, e l'affidabilità arriva al massimo già dopo 5-10 partite.",
     effect: 'Stime estreme a inizio stagione; la correzione verso la media del campionato sparisce troppo presto.',
     fix: 'La stima parte dalla media del campionato e si sposta verso la squadra man mano che giocano partite.',
   },
   {
     module: 'Modello gol',
-    problem: 'Casa e trasferta confrontate con la media generica del campionato; frequenza di campionato dell\'Under 0.5 primo tempo sempre 0.',
+    problem: "Casa e trasferta confrontate con la media generica del campionato; frequenza di campionato dell'Under 0.5 primo tempo sempre 0.",
     effect: 'Stime distorte per le squadre forti in casa o fuori; un mercato del primo tempo sempre sbagliato.',
     fix: 'Media gol in casa o in trasferta del campionato; frequenze di campionato corrette per tutti i mercati.',
   },
   {
     module: 'Pannello KPI',
     problem: 'Il "vantaggio" è calcolato contro la probabilità del bookmaker con il suo margine dentro, e l\'edge è quota book / quota Cecchino − 1.',
-    effect: 'Il vantaggio sembra più piccolo di quello che è e l\'edge non è il guadagno atteso reale della giocata.',
-    fix: 'Vantaggio contro la probabilità Bet365 senza margine; valore atteso = probabilità × quota − 1.',
+    effect: "Il vantaggio sembra più piccolo di quello che è e l'edge non è il guadagno atteso reale della giocata.",
+    fix: 'Calcoli corretti (probabilità senza margine, guadagno atteso reale). Resta una tabella di lettura: non decide cosa giocare.',
   },
   {
     module: 'Equilibrio / Squilibrio',
     problem: 'La geometria (F36) è la differenza tra le quote di 1 e 2 con soglie fisse, corretta con la quota X del bookmaker.',
-    effect: 'Tra 1,50 e 2,00 e tra 4,00 e 4,50 la differenza è la stessa, ma l\'equilibrio no. E il modulo dipende dalle quote del book.',
-    fix: 'Distanza tra le probabilità di 1 e 2 calcolate solo dal Cecchino.',
+    effect: "Tra 1,50 e 2,00 e tra 4,00 e 4,50 la differenza è la stessa, ma l'equilibrio no. E il modulo dipende dalle quote del bookmaker.",
+    fix: 'Distanza tra le probabilità di 1 e 2 calcolate solo dal Cecchino, senza quote del bookmaker.',
   },
   {
     module: 'Equilibrio / Squilibrio',
@@ -243,13 +272,13 @@ export const GUIDE_V2_BUGS: V2Bug[] = [
   },
   {
     module: 'Indice di Acquistabilità V3.6',
-    problem: 'Dà un punteggio solo quando il Cecchino vede valore sulla quota e premia la distanza dal bookmaker come se fosse sempre un vantaggio; usa la probabilità grezza non normalizzata.',
-    effect: 'Nella RUN V2 circa il 90% delle righe è senza classe e le altre sono quasi tutte "Molto bassa". Ma il bookmaker è mediamente più preciso: una grande distanza è spesso un errore del Cecchino, non un\'occasione.',
-    fix: 'Punteggio per ogni mercato quotato, dal valore atteso corretto con lo storico delle partite già giocate.',
+    problem: 'Dà un punteggio solo quando il Cecchino si allontana dalla quota del bookmaker, premia quella distanza come se fosse sempre un vantaggio e usa la probabilità grezza non normalizzata.',
+    effect: 'Nella RUN V2 circa il 90% delle righe è senza classe e le altre sono quasi tutte "Molto bassa"; nelle stagioni di verifica tutte le classi hanno chiuso in perdita. Ragiona sulla distanza dal bookmaker invece che sui moduli.',
+    fix: "La V2.5 corregge i calcoli ma resta costruita sul confronto con il bookmaker: l'indice va rifatto come orchestratore dei moduli (in corso).",
   },
   {
     module: 'Segnali Cecchino',
-    problem: 'Le regole SI/NO usano soglie sulle quote V2, che sono medie di quote e quindi gonfiate. L\'"Indice affidabilità" è solo il numero di partite casa/fuori diviso 20.',
+    problem: 'Le regole SI/NO usano soglie sulle quote Cecchino V2, che sono medie di quote e quindi gonfiate. L\'"Indice affidabilità" è solo il numero di partite casa/fuori diviso 20.',
     effect: 'Le soglie dipendono dall\'errore dei picchetti. L\'indice affidabilità non dice se i segnali vincono e il suo "NO BET" non blocca nulla.',
     fix: 'Stesse regole su quote riportate alla scala V2, mantenendo la stessa selettività. Indice affidabilità tolto dalla scheda V2.',
   },
@@ -264,8 +293,9 @@ export const GUIDE_GI_LEAGUES: { league: string; goals: string; over: string; hi
 ]
 
 export const GUIDE_NEXT: string[] = [
-  'Osservazione live per alcuni mesi: le predizioni salvate prima delle partite diranno quale modello e quali pattern fanno guadagnare davvero.',
-  'Verificare se i pattern confermati dai moduli rendono più di quelli smentiti.',
+  'Osservazione live per alcuni mesi: le predizioni salvate prima delle partite diranno quale modello e quali pattern fanno vincere e guadagnare davvero.',
+  'Verificare se i pattern confermati dai moduli vincono più di quelli smentiti.',
+  'Nuovo indice di acquistabilità per V2.5 e V3: legge tutti i moduli, stima quanto la giocata può vincere e solo alla fine guarda la quota per decidere se e quanto investire.',
   'Capire se i pattern trovati sui 16 campionati europei del Lab funzionano anche nei campionati minori che entrano ogni giorno in Cecchino Today.',
   'Aggiungere formazioni e infortuni da una fonte dedicata (API-Football non li fornisce bene per i campionati minori).',
 ]

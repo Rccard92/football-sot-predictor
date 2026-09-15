@@ -30,7 +30,9 @@ describe('moduleVerdict', () => {
   it('pattern sul 2 confermato dai moduli', () => {
     const v = moduleVerdict(prediction(), 'AWAY')
     expect(v.key).toBe('confirmed')
-    expect(v.checks.map((c) => c.outcome)).toEqual([1, 1, 1, 1])
+    expect(v.checks.map((c) => c.outcome)).toEqual([1, 1, 1])
+    // la quota del book non è un modulo: nessun controllo sul valore alla quota
+    expect(v.checks.some((c) => c.name.includes('quota'))).toBe(false)
   })
 
   it('pattern sull1 smentito dai moduli', () => {
@@ -38,14 +40,14 @@ describe('moduleVerdict', () => {
     expect(moduleVerdict(p, 'HOME').key).toBe('denied')
   })
 
-  it('under con intensità goal alta e valore negativo: smentito', () => {
+  it('under con intensità goal alta: smentito', () => {
     expect(moduleVerdict(prediction(), 'UNDER_2_5').key).toBe('denied')
   })
 
   it('V3: classi italiane', () => {
     const p = prediction({ modules: { indices: { intensita_goal: { class: 'molto_basso' } } } })
     const v = moduleVerdict(p, 'OVER_2_5')
-    expect(v.key).toBe('mixed')
+    expect(v.key).toBe('denied')
   })
 
   it('senza dati: nessuna indicazione', () => {

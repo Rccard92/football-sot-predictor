@@ -178,9 +178,13 @@ function PurchasabilityCard({ markets, patternMarkets }: { markets: Record<strin
           <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità V2.5</h3>
           <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">V2.5</span>
           <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-amber-200">
-            In osservazione
+            In rifacimento
           </span>
         </div>
+        <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-900">
+          Versione attuale costruita sul confronto tra Cecchino e Bet365: verrà sostituita da un indice che legge prima tutti i moduli e
+          solo alla fine guarda la quota per decidere se e quanto investire.
+        </p>
         <p className="mt-1 text-xs text-slate-500">
           Scala 0–100 sul valore atteso alla quota Bet365, corretto con lo storico. Consigliati solo i mercati da {RECOMMENDED_MIN_SCORE}/100 in su
           (valore atteso positivo). Non è una probabilità di vittoria.
@@ -784,14 +788,8 @@ export function CecchinoV25Panel({ todayFixtureId }: { todayFixtureId: number })
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Storico delle squadre sotto i minimi della RUN: numeri indicativi.</p>
         )}
       </section>
-      <CecchinoPatternHero
-        p={p}
-        model="V2.5"
-        indexFor={(k) => {
-          const m = p.markets?.[k]
-          return m?.buyability_score != null ? { score: m.buyability_score, label: m.buyability_class, title: 'Indice V2.5' } : null
-        }}
-      />
+      {/* indice V2.5 attuale costruito sul confronto con il book: non accanto alla predizione finché non è rifatto */}
+      <CecchinoPatternHero p={p} model="V2.5" />
       <PurchasabilityCard markets={p.markets} patternMarkets={patternMarketKeys(p.modules?.patterns?.active)} />
       <KpiPanel p={p} />
       <BalancePanel p={p} />

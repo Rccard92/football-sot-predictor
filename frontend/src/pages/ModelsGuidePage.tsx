@@ -1,5 +1,6 @@
 import { PageShell, Section } from '../components/layout/PageShell'
 import {
+  GUIDE_BOOK_RULE,
   GUIDE_FLOW,
   GUIDE_GI_LEAGUES,
   GUIDE_GLOSSARY,
@@ -122,6 +123,19 @@ export function ModelsGuidePage() {
         {GUIDE_MODELS.map((m) => (
           <ModelBlock key={m.key} model={m} />
         ))}
+
+        <Section title="La quota del bookmaker: dove entra e dove no">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {GUIDE_BOOK_RULE.map((b) => (
+              <div key={b.title} className="pi-tile">
+                <div className="mb-2 text-base font-bold uppercase tracking-wide" style={{ color: TEXT_MUTED }}>
+                  {b.title}
+                </div>
+                <Bullets items={b.items} />
+              </div>
+            ))}
+          </div>
+        </Section>
 
         <Section title="Pattern e Master Pattern">
           <Bullets items={GUIDE_PATTERN_RULES} />
