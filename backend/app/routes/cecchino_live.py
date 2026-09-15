@@ -97,11 +97,17 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
         items["V3"] = _v3_preview(db, int(today_fixture_id))
     if "V2" not in items:
         items["V2"] = _v2_preview(db, int(today_fixture_id))
-    elif not (items["V2"].get("modules") or {}).get("patterns") and items["V2"].get("status") == "open":
-        # previsione registrata prima dei pattern V2: moduli calcolati al momento (non salvati)
+    elif items["V2"].get("status") == "open" and not (
+        (items["V2"].get("modules") or {}).get("patterns")
+        and (items["V2"].get("modules") or {}).get("goal_intensity_pillars")
+    ):
+        # previsione registrata prima dei pattern V2 o del dettaglio Intensita' Goal:
+        # le parti mancanti arrivano dai moduli calcolati al momento (non salvati)
         preview = _v2_preview(db, int(today_fixture_id))
         if preview.get("modules"):
-            items["V2"] = {**items["V2"], "modules": preview["modules"], "modules_source": "anteprima_non_registrata"}
+            registered = items["V2"].get("modules") or {}
+            merged = {**preview["modules"], **{k: v for k, v in registered.items() if v}}
+            items["V2"] = {**items["V2"], "modules": merged, "modules_source": "anteprima_non_registrata"}
     return JSONResponse(content=jsonable_encoder({"today_fixture_id": int(today_fixture_id), "models": items}))
 
 

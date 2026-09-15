@@ -208,6 +208,12 @@ def v2_modules(pre: dict[str, Any]) -> dict[str, Any]:
         "module_version": MODULE_VERSION,
         "goal_intensity_classes": {k: (v or {}).get("class_key") for k, v in (gi.get("pillars") or {}).items()},
         "goal_intensity_final": (gi.get("final_class") or {}).get("key"),
+        # dettaglio per la scheda V2 (stessi valori che leggono i pattern) — solo lettura
+        "goal_intensity_pillars": {
+            k: {f: (v or {}).get(f) for f in ("score", "raw_value", "class_key", "label")}
+            for k, v in (gi.get("pillars") or {}).items()
+        },
+        "goal_intensity_final_detail": gi.get("final_class"),
         "balance_classes": balance.get("pillar_classes") or {},
         "signal_markets": sorted(k for k, v in (pre.get("signal_index") or {}).items() if (v or {}).get("signal_active")),
         "eligibility": (pre.get("eligibility") or {}).get("status"),

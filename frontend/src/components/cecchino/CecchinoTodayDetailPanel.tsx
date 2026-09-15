@@ -10,11 +10,10 @@ import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
-import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
-import { CecchinoV2PatternHero, CecchinoV2Patterns, useV2PatternMarkets } from './CecchinoV2Patterns'
+import { CecchinoV2GoalIntensity, CecchinoV2PatternHero, CecchinoV2Patterns, useV2PatternMarkets } from './CecchinoV2Patterns'
 
 type Props = {
   detail: CecchinoTodayDetailResponse
@@ -138,11 +137,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         providerFixtureId={detail.provider_fixture_id}
       />
 
-      <CecchinoGoalIntensityV5Panel
-        goalIntensity={detail.goal_intensity_v5 ?? detail.goal_intensity_v5_preview}
-        todayFixtureId={detail.today_fixture_id ?? detail.id}
-        providerFixtureId={detail.provider_fixture_id}
-      />
+      {todayFixtureId != null && <CecchinoV2GoalIntensity todayFixtureId={todayFixtureId} />}
 
       {signals && (
         <CecchinoSignalsCard

@@ -552,7 +552,16 @@ function ProbBlock({ title, overLabel, underLabel, over, under }: { title: strin
   )
 }
 
-function GoalIntensityPanel({ p }: { p: LiveModelPrediction }) {
+export function GoalIntensityPanel({
+  p,
+  model = 'V2.5',
+  reference,
+}: {
+  p: LiveModelPrediction
+  model?: string
+  /** Storico con cui la partita viene confrontata, se diverso dal campionato. */
+  reference?: string
+}) {
   const markets = p.markets ?? {}
   const pillars = p.modules?.goal_intensity_pillars ?? {}
   const classes = p.modules?.goal_intensity_classes ?? {}
@@ -562,26 +571,31 @@ function GoalIntensityPanel({ p }: { p: LiveModelPrediction }) {
   const total = xg?.home != null && xg?.away != null ? xg.home + xg.away : null
   return (
     <section className={`${todayCard} ${todayCardPadding}`}>
-      <h3 className={todaySectionTitle}>Intensità Goal V2.5</h3>
-      <p className={todaySectionSubtitle}>Quanti gol ci si aspetta dalla partita, rispetto alla media del campionato. Non è un consiglio autonomo.</p>
+      <h3 className={todaySectionTitle}>Intensità Goal {model}</h3>
+      <p className={todaySectionSubtitle}>
+        Quanti gol ci si aspetta dalla partita, rispetto {reference ?? 'alla media del campionato'}. Non è un consiglio autonomo.
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge tone="sky">Classe finale: {cls(finalKey)}</Badge>
-        <Badge>Non collegato ai Segnali</Badge>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
           <p className="text-[11px] text-slate-500">Indice intensità (0–100)</p>
           <p className="text-2xl font-semibold text-slate-900">{num(finalDetail?.score, 1)}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Posizione della probabilità Over 2.5 tra le partite dello storico</p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {reference ? 'Media dei quattro pilastri: posizione della partita tra quelle dello storico' : 'Posizione della probabilità Over 2.5 tra le partite dello storico'}
+          </p>
         </div>
+        {total != null && (
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
           <p className="text-[11px] text-slate-500">Stima totale gol</p>
           <p className="text-2xl font-semibold text-slate-900">{num(total, 2)}</p>
           <p className="mt-1 text-[11px] text-slate-500">
-            {xg ? `Casa ${num(xg.home, 2)} · Ospite ${num(xg.away, 2)} (modello gol V2.5)` : 'Modello gol V2.5'}
+            {xg ? `Casa ${num(xg.home, 2)} · Ospite ${num(xg.away, 2)} (modello gol ${model})` : `Modello gol ${model}`}
           </p>
         </div>
+        )}
         <ProbBlock title="Linea 1.5" overLabel="Over 1.5" underLabel="Under 1.5" over={markets.OVER_1_5?.probability} under={markets.UNDER_1_5?.probability} />
         <ProbBlock title="Linea 2.5" overLabel="Over 2.5" underLabel="Under 2.5" over={markets.OVER_2_5?.probability} under={markets.UNDER_2_5?.probability} />
       </div>
@@ -594,7 +608,7 @@ function GoalIntensityPanel({ p }: { p: LiveModelPrediction }) {
             <div key={info.key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-800">{info.title}</p>
-                <p className="text-[11px] text-slate-500">{info.hint}</p>
+                <p className="text-[11px] text-slate-500">{reference ? info.hint.replace(/(alla media del campionato|al campionato)/, 'allo storico') : info.hint}</p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-sm font-semibold tabular-nums text-slate-900">{num(pl?.score, 0)}</p>

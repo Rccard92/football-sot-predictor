@@ -35,5 +35,7 @@ def test_v2_modules_extracts_pattern_columns():
     mods = v2_modules(pre)
     assert mods["goal_intensity_classes"] == {"offensive_production": "high", "match_tempo": "low"}
     assert mods["goal_intensity_final"] == "medium"
+    assert mods["goal_intensity_pillars"]["offensive_production"]["class_key"] == "high"
+    assert mods["goal_intensity_final_detail"] == {"key": "medium"}
     assert mods["balance_classes"]["f36"] == "imbalance"
     assert mods["signal_markets"] == ["HOME"]
