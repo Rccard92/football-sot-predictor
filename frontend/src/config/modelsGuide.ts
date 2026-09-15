@@ -154,7 +154,7 @@ export const GUIDE_MODELS: ModelCard[] = [
     reallyDoes: [
       'È di gran lunga il modello più preciso sui risultati reali. Sulla stagione 2025/26, usata una sola volta come esame finale: 1X2 5,1% meglio della V2, Over/Under 2,5% meglio.',
       'Master Pattern V3 con quota: 24 vincenti contro circa 28 attesi per caso. 14 di questi usano la quota del bookmaker come condizione e nella scheda sono mostrati a parte.',
-      'Indice di acquistabilità: non ancora costruito. Verrà fatto come orchestratore dei suoi moduli.',
+      'Indice di acquistabilità (stesso impianto della V2.5): parte dalla probabilità V3, che già combina specialisti, forma e calendario, ricalibrata sui risultati. Nelle stagioni di prova le predizioni da 70/100 in su hanno vinto il 62,5% delle volte contro il 46,8% normale; alle quote Bet365 il ROI è stato negativo (−3,6%). Rimettere tutti i moduli uno per uno peggiorava la lettura, perché la V3 li ha già dentro.',
       'Dal vivo funziona solo dove API-Football fornisce tiri e tiri in porta: il 15/09 in 13 partite eleggibili su 25.',
     ],
   },
@@ -181,7 +181,6 @@ export const GUIDE_BOOK_RULE: { title: string; items: string[] }[] = [
   {
     title: 'Dove la quota entra ancora nei ragionamenti (da correggere, V2 esclusa perché congelata)',
     items: [
-      'Indice di acquistabilità V3: non ancora costruito, verrà fatto con la stessa regola.',
       'Pattern con condizioni sulla quota: 14 su 24 nella V3 (distanza dal book o fascia di quota), 2 su 87 nella V2.5 (classe di acquistabilità). Mostrati a parte nella predizione.',
       'Pannello KPI V2.5: il rating contiene vantaggio ed edge rispetto al bookmaker. È solo una tabella di lettura, non decide nulla.',
       "Nella V2 congelata la quota entra anche nell'Equilibrio (quota X del book) e nell'indice V3.6: restano così per il confronto.",
@@ -295,7 +294,7 @@ export const GUIDE_GI_LEAGUES: { league: string; goals: string; over: string; hi
 export const GUIDE_NEXT: string[] = [
   'Osservazione live per alcuni mesi: le predizioni salvate prima delle partite diranno quale modello e quali pattern fanno vincere e guadagnare davvero.',
   'Verificare se i pattern confermati dai moduli vincono più di quelli smentiti.',
-  'Indice di acquistabilità V3 con lo stesso impianto della V2.5. Per la V2.5 resta da fare, una sola volta, l\x27esame finale sulla stagione 2025/26.',
+  'Esame finale degli indici V2.5 e V3 sulla stagione 2025/26, una sola volta, se un giorno passeranno l\x27esame di profitto.',
   'Misurare dal vivo se le predizioni dell\x27indice confermate da un pattern vincono e guadagnano più di quelle non confermate.',
   'Capire se i pattern trovati sui 16 campionati europei del Lab funzionano anche nei campionati minori che entrano ogni giorno in Cecchino Today.',
   'Aggiungere formazioni e infortuni da una fonte dedicata (API-Football non li fornisce bene per i campionati minori).',

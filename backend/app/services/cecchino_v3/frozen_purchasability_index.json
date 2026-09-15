@@ -1,0 +1,890 @@
+{
+ "module_version": "cecchino_v3_orchestrator_v1",
+ "mode": "freeze",
+ "runs": {
+  "v3_run": 11,
+  "index_run": 3
+ },
+ "criteria": {
+  "calibration_max_pt": 3.0,
+  "lift_min_pt": 5.0,
+  "profit_positive_seasons": 2,
+  "notes": [
+   "Allenamento solo in avanti: per ogni stagione di prova si impara sulle stagioni precedenti.",
+   "E1 calibrazione: nelle 10 fasce di probabilita' stimata la % reale di vittorie si discosta in media (pesata) al massimo di 3 punti, in ogni stagione.",
+   "E2 moduli utili: log-loss dell'indice minore di quella della sola probabilita' Cecchino ricalibrata, in ogni stagione (nessuna quota).",
+   "E3 predizioni vincono di piu': punteggio >= 70 con % reale di vittorie almeno 5 punti sopra la frequenza normale di quei mercati, in ogni stagione.",
+   "E4 profitto: predizioni (punteggio >= 70) con quota >= 1,50 con ROI > 0 in almeno 2 stagioni su 3 e nel complessivo.",
+   "E5 ordine: scarto tra vittorie reali e frequenza normale crescente con le fasce di punteggio (sotto 50, 50-60, 60-70, 70+), sul complessivo.",
+   "Volume: predizioni giocabili medie per giornata, solo riportato."
+  ]
+ },
+ "trained_on": [
+  "2021/2022",
+  "2022/2023",
+  "2023/2024",
+  "2024/2025"
+ ],
+ "held_out": [
+  "2025/2026"
+ ],
+ "models": {
+  "AWAY": {
+   "market_key": "AWAY",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.87688586
+   ],
+   "scales": [
+    0.58057502
+   ],
+   "impute": {},
+   "coef": [
+    -0.93114658,
+    0.74413129
+   ],
+   "n": 21693,
+   "base_rate": 0.30254
+  },
+  "AWAY_PT": {
+   "market_key": "AWAY_PT",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -1.13214213
+   ],
+   "scales": [
+    0.40084559
+   ],
+   "impute": {},
+   "coef": [
+    -1.14450691,
+    0.49430214
+   ],
+   "n": 21654,
+   "base_rate": 0.252055
+  },
+  "DRAW": {
+   "market_key": "DRAW",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -1.06125048
+   ],
+   "scales": [
+    0.22088942
+   ],
+   "impute": {},
+   "coef": [
+    -1.04999704,
+    0.22044241
+   ],
+   "n": 21693,
+   "base_rate": 0.261467
+  },
+  "DRAW_PT": {
+   "market_key": "DRAW_PT",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.3370696
+   ],
+   "scales": [
+    0.18788486
+   ],
+   "impute": {},
+   "coef": [
+    -0.35039333,
+    0.17493752
+   ],
+   "n": 21654,
+   "base_rate": 0.413965
+  },
+  "HOME": {
+   "market_key": "HOME",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.28142669
+   ],
+   "scales": [
+    0.56464662
+   ],
+   "impute": {},
+   "coef": [
+    -0.28100199,
+    0.6990606
+   ],
+   "n": 21693,
+   "base_rate": 0.435993
+  },
+  "HOME_PT": {
+   "market_key": "HOME_PT",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.72414197
+   ],
+   "scales": [
+    0.39533782
+   ],
+   "impute": {},
+   "coef": [
+    -0.72324638,
+    0.47092779
+   ],
+   "n": 21654,
+   "base_rate": 0.33398
+  },
+  "ONE_TWO": {
+   "market_key": "ONE_TWO",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    1.06125048
+   ],
+   "scales": [
+    0.22088942
+   ],
+   "impute": {},
+   "coef": [
+    1.04999704,
+    0.22044241
+   ],
+   "n": 21693,
+   "base_rate": 0.738533
+  },
+  "ONE_X": {
+   "market_key": "ONE_X",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    0.87688586
+   ],
+   "scales": [
+    0.58057502
+   ],
+   "impute": {},
+   "coef": [
+    0.93114658,
+    0.74413129
+   ],
+   "n": 21693,
+   "base_rate": 0.69746
+  },
+  "OVER_0_5": {
+   "market_key": "OVER_0_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    2.53492524
+   ],
+   "scales": [
+    0.44534029
+   ],
+   "impute": {},
+   "coef": [
+    2.60052086,
+    0.32389212
+   ],
+   "n": 21693,
+   "base_rate": 0.928087
+  },
+  "OVER_1_5": {
+   "market_key": "OVER_1_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    1.11201287
+   ],
+   "scales": [
+    0.41437805
+   ],
+   "impute": {},
+   "coef": [
+    1.11862654,
+    0.31741762
+   ],
+   "n": 21693,
+   "base_rate": 0.74909
+  },
+  "OVER_2_5": {
+   "market_key": "OVER_2_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.006533
+   ],
+   "scales": [
+    0.41151437
+   ],
+   "impute": {},
+   "coef": [
+    0.01795458,
+    0.32753932
+   ],
+   "n": 21693,
+   "base_rate": 0.504172
+  },
+  "OVER_3_5": {
+   "market_key": "OVER_3_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -0.96047177
+   ],
+   "scales": [
+    0.45260752
+   ],
+   "impute": {},
+   "coef": [
+    -0.95555249,
+    0.36777084
+   ],
+   "n": 21693,
+   "base_rate": 0.283455
+  },
+  "UNDER_0_5": {
+   "market_key": "UNDER_0_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -2.53492524
+   ],
+   "scales": [
+    0.44534029
+   ],
+   "impute": {},
+   "coef": [
+    -2.60052086,
+    0.32389212
+   ],
+   "n": 21693,
+   "base_rate": 0.071913
+  },
+  "UNDER_1_5": {
+   "market_key": "UNDER_1_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    -1.11201287
+   ],
+   "scales": [
+    0.41437805
+   ],
+   "impute": {},
+   "coef": [
+    -1.11862654,
+    0.31741762
+   ],
+   "n": 21693,
+   "base_rate": 0.25091
+  },
+  "UNDER_2_5": {
+   "market_key": "UNDER_2_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    0.006533
+   ],
+   "scales": [
+    0.41151437
+   ],
+   "impute": {},
+   "coef": [
+    -0.01795458,
+    0.32753932
+   ],
+   "n": 21693,
+   "base_rate": 0.495828
+  },
+  "UNDER_3_5": {
+   "market_key": "UNDER_3_5",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    0.96047177
+   ],
+   "scales": [
+    0.45260752
+   ],
+   "impute": {},
+   "coef": [
+    0.95555249,
+    0.36777084
+   ],
+   "n": 21693,
+   "base_rate": 0.716545
+  },
+  "X_TWO": {
+   "market_key": "X_TWO",
+   "features": [
+    "logit_p"
+   ],
+   "means": [
+    0.28142669
+   ],
+   "scales": [
+    0.56464662
+   ],
+   "impute": {},
+   "coef": [
+    0.28100199,
+    0.6990606
+   ],
+   "n": 21693,
+   "base_rate": 0.564007
+  }
+ },
+ "variant": "engine",
+ "exam_dev": {
+  "adopted_variant": "engine",
+  "engine": {
+   "verdict": {
+    "E1": true,
+    "E2": null,
+    "E3": true,
+    "E4": false,
+    "E5": true,
+    "passed": false
+   },
+   "pooled": {
+    "rows": 275377,
+    "calibration_gap_pt": 0.226,
+    "log_loss_index": 0.558724,
+    "log_loss_engine": 0.558724,
+    "predictions": {
+     "rows": 37009,
+     "won_pct": 62.46,
+     "base_pct": 46.77,
+     "lift_pt": 15.69,
+     "plays": 35195,
+     "roi_pct": -3.58,
+     "avg_quota": 1.683
+    },
+    "playable": {
+     "rows": 19194,
+     "won_pct": 48.68,
+     "base_pct": 35.79,
+     "lift_pt": 12.89,
+     "plays": 19194,
+     "roi_pct": -4.27,
+     "avg_quota": 2.059
+    },
+    "playable_per_day": 27.34,
+    "bands": {
+     "sotto 50": {
+      "rows": 139660,
+      "won_pct": 38.88,
+      "base_pct": 45.47,
+      "lift_pt": -6.59,
+      "plays": 129842,
+      "roi_pct": -10.57,
+      "avg_quota": 3.657
+     },
+     "50-60": {
+      "rows": 69172,
+      "won_pct": 51.84,
+      "base_pct": 49.65,
+      "lift_pt": 2.19,
+      "plays": 63871,
+      "roi_pct": -6.53,
+      "avg_quota": 2.667
+     },
+     "60-70": {
+      "rows": 29536,
+      "won_pct": 55.28,
+      "base_pct": 48.9,
+      "lift_pt": 6.38,
+      "plays": 27371,
+      "roi_pct": -5.74,
+      "avg_quota": 1.96
+     },
+     "70 e oltre": {
+      "rows": 37009,
+      "won_pct": 62.46,
+      "base_pct": 46.77,
+      "lift_pt": 15.69,
+      "plays": 35195,
+      "roi_pct": -3.58,
+      "avg_quota": 1.683
+     }
+    }
+   },
+   "seasons": {
+    "2022/2023": {
+     "rows": 92622,
+     "calibration_gap_pt": 0.471,
+     "log_loss_index": 0.560203,
+     "log_loss_engine": 0.560203,
+     "predictions": {
+      "rows": 10986,
+      "won_pct": 62.63,
+      "base_pct": 46.31,
+      "lift_pt": 16.32,
+      "plays": 10699,
+      "roi_pct": -2.62,
+      "avg_quota": 1.705
+     },
+     "playable": {
+      "rows": 5908,
+      "won_pct": 49.24,
+      "base_pct": 35.38,
+      "lift_pt": 13.86,
+      "plays": 5908,
+      "roi_pct": -2.06,
+      "avg_quota": 2.087
+     },
+     "playable_per_day": 24.11,
+     "bands": {
+      "sotto 50": {
+       "rows": 46896,
+       "won_pct": 39.31,
+       "base_pct": 45.86,
+       "lift_pt": -6.54,
+       "plays": 44476,
+       "roi_pct": -10.32,
+       "avg_quota": 3.542
+      },
+      "50-60": {
+       "rows": 24945,
+       "won_pct": 51.67,
+       "base_pct": 49.16,
+       "lift_pt": 2.51,
+       "plays": 23413,
+       "roi_pct": -6.42,
+       "avg_quota": 2.669
+      },
+      "60-70": {
+       "rows": 9795,
+       "won_pct": 55.07,
+       "base_pct": 48.45,
+       "lift_pt": 6.62,
+       "plays": 9305,
+       "roi_pct": -6.8,
+       "avg_quota": 1.954
+      },
+      "70 e oltre": {
+       "rows": 10986,
+       "won_pct": 62.63,
+       "base_pct": 46.31,
+       "lift_pt": 16.32,
+       "plays": 10699,
+       "roi_pct": -2.62,
+       "avg_quota": 1.705
+      }
+     }
+    },
+    "2023/2024": {
+     "rows": 92205,
+     "calibration_gap_pt": 0.311,
+     "log_loss_index": 0.556718,
+     "log_loss_engine": 0.556718,
+     "predictions": {
+      "rows": 12957,
+      "won_pct": 62.69,
+      "base_pct": 46.89,
+      "lift_pt": 15.8,
+      "plays": 11855,
+      "roi_pct": -3.42,
+      "avg_quota": 1.665
+     },
+     "playable": {
+      "rows": 6383,
+      "won_pct": 49.11,
+      "base_pct": 36.04,
+      "lift_pt": 13.07,
+      "plays": 6383,
+      "roi_pct": -4.25,
+      "avg_quota": 2.036
+     },
+     "playable_per_day": 28.12,
+     "bands": {
+      "sotto 50": {
+       "rows": 46786,
+       "won_pct": 38.42,
+       "base_pct": 45.26,
+       "lift_pt": -6.84,
+       "plays": 41497,
+       "roi_pct": -11.79,
+       "avg_quota": 3.732
+      },
+      "50-60": {
+       "rows": 22367,
+       "won_pct": 52.32,
+       "base_pct": 50.01,
+       "lift_pt": 2.31,
+       "plays": 19685,
+       "roi_pct": -5.5,
+       "avg_quota": 2.633
+      },
+      "60-70": {
+       "rows": 10095,
+       "won_pct": 55.38,
+       "base_pct": 49.06,
+       "lift_pt": 6.32,
+       "plays": 8860,
+       "roi_pct": -5.28,
+       "avg_quota": 1.949
+      },
+      "70 e oltre": {
+       "rows": 12957,
+       "won_pct": 62.69,
+       "base_pct": 46.89,
+       "lift_pt": 15.8,
+       "plays": 11855,
+       "roi_pct": -3.42,
+       "avg_quota": 1.665
+      }
+     }
+    },
+    "2024/2025": {
+     "rows": 90550,
+     "calibration_gap_pt": 0.449,
+     "log_loss_index": 0.559253,
+     "log_loss_engine": 0.559253,
+     "predictions": {
+      "rows": 13066,
+      "won_pct": 62.07,
+      "base_pct": 47.03,
+      "lift_pt": 15.04,
+      "plays": 12641,
+      "roi_pct": -4.55,
+      "avg_quota": 1.681
+     },
+     "playable": {
+      "rows": 6903,
+      "won_pct": 47.81,
+      "base_pct": 35.9,
+      "lift_pt": 11.91,
+      "plays": 6903,
+      "roi_pct": -6.19,
+      "avg_quota": 2.057
+     },
+     "playable_per_day": 30.01,
+     "bands": {
+      "sotto 50": {
+       "rows": 45978,
+       "won_pct": 38.91,
+       "base_pct": 45.3,
+       "lift_pt": -6.38,
+       "plays": 43869,
+       "roi_pct": -9.69,
+       "avg_quota": 3.704
+      },
+      "50-60": {
+       "rows": 21860,
+       "won_pct": 51.55,
+       "base_pct": 49.85,
+       "lift_pt": 1.7,
+       "plays": 20773,
+       "roi_pct": -7.61,
+       "avg_quota": 2.698
+      },
+      "60-70": {
+       "rows": 9646,
+       "won_pct": 55.39,
+       "base_pct": 49.19,
+       "lift_pt": 6.2,
+       "plays": 9206,
+       "roi_pct": -5.11,
+       "avg_quota": 1.977
+      },
+      "70 e oltre": {
+       "rows": 13066,
+       "won_pct": 62.07,
+       "base_pct": 47.03,
+       "lift_pt": 15.04,
+       "plays": 12641,
+       "roi_pct": -4.55,
+       "avg_quota": 1.681
+      }
+     }
+    }
+   }
+  },
+  "modules": {
+   "verdict": {
+    "E1": true,
+    "E2": false,
+    "E3": true,
+    "E4": false,
+    "E5": true,
+    "passed": false
+   },
+   "pooled": {
+    "rows": 275377,
+    "calibration_gap_pt": 0.53,
+    "log_loss_index": 0.560835,
+    "log_loss_engine": 0.558724,
+    "predictions": {
+     "rows": 45382,
+     "won_pct": 61.31,
+     "base_pct": 47.3,
+     "lift_pt": 14.01,
+     "plays": 42753,
+     "roi_pct": -3.56,
+     "avg_quota": 1.752
+    },
+    "playable": {
+     "rows": 24137,
+     "won_pct": 47.74,
+     "base_pct": 36.29,
+     "lift_pt": 11.46,
+     "plays": 24137,
+     "roi_pct": -4.23,
+     "avg_quota": 2.155
+    },
+    "playable_per_day": 34.38,
+    "bands": {
+     "sotto 50": {
+      "rows": 139356,
+      "won_pct": 40.6,
+      "base_pct": 46.77,
+      "lift_pt": -6.18,
+      "plays": 129596,
+      "roi_pct": -9.78,
+      "avg_quota": 3.461
+     },
+     "50-60": {
+      "rows": 57702,
+      "won_pct": 48.92,
+      "base_pct": 47.48,
+      "lift_pt": 1.44,
+      "plays": 53475,
+      "roi_pct": -7.99,
+      "avg_quota": 3.05
+     },
+     "60-70": {
+      "rows": 32937,
+      "won_pct": 51.55,
+      "base_pct": 47.23,
+      "lift_pt": 4.32,
+      "plays": 30455,
+      "roi_pct": -7.44,
+      "avg_quota": 2.35
+     },
+     "70 e oltre": {
+      "rows": 45382,
+      "won_pct": 61.31,
+      "base_pct": 47.3,
+      "lift_pt": 14.01,
+      "plays": 42753,
+      "roi_pct": -3.56,
+      "avg_quota": 1.752
+     }
+    }
+   },
+   "seasons": {
+    "2022/2023": {
+     "rows": 92622,
+     "calibration_gap_pt": 0.957,
+     "log_loss_index": 0.564047,
+     "log_loss_engine": 0.560203,
+     "predictions": {
+      "rows": 16342,
+      "won_pct": 60.57,
+      "base_pct": 47.35,
+      "lift_pt": 13.22,
+      "plays": 15718,
+      "roi_pct": -3.25,
+      "avg_quota": 1.8
+     },
+     "playable": {
+      "rows": 9197,
+      "won_pct": 47.33,
+      "base_pct": 36.34,
+      "lift_pt": 10.99,
+      "plays": 9197,
+      "roi_pct": -3.49,
+      "avg_quota": 2.203
+     },
+     "playable_per_day": 37.54,
+     "bands": {
+      "sotto 50": {
+       "rows": 46443,
+       "won_pct": 41.01,
+       "base_pct": 46.89,
+       "lift_pt": -5.88,
+       "plays": 44066,
+       "roi_pct": -9.31,
+       "avg_quota": 3.41
+      },
+      "50-60": {
+       "rows": 18426,
+       "won_pct": 48.62,
+       "base_pct": 47.51,
+       "lift_pt": 1.1,
+       "plays": 17280,
+       "roi_pct": -8.22,
+       "avg_quota": 3.017
+      },
+      "60-70": {
+       "rows": 11411,
+       "won_pct": 49.95,
+       "base_pct": 46.71,
+       "lift_pt": 3.24,
+       "plays": 10829,
+       "roi_pct": -8.97,
+       "avg_quota": 2.378
+      },
+      "70 e oltre": {
+       "rows": 16342,
+       "won_pct": 60.57,
+       "base_pct": 47.35,
+       "lift_pt": 13.22,
+       "plays": 15718,
+       "roi_pct": -3.25,
+       "avg_quota": 1.8
+      }
+     }
+    },
+    "2023/2024": {
+     "rows": 92205,
+     "calibration_gap_pt": 0.558,
+     "log_loss_index": 0.558274,
+     "log_loss_engine": 0.556718,
+     "predictions": {
+      "rows": 14481,
+      "won_pct": 62.86,
+      "base_pct": 48.06,
+      "lift_pt": 14.81,
+      "plays": 13020,
+      "roi_pct": -3.47,
+      "avg_quota": 1.66
+     },
+     "playable": {
+      "rows": 6971,
+      "won_pct": 49.39,
+      "base_pct": 37.08,
+      "lift_pt": 12.32,
+      "plays": 6971,
+      "roi_pct": -4.31,
+      "avg_quota": 2.033
+     },
+     "playable_per_day": 30.71,
+     "bands": {
+      "sotto 50": {
+       "rows": 46788,
+       "won_pct": 39.48,
+       "base_pct": 45.83,
+       "lift_pt": -6.35,
+       "plays": 41495,
+       "roi_pct": -10.57,
+       "avg_quota": 3.592
+      },
+      "50-60": {
+       "rows": 20356,
+       "won_pct": 49.77,
+       "base_pct": 48.28,
+       "lift_pt": 1.49,
+       "plays": 18183,
+       "roi_pct": -8.09,
+       "avg_quota": 2.955
+      },
+      "60-70": {
+       "rows": 10580,
+       "won_pct": 53.71,
+       "base_pct": 48.76,
+       "lift_pt": 4.96,
+       "plays": 9199,
+       "roi_pct": -5.82,
+       "avg_quota": 2.1
+      },
+      "70 e oltre": {
+       "rows": 14481,
+       "won_pct": 62.86,
+       "base_pct": 48.06,
+       "lift_pt": 14.81,
+       "plays": 13020,
+       "roi_pct": -3.47,
+       "avg_quota": 1.66
+      }
+     }
+    },
+    "2024/2025": {
+     "rows": 90550,
+     "calibration_gap_pt": 0.471,
+     "log_loss_index": 0.560159,
+     "log_loss_engine": 0.559253,
+     "predictions": {
+      "rows": 14559,
+      "won_pct": 60.61,
+      "base_pct": 46.5,
+      "lift_pt": 14.11,
+      "plays": 14015,
+      "roi_pct": -4.0,
+      "avg_quota": 1.784
+     },
+     "playable": {
+      "rows": 7969,
+      "won_pct": 46.78,
+      "base_pct": 35.53,
+      "lift_pt": 11.25,
+      "plays": 7969,
+      "roi_pct": -5.01,
+      "avg_quota": 2.206
+     },
+     "playable_per_day": 34.65,
+     "bands": {
+      "sotto 50": {
+       "rows": 46125,
+       "won_pct": 41.31,
+       "base_pct": 47.61,
+       "lift_pt": -6.3,
+       "plays": 44035,
+       "roi_pct": -9.49,
+       "avg_quota": 3.388
+      },
+      "50-60": {
+       "rows": 18920,
+       "won_pct": 48.3,
+       "base_pct": 46.59,
+       "lift_pt": 1.71,
+       "plays": 18012,
+       "roi_pct": -7.67,
+       "avg_quota": 3.179
+      },
+      "60-70": {
+       "rows": 10946,
+       "won_pct": 51.11,
+       "base_pct": 46.3,
+       "lift_pt": 4.82,
+       "plays": 10427,
+       "roi_pct": -7.28,
+       "avg_quota": 2.541
+      },
+      "70 e oltre": {
+       "rows": 14559,
+       "won_pct": 60.61,
+       "base_pct": 46.5,
+       "lift_pt": 14.11,
+       "plays": 14015,
+       "roi_pct": -4.0,
+       "avg_quota": 1.784
+      }
+     }
+    }
+   }
+  },
+  "reason": "La variante con tutti i moduli non passa E2: la probabilita V3 li combina gia; la variante engine ha calibrazione e scarto migliori."
+ },
+ "frozen_at": "2026-09-15"
+}

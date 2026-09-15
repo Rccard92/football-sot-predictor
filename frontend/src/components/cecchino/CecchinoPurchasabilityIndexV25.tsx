@@ -50,7 +50,12 @@ function label(key: string): string {
   return SEGNO[key] ?? MARKET_LABELS[key] ?? key
 }
 
-export function CecchinoPurchasabilityIndexV25({ p }: { p: LiveModelPrediction }) {
+const MODULES_READ: Record<string, string> = {
+  'V2.5': 'Picchetti, modello gol, Equilibrio, Intensità Goal e segnali',
+  V3: 'La probabilità V3, che combina gli specialisti (forza, tiri, tiri in porta), la forma e il calendario,',
+}
+
+export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveModelPrediction; model?: string }) {
   const panelId = useId()
   const index = p.modules?.purchasability_index
   const markets = index?.markets ?? {}
@@ -75,27 +80,27 @@ export function CecchinoPurchasabilityIndexV25({ p }: { p: LiveModelPrediction }
     <section className={`${todayCard} ${todayCardPadding} space-y-4`} data-testid="purchasability-index-v25">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità V2.5</h3>
-          <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">V2.5</span>
+          <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità {model}</h3>
+          <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">{model}</span>
           <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-amber-200">
             In osservazione
           </span>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Predizioni dei moduli V2.5: il punteggio dice quanto la giocata è più probabile del normale per quel mercato. I pattern accesi le
+          Predizioni dei moduli {model}: il punteggio dice quanto la giocata è più probabile del normale per quel mercato. I pattern accesi le
           confermano o no; la quota Bet365 serve solo a capire se vale la pena (da {num(minQuota)} in su).
         </p>
       </div>
 
       {index?.status !== 'ok' ? (
-        <p className="text-sm text-slate-600">Indice V2.5 non calcolabile per questa partita{index?.error ? `: ${index.error}` : '.'}</p>
+        <p className="text-sm text-slate-600">Indice {model} non calcolabile per questa partita{index?.status === 'early_season' ? ': servono almeno 5 partite giocate per squadra.' : index?.error ? `: ${index.error}` : '.'}</p>
       ) : predictions.length === 0 ? (
-        <p className="text-sm text-slate-600">Nessuna predizione forte: nessun mercato arriva a {minScore}/100 per i moduli V2.5.</p>
+        <p className="text-sm text-slate-600">Nessuna predizione forte: nessun mercato arriva a {minScore}/100 per i moduli {model}.</p>
       ) : (
         <>
           <div className="space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Predizioni dell&apos;indice</p>
-            <div className={`${bbOppTabScroll} gap-1.5`} role="tablist" aria-label="Predizioni indice V2.5">
+            <div className={`${bbOppTabScroll} gap-1.5`} role="tablist" aria-label={`Predizioni indice ${model}`}>
               {predictions.map((k) => {
                 const it = markets[k]
                 const active = k === current
@@ -128,7 +133,7 @@ export function CecchinoPurchasabilityIndexV25({ p }: { p: LiveModelPrediction }
           {m && current && (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4" id={`${panelId}-index-detail`} role="tabpanel">
               <div className="flex flex-wrap items-center gap-4">
-                <PurchasabilityScoreRing score={m.score} classLabel={indexClassLabel(m.score)} size="lg" title="Indice V2.5" testId="index-v25-ring" />
+                <PurchasabilityScoreRing score={m.score} classLabel={indexClassLabel(m.score)} size="lg" title={`Indice ${model}`} testId="index-v25-ring" />
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Mercato</p>
                   <h4 className="text-base font-bold text-slate-900">{MARKET_LABELS[current] ?? label(current)}</h4>
@@ -148,7 +153,7 @@ export function CecchinoPurchasabilityIndexV25({ p }: { p: LiveModelPrediction }
                   <div>
                     <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Moduli</dt>
                     <dd>
-                      Picchetti, modello gol, Equilibrio, Intensità Goal e segnali, letti insieme, stimano che {label(current)} esca il{' '}
+                      {MODULES_READ[model] ?? 'I moduli'}, letti insieme, stimano che {label(current)} esca il{' '}
                       {pct(m.probability)} delle volte, contro il {pct(m.base_rate)} normale di questo mercato:{' '}
                       {((m.probability - m.base_rate) * 100).toLocaleString('it-IT', { maximumFractionDigits: 1, signDisplay: 'always' })} punti.
                     </dd>
@@ -157,9 +162,9 @@ export function CecchinoPurchasabilityIndexV25({ p }: { p: LiveModelPrediction }
                     <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Pattern</dt>
                     <dd>
                       {relation === 'confirmed'
-                        ? 'Confermata: un Pattern Master V2.5 acceso indica lo stesso mercato.'
+                        ? `Confermata: un Pattern Master ${model} acceso indica lo stesso mercato.`
                         : relation === 'conflict'
-                          ? 'In contrasto: un Pattern Master V2.5 acceso indica un esito opposto.'
+                          ? `In contrasto: un Pattern Master ${model} acceso indica un esito opposto.`
                           : patternMarkets.length
                             ? 'I pattern accesi indicano altri mercati, compatibili con questa predizione.'
                             : 'Nessun pattern acceso su questa partita: vale la sola lettura dei moduli.'}

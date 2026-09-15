@@ -130,7 +130,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: 'Scansione automatica spostata alle 06:00 sulla giornata in corso (staging con recupero alle 06:45, produzione alle 06:00); scansione delle 23:00 spenta', status: 'fatto' },
       { text: 'Scheda V2.5 con la stessa grafica della V2: Acquistabilità, Pannello KPI, pilastri Equilibrio, Intensità Goal e pattern con guida alla lettura', status: 'fatto' },
       { text: 'Predizione in cima alle schede: pattern con quota, controllo dei moduli senza quote del book, pattern che usano la quota come condizione mostrati a parte', status: 'fatto' },
-      { text: 'Nuovo Indice di Acquistabilità V2.5 e V3 come orchestratore: legge tutti i moduli, stima quanto la giocata può vincere e solo alla fine guarda la quota per decidere se e quanto investire (V2.5 online in osservazione: predizioni 70+ dai soli moduli, conferma dai pattern; V3 da fare)', status: 'in_corso' },
+      { text: 'Nuovo Indice di Acquistabilità V2.5 e V3 come orchestratore: legge tutti i moduli, stima quanto la giocata può vincere e solo alla fine guarda la quota per decidere se e quanto investire (V2.5 e V3 online in osservazione: predizioni 70+ senza quote, conferma dai pattern, confronto in Osservazione live)', status: 'fatto' },
     ],
     doneWhen: 'Su ogni partita vedi tre analisi e i segnali dei pattern, anche per i mercati senza quota.',
   },
@@ -193,6 +193,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-15',
+    text: "Indice di Acquistabilità V3 con lo stesso impianto e gli stessi criteri della V2.5. La versione con tutte le colonne dei moduli peggiorava la lettura (la probabilità V3 li combina già): adottata la probabilità V3 ricalibrata sui risultati. Esame 2022/23-2024/25: predizioni 70+ vinte 62,5% contro 46,8% normale, ordine rispettato, profitto non superato (ROI -3,6%). Online nella scheda V3 con conferma dai pattern; Osservazione live confronta predizioni confermate e non confermate.",
+  },
   {
     date: '2026-09-15',
     text: "Nuovo Indice di Acquistabilità V2.5 come orchestratore: impara solo da vinte/perse sui moduli (nessuna quota), punteggio = quanto la giocata è più probabile del normale, quota Bet365 solo per dire se è giocabile (da 1,50). Esame sulle stagioni 2022/23-2024/25: stime realistiche, moduli utili, predizioni 70+ vinte 60,3% contro 46,6% normale, ordine rispettato; profitto non superato (ROI -4,7%). Online in Cecchino Today in cima alla scheda V2.5, con conferma dai pattern accesi. Stagione 2025/26 tenuta fuori per l'esame finale.",

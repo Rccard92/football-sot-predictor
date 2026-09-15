@@ -1,5 +1,6 @@
 import type { LiveModelPrediction, V3IndexBlock } from '../../lib/cecchinoLiveApi'
 import { CecchinoPatternHero } from './CecchinoPatternHero'
+import { CecchinoPurchasabilityIndexV25 } from './CecchinoPurchasabilityIndexV25'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 import { Badge, KpiPanel, PatternPanel, SourceBadge, Stat, useLiveFixture } from './CecchinoV25Panel'
 
@@ -40,22 +41,6 @@ function indexClass(block: V3IndexBlock | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-
-function PurchasabilityInactive() {
-  return (
-    <section className={`${todayCard} ${todayCardPadding}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-bold tracking-wide text-slate-800">Indice di Acquistabilità V3</h3>
-        <Badge tone="dark">V3</Badge>
-        <Badge>In costruzione</Badge>
-      </div>
-      <p className="mt-1 text-xs text-slate-500">
-        L&apos;indice della V3 verrà costruito come orchestratore: legge prima specialisti, indici e pattern accesi per stimare quanto la
-        giocata può vincere, e solo alla fine guarda la quota Bet365 per decidere se e quanto investire.
-      </p>
-    </section>
-  )
-}
 
 function SpecialistsPanel({ p }: { p: LiveModelPrediction }) {
   const s = p.modules?.specialists ?? {}
@@ -299,8 +284,8 @@ export function CecchinoV3Panel({ todayFixtureId }: { todayFixtureId: number }) 
           </p>
         )}
       </section>
-      <CecchinoPatternHero p={p} model="V3" />
-      <PurchasabilityInactive />
+      <CecchinoPurchasabilityIndexV25 p={p} model="V3" />
+      <CecchinoPatternHero p={p} model="V3" hideWhenEmpty />
       <KpiPanel p={p} title="PANNELLO KPI V3" showPurchasability={false} />
       <SpecialistsPanel p={p} />
       <IndicesPanel p={p} />

@@ -181,7 +181,36 @@ def v3_payload(result: dict[str, Any], kpi_panel: dict[str, Any] | None) -> tupl
         "params": result.get("params"),
         "eligibility": "ok" if result.get("eligible") else "early_season",
     }
+    modules["purchasability_index"] = v3_index_from_payload(markets, modules, kpi_rows=panel["rows"])
     return markets, modules
+
+
+def v3_index_from_payload(
+    markets: dict[str, Any], modules: dict[str, Any], *, kpi_rows: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Indice di Acquistabilita' V3 (orchestratore) dai dati gia' salvati della previsione V3.
+    La quota reale serve solo alla fine; le quote ricavate non contano."""
+    try:
+        from app.services.cecchino_v3.purchasability_index import purchasability_index_live
+
+        derived = {r["market_key"] for r in (kpi_rows or []) if r.get("quota_book_derived")}
+        expected = modules.get("expected_goals") or {}
+        evidence = modules.get("evidence") or {}
+        result = {
+            "eligible": modules.get("eligibility") == "ok",
+            "lambda_home": expected.get("home"),
+            "lambda_away": expected.get("away"),
+            "ht_share": modules.get("ht_share"),
+            "home_evidence": evidence.get("home"),
+            "away_evidence": evidence.get("away"),
+            "specialists": modules.get("specialists"),
+            "indices": modules.get("indices"),
+            "probabilities": {k: (m or {}).get("probability") for k, m in markets.items()},
+        }
+        quotas = {k: (m or {}).get("quota_book") for k, m in markets.items() if k not in derived}
+        return purchasability_index_live(result, quotas)
+    except Exception as exc:  # noqa: BLE001 - l'indice non deve mai bloccare la registrazione
+        return {"status": "error", "error": str(exc)[:200]}
 
 
 def v25_pattern_signals(

@@ -109,6 +109,16 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
                 db.rollback()
     if "V3" not in items:
         items["V3"] = _v3_preview(db, int(today_fixture_id))
+    elif items["V3"].get("status") == "open" and not (items["V3"].get("modules") or {}).get("purchasability_index"):
+        # previsione V3 registrata prima dell'indice: calcolato dai dati salvati (non salvato)
+        from app.services.cecchino_live.registry import v3_index_from_payload
+
+        modules = dict(items["V3"].get("modules") or {})
+        modules["purchasability_index"] = {
+            **v3_index_from_payload(items["V3"].get("markets") or {}, modules),
+            "source": "anteprima_non_registrata",
+        }
+        items["V3"] = {**items["V3"], "modules": modules}
     if "V2" not in items:
         items["V2"] = _v2_preview(db, int(today_fixture_id))
     elif items["V2"].get("status") == "open" and not (
