@@ -119,6 +119,18 @@ def v25_payload(pre: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         "history_matches": pre.get("history_matches"),
         "league_reference": pre.get("league_reference"),
     }
+    # Indice di Acquistabilita' V2.5 (orchestratore): legge i moduli, la quota reale serve solo alla fine
+    try:
+        from app.services.cecchino_v25.orchestrator_data import purchasability_index_live
+
+        quotas = {
+            r["market_key"]: r.get("quota_book")
+            for r in pre["kpi"]["rows"]
+            if r.get("quota_book") is not None and not r.get("quota_book_derived")
+        }
+        modules["purchasability_index"] = purchasability_index_live(pre, quotas)
+    except Exception as exc:  # noqa: BLE001 - l'indice non deve mai bloccare la registrazione
+        modules["purchasability_index"] = {"status": "error", "error": str(exc)[:200]}
     return markets, modules
 
 

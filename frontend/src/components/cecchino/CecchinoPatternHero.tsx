@@ -10,7 +10,7 @@ import { breakEvenQuota, groupPatternSignals, referencePattern, type PatternGrou
 /** Conferma o contrasto di un mercato dell'indice con la predizione dei pattern. */
 export function PatternRelationBadge({ relation }: { relation: PatternRelation }) {
   if (relation === 'confirmed') {
-    return <span className="inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900 ring-1 ring-emerald-200">Indicato dal pattern</span>
+    return <span className="inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900 ring-1 ring-emerald-200">Confermata dal pattern</span>
   }
   if (relation === 'conflict') {
     return <span className="inline-flex rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-900 ring-1 ring-red-200">In contrasto col pattern</span>
@@ -82,10 +82,13 @@ export function CecchinoPatternHero({
   p,
   model,
   indexFor,
+  hideWhenEmpty = false,
 }: {
   p: LiveModelPrediction | undefined
   model: string
   indexFor?: (marketKey: string) => MarketIndex | null
+  /** Nasconde il blocco quando non c'è nessun pattern con quota acceso (resta visibile solo l'indice). */
+  hideWhenEmpty?: boolean
 }) {
   const patterns = p?.modules?.patterns
   // i pattern con condizioni sulla quota del book restano separati da quelli costruiti solo sui moduli
@@ -177,6 +180,8 @@ export function CecchinoPatternHero({
           </article>
         )
   }
+
+  if (hideWhenEmpty && groups.length === 0 && bookGroups.length === 0) return null
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-300 shadow-md" data-testid={`pattern-hero-${model}`}>

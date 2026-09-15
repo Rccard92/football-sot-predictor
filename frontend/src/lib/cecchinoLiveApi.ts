@@ -47,6 +47,29 @@ export type LivePatterns = {
   }
 }
 
+export type LiveIndexMarket = {
+  probability: number
+  base_rate: number
+  score: number
+  is_prediction: boolean
+  quota: number | null
+  min_quota: number | null
+  playable: boolean
+}
+
+/** Indice di Acquistabilità V2.5 (orchestratore): legge i moduli, la quota serve solo alla fine. */
+export type LivePurchasabilityIndex = {
+  status: string
+  error?: string
+  source?: string
+  module_version?: string
+  trained_on?: string[]
+  prediction_min_score?: number
+  playable_min_quota?: number
+  markets?: Record<string, LiveIndexMarket>
+  predictions?: string[]
+}
+
 export type LiveBalancePillar = {
   title?: string | null
   index?: number | null
@@ -125,6 +148,7 @@ export type LiveModules = {
   eligibility?: string | null
   history_matches?: number | null
   patterns?: LivePatterns
+  purchasability_index?: LivePurchasabilityIndex
 }
 
 export type LiveModelPrediction = {

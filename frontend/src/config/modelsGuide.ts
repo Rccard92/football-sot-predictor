@@ -132,7 +132,7 @@ export const GUIDE_MODELS: ModelCard[] = [
       'Circa 700 partite in più per stagione diventano analizzabili (la V2 le scartava per un errore).',
       'Intensità Goal: più alta è la classe, più partite finiscono Over 2.5 (dal 41,9% al 60,0%). Il modulo misura quello che deve misurare.',
       'Master Pattern V2.5 con quota: 87 vincenti contro circa 79 attesi per caso.',
-      "Indice di acquistabilità: la versione attuale è stata costruita sul confronto tra Cecchino e Bet365 invece che sui moduli, e per questo non si attiva quasi mai. È in rifacimento.",
+      "Indice di acquistabilità (orchestratore dei moduli): legge picchetti, modello gol, Equilibrio, Intensità Goal e segnali senza quote. Nelle stagioni di prova le sue predizioni da 70/100 in su hanno vinto il 60,3% delle volte contro il 46,6% normale di quei mercati, e più il punteggio è alto più vincono. Alle quote Bet365 il ROI di queste predizioni è stato negativo (−4,7%): per questo i pattern che le confermano vanno seguiti in Osservazione live.",
     ],
   },
   {
@@ -174,13 +174,13 @@ export const GUIDE_BOOK_RULE: { title: string; items: string[] }[] = [
     items: [
       'Regola dei Master Pattern: ROI positivo alle quote reali in 4 stagioni su 4, cioè guadagno vero.',
       'Quota minima e "quota in profitto" nella predizione: la riuscita storica del pattern confrontata con la quota di oggi.',
+      'Indice di acquistabilità V2.5: il punteggio nasce solo dai moduli; la quota Bet365 dice solo se una predizione è giocabile (da 1,50 in su).',
       'Eleggibilità: servono le quote Bet365 per poter giocare la partita.',
     ],
   },
   {
     title: 'Dove la quota entra ancora nei ragionamenti (da correggere, V2 esclusa perché congelata)',
     items: [
-      'Indice di acquistabilità V2.5: costruito sul confronto tra Cecchino e Bet365. Da rifare come orchestratore dei moduli.',
       'Indice di acquistabilità V3: non ancora costruito, verrà fatto con la stessa regola.',
       'Pattern con condizioni sulla quota: 14 su 24 nella V3 (distanza dal book o fascia di quota), 2 su 87 nella V2.5 (classe di acquistabilità). Mostrati a parte nella predizione.',
       'Pannello KPI V2.5: il rating contiene vantaggio ed edge rispetto al bookmaker. È solo una tabella di lettura, non decide nulla.',
@@ -295,7 +295,8 @@ export const GUIDE_GI_LEAGUES: { league: string; goals: string; over: string; hi
 export const GUIDE_NEXT: string[] = [
   'Osservazione live per alcuni mesi: le predizioni salvate prima delle partite diranno quale modello e quali pattern fanno vincere e guadagnare davvero.',
   'Verificare se i pattern confermati dai moduli vincono più di quelli smentiti.',
-  'Nuovo indice di acquistabilità per V2.5 e V3: legge tutti i moduli, stima quanto la giocata può vincere e solo alla fine guarda la quota per decidere se e quanto investire.',
+  'Indice di acquistabilità V3 con lo stesso impianto della V2.5. Per la V2.5 resta da fare, una sola volta, l\x27esame finale sulla stagione 2025/26.',
+  'Misurare dal vivo se le predizioni dell\x27indice confermate da un pattern vincono e guadagnano più di quelle non confermate.',
   'Capire se i pattern trovati sui 16 campionati europei del Lab funzionano anche nei campionati minori che entrano ogni giorno in Cecchino Today.',
   'Aggiungere formazioni e infortuni da una fonte dedicata (API-Football non li fornisce bene per i campionati minori).',
 ]

@@ -93,6 +93,20 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
                 items[MODEL_V25] = {"model": MODEL_V25, "status": "error", "source": "anteprima", "error": str(exc)[:300]}
             finally:
                 db.rollback()
+    elif items[MODEL_V25].get("status") == "open" and not (items[MODEL_V25].get("modules") or {}).get("purchasability_index"):
+        # previsione registrata prima dell'indice orchestratore: indice calcolato al momento (non salvato)
+        today = db.get(CecchinoTodayFixture, int(today_fixture_id))
+        fixture = db.get(Fixture, int(today.local_fixture_id)) if today and today.local_fixture_id else None
+        if fixture is not None:
+            try:
+                _, preview_modules = v25_payload(compute_v25_live(db, fixture, today.kpi_panel_json))
+                modules = dict(items[MODEL_V25].get("modules") or {})
+                modules["purchasability_index"] = {**preview_modules["purchasability_index"], "source": "anteprima_non_registrata"}
+                items[MODEL_V25] = {**items[MODEL_V25], "modules": modules}
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                db.rollback()
     if "V3" not in items:
         items["V3"] = _v3_preview(db, int(today_fixture_id))
     if "V2" not in items:
