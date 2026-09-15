@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 PROVIDER = "api_football"
 LOOKAHEAD = timedelta(minutes=75)
+FORCE_LOOKAHEAD = timedelta(hours=24)
 GRACE_AFTER_KICKOFF = timedelta(minutes=5)
 INJURIES_REFRESH = timedelta(hours=3)
 ELIGIBLE = "eligible"
@@ -46,14 +47,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def target_fixtures(db: Session, now: datetime) -> list[Fixture]:
+def target_fixtures(db: Session, now: datetime, lookahead: timedelta = LOOKAHEAD) -> list[Fixture]:
     """Partite eleggibili di Today nella finestra, senza formazione ufficiale di entrambe le squadre."""
     local_ids = db.scalars(
         select(CecchinoTodayFixture.local_fixture_id).where(
             CecchinoTodayFixture.eligibility_status == ELIGIBLE,
             CecchinoTodayFixture.local_fixture_id.is_not(None),
             CecchinoTodayFixture.kickoff >= now - GRACE_AFTER_KICKOFF,
-            CecchinoTodayFixture.kickoff <= now + LOOKAHEAD,
+            CecchinoTodayFixture.kickoff <= now + lookahead,
         )
     ).all()
     ids = sorted({int(i) for i in local_ids})
@@ -159,10 +160,23 @@ def store_injuries(db: Session, fixture: Fixture, items: list[dict[str, Any]]) -
     return stored
 
 
-def run_prematch_lineups(db: Session, *, client: ApiFootballClient | None = None, now: datetime | None = None) -> dict[str, Any]:
+def run_prematch_lineups(
+    db: Session,
+    *,
+    client: ApiFootballClient | None = None,
+    now: datetime | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """force=True: tutte le partite eleggibili delle prossime 24 ore e assenti riletti comunque."""
     now = now or _now()
-    fixtures = target_fixtures(db, now)
-    out: dict[str, Any] = {"fixtures_in_window": len(fixtures), "calls": 0, "lineups_stored": 0, "injuries_stored": 0}
+    fixtures = target_fixtures(db, now, FORCE_LOOKAHEAD if force else LOOKAHEAD)
+    out: dict[str, Any] = {
+        "force": force,
+        "fixtures_in_window": len(fixtures),
+        "calls": 0,
+        "lineups_stored": 0,
+        "injuries_stored": 0,
+    }
     if not fixtures:
         return out
     client = client or ApiFootballClient()
@@ -189,7 +203,7 @@ def run_prematch_lineups(db: Session, *, client: ApiFootballClient | None = None
             with_lineups += 1 if n >= 2 else 0
         db.commit()
 
-    recent = _injuries_recent(db, [int(f.id) for f in fixtures], now)
+    recent = set() if force else _injuries_recent(db, [int(f.id) for f in fixtures], now)
     injury_ids = [aid for aid, f in by_api.items() if int(f.id) not in recent]
     for start in range(0, len(injury_ids), BATCH_SIZE):
         if not budget.can_spend():

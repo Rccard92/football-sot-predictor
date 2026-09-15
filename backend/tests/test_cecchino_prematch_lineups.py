@@ -9,7 +9,7 @@ from app.services.cecchino_live import prematch_lineups as pl
 
 
 def test_no_fixtures_in_window_makes_no_api_calls(monkeypatch):
-    monkeypatch.setattr(pl, "target_fixtures", lambda db, now: [])
+    monkeypatch.setattr(pl, "target_fixtures", lambda db, now, lookahead=None: [])
     client = MagicMock()
     out = pl.run_prematch_lineups(MagicMock(), client=client)
     assert out["fixtures_in_window"] == 0 and out["calls"] == 0
