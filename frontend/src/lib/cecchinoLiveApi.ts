@@ -256,23 +256,69 @@ export type ObservationPatternStats = {
   roi_pct: number | null
 }
 
-export type IndexObservationBlock = {
-  predictions: number
+/** Giocate di un modello: vinte/perse e profitto a 1 unità alla quota registrata prima della partita. */
+export type ObservationTally = {
+  plays: number
+  closed: number
+  pending: number
   won: number
   lost: number
-  pending: number
-  playable: number
-  playable_closed: number
-  profit: number
-  win_rate_pct: number | null
+  won_pct: number | null
   roi_pct: number | null
+  profit: number
+  avg_quota: number | null
+  sample: 'presto per dirlo' | 'indicativo' | 'affidabile'
 }
 
-export type IndexObservationModel = {
-  fixtures: number
-  all: IndexObservationBlock
-  by_pattern: Record<'confermate' | 'in_contrasto' | 'altri_pattern' | 'senza_pattern', IndexObservationBlock>
-  by_score: Record<string, IndexObservationBlock>
+export type ObservationTallyRow = ObservationTally & { key: string; label?: string }
+
+export type ObservationFixturePlay = {
+  today_fixture_id: number
+  match: string
+  league: string
+  kickoff: string | null
+  status: string
+  score?: Record<string, number | null> | null
+  index: { market_key: string; score: number; quota: number | null; playable: boolean; won: boolean | null; pattern: string }[]
+  patterns: { market_key: string; patterns: number; quota: number | null; won: boolean | null }[]
+}
+
+export type ObservationModelOverview = {
+  index: {
+    available: boolean
+    plays: ObservationTally
+    all_predictions: ObservationTally
+    last7: ObservationTally
+    top: Record<'90-100' | '70-90', ObservationTally>
+    by_pattern: Record<'confermate' | 'in_contrasto' | 'altri_pattern' | 'senza_pattern', ObservationTally>
+    bands: ObservationTallyRow[]
+    by_market: ObservationTallyRow[]
+    by_family: ObservationTallyRow[]
+    by_league: ObservationTallyRow[]
+  }
+  patterns: {
+    plays: ObservationTally
+    last7: ObservationTally
+    with_book_conditions: ObservationTally
+    by_market: (ObservationTallyRow & { hist_win_pct: number | null; hist_roi_pct: number | null })[]
+    by_family: ObservationTallyRow[]
+    by_league: ObservationTallyRow[]
+    concordance: ObservationTallyRow[]
+  }
+  daily: {
+    scan_date: string
+    index: ObservationTally
+    pattern: ObservationTally
+    cumulative_index_profit: number
+    cumulative_pattern_profit: number
+    fixtures: ObservationFixturePlay[]
+  }[]
+}
+
+export type ObservationModelsOverview = {
+  thresholds: { index_min_score: number; playable_min_quota: number; sample_early: number; sample_reliable: number }
+  models: Record<string, ObservationModelOverview>
+  agreement: Record<string, ObservationTally>
 }
 
 export type ObservationDashboard = {
@@ -298,7 +344,7 @@ export type ObservationDashboard = {
     cumulative_fixtures: number
     cumulative: EngineMetrics
   }[]
-  purchasability_index?: Record<string, IndexObservationModel>
+  models_overview?: ObservationModelsOverview
   pattern_groups: ObservationGroupStats[]
   patterns: ObservationPatternStats[]
   patterns_total: number
