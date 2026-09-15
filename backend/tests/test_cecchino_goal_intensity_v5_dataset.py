@@ -628,18 +628,8 @@ def test_streaming_response_routes():
         date_to=date(2026, 7, 17),
     )
     assert summary_name.endswith(".json")
-    route_src = (
-        Path(__file__).resolve().parents[1] / "app/routes/cecchino_research.py"
-    ).read_text(encoding="utf-8")
-    for path in (
-        "/goal-intensity-v5/dataset/export/all",
-        "/goal-intensity-v5/dataset/export/core-min5",
-        "/goal-intensity-v5/dataset/export/core-min10",
-        "/goal-intensity-v5/dataset/export/xg-paired",
-        "/goal-intensity-v5/dataset/export/summary",
-    ):
-        assert path in route_src
-    assert "StreamingResponse" in route_src
+    # Gli endpoint di ricerca GI v5 sono stati rimossi (Step 2, conferma utente 2026-09-15):
+    # il servizio dataset resta e viene verificato qui sopra.
 
 
 def test_internal_equivalent_to_summary_preview():

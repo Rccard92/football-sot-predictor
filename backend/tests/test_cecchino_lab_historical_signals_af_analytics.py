@@ -253,39 +253,3 @@ def test_summary_cache_hit():
     assert calls["n"] == 1
 
 
-def test_api_signals_af_endpoints():
-    app = FastAPI()
-    app.include_router(cecchino_lab.router, prefix="/api")
-    db = MagicMock()
-
-    def _override():
-        yield db
-
-    app.dependency_overrides[get_db] = _override
-    client = TestClient(app)
-
-    minimal = {
-        "schema_version": HISTORICAL_SIGNALS_AF_ANALYTICS_VERSION,
-        "models": [],
-        "unique_opportunities": 0,
-        "active_cells": 0,
-    }
-    with patch(
-        "app.routes.cecchino_lab.get_signals_af_summary", return_value=minimal
-    ) as m_sum:
-        r = client.get("/api/cecchino-lab/historical-scans/3/signals-af/summary")
-        assert r.status_code == 200
-        m_sum.assert_called_once()
-
-    with patch(
-        "app.routes.cecchino_lab.get_signals_af_activations",
-        return_value={"items": [], "total": 0, "limit": 50, "offset": 0},
-    ) as m_act:
-        r = client.get(
-            "/api/cecchino-lab/historical-scans/3/signals-af/activations?limit=50&offset=0"
-        )
-        assert r.status_code == 200
-        m_act.assert_called_once()
-
-    assert not db.add.called
-    assert not db.commit.called

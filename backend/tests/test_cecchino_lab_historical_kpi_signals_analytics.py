@@ -596,60 +596,6 @@ def _api_client(db=None):
     return TestClient(app), db
 
 
-def test_api_kpi_signals_routes():
-    client, db = _api_client()
-    minimal_summary = {
-        "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
-        "run": {"run_id": 3},
-        "overall": {"real": {}},
-        "filters": {},
-    }
-    minimal_timeline = {
-        "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
-        "points": [],
-        "filters": {},
-    }
-    minimal_activations = {"items": [], "total": 0, "limit": 50, "offset": 0, "filters": {}}
-
-    with patch(
-        "app.routes.cecchino_lab.get_kpi_signals_summary",
-        return_value=minimal_summary,
-    ) as m_sum:
-        r = client.get("/api/cecchino-lab/historical-scans/3/kpi-signals/summary")
-        assert r.status_code == 200
-        assert r.json()["schema_version"] == HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION
-        m_sum.assert_called_once()
-
-    with patch(
-        "app.routes.cecchino_lab.get_kpi_signals_timeline",
-        return_value=minimal_timeline,
-    ) as m_tl:
-        r = client.get(
-            "/api/cecchino-lab/historical-scans/3/kpi-signals/timeline?group_by=week"
-        )
-        assert r.status_code == 200
-        m_tl.assert_called_once()
-
-    with patch(
-        "app.routes.cecchino_lab.get_kpi_signal_activations",
-        return_value=minimal_activations,
-    ) as m_act:
-        r = client.get(
-            "/api/cecchino-lab/historical-scans/3/kpi-signals/activations?limit=25&offset=2"
-        )
-        assert r.status_code == 200
-        m_act.assert_called_once()
-
-    assert not db.add.called
-    assert not db.commit.called
-
-    with patch(
-        "app.routes.cecchino_lab.get_kpi_signals_summary",
-        side_effect=CecchinoLabImportError("run_not_found", "x", status_code=404),
-    ):
-        r404 = client.get("/api/cecchino-lab/historical-scans/999/kpi-signals/summary")
-        assert r404.status_code == 404
-
 # --- STEP 4B: purchasability_min_score ---
 
 

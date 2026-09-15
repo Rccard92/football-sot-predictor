@@ -162,29 +162,6 @@ def test_invalid_snapshot_returns_invalid():
         get_purchasability_v35_audit_export(db, 7)
 
 
-def test_api_no_snapshot_409():
-    row = _fixture_row()
-    row.cecchino_output_json = {}
-    client = _client_with_db(row)
-    resp = client.get("/api/cecchino/today/7/purchasability-v35-audit-export")
-    assert resp.status_code == 409
-    assert resp.json()["error"] == "v35_snapshot_unavailable"
-
-
-def test_api_invalid_snapshot_409():
-    row = _fixture_row(v35_snapshot={"snapshot_version": "bad", "items": []})
-    client = _client_with_db(row)
-    resp = client.get("/api/cecchino/today/7/purchasability-v35-audit-export")
-    assert resp.status_code == 409
-    assert resp.json()["error"] == "v35_snapshot_invalid"
-
-
-def test_api_fixture_not_found_404():
-    client = _client_with_db(None)
-    resp = client.get("/api/cecchino/today/999/purchasability-v35-audit-export")
-    assert resp.status_code == 404
-
-
 def test_19_markets_preserved_in_audit():
     snap = _build_v35_snapshot()
     row = _fixture_row(v35_snapshot=snap)
@@ -321,29 +298,6 @@ def test_daily_no_db_writes():
     db.add.assert_not_called()
 
 
-def test_daily_api_route_static_before_dynamic():
-    snap = _build_v35_snapshot()
-    row = _fixture_row(v35_snapshot=snap)
-    app = FastAPI()
-    app.include_router(router, prefix="/api")
-
-    def _override_db():
-        db = MagicMock()
-        db.scalars.return_value.all.return_value = [row]
-        yield db
-
-    app.dependency_overrides[get_db] = _override_db
-    client = TestClient(app)
-    resp = client.get(
-        "/api/cecchino/today/purchasability-v35-audit-export/daily",
-        params={"scan_date": "2026-08-19"},
-    )
-    assert resp.status_code == 200
-    assert resp.headers["content-disposition"].startswith(
-        'attachment; filename="purchasability-v35-audits-2026-08-19.zip"'
-    )
-
-
 def test_no_historical_reliability_in_audit_path():
     row = _fixture_row()
     snap = row.cecchino_output_json["purchasability_preview_v35"]
@@ -382,11 +336,6 @@ def test_tampered_valid_snapshot_fails_single_audit_409():
     db.get.return_value = row
     with pytest.raises(V35SnapshotInvalidError):
         get_purchasability_v35_audit_export(db, 7)
-
-    client = _client_with_db(row)
-    resp = client.get("/api/cecchino/today/7/purchasability-v35-audit-export")
-    assert resp.status_code == 409
-    assert resp.json()["error"] == "v35_snapshot_invalid"
 
 
 def test_tampered_valid_snapshot_daily_audit_excluded():

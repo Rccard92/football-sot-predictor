@@ -762,93 +762,6 @@ def test_cross_competition_stability_categories():
     assert stab2["cross_competition_stability"] in ("inconsistent", "concentrated", "insufficient_evidence")
 
 
-def test_kpi_signals_endpoints_exist_and_isolated():
-    """Endpoint KPI segnali storici separati dal dashboard overview."""
-    assert parse_kpi_signals_filters()["quote_type"] == "real"
-
-    app = FastAPI()
-    app.include_router(cecchino_lab.router, prefix="/api")
-    db = MagicMock()
-
-    def override():
-        yield db
-
-    app.dependency_overrides[get_db] = override
-    client = TestClient(app)
-
-    minimal_kpi = {
-        "schema_version": HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION,
-        "run": {"run_id": 3, "status": "completed"},
-        "overall": {"real": {"signals_count": 0}},
-        "filters": {},
-    }
-    with patch(
-        "app.routes.cecchino_lab.get_kpi_signals_summary",
-        return_value=minimal_kpi,
-    ) as kpi_mock:
-        res = client.get("/api/cecchino-lab/historical-scans/3/kpi-signals/summary")
-        assert res.status_code == 200
-        assert res.json()["schema_version"] == HISTORICAL_KPI_SIGNALS_ANALYTICS_VERSION
-        kpi_mock.assert_called_once()
-
-    with patch(
-        "app.routes.cecchino_lab.dashboard_overview",
-        return_value={"run": {"run_id": 3}, "kpis": {}, "filters": {}},
-    ) as overview_mock, patch(
-        "app.routes.cecchino_lab.get_kpi_signals_summary",
-    ) as kpi_mock:
-        res_ov = client.get("/api/cecchino-lab/historical-scans/3/dashboard/overview")
-        assert res_ov.status_code == 200
-        overview_mock.assert_called_once()
-        kpi_mock.assert_not_called()
-
-
-def test_api_endpoints_read_only():
-    app = FastAPI()
-    app.include_router(cecchino_lab.router, prefix="/api")
-    db = MagicMock()
-
-    def override():
-        yield db
-
-    app.dependency_overrides[get_db] = override
-    client = TestClient(app)
-
-    fake = {
-        "run": {"run_id": 1, "status": "completed"},
-        "is_provisional": False,
-        "kpis": {"matches_eligible": 2},
-        "filters": {},
-        "progress": {},
-        "module_coverage": {},
-        "market_summary": {},
-        "warnings": [],
-    }
-    with patch(
-        "app.routes.cecchino_lab.dashboard_overview", return_value=fake
-    ) as mocked:
-        res = client.get("/api/cecchino-lab/historical-scans/1/dashboard/overview")
-    assert res.status_code == 200
-    assert res.json()["is_provisional"] is False
-    mocked.assert_called_once()
-    # no write methods on db from route itself
-    assert not db.add.called
-    assert not db.commit.called
-
-    with patch(
-        "app.routes.cecchino_lab.get_dashboard_match_detail",
-        return_value={"prematch": {}, "result_after_lock": {}},
-    ):
-        res2 = client.get("/api/cecchino-lab/historical-scans/1/matches/9")
-    assert res2.status_code == 200
-
-    with patch(
-        "app.routes.cecchino_lab.dashboard_overview",
-        side_effect=CecchinoLabImportError("run_not_found", "x", status_code=404),
-    ):
-        res3 = client.get("/api/cecchino-lab/historical-scans/999/dashboard/overview")
-    assert res3.status_code == 404
-
 
 def test_empty_payload_compatibility_run1_run2():
     """Run senza market rows → payload vuoto ma valido (compat Run #1/#2 edge)."""
@@ -969,3 +882,25 @@ def test_v2_1_by_market_helpers_and_overview_revisions():
     assert "by_market" not in purch or purch.get("reason")
     assert not getattr(db, "add").called
     assert not getattr(db, "commit").called
+
+
+def test_api_match_detail_read_only():
+    """Le dashboard della Historical Scan V4 sono state rimosse (Step 2); il dettaglio partita resta."""
+    app = FastAPI()
+    app.include_router(cecchino_lab.router, prefix="/api")
+    db = MagicMock()
+
+    def override():
+        yield db
+
+    app.dependency_overrides[get_db] = override
+    client = TestClient(app)
+    with patch(
+        "app.routes.cecchino_lab.get_dashboard_match_detail",
+        return_value={"prematch": {}, "result_after_lock": {}},
+    ):
+        res2 = client.get("/api/cecchino-lab/historical-scans/1/matches/9")
+    assert res2.status_code == 200
+    assert not db.add.called
+    res_removed = client.get("/api/cecchino-lab/historical-scans/1/dashboard/overview")
+    assert res_removed.status_code == 404

@@ -616,21 +616,7 @@ def test_range_zip_and_route():
         assert "top_v2_strict_paired_per_fixture" in smoke
         assert "top_v1_strict_paired_per_fixture" in smoke
         assert "paired_top_delta" in smoke
-
-    app = FastAPI()
-    app.include_router(router, prefix="/api")
-
-    def _override():
-        yield db
-
-    app.dependency_overrides[get_db] = _override
-    client = TestClient(app)
-    resp = client.get(
-        "/api/cecchino/today/purchasability-v35-v2-analysis-export"
-        "?date_from=2026-08-26&date_to=2026-08-26"
-    )
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("application/zip")
+    # endpoint di download V3.5-v2 rimosso (Step 2, conferma utente 2026-09-15): il servizio resta.
 
 
 def test_range_validation():

@@ -323,26 +323,6 @@ def test_csv_header_complete():
     assert len(CSV_COLUMNS) >= 40
 
 
-def test_analysis_api_route_static_before_dynamic():
-    row = _fixture_row()
-    app = FastAPI()
-    app.include_router(router, prefix="/api")
-
-    def _override_db():
-        db = MagicMock()
-        db.scalars.return_value.all.return_value = [row]
-        yield db
-
-    app.dependency_overrides[get_db] = _override_db
-    client = TestClient(app)
-    resp = client.get(
-        "/api/cecchino/today/purchasability-v35-analysis-export",
-        params={"date_from": "2026-08-20", "date_to": "2026-08-26"},
-    )
-    assert resp.status_code == 200
-    assert "purchasability-v35-analysis-2026-08-20_2026-08-26.zip" in resp.headers["content-disposition"]
-
-
 def test_audit_export_unchanged():
     row = _fixture_row()
     snap = row.cecchino_output_json["purchasability_preview_v35"]

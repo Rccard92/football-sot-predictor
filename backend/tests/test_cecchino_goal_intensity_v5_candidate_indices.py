@@ -617,14 +617,6 @@ def test_statistics_module_untouched():
     assert STATS_VERSION == "cecchino_goal_intensity_v5_statistics_v1_2"
 
 
-def test_routes_register_candidate_indices():
-    routes_path = Path(__file__).resolve().parents[1] / "app" / "routes" / "cecchino_research.py"
-    source = routes_path.read_text(encoding="utf-8")
-    assert "/goal-intensity-v5/candidate-indices" in source
-    assert "candidate-indices/export/summary" in source
-    assert "candidate-indices/export/prospective-validation-protocol" in source
-
-
 def test_expanding_or_insufficient(sample_result):
     expanding = sample_result[0]["temporal_metrics"]["expanding"]
     assert expanding["status"] in {"ok", "insufficient_sample_for_3_temporal_folds"}
@@ -970,13 +962,6 @@ def test_v11_calibrate_and_evaluate_no_score100():
     )
     assert metrics["goals_ge_2"]["uses_score_over_100_as_probability"] is False
     assert any(p["target"] == "goals_ge_2" and p["probability"] is not None for p in preds)
-
-
-def test_v11_routes_new_exports():
-    routes_path = Path(__file__).resolve().parents[1] / "app" / "routes" / "cecchino_research.py"
-    source = routes_path.read_text(encoding="utf-8")
-    assert "calibrated-predictions" in source
-    assert "temporal-fold-metrics" in source
 
 
 def test_v11_expanding_candidate_ids_complete():
