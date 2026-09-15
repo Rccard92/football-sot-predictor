@@ -157,6 +157,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: "Possibile seconda lettura quote Bet365 qualche ora prima del calcio d'inizio (mercati tiri/corner/cartellini che escono tardi): da valutare dopo i primi dati", status: 'da_fare' },
       { text: 'Nuovo cron formazioni pre-match (staging, ogni 10 minuti): formazioni ufficiali e assenti da API-Football per tutte le partite eleggibili che iniziano entro 75 minuti', status: 'fatto' },
       { text: 'Mostrare formazioni e assenti nelle schede partita', status: 'da_fare' },
+      { text: "Formazioni e infortuni da una fonte dedicata: API-Football copre male gli infortuni (assenti in quasi tutti i campionati minori). Valutare un'altra API", status: 'da_fare' },
       { text: 'Integrazione nelle schede e, se utile, nei motori (come nuova versione misurata in live)', status: 'da_fare' },
     ],
     doneWhen: 'Statistiche e formazioni disponibili nelle schede partita.',
