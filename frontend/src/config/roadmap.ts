@@ -122,7 +122,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     tasks: [
       { text: 'Dettaglio analisi con 3 schede: V2, V2.5 (dal registro o anteprima), V3 in attesa del collegamento API', status: 'fatto' },
       { text: 'Pattern Master V2.5 accesi su ogni partita, registrati prima del calcio di inizio (solo se tutte le condizioni sono verificabili)', status: 'fatto' },
-      { text: 'Pattern Master V2: servono le classi dei moduli V2 calcolate come nella RUN V2', status: 'da_fare' },
+      { text: 'Pattern Master V2 accesi in live (Cecchino Today e Bet Builder): moduli V2 ricalcolati con le stesse funzioni della RUN V2, quote reali Bet365, percentili Intensità Goal dell\'ultima RUN V2', status: 'fatto' },
       { text: "Statistiche squadra (tiri, corner, cartellini) per tutte le competizioni: oggi presenti solo per poche partite, la maggior parte dei pattern resta non verificabile", status: 'da_fare' },
       { text: 'Bet Builder: sezione pattern accesi in osservazione con esito a fine partita (non giocate automatiche)', status: 'fatto' },
       { text: 'Scansione notturna: i rifiuti per troppe richieste (429) non escludono piu partite, quote del giorno lette a pagine, secondo passaggio di recupero', status: 'fatto' },
@@ -188,6 +188,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-15',
+    text: 'Step 6: Pattern Master V2 accesi in live nella scheda V2 di Cecchino Today e nel Bet Builder. Ora tutti e tre i motori (V2, V2.5, V3) accendono i propri pattern Master sulle partite del giorno.',
+  },
   {
     date: '2026-09-15',
     text: "V3 estesa online su staging: modello V3 del Lab (parametri congelati, identico alla run finale) calcolato su tutti i campionati con tiri e tiri in porta di API-Football. Sulle partite del 15/09: 13 su 25 coperte, le altre in campionati senza statistiche. Registro previsioni e Osservazione live includono la V3.",
