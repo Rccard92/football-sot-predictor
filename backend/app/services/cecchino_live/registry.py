@@ -122,6 +122,18 @@ def v25_payload(pre: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return markets, modules
 
 
+def v2_live_modules(
+    db: Session, fixture: Fixture, row: CecchinoTodayFixture, markets: dict[str, Any]
+) -> dict[str, Any]:
+    """Moduli V2 ricalcolati come nella RUN V2 + Pattern Master V2 accesi."""
+    from app.services.cecchino_live.v2_live import compute_v2_live, v2_modules, v2_pattern_signals
+
+    pre = compute_v2_live(db, fixture, row.kpi_panel_json)
+    modules = v2_modules(pre)
+    modules["patterns"] = v2_pattern_signals(db, fixture, markets, modules)
+    return modules
+
+
 def v3_payload(result: dict[str, Any], kpi_panel: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Mercati (probabilita' V3 contro quote reali Bet365 del pannello KPI) e dettaglio del modello."""
     from app.services.cecchino_live.v25_live import strict_quotes_from_kpi
@@ -244,12 +256,26 @@ def record_predictions(db: Session, *, scan_date: date, now: datetime | None = N
         if kickoff is None or now >= kickoff:
             counts["already_started"] = counts.get("already_started", 0) + 1
             continue
+        fixture = db.get(Fixture, int(row.local_fixture_id))
+        v2_mods: dict[str, Any] | None = None
+        markets_v2 = v2_markets(row)
+        if fixture is not None:
+            try:
+                with db.begin_nested():
+                    v2_mods = v2_live_modules(db, fixture, row, markets_v2)
+            except Exception as exc:  # noqa: BLE001 - i pattern V2 non bloccano la previsione V2
+                logger.exception("live registry moduli V2 falliti today_fixture_id=%s", row.id)
+                errors.append(f"{row.id} V2 moduli: {exc!s}"[:200])
+                v2_mods = None
+        if v2_mods is not None:
+            for key in v2_mods.get("signal_markets") or []:
+                if key in markets_v2:
+                    markets_v2[key]["signal_active"] = True
         state = _upsert(
             db, row, model=MODEL_V2, engine_version=V2_ENGINE_VERSION,
-            markets=v2_markets(row), modules=None, eligible=True, now=now,
+            markets=markets_v2, modules=v2_mods, eligible=True, now=now,
         )
         counts[f"v2_{state}"] = counts.get(f"v2_{state}", 0) + 1
-        fixture = db.get(Fixture, int(row.local_fixture_id))
         if fixture is None:
             continue
         try:

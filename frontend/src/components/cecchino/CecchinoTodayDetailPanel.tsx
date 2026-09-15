@@ -16,6 +16,7 @@ import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGo
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
+import { CecchinoV2Patterns } from './CecchinoV2Patterns'
 
 type Props = {
   detail: CecchinoTodayDetailResponse
@@ -182,6 +183,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           signalContract={detail.signal_contract ?? null}
         />
       )}
+
+      {todayFixtureId != null && <CecchinoV2Patterns todayFixtureId={todayFixtureId} />}
 
       </>
       )}

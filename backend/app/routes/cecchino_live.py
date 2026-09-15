@@ -95,7 +95,41 @@ def fixture_predictions(today_fixture_id: int, db: Session = Depends(get_db)) ->
                 db.rollback()
     if "V3" not in items:
         items["V3"] = _v3_preview(db, int(today_fixture_id))
+    if "V2" not in items:
+        items["V2"] = _v2_preview(db, int(today_fixture_id))
+    elif not (items["V2"].get("modules") or {}).get("patterns") and items["V2"].get("status") == "open":
+        # previsione registrata prima dei pattern V2: moduli calcolati al momento (non salvati)
+        preview = _v2_preview(db, int(today_fixture_id))
+        if preview.get("modules"):
+            items["V2"] = {**items["V2"], "modules": preview["modules"], "modules_source": "anteprima_non_registrata"}
     return JSONResponse(content=jsonable_encoder({"today_fixture_id": int(today_fixture_id), "models": items}))
+
+
+def _v2_preview(db: Session, today_fixture_id: int) -> dict:
+    """Moduli V2 (come nella RUN V2) e Pattern Master V2 calcolati al momento, non registrati."""
+    from app.models import Fixture
+    from app.models.cecchino_today_fixture import CecchinoTodayFixture
+    from app.services.cecchino_live.registry import v2_live_modules, v2_markets
+
+    today = db.get(CecchinoTodayFixture, today_fixture_id)
+    fixture = db.get(Fixture, int(today.local_fixture_id)) if today and today.local_fixture_id else None
+    if fixture is None:
+        return {"model": "V2", "status": "unavailable", "source": "anteprima", "reason": "no_fixture"}
+    try:
+        markets = v2_markets(today)
+        modules = v2_live_modules(db, fixture, today, markets)
+        return {
+            "model": "V2",
+            "status": "preview",
+            "source": "anteprima_non_registrata",
+            "eligible": True,
+            "markets": markets,
+            "modules": modules,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"model": "V2", "status": "error", "source": "anteprima", "error": str(exc)[:300]}
+    finally:
+        db.rollback()
 
 
 def _v3_preview(db: Session, today_fixture_id: int) -> dict:
@@ -143,7 +177,7 @@ def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> 
     """Pattern Master accesi sulle partite del giorno (osservazione: nessuna giocata automatica)."""
     rows = db.scalars(
         select(CecchinoLivePrediction)
-        .where(CecchinoLivePrediction.scan_date == scan_date, CecchinoLivePrediction.model.in_(("V2.5", "V3")))
+        .where(CecchinoLivePrediction.scan_date == scan_date, CecchinoLivePrediction.model.in_(("V2", "V2.5", "V3")))
         .order_by(CecchinoLivePrediction.kickoff, CecchinoLivePrediction.id)
     ).all()
     out = []

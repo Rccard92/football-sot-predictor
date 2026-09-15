@@ -39,7 +39,7 @@ export function BetBuilderPatternObservation({ date }: { date: string }) {
         <span>
           <span className="text-sm font-semibold text-slate-900">Pattern Master in osservazione</span>
           <span className="ml-2 text-xs text-slate-500">
-            V2.5 e V3 · registrati prima del calcio d&apos;inizio · nessuna giocata automatica
+            V2, V2.5 e V3 · registrati prima del calcio d&apos;inizio · nessuna giocata automatica
           </span>
         </span>
         <span className="text-xs font-medium tabular-nums text-slate-600">
