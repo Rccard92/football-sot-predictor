@@ -27,7 +27,7 @@ from app.models.api_football_data import ApiFootballFixtureFetch, ApiFootballLea
 from app.models.cecchino_live_prediction import LIVE_STATUS_OPEN, CecchinoLivePrediction
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.api_football_client import ApiFootballClient
-from app.services.ingestion_service import IngestionService
+from app.services.cecchino.fixture_ingest import FixtureIngest
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def ensure_previous_season(
     league = db.scalar(select(League).where(League.api_league_id == int(comp.provider_league_id)))
     if league is None:
         return "league_missing"
-    ingest = IngestionService(client=client)
+    ingest = FixtureIngest(client=client)
     season_row = get_or_create_season(db, league_id=int(league.id), year=prev_year, label=str(prev_year), raw_json={"year": prev_year})
     prev_comp, _ = get_or_create_competition_for_league_season(
         db,
@@ -231,7 +231,7 @@ def fetch_fixture_batches(
 ) -> dict[str, int]:
     from app.services.cecchino.cecchino_current_season_xg import _persist_fixture_statistics
 
-    ingest = IngestionService(client=client)
+    ingest = FixtureIngest(client=client)
     by_api = {int(f.api_fixture_id): f for f in fixtures}
     api_ids = list(by_api)
     counts = {"calls": 0, "fixtures": 0, "with_stats": 0, "results_updated": 0}

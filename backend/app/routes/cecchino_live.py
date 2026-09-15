@@ -172,6 +172,50 @@ def _v3_preview(db: Session, today_fixture_id: int) -> dict:
         db.rollback()
 
 
+@router.get("/fixture/{today_fixture_id}/lineups")
+def fixture_lineups(today_fixture_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    """Formazioni ufficiali e assenti (API-Football) salvati dal cron pre-match."""
+    from app.models.cecchino_today_fixture import CecchinoTodayFixture
+    from app.models.fixture_lineup import FixtureLineup
+    from app.models.fixture_missing_player import FixtureMissingPlayer
+    from app.services.cecchino_live.prematch_lineups import PROVIDER
+
+    today = db.get(CecchinoTodayFixture, int(today_fixture_id))
+    if today is None or not today.local_fixture_id:
+        return JSONResponse(content={"today_fixture_id": int(today_fixture_id), "lineups": [], "missing": []})
+    fid = int(today.local_fixture_id)
+    lineups = db.scalars(select(FixtureLineup).where(FixtureLineup.fixture_id == fid)).all()
+    missing = db.scalars(
+        select(FixtureMissingPlayer).where(
+            FixtureMissingPlayer.fixture_id == fid, FixtureMissingPlayer.provider_name == PROVIDER
+        )
+    ).all()
+    return JSONResponse(
+        content=jsonable_encoder(
+            {
+                "today_fixture_id": int(today_fixture_id),
+                "lineups": [
+                    {
+                        "api_team_id": r.api_team_id,
+                        "formation": r.formation,
+                        "coach": r.coach_name,
+                        "official": r.is_official,
+                        "source": r.source,
+                        "fetched_at": r.fetched_at,
+                        "start_xi": r.start_xi,
+                        "substitutes": r.substitutes,
+                    }
+                    for r in lineups
+                ],
+                "missing": [
+                    {"side": m.team_side, "player": m.player_name, "type": m.external_type, "reason": m.reason}
+                    for m in missing
+                ],
+            }
+        )
+    )
+
+
 @router.get("/observation")
 def observation(scan_date: date = Query(...), db: Session = Depends(get_db)) -> JSONResponse:
     """Pattern Master accesi sulle partite del giorno (osservazione: nessuna giocata automatica)."""

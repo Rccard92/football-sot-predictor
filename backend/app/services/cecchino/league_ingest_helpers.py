@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Competition, League, Season, Team
-from app.services.ingestion_service import IngestionService
+from app.services.cecchino.fixture_ingest import FixtureIngest
 
 T = TypeVar("T")
 
@@ -219,7 +219,7 @@ def get_or_create_competition_for_league_season(
 
 def safe_upsert_team_from_api_item(
     db: Session,
-    ingest: IngestionService,
+    ingest: FixtureIngest,
     item: dict[str, Any],
 ) -> None:
     """Upsert team con recovery IntegrityError (race su api_team_id)."""

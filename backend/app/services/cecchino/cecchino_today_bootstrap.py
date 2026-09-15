@@ -21,7 +21,7 @@ from app.services.cecchino.league_ingest_helpers import (
     get_or_create_season,
     safe_upsert_team_from_api_item,
 )
-from app.services.ingestion_service import IngestionService
+from app.services.cecchino.fixture_ingest import FixtureIngest
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def ensure_competition_and_history(
         return None, None, ["missing_league_or_season_in_api_item"]
 
     af_client = client or ApiFootballClient()
-    ingest = IngestionService(client=af_client)
+    ingest = FixtureIngest(client=af_client)
 
     league_name = str(league_meta.get("name") or f"League {provider_league_id}")
     league_country = str(league_meta.get("country") or "") or None

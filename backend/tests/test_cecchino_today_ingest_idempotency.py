@@ -89,7 +89,7 @@ def test_ensure_competition_with_existing_league_no_crash():
             "app.services.cecchino.cecchino_today_bootstrap.get_or_create_competition_for_league_season",
         ) as mock_comp,
         patch("app.services.cecchino.cecchino_today_bootstrap.ApiFootballClient") as mock_client_cls,
-        patch("app.services.cecchino.cecchino_today_bootstrap.IngestionService") as mock_ingest_cls,
+        patch("app.services.cecchino.cecchino_today_bootstrap.FixtureIngest") as mock_ingest_cls,
         patch(
             "app.services.cecchino.cecchino_today_bootstrap.get_league_stats_cache",
             return_value=None,
