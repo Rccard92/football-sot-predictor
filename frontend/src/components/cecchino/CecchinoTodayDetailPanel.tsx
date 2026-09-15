@@ -4,11 +4,10 @@ import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalRel
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
-import { indexPurchasabilityV31ByMarketKey, indexPurchasabilityV36ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
+import { indexPurchasabilityV36ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
-import { CecchinoPurchasabilityPanel } from './CecchinoPurchasabilityPanel'
 import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
@@ -64,14 +63,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     enabled: canFetch,
   })
 
-  const purchasabilityV31ByMarketKey = useMemo(
-    () => indexPurchasabilityV31ByMarketKey(detail.purchasability_preview_v31),
-    [detail.purchasability_preview_v31],
-  )
-  const purchasabilityV31SnapshotAvailable =
-    detail.purchasability_preview_v31 != null &&
-    detail.purchasability_preview_v31.status !== 'unavailable'
-
   const purchasabilityV36ByMarketKey = useMemo(
     () => indexPurchasabilityV36ByMarketKey(detail.purchasability_preview_v35_v2),
     [detail.purchasability_preview_v35_v2],
@@ -120,27 +111,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         todayFixtureId={todayFixtureId}
         providerFixtureId={detail.provider_fixture_id}
       />
-
-      <details
-        className="rounded-xl border border-slate-200 bg-slate-50/60"
-        data-testid="purchasability-v31-legacy"
-      >
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
-          Versione precedente V3.1
-        </summary>
-        <div className="border-t border-slate-200 p-3">
-          <CecchinoPurchasabilityPanel
-            key={todayFixtureId}
-            formulaVersion={detail.purchasability_preview_v31?.formula_version}
-            candidateName={detail.purchasability_preview_v31?.candidate_name}
-            candidateVersion={detail.purchasability_preview_v31?.candidate_version}
-            itemsByMarket={purchasabilityV31ByMarketKey}
-            snapshotAvailable={purchasabilityV31SnapshotAvailable}
-            todayFixtureId={todayFixtureId}
-            providerFixtureId={detail.provider_fixture_id}
-          />
-        </div>
-      </details>
 
       {(detail.kpi_panel_v2 ?? detail.kpi_panel) && (
         <CecchinoTodayKpiPanel

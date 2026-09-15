@@ -72,11 +72,9 @@ describe('CecchinoTodayDetailPanel production route V3.6', () => {
     }
   })
 
-  it('V3.1 è legacy collapsed', () => {
+  it('versione precedente V3.1 non più mostrata', () => {
     renderDetail(baseDetail())
-    const legacy = screen.getByTestId('purchasability-v31-legacy') as HTMLDetailsElement
-    expect(legacy.open).toBe(false)
-    expect(legacy.textContent).toMatch(/Versione precedente V3\.1/)
+    expect(screen.queryByTestId('purchasability-v31-legacy')).toBeNull()
   })
 
   it('absent V3.6 non fa fallback a V3.5', () => {

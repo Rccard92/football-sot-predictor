@@ -1,5 +1,5 @@
 ﻿/** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import {
@@ -7,15 +7,6 @@ import {
   V36_VALID_SNAPSHOT,
 } from './fixtures/purchasabilityV36Fixtures'
 import { indexPurchasabilityV36ByMarketKey } from '../../lib/cecchinoTodayApi'
-import * as api from '../../lib/cecchinoTodayApi'
-
-vi.mock('../../lib/cecchinoTodayApi', async () => {
-  const actual = await vi.importActual('../../lib/cecchinoTodayApi')
-  return {
-    ...actual,
-    getPurchasabilityV36AuditExport: vi.fn(),
-  }
-})
 
 describe('CecchinoPurchasabilityV36Panel', () => {
   beforeEach(() => {
@@ -151,35 +142,7 @@ describe('CecchinoPurchasabilityV36Panel', () => {
     expect(screen.queryByText(/Acquistabilità V3\.5/)).toBeNull()
   })
 
-  it('audit V3.6 chiama endpoint v35-v2', async () => {
-    vi.mocked(api.getPurchasabilityV36AuditExport).mockResolvedValue({
-      contract_version: 'cecchino_purchasability_v35_v2_audit_export_v1',
-      generated_at: '2026-08-26T00:00:00Z',
-      fixture: {},
-      snapshot_identity: {},
-      frozen_config: {},
-      relation_registry: [],
-      market_order: [],
-      markets: {},
-    })
-    const items = indexPurchasabilityV36ByMarketKey(V36_VALID_SNAPSHOT)
-    render(
-      <CecchinoPurchasabilityV36Panel
-        snapshot={V36_VALID_SNAPSHOT}
-        snapshotStatus="valid"
-        itemsByMarket={items}
-        todayFixtureId={42}
-        providerFixtureId={999}
-      />,
-    )
-    fireEvent.click(screen.getByTestId('v36-audit-download-btn'))
-    await waitFor(() => {
-      expect(api.getPurchasabilityV36AuditExport).toHaveBeenCalledWith(42)
-    })
-    expect(screen.getByTestId('v36-audit-download-btn').textContent).toContain('Scarica audit V3.6')
-  })
-
-  it('valid no-score mostra inactive section', () => {
+  it('valid no-score: niente tag in validazione, audit e mercati non valutabili', () => {
     const items = indexPurchasabilityV36ByMarketKey(V36_NO_SCORE_SNAPSHOT)
     render(
       <CecchinoPurchasabilityV36Panel
@@ -191,6 +154,8 @@ describe('CecchinoPurchasabilityV36Panel', () => {
     expect(screen.getByTestId('cecchino-purchasability-v36-panel').getAttribute('data-status')).toBe(
       'valid-no-score',
     )
-    expect(screen.getByTestId('v36-inactive-markets')).toBeTruthy()
+    expect(screen.queryByTestId('v36-inactive-markets')).toBeNull()
+    expect(screen.queryByTestId('v36-audit-download-btn')).toBeNull()
+    expect(screen.queryByText('IN VALIDAZIONE')).toBeNull()
   })
 })
