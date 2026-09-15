@@ -11,7 +11,6 @@ import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
-import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
@@ -145,11 +144,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         providerFixtureId={detail.provider_fixture_id}
       />
 
-      <CecchinoExpectedGoalEngineDiagnosticsPanel
-        diagnostics={detail.expected_goal_engine_diagnostics}
-        todayFixtureId={detail.today_fixture_id ?? detail.id}
-      />
-
       {signals && (
         <CecchinoSignalsCard
           matrix={signals}
@@ -157,6 +151,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
           signalContract={detail.signal_contract ?? null}
+          hideReliability
         />
       )}
 

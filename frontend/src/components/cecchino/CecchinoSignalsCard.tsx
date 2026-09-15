@@ -21,6 +21,7 @@ type Props = {
   todayFixtureId?: number | null
   providerFixtureId?: number | null
   signalContract?: CecchinoSignalContract | null
+  hideReliability?: boolean
 }
 
 function downloadAuditJson(
@@ -43,6 +44,7 @@ export function CecchinoSignalsCard({
   todayFixtureId,
   providerFixtureId,
   signalContract = null,
+  hideReliability = false,
 }: Props) {
   const monitoringHref =
     scanDate != null
@@ -169,6 +171,7 @@ export function CecchinoSignalsCard({
         onOpenCell={openCell}
         hasExplanation={hasExplanation}
         signalContract={signalContract}
+        hideReliability={hideReliability}
       />
       {selected ? (
         <CecchinoSignalAuditModal explanation={selected} onClose={() => setSelected(null)} />

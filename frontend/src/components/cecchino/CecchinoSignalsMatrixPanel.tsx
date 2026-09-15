@@ -15,6 +15,8 @@ type Props = {
   onOpenCell?: (rowKey: string, columnKey: string) => void
   hasExplanation?: (rowKey: string, columnKey: string) => boolean
   signalContract?: CecchinoSignalContract | null
+  /** Nasconde il riquadro Indice affidabilità (conteggio partite del picchetto casa/fuori). */
+  hideReliability?: boolean
 }
 
 function SiNoBadge({
@@ -116,6 +118,7 @@ export function CecchinoSignalsMatrixPanel({
   onOpenCell,
   hasExplanation,
   signalContract = null,
+  hideReliability = false,
 }: Props) {
   const embedded = variant === 'embedded'
   const rows = matrix.rows ?? []
@@ -256,7 +259,7 @@ export function CecchinoSignalsMatrixPanel({
         consenso (colonna Consenso).
       </p>
 
-      {rel && (
+      {rel && !hideReliability && (
         <div
           className={
             embedded
