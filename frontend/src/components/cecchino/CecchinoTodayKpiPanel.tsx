@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react'
-import type { HistoricalReliabilityItem } from '../../lib/cecchinoKpiSignalsApi'
 import type {
   CecchinoKpiExplanation,
   CecchinoKpiExplanationsResponse,
@@ -8,16 +7,13 @@ import type {
 } from '../../lib/cecchinoTodayApi'
 import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
 import { CecchinoFormulaAuditModal } from './CecchinoFormulaAuditModal'
-import { CecchinoOverlayPortal } from './CecchinoOverlayPortal'
 import {
   edgeClassName,
   fmtKpiCell,
   fmtProbPct,
-  fmtRoiPct,
   fmtScoreAcquisto,
   fmtVantaggioProb,
   formatEdgePct,
-  historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
   ratingBadgeClass,
   vantaggioClassName,
@@ -46,24 +42,9 @@ function fmtOddsTimestamp(iso?: string | null): string {
   }
 }
 
-function fmtPct(v: number | null | undefined, digits = 1): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  return `${(Number(v) * 100).toFixed(digits)}%`
-}
-
-function fmtPp(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  const pts = Number(v) * 100
-  const sign = pts > 0 ? '+' : ''
-  return `${sign}${pts.toFixed(1)} pp`
-}
-
 type Props = {
   panel: CecchinoKpiV2Panel
   bookmakerStatus?: string
-  historicalReliabilityByMarketKey?: Record<string, HistoricalReliabilityItem>
-  historicalReliabilityLoading?: boolean
-  historicalReliabilityError?: string | null
   todayFixtureId?: number
   providerFixtureId?: number | null
 }
@@ -96,210 +77,6 @@ function AnalyzableCell({
   )
 }
 
-function cohortScopeChip(scope?: HistoricalReliabilityItem['cohort_scope']) {
-  if (scope === 'same_competition') {
-    return (
-      <span className="mt-0.5 inline-block rounded border border-sky-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-sky-200">
-        Campionato
-      </span>
-    )
-  }
-  // Chip "Globale" rimosso dalla UI KPI (fallback resta solo nel popover).
-  return null
-}
-
-function HistoricalReliabilityCell({
-  item,
-  loading,
-  error,
-  onOpen,
-  interactive = true,
-}: {
-  item?: HistoricalReliabilityItem
-  loading?: boolean
-  error?: string | null
-  onOpen: () => void
-  interactive?: boolean
-}) {
-  if (loading) {
-    return <span className="text-[10px] text-slate-400">Calcolo storico…</span>
-  }
-  if (error && !item) {
-    return <span className="text-[10px] text-slate-400">Affidabilità non disponibile</span>
-  }
-  if (!item) {
-    return <span className="text-slate-500">—</span>
-  }
-
-  if (item.status === 'rating_below_scope') {
-    return (
-      <span
-        className="text-left"
-        title="L’Affidabilità storica viene calcolata per Rating almeno pari a 50."
-      >
-        <span className="block text-slate-300">—</span>
-        <span className="block text-[9px] text-slate-400">Non valutato</span>
-      </span>
-    )
-  }
-
-  if (item.status === 'unsupported_market') {
-    return (
-      <span className="text-left" title={item.unsupported_reason || item.explanation || undefined}>
-        <span className="block text-slate-300">—</span>
-        <span className="block text-[9px] text-slate-400">Non disponibile</span>
-      </span>
-    )
-  }
-
-  if (item.status === 'insufficient_data') {
-    const n =
-      item.global_sample_size ?? item.selected_sample_size ?? item.sample_size ?? 0
-    const body = (
-      <>
-        <span className="block text-slate-300">—</span>
-        <span className="block text-[9px] text-slate-400">{n} casi globali</span>
-      </>
-    )
-    if (!interactive) return <span className="text-left">{body}</span>
-    return (
-      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
-        {body}
-      </button>
-    )
-  }
-
-  if (item.score == null) {
-    const body = (
-      <>
-        <span className="block text-slate-300">—</span>
-        <span className="block text-[9px] text-slate-400">{item.class}</span>
-      </>
-    )
-    if (!interactive) return <span className="text-left">{body}</span>
-    return (
-      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
-        {body}
-      </button>
-    )
-  }
-
-  const body = (
-    <>
-      <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${historicalReliabilityBadgeClass(item.class)}`}
-      >
-        <span className="tabular-nums">{item.score}</span>
-        <span className="hidden lg:inline">{item.class}</span>
-      </span>
-      <span className="mt-0.5 block text-[9px] text-slate-400">
-        {item.selected_sample_size ?? item.sample_size ?? 0} casi · ROI {fmtRoiPct(item.roi)}
-      </span>
-      {cohortScopeChip(item.cohort_scope)}
-    </>
-  )
-  if (!interactive) return <span className="text-left">{body}</span>
-  return (
-    <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
-      {body}
-    </button>
-  )
-}
-
-function HistoricalReliabilityPopover({
-  item,
-  onClose,
-}: {
-  item: HistoricalReliabilityItem
-  onClose: () => void
-}) {
-  return (
-    <CecchinoOverlayPortal>
-      <div
-        className="flex h-full w-full items-center justify-center bg-black/40 p-4"
-        role="presentation"
-        onClick={onClose}
-      >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <h4 className="text-sm font-bold text-slate-900">Affidabilità storica</h4>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
-          >
-            Chiudi
-          </button>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-800">
-          <dt className="text-slate-500">Mercato</dt>
-          <dd>{item.label || item.selection || item.market_key || '—'}</dd>
-          <dt className="text-slate-500">Rating</dt>
-          <dd>{item.rating ?? '—'}</dd>
-          <dt className="text-slate-500">Fascia</dt>
-          <dd>{item.rating_band?.label ?? '—'}</dd>
-          <dt className="text-slate-500">Ambito coorte</dt>
-          <dd>
-            {item.cohort_scope === 'all_competitions_fallback'
-              ? 'Globale (fallback)'
-              : item.cohort_scope === 'same_competition'
-                ? 'Campionato'
-                : '—'}
-          </dd>
-          <dt className="text-slate-500">Casi campionato</dt>
-          <dd>{item.local_sample_size ?? '—'}</dd>
-          <dt className="text-slate-500">Casi globali</dt>
-          <dd>{item.global_sample_size ?? '—'}</dd>
-          <dt className="text-slate-500">Casi usati</dt>
-          <dd>{item.selected_sample_size ?? item.sample_size ?? '—'}</dd>
-          <dt className="text-slate-500">W / L / V</dt>
-          <dd>
-            {item.wins ?? 0} / {item.losses ?? 0} / {item.voids ?? 0}
-          </dd>
-          <dt className="text-slate-500">Quota media</dt>
-          <dd>{item.average_odds != null ? Number(item.average_odds).toFixed(2) : '—'}</dd>
-          <dt className="text-slate-500">Win Rate</dt>
-          <dd>{fmtPct(item.win_rate)}</dd>
-          <dt className="text-slate-500">Break-even</dt>
-          <dd>{fmtPct(item.average_break_even_probability)}</dd>
-          <dt className="text-slate-500">Margine</dt>
-          <dd>{fmtPp(item.realized_margin)}</dd>
-          <dt className="text-slate-500">ROI</dt>
-          <dd>{fmtRoiPct(item.roi)}</dd>
-          <dt className="text-slate-500">Stabilità</dt>
-          <dd>
-            {item.positive_periods != null && item.total_periods != null
-              ? `${item.positive_periods}/${item.total_periods}`
-              : '—'}
-          </dd>
-          <dt className="text-slate-500">Intervallo storico</dt>
-          <dd>
-            {item.historical_date_from ?? '—'} → {item.historical_date_to ?? '—'}
-          </dd>
-          <dt className="text-slate-500">Score / classe</dt>
-          <dd>
-            {item.score ?? '—'} · {item.class}
-          </dd>
-        </dl>
-        {item.explanation ? (
-          <p className="mt-3 text-xs text-slate-700">{item.explanation}</p>
-        ) : null}
-        <p className="mt-3 rounded-md bg-slate-50 px-2 py-2 text-[11px] leading-snug text-slate-600">
-          L’Affidabilità storica descrive come si sono comportati in passato lo stesso mercato e la
-          stessa fascia Rating. Non rappresenta la nuova Acquistabilità, una probabilità di vittoria
-          o uno stake consigliato.
-        </p>
-      </div>
-      </div>
-    </CecchinoOverlayPortal>
-  )
-}
-
 function downloadAuditJson(
   payload: CecchinoKpiExplanationsResponse,
   providerFixtureId: number | null | undefined,
@@ -317,15 +94,11 @@ function downloadAuditJson(
 export function CecchinoTodayKpiPanel({
   panel,
   bookmakerStatus,
-  historicalReliabilityByMarketKey,
-  historicalReliabilityLoading,
-  historicalReliabilityError,
   todayFixtureId,
   providerFixtureId,
 }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
-  const [openItem, setOpenItem] = useState<HistoricalReliabilityItem | null>(null)
   const [analysisMode, setAnalysisMode] = useState(false)
   const [explanations, setExplanations] = useState<CecchinoKpiExplanationsResponse | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -342,7 +115,6 @@ export function CecchinoTodayKpiPanel({
     setAnalysisError(null)
     setAnalysisLoading(false)
     setSelectedExplanation(null)
-    setOpenItem(null)
   }
 
   const loadExplanations = useCallback(async (): Promise<CecchinoKpiExplanationsResponse | null> => {
@@ -385,11 +157,6 @@ export function CecchinoTodayKpiPanel({
     const expl = explanations?.markets?.[marketKey]?.[metricKey]
     if (expl) setSelectedExplanation(expl)
   }
-
-  const lookup = (row: CecchinoKpiV2Row) =>
-    historicalReliabilityByMarketKey?.[row.market_key] ||
-    historicalReliabilityByMarketKey?.[row.segno] ||
-    undefined
 
   return (
     <section className="rounded-xl border border-slate-300 shadow-md">
@@ -471,16 +238,15 @@ export function CecchinoTodayKpiPanel({
       <div className="hidden bg-[#163352] xl:block">
         <table className="w-full table-fixed border-collapse text-center text-[11px] text-white 2xl:text-xs">
           <colgroup>
-            <col className="w-[12%]" />
-            <col className="w-[8%]" />
-            <col className="w-[9%]" />
-            <col className="w-[8%]" />
-            <col className="w-[9%]" />
-            <col className="w-[9%]" />
-            <col className="w-[8%]" />
-            <col className="w-[7%]" />
+            <col className="w-[14%]" />
             <col className="w-[10%]" />
-            <col className="w-[20%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[9%]" />
+            <col className="w-[14%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-400/50 bg-[#0f2847]">
@@ -511,9 +277,6 @@ export function CecchinoTodayKpiPanel({
               <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Rating
               </th>
-              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
-                Affidabilità
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -524,7 +287,6 @@ export function CecchinoTodayKpiPanel({
               const labelClass = primary
                 ? 'font-bold text-white'
                 : 'font-medium text-slate-300'
-              const emp = lookup(row)
               const mk = row.market_key
 
                   return (
@@ -618,23 +380,6 @@ export function CecchinoTodayKpiPanel({
                           )}
                         </AnalyzableCell>
                       </td>
-                      <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                        <AnalyzableCell
-                          active={analysisMode}
-                          label="Affidabilità"
-                          onOpen={() => openMetric(mk, 'historical_reliability')}
-                        >
-                          <HistoricalReliabilityCell
-                            item={emp}
-                            loading={historicalReliabilityLoading}
-                            error={historicalReliabilityError}
-                            interactive={!analysisMode}
-                            onOpen={() => {
-                              if (emp) setOpenItem(emp)
-                            }}
-                          />
-                        </AnalyzableCell>
-                      </td>
                     </tr>
                   )
             })}
@@ -645,7 +390,6 @@ export function CecchinoTodayKpiPanel({
       <div className="space-y-2 bg-[#163352] p-3 xl:hidden">
         {(panel.rows || []).map((row) => {
           const segnoLabel = kpiSegnoLabel(row)
-          const emp = lookup(row)
           const mk = row.market_key
           return (
             <article
@@ -668,24 +412,6 @@ export function CecchinoTodayKpiPanel({
                     </span>
                   </AnalyzableCell>
                 )}
-              </div>
-              <div className="mb-2">
-                <p className="mb-1 text-[10px] uppercase text-slate-400">Affidabilità</p>
-                <AnalyzableCell
-                  active={analysisMode}
-                  label="Affidabilità"
-                  onOpen={() => openMetric(mk, 'historical_reliability')}
-                >
-                  <HistoricalReliabilityCell
-                    item={emp}
-                    loading={historicalReliabilityLoading}
-                    error={historicalReliabilityError}
-                    interactive={!analysisMode}
-                    onOpen={() => {
-                      if (emp) setOpenItem(emp)
-                    }}
-                  />
-                </AnalyzableCell>
               </div>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
                 <dt className="text-slate-400">Quota Book</dt>
@@ -766,9 +492,6 @@ export function CecchinoTodayKpiPanel({
         </div>
       )}
 
-      {!analysisMode && openItem ? (
-        <HistoricalReliabilityPopover item={openItem} onClose={() => setOpenItem(null)} />
-      ) : null}
       {selectedExplanation ? (
         <CecchinoFormulaAuditModal
           explanation={selectedExplanation}

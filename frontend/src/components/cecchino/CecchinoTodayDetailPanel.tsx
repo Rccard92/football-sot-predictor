@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
-import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalReliabilityForFixture'
 import type {
   CecchinoTodayDetailResponse,
 } from '../../lib/cecchinoTodayApi'
@@ -42,24 +41,9 @@ export function CecchinoTodayDetailSkeleton() {
 }
 
 export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
-  const scanDate = detail.scan_date
-  const competitionId = detail.competition_id
   const todayFixtureId = detail.today_fixture_id ?? detail.id
   const [engine, setEngine] = useState<EngineTab>('V2')
   const v2PatternMarkets = useV2PatternMarkets(todayFixtureId)
-  const hasKpi = Boolean(detail.kpi_panel_v2 ?? detail.kpi_panel)
-  const canFetch = hasKpi && Boolean(scanDate) && detail.status === 'ok'
-
-  const {
-    byMarketKey: hrMemo,
-    loading: hrLoading,
-    error: hrError,
-  } = useHistoricalReliabilityForFixture({
-    scanDate,
-    competitionId,
-    todayFixtureId,
-    enabled: canFetch,
-  })
 
   const purchasabilityV36ByMarketKey = useMemo(
     () => indexPurchasabilityV36ByMarketKey(detail.purchasability_preview_v35_v2),
@@ -114,9 +98,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
-          historicalReliabilityByMarketKey={hrMemo}
-          historicalReliabilityLoading={hrLoading}
-          historicalReliabilityError={hrError}
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
         />

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it, afterEach, vi } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { CecchinoTodayDetailPanel } from './CecchinoTodayDetailPanel'
@@ -7,14 +7,6 @@ import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
 import { V35_VALID_SNAPSHOT } from './fixtures/purchasabilityV35Fixtures'
 import { V36_VALID_SNAPSHOT } from './fixtures/purchasabilityV36Fixtures'
 import { V31_SNAPSHOT } from './fixtures/purchasabilityV31Fixtures'
-
-vi.mock('../../hooks/useHistoricalReliabilityForFixture', () => ({
-  useHistoricalReliabilityForFixture: () => ({
-    byMarketKey: {},
-    loading: false,
-    error: null,
-  }),
-}))
 
 const FORBIDDEN = [
   'Acquistabilità V3.5',

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { BetBuilderResultAnalysisContext } from '../../lib/cecchinoBetBuilderApi'
 import type { AnalysisContextState } from '../../hooks/useBetBuilderResultAnalysisContext'
-import { useHistoricalReliabilityForFixture } from '../../hooks/useHistoricalReliabilityForFixture'
 import { CecchinoTodayKpiPanel } from '../cecchino/CecchinoTodayKpiPanel'
 import { CecchinoBalanceV5Panel } from '../cecchino/CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityV5Panel } from '../cecchino/CecchinoGoalIntensityV5Panel'
@@ -69,14 +68,6 @@ function TechnicalPanelContent({
   const fixture = context.fixture
   const todayFixtureId = fixture.today_fixture_id
   const providerFixtureId = fixture.provider_fixture_id
-  const hasKpi = Boolean(context.kpi_panel)
-
-  const hr = useHistoricalReliabilityForFixture({
-    scanDate: fixture.scan_date,
-    competitionId: fixture.competition_id,
-    todayFixtureId,
-    enabled: tab === 'kpi' && hasKpi,
-  })
 
   if (tab === 'kpi') {
     if (!context.kpi_panel) {
@@ -87,9 +78,6 @@ function TechnicalPanelContent({
         <CecchinoTodayKpiPanel
           panel={context.kpi_panel}
           bookmakerStatus={context.kpi_panel.bookmaker_status}
-          historicalReliabilityByMarketKey={hr.byMarketKey}
-          historicalReliabilityLoading={hr.loading}
-          historicalReliabilityError={hr.error}
           todayFixtureId={todayFixtureId}
           providerFixtureId={providerFixtureId}
         />

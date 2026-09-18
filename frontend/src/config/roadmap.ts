@@ -197,6 +197,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-18',
+    text: "Tolta la colonna Affidabilità dalla tabella KPI V2 (Cecchino Today e Bet Builder): per calcolarla il server caricava tutto lo storico delle valutazioni a ogni apertura di partita e arrivava a 6,6 GB di memoria. Cron formazioni in pausa finché le formazioni non saranno mostrate nelle schede partita.",
+  },
+  {
+    date: '2026-09-18',
     text: "Un solo ambiente online: lo staging diventa il tool ufficiale. Prima di spegnere la vecchia produzione: backup completo del suo database (anche le analisi del 12-13/09 che lo staging non aveva completo), ripristino di prova identico su tutte le 84 tabelle, tolto l'ultimo riferimento del cron formazioni alla vecchia produzione. Memoria del backend da 16 GB a meno di 0,5 GB: il server apriva un'area di memoria per ognuno dei 48 processori e non la restituiva più dopo la scansione.",
   },
   {
