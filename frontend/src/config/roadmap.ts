@@ -197,6 +197,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-18',
+    text: "Nuova pagina Bet Builder V3 (menù laterale), stessa grafica del Bet Builder: schede V2.5 e V3 che lavorano ognuna da sola con le predizioni del proprio Indice di Acquistabilità (da 70 in su) e il cerchio del punteggio; filtro 'indice + pattern d'accordo', solo giocabili (quota ≥ 1,50), tipo di mercato, paese, campionato, punteggio minimo; scheda Combo con i soli mercati su cui V2.5 e V3 sono d'accordo e nessun pattern in contrasto. Vista Risultati con vinte, perse e ROI sulle opportunità filtrate (dati dal 16/09). Il Bet Builder V2 resta invariato.",
+  },
+  {
+    date: '2026-09-18',
     text: "Tolta la colonna Affidabilità dalla tabella KPI V2 (Cecchino Today e Bet Builder): per calcolarla il server caricava tutto lo storico delle valutazioni a ogni apertura di partita e arrivava a 6,6 GB di memoria. Cron formazioni in pausa finché le formazioni non saranno mostrate nelle schede partita.",
   },
   {

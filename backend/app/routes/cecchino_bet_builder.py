@@ -24,6 +24,20 @@ from app.services.cecchino.cecchino_bet_builder_results import (
 router = APIRouter(prefix="/cecchino/bet-builder", tags=["cecchino-bet-builder"])
 
 
+@router.get("/v3")
+def get_bet_builder_v3(
+    date_from: date_type | None = Query(None, description="Inizio intervallo (default oggi Europe/Rome)"),
+    date_to: date_type | None = Query(None, description="Fine intervallo (default = date_from)"),
+    db: Session = Depends(get_db),
+):
+    """Bet Builder V3: giocate V2.5, V3 e Combo dal registro live. Sola lettura."""
+    from app.services.cecchino.cecchino_today_service import rome_today
+    from app.services.cecchino_live.bet_builder_v3 import bet_builder_v3
+
+    start = date_from or rome_today()
+    return JSONResponse(content=jsonable_encoder(bet_builder_v3(db, date_from=start, date_to=date_to or start)))
+
+
 @router.get("/opportunities")
 def get_bet_builder_opportunities(
     date: date_type = Query(..., description="Scan date YYYY-MM-DD (Cecchino Today)"),

@@ -10,6 +10,7 @@ import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
 import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { BetBuilderPage } from './pages/BetBuilderPage'
+import { BetBuilderV3Page } from './pages/BetBuilderV3Page'
 import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoLabPatternLabPage } from './pages/CecchinoLabPatternLabPage'
 import { CecchinoLabPurchasabilityReplayPage } from './pages/CecchinoLabPurchasabilityReplayPage'
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/cecchino" element={<Navigate to="/cecchino-today" replace />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/bet-builder" element={<BetBuilderPage />} />
+          <Route path="/bet-builder-v3" element={<BetBuilderV3Page />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route path="/roadmap" element={<RoadmapPage />} />
           <Route path="/guida-modelli" element={<ModelsGuidePage />} />
