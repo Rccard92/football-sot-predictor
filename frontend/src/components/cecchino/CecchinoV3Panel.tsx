@@ -3,6 +3,7 @@ import { CecchinoPatternHero } from './CecchinoPatternHero'
 import { CecchinoPurchasabilityIndexV25 } from './CecchinoPurchasabilityIndexV25'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 import { Badge, KpiPanel, PatternPanel, SourceBadge, Stat, useLiveFixture } from './CecchinoV25Panel'
+import { FORM_LEVEL_LABEL, formLevel, formPercent, formReading, formTone } from './cecchinoV3Form'
 
 /** Scheda V3 estesa in Cecchino Today: stessi blocchi e stessa grafica di V2 e V2.5. */
 
@@ -153,6 +154,78 @@ function IndexCard({ number, title, question, value, valueLabel, block, reading 
   )
 }
 
+type FormSide = { gioco: number; risultati: number; matches: number | null } | null | undefined
+
+const FORM_TONE_CLASS = {
+  positive: 'text-emerald-700',
+  negative: 'text-rose-700',
+  neutral: 'text-slate-700',
+} as const
+
+function FormLine({ label, hint, value, kind }: { label: string; hint: string; value: number; kind: 'gioco' | 'risultati' }) {
+  const level = formLevel(value, kind)
+  const perc = formPercent(value)
+  return (
+    <div>
+      <p className="text-sm text-slate-500">
+        {label} <span className="text-slate-400">· {hint}</span>
+      </p>
+      <p className={`text-base font-semibold ${FORM_TONE_CLASS[formTone(level)]}`}>
+        {FORM_LEVEL_LABEL[level]}
+        <span className="ml-1 tabular-nums">
+          ({perc > 0 ? '+' : ''}
+          {perc}%)
+        </span>
+      </p>
+    </div>
+  )
+}
+
+function FormCard({ home, away }: { home: FormSide; away: FormSide }) {
+  return (
+    <article className={`${todayCard} ${todayCardPadding} flex flex-col gap-3`}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Indice 4</p>
+          <h4 className="text-sm font-semibold text-slate-900">Forma</h4>
+        </div>
+        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">V3</span>
+      </div>
+      <p className="text-sm text-slate-600">
+        Ultime 5 partite: meglio o peggio di quanto ci si aspettava, tenendo conto degli avversari affrontati?
+      </p>
+      <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-3 sm:grid-cols-2">
+        {(
+          [
+            ['Casa', home],
+            ['Ospite', away],
+          ] as [string, FormSide][]
+        ).map(([label, block]) => (
+          <div key={label} className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {label}
+              {block?.matches != null ? ` · ${block.matches} partite` : ''}
+            </p>
+            {block ? (
+              <>
+                <FormLine label="Gioco" hint="tiri creati e concessi" value={block.gioco} kind="gioco" />
+                <FormLine label="Risultati" hint="gol fatti e subiti" value={block.risultati} kind="risultati" />
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Non disponibile</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-800">{formReading(home, away)}</p>
+      <p className="text-xs leading-relaxed text-slate-500">
+        La V3 ha imparato dallo storico che per prevedere la partita successiva conta la forma del gioco; quella dei
+        risultati, a parità di forza delle squadre, non aggiunge nulla.
+      </p>
+    </article>
+  )
+}
+
 function IndicesPanel({ p }: { p: LiveModelPrediction }) {
   const idx = p.modules?.indices ?? {}
   const eq = idx.equilibrio
@@ -206,34 +279,7 @@ function IndicesPanel({ p }: { p: LiveModelPrediction }) {
               : `Over 2.5 al ${pct(gi?.p_over_2_5)}.`
           }
         />
-        <article className={`${todayCard} ${todayCardPadding} flex flex-col gap-3`}>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Indice 4</p>
-              <h4 className="text-sm font-semibold text-slate-900">Forma</h4>
-            </div>
-            <span className="inline-flex shrink-0 items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">V3</span>
-          </div>
-          <p className="text-xs text-slate-500">Nelle ultime 5 partite le squadre hanno fatto meglio o peggio delle attese?</p>
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-sm">
-            {[
-              ['Casa', formHome],
-              ['Ospite', formAway],
-            ].map(([label, f]) => {
-              const block = f as { gioco: number; risultati: number; matches: number | null } | null | undefined
-              return (
-                <div key={label as string}>
-                  <p className="text-[10px] uppercase tracking-wide text-slate-400">{label as string}</p>
-                  <p className="font-semibold tabular-nums text-slate-900">Gioco {signed(block?.gioco, 2)}</p>
-                  <p className="tabular-nums text-slate-700">Risultati {signed(block?.risultati, 2)}</p>
-                </div>
-              )
-            })}
-          </div>
-          <p className="text-xs leading-relaxed text-slate-700">
-            Positivo = sopra le attese (crea più tiri o fa più gol di quanto previsto, al netto degli avversari affrontati).
-          </p>
-        </article>
+        <FormCard home={formHome} away={formAway} />
       </div>
     </section>
   )

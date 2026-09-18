@@ -197,6 +197,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-18',
+    text: "Scheda V3 di Cecchino Today: card 'Forma' riscritta. Per ogni squadra gioco (tiri) e risultati (gol) in parole e percentuale rispetto alle attese (es. 'Leggermente sopra le attese (+15%)'), soglie dalla distribuzione di 31 mila partite del Lab, frase finale su chi favorisce il gioco e su chi raccoglie più o meno di quanto produce. Calcoli invariati.",
+  },
+  {
+    date: '2026-09-18',
     text: "Bet Builder V3: nelle schede V2.5 e V3 selettore 'Indice / Solo pattern'. In 'Solo pattern' le opportunità sono i pattern Master accesi con quota (uno per mercato, prima quelli con più pattern concordi), con riuscita e ROI storici, quota e quota minima storica; il cerchio mostra cosa dice l'indice dello stesso modello su quel mercato (confermato, in contrasto, altri mercati). Filtro 'pattern + indice d'accordo' e vista Risultati anche per i pattern.",
   },
   {
