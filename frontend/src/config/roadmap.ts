@@ -23,7 +23,7 @@ export type RoadmapUpdate = {
 }
 
 export const ROADMAP_RULES: string[] = [
-  "Si lavora solo su staging; la produzione si fa una sola volta, alla fine, quando tutto e' finito e verificato.",
+  "Un solo ambiente online (dal 18/09/2026): quello che era lo staging e' il tool ufficiale; la vecchia produzione e' stata spenta dopo un backup completo del suo database.",
   "La stagione 2025/26 e' gia' stata usata: da ora l'unico banco di prova pulito e' la live (2026/27 in avanti).",
   "Pattern vincente = profitto (o scostamento confermato, per i mercati senza quota) in tutte e 4 le stagioni 2022/23-2025/26, con almeno 20 partite per stagione.",
   "Ogni motore e ogni pattern hanno una versione congelata: una modifica crea una versione nuova.",
@@ -180,19 +180,25 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
   {
     id: 9,
     title: 'Messa in produzione',
-    goal: 'Uscita unica del tool completo, dopo verifica su staging.',
-    status: 'da_fare',
+    goal: 'Un solo ambiente online per ridurre i costi, senza perdere dati.',
+    status: 'in_corso',
     dependsOn: [1, 2, 4, 5, 6, 7],
     tasks: [
-      { text: 'Migrazioni database, dati storici necessari, calcoli giornalieri programmati', status: 'da_fare' },
-      { text: 'Verifica completa su staging', status: 'da_fare' },
-      { text: "Pubblicazione in produzione solo con conferma esplicita dell'utente", status: 'da_fare' },
+      { text: 'Verifica su staging: scansioni del 16, 17 e 18/09 complete, cron formazioni attivo, nessun collegamento alla vecchia produzione', status: 'fatto' },
+      { text: 'Backup completo del database della vecchia produzione (84 tabelle, ripristino di prova identico riga per riga)', status: 'fatto' },
+      { text: 'Spenti backend, frontend e cron della vecchia produzione; codice unito nel ramo main', status: 'fatto' },
+      { text: 'Memoria del backend ridotta (da 16 GB a meno di 0,5 GB)', status: 'fatto' },
+      { text: "Cancellazione del database della vecchia produzione (dall'utente, dal pannello Railway)", status: 'da_fare' },
     ],
     doneWhen: 'Il tool gira in produzione con i tre motori, Master Pattern e osservazione live.',
   },
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-18',
+    text: "Un solo ambiente online: lo staging diventa il tool ufficiale. Prima di spegnere la vecchia produzione: backup completo del suo database (anche le analisi del 12-13/09 che lo staging non aveva completo), ripristino di prova identico su tutte le 84 tabelle, tolto l'ultimo riferimento del cron formazioni alla vecchia produzione. Memoria del backend da 16 GB a meno di 0,5 GB: il server apriva un'area di memoria per ognuno dei 48 processori e non la restituiva più dopo la scansione.",
+  },
   {
     date: '2026-09-15',
     text: "Indice di Acquistabilità V3 con lo stesso impianto e gli stessi criteri della V2.5. La versione con tutte le colonne dei moduli peggiorava la lettura (la probabilità V3 li combina già): adottata la probabilità V3 ricalibrata sui risultati. Esame 2022/23-2024/25: predizioni 70+ vinte 62,5% contro 46,8% normale, ordine rispettato, profitto non superato (ROI -3,6%). Online nella scheda V3 con conferma dai pattern; Osservazione live confronta predizioni confermate e non confermate.",

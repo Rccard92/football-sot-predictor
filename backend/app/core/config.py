@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     cecchino_league_stats_cache_hours: int = 12
     cecchino_league_stats_cache_hours_ok: int = 24
     cors_origins: str = (
-        "https://frontend-production-9b20.up.railway.app,"
+        "https://frontend-staging-5729e.up.railway.app,"
         "http://localhost:5173,"
         "http://localhost:3000"
     )

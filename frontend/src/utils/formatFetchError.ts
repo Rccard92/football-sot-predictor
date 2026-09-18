@@ -12,7 +12,7 @@ export function formatFetchError(err: unknown, endpoint?: string): string {
     return (
       `Backend non raggiungibile o CORS non configurato${ep}. ` +
       'Verifica che il servizio API su Railway sia attivo e che CORS_ORIGINS includa ' +
-      'https://frontend-production-9b20.up.railway.app'
+      'https://frontend-staging-5729e.up.railway.app'
     )
   }
   return raw || 'Errore sconosciuto'
