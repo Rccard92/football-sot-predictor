@@ -2901,18 +2901,10 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         )
     v35_detail = resolve_purchasability_preview_v35_for_detail(row=row)
     v35_v2_detail = resolve_purchasability_preview_v35_v2_for_detail(row=row)
-    try:
-        from app.services.cecchino.cecchino_purchasability_observational import (
-            build_observational_maps_for_previews,
-        )
-
-        obs_v1, obs_v2 = build_observational_maps_for_previews(
-            db,
-            purch_v1=purch_v1 if isinstance(purch_v1, dict) else None,
-            purch_v2=purch_v2 if isinstance(purch_v2, dict) else None,
-        )
-    except Exception:
-        obs_v1, obs_v2 = {}, {}
+    # Statistiche osservazionali Acquistabilita' V1/V2: non mostrate in nessuna pagina e costose
+    # (rileggevano tutte le valutazioni storiche a ogni apertura, ~3 s). Campi lasciati vuoti.
+    obs_v1: dict[str, Any] = {}
+    obs_v2: dict[str, Any] = {}
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,

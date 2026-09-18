@@ -16,6 +16,7 @@ import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPag
 import { CecchinoTodayScanProgressCard } from '../components/cecchino/CecchinoTodayScanProgressCard'
 import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
 import { CecchinoDayTimeline } from '../components/cecchino/CecchinoDayTimeline'
+import { prefetchLiveFixture } from '../components/cecchino/CecchinoV25Panel'
 import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../components/cecchino/cecchinoTodayStyles'
 import {
   getCecchinoTodayDays,
@@ -386,6 +387,7 @@ export function CecchinoTodayPage() {
       setDetail(null)
       if (selectedId == null) return
       setDetailLoading(true)
+      prefetchLiveFixture(selectedId)
       try {
         const data = await getCecchinoTodayDetail(selectedId)
         setDetail(data)

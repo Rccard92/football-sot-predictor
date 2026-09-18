@@ -71,6 +71,9 @@ class Settings(BaseSettings):
 
     cecchino_allow_destructive_cleanup: bool = False
 
+    # Precarica i Master Pattern all'avvio del server (prima scheda partita piu' veloce)
+    cecchino_warm_pattern_cache: bool = False
+
     # Cron formazioni pre-match: false = in pausa (esce subito, nessuna chiamata API-Football)
     cecchino_prematch_lineups_enabled: bool = True
 

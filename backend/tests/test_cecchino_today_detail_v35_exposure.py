@@ -353,3 +353,18 @@ def test_detail_v35_no_db_write(detail_patches):
 
     db.commit.assert_not_called()
     db.add.assert_not_called()
+
+
+def test_detail_skips_observational_maps(detail_patches):
+    """Statistiche osservazionali V1/V2 non piu' calcolate: campi presenti ma vuoti."""
+    row = _eligible_row()
+    with patch(
+        "app.services.cecchino.cecchino_today_service._resolve_kpi_panel_for_detail",
+        return_value=row.kpi_panel_json,
+    ):
+        detail = get_today_fixture_detail(_detail_db(row), 21807)
+
+    detail_patches[0].assert_not_called()
+    assert detail["purchasability_observational_v1_1"] == {}
+    assert detail["purchasability_observational_v2"] == {}
+    assert detail["status"] == "ok"

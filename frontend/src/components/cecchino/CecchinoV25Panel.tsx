@@ -94,6 +94,11 @@ function fetchLiveFixture(id: number): Promise<LiveFixtureResponse> {
   return promise
 }
 
+/** Avvia la lettura V2.5/V3/pattern insieme alla scheda V2: i pannelli la trovano già in corso. */
+export function prefetchLiveFixture(id: number): void {
+  fetchLiveFixture(id).catch(() => undefined)
+}
+
 export function useLiveFixture(todayFixtureId: number | undefined) {
   const [data, setData] = useState<LiveFixtureResponse | null>(null)
   const [error, setError] = useState<string | null>(null)

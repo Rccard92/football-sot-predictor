@@ -35,6 +35,18 @@ app.add_middleware(
 app.include_router(api_router)
 
 
+@app.on_event("startup")
+def warm_pattern_cache() -> None:
+    """Master Pattern caricati in sottofondo: l'avvio non aspetta e la prima scheda non paga il caricamento."""
+    if not settings.cecchino_warm_pattern_cache:
+        return
+    import threading
+
+    from app.services.cecchino_live.pattern_signals import warm_winners_cache
+
+    threading.Thread(target=warm_winners_cache, name="warm-pattern-cache", daemon=True).start()
+
+
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_unhandled_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Log degli errori SQLAlchemy non gestiti a livello di route (senza URL/credenziali)."""

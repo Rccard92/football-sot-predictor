@@ -7,6 +7,7 @@ quella competizione) il pattern resta "non verificabile": non viene mai acceso p
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
 
@@ -19,6 +20,8 @@ from app.models.cecchino_master_pattern import (
     CecchinoMasterPatternBuild,
 )
 from app.services.cecchino_data_lab.run_v2_grid_vocabulary import SIGNAL_ACTIVE_COLUMN
+
+logger = logging.getLogger(__name__)
 
 _cache: dict[str, tuple[int, list[dict[str, Any]], int | None]] = {}
 _lock = threading.Lock()
@@ -65,6 +68,23 @@ def load_winners(db: Session, model: str) -> tuple[int | None, list[dict[str, An
     with _lock:
         _cache[model] = entry
     return entry
+
+
+def warm_winners_cache(models: tuple[str, ...] = ("V2", "V2.5", "V3")) -> None:
+    """Carica in anticipo i pattern vincenti (stessa cache di load_winners), senza scrivere nulla."""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        for model in models:
+            try:
+                load_winners(db, model)
+            except Exception:  # noqa: BLE001
+                logger.exception("precaricamento pattern %s non riuscito", model)
+                db.rollback()
+    finally:
+        db.rollback()
+        db.close()
 
 
 def _holds(
