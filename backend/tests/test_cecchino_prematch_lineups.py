@@ -33,3 +33,15 @@ def test_store_injuries_maps_team_side_and_skips_other_teams():
     row = added[0]
     assert row.team_side == "away" and row.provider_name == "api_football"
     assert row.external_type == "Missing Fixture" and row.reason == "Injury"
+
+
+def test_job_paused_makes_no_db_or_api_work(monkeypatch):
+    from app.jobs import cecchino_prematch_lineups as job
+
+    monkeypatch.setattr(job, "get_settings", lambda: SimpleNamespace(cecchino_prematch_lineups_enabled=False))
+    session = MagicMock(side_effect=AssertionError("database aperto con il cron in pausa"))
+    monkeypatch.setattr(job, "SessionLocal", session)
+    run = MagicMock()
+    monkeypatch.setattr(job, "run_prematch_lineups", run)
+    assert job.main([]) == 0
+    run.assert_not_called()

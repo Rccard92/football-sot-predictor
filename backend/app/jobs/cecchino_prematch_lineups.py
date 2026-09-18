@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.services.cecchino_live.prematch_lineups import run_prematch_lineups
 
@@ -25,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    if not args.force and not get_settings().cecchino_prematch_lineups_enabled:
+        logger.info("cecchino_prematch_lineups in pausa (CECCHINO_PREMATCH_LINEUPS_ENABLED=false)")
+        return 0
     db = SessionLocal()
     try:
         result = run_prematch_lineups(db, force=args.force)

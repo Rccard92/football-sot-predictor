@@ -71,6 +71,9 @@ class Settings(BaseSettings):
 
     cecchino_allow_destructive_cleanup: bool = False
 
+    # Cron formazioni pre-match: false = in pausa (esce subito, nessuna chiamata API-Football)
+    cecchino_prematch_lineups_enabled: bool = True
+
     # Cecchino Today — scansione automatica sincrono (cron-ready; default disabilitato)
     cecchino_auto_scan_enabled: bool = False
     cecchino_auto_scan_timezone: str = "Europe/Rome"
