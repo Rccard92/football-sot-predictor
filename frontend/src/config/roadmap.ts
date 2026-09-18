@@ -124,7 +124,7 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
       { text: 'Dettaglio analisi con 3 schede: V2, V2.5 (dal registro o anteprima), V3 in attesa del collegamento API', status: 'fatto' },
       { text: 'Pattern Master V2.5 accesi su ogni partita, registrati prima del calcio di inizio (solo se tutte le condizioni sono verificabili)', status: 'fatto' },
       { text: 'Pattern Master V2 accesi in live (Cecchino Today e Bet Builder): moduli V2 ricalcolati con le stesse funzioni della RUN V2, quote reali Bet365, percentili Intensità Goal dell\'ultima RUN V2', status: 'fatto' },
-      { text: "Statistiche squadra (tiri, corner, cartellini) per tutte le competizioni: oggi presenti solo per poche partite, la maggior parte dei pattern resta non verificabile", status: 'da_fare' },
+      { text: "Statistiche squadra (tiri, corner, cartellini) recuperate per tutti i campionati in cui API-Football le fornisce: verifica 16-18/09 su 80 partite, 18 su 18 nei campionati coperti con storico completo (pattern non verificabili 1,3%); nei 27 campionati senza statistiche nella fonte i pattern su tiri, corner e cartellini restano non verificabili (limite della fonte)", status: 'fatto' },
       { text: 'Bet Builder: sezione pattern accesi in osservazione con esito a fine partita (non giocate automatiche)', status: 'fatto' },
       { text: 'Scansione notturna: i rifiuti per troppe richieste (429) non escludono piu partite, quote del giorno lette a pagine, secondo passaggio di recupero', status: 'fatto' },
       { text: 'Scansione automatica spostata alle 06:00 sulla giornata in corso (staging con recupero alle 06:45, produzione alle 06:00); scansione delle 23:00 spenta', status: 'fatto' },
