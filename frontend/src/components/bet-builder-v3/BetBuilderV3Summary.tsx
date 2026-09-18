@@ -1,14 +1,16 @@
 import { bbCard, bbCardPadding } from '../bet-builder/betBuilderStyles'
 import { formatProfitUnits, formatRoiPct, signedMetricTone } from '../bet-builder/betBuilderResultsUtils'
-import { sampleLabel, type BbV3Tally } from './bbV3Utils'
+import { sampleLabel, type BbV3Source, type BbV3Tally } from './bbV3Utils'
 
 /** Riepilogo pre-match: stessa striscia del Bet Builder. */
 export function BetBuilderV3PrematchSummary({
+  source = 'index',
   fixtures,
   fixturesWithOpportunity,
   tally,
   confirmed,
 }: {
+  source?: BbV3Source
   fixtures: number
   fixturesWithOpportunity: number
   tally: BbV3Tally
@@ -16,10 +18,14 @@ export function BetBuilderV3PrematchSummary({
 }) {
   const items = [
     { key: 'fixtures', label: 'Partite analizzate', value: fixtures },
-    { key: 'with', label: 'Con opportunità', value: fixturesWithOpportunity },
-    { key: 'opps', label: 'Opportunità', value: tally.opportunities },
+    { key: 'with', label: source === 'pattern' ? 'Con pattern accesi' : 'Con opportunità', value: fixturesWithOpportunity },
+    { key: 'opps', label: source === 'pattern' ? 'Mercati con pattern' : 'Opportunità', value: tally.opportunities },
     { key: 'playable', label: 'Giocabili', value: tally.playable },
-    { key: 'confirmed', label: 'Confermate dal pattern', value: confirmed },
+    {
+      key: 'confirmed',
+      label: source === 'pattern' ? 'Confermati dall’indice' : 'Confermate dal pattern',
+      value: confirmed,
+    },
     { key: 'pending', label: 'Da giocare', value: tally.pending },
   ]
   return (

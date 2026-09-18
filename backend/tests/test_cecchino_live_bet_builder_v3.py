@@ -88,3 +88,30 @@ def test_combo_same_market_both_models_without_conflicting_patterns():
 def test_combo_empty_when_a_model_is_missing():
     v25 = bb._model_block(None, _pred("V2.5", {"HOME": _m(85, 2.1)}))
     assert bb._combo(v25, None) == []
+
+
+def test_patterns_carry_index_view_of_the_same_market():
+    pred = _pred(
+        "V2.5",
+        {"HOME": _m(81, 2.0), "AWAY": _m(40, 3.8), "OVER_2_5": _m(64, 1.9)},
+        patterns=[
+            _pattern(1, "HOME"),
+            _pattern(2, "HOME"),
+            _pattern(3, "AWAY"),
+            _pattern(4, "OVER_2_5"),
+            _pattern(5, "UNDER_2_5", uses_book=True),
+        ],
+    )
+    pats = {p["market_key"]: p for p in bb._model_block(None, pred)["patterns"]}
+    assert set(pats) == {"HOME", "AWAY", "OVER_2_5"}  # pattern con condizioni sulla quota esclusi
+    assert pats["HOME"]["patterns_count"] == 2 and pats["HOME"]["index_relation"] == "confermato"
+    assert pats["AWAY"]["index_relation"] == "in_contrasto" and pats["AWAY"]["index_score"] == 40
+    assert pats["OVER_2_5"]["index_relation"] == "indice_altri_mercati"
+    assert list(pats)[0] == "HOME"  # prima i mercati con piu' pattern concordi
+
+
+def test_patterns_without_index():
+    pred = _pred("V3", {}, patterns=[_pattern(1, "DRAW")])
+    pred.modules_json["purchasability_index"] = {"status": "unavailable"}
+    pats = bb._model_block(None, pred)["patterns"]
+    assert pats[0]["index_relation"] == "indice_non_disponibile" and pats[0]["index_score"] is None

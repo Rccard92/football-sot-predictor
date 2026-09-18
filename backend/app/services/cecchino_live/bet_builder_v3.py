@@ -85,24 +85,51 @@ def _model_block(db: Session, pred: CecchinoLivePrediction) -> dict[str, Any]:
                 }
             )
     predictions.sort(key=lambda p: -p["score"])
+    index_markets = (index.get("markets") or {}) if index.get("status") == "ok" else {}
+    predicted = {p["market_key"] for p in predictions}
+    patterns = []
+    for key, g in groups.items():
+        m = index_markets.get(key) or {}
+        quota = g.get("quota_book") if g.get("quota_book") is not None else m.get("quota")
+        patterns.append(
+            {
+                "market_key": key,
+                "family": market_family(key),
+                "patterns_count": int(g["patterns_count"]),
+                "hist_win_pct": g.get("hist_win_rate_pct"),
+                "hist_roi_pct": g.get("hist_roi_pct_best"),
+                "quota": quota,
+                "playable": quota is not None and float(quota) >= PLAYABLE_MIN_QUOTA,
+                # cosa dice l'indice dello stesso modello su questo mercato
+                "index_score": round(float(m["score"]), 1) if m.get("score") is not None else None,
+                "index_probability": m.get("probability"),
+                "index_base_rate": m.get("base_rate"),
+                "index_relation": _index_relation(key, predicted, bool(index_markets)),
+                "won": _won(pred, key),
+            }
+        )
+    patterns.sort(key=lambda p: (-p["patterns_count"], -(p["hist_win_pct"] or 0.0)))
     return {
         "available": index.get("status") == "ok",
         "status": pred.status,
         "frozen_at": pred.frozen_at.isoformat() if pred.frozen_at else None,
         "predictions": predictions,
-        "patterns": [
-            {
-                "market_key": key,
-                "patterns_count": int(g["patterns_count"]),
-                "hist_win_pct": g.get("hist_win_rate_pct"),
-                "hist_roi_pct": g.get("hist_roi_pct_best"),
-                "quota": g.get("quota_book"),
-                "won": _won(pred, key),
-            }
-            for key, g in groups.items()
-        ],
+        "patterns": patterns,
         "_groups": groups,
     }
+
+
+def _index_relation(key: str, predicted: set[str], index_available: bool) -> str:
+    """Il pattern visto dall'indice: stesso mercato predetto (70+), mercato opposto, altro, nessuna predizione."""
+    if not index_available:
+        return "indice_non_disponibile"
+    if key in predicted:
+        return "confermato"
+    if any(markets_conflict(key, other) for other in predicted):
+        return "in_contrasto"
+    if predicted:
+        return "indice_altri_mercati"
+    return "nessuna_predizione"
 
 
 def _combo(v25: dict[str, Any] | None, v3: dict[str, Any] | None) -> list[dict[str, Any]]:

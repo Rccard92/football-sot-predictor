@@ -197,6 +197,10 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
   {
     date: '2026-09-18',
+    text: "Bet Builder V3: nelle schede V2.5 e V3 selettore 'Indice / Solo pattern'. In 'Solo pattern' le opportunità sono i pattern Master accesi con quota (uno per mercato, prima quelli con più pattern concordi), con riuscita e ROI storici, quota e quota minima storica; il cerchio mostra cosa dice l'indice dello stesso modello su quel mercato (confermato, in contrasto, altri mercati). Filtro 'pattern + indice d'accordo' e vista Risultati anche per i pattern.",
+  },
+  {
+    date: '2026-09-18',
     text: "Nuova pagina Bet Builder V3 (menù laterale), stessa grafica del Bet Builder: schede V2.5 e V3 che lavorano ognuna da sola con le predizioni del proprio Indice di Acquistabilità (da 70 in su) e il cerchio del punteggio; filtro 'indice + pattern d'accordo', solo giocabili (quota ≥ 1,50), tipo di mercato, paese, campionato, punteggio minimo; scheda Combo con i soli mercati su cui V2.5 e V3 sono d'accordo e nessun pattern in contrasto. Vista Risultati con vinte, perse e ROI sulle opportunità filtrate (dati dal 16/09). Il Bet Builder V2 resta invariato.",
   },
   {

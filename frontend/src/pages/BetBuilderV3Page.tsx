@@ -18,6 +18,7 @@ import {
   uniqueSorted,
   type BbV3Filters,
   type BbV3Period,
+  type BbV3Source,
   type BbV3Tab,
 } from '../components/bet-builder-v3/bbV3Utils'
 import { BetBuilderViewSwitch } from '../components/bet-builder/BetBuilderViewSwitch'
@@ -58,6 +59,9 @@ function periodRange(period: BbV3Period, today: string): { from: string; to: str
   return { from: today, to: today }
 }
 
+const PATTERN_HINT =
+  'Solo i pattern Master accesi con quota (uno per mercato, esclusi quelli che usano la quota del bookmaker come condizione). Il cerchio mostra cosa dice l’indice dello stesso modello su quel mercato.'
+
 const TAB_HINT: Record<BbV3Tab, string> = {
   'V2.5': 'Predizioni dell’Indice di Acquistabilità V2.5 (punteggio da 70 in su).',
   V3: 'Predizioni dell’Indice di Acquistabilità V3 (punteggio da 70 in su). La V3 analizza solo le partite con tiri e tiri in porta disponibili.',
@@ -68,6 +72,7 @@ export function BetBuilderV3Page() {
   const [params, setParams] = useSearchParams()
   const today = todayIsoRome()
   const tab = parseTab(params.get('tab'))
+  const source: BbV3Source = tab !== 'combo' && params.get('source') === 'pattern' ? 'pattern' : 'index'
   const view: BetBuilderPageView = params.get('view') === 'results' ? 'results' : 'pre-match'
   const dateParam = params.get('date')
   const date = isIsoDate(dateParam) ? dateParam : today
@@ -115,14 +120,20 @@ export function BetBuilderV3Page() {
     () => (showOutcome ? filters : { ...filters, outcome: 'all' as const }),
     [filters, showOutcome],
   )
-  const groups = useMemo(() => buildGroups(items, tab, effectiveFilters), [items, tab, effectiveFilters])
-  const counts = useMemo(() => familyCounts(items, tab, effectiveFilters), [items, tab, effectiveFilters])
+  const groups = useMemo(
+    () => buildGroups(items, tab, effectiveFilters, source),
+    [items, tab, effectiveFilters, source],
+  )
+  const counts = useMemo(
+    () => familyCounts(items, tab, effectiveFilters, source),
+    [items, tab, effectiveFilters, source],
+  )
   const totals = useMemo(() => tally(groups), [groups])
   const confirmed = useMemo(
     () => groups.reduce((n, g) => n + g.opportunities.filter(isPatternAgree).length, 0),
     [groups],
   )
-  const covered = useMemo(() => fixturesCovered(items, tab), [items, tab])
+  const covered = useMemo(() => fixturesCovered(items, tab, source), [items, tab, source])
   const countries = useMemo(() => uniqueSorted(items.map((i) => i.fixture.country)), [items])
   const leagues = useMemo(
     () =>
@@ -246,7 +257,35 @@ export function BetBuilderV3Page() {
             </button>
           ))}
         </div>
-        <p className="text-sm text-slate-600">{TAB_HINT[tab]}</p>
+        {tab !== 'combo' ? (
+          <div
+            className="ml-0 inline-flex overflow-hidden rounded-xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm sm:ml-2"
+            role="tablist"
+            aria-label="Cosa mostrare"
+            data-testid="bb-v3-source-tabs"
+          >
+            {(
+              [
+                { key: 'index', label: 'Indice' },
+                { key: 'pattern', label: 'Solo pattern' },
+              ] as { key: BbV3Source; label: string }[]
+            ).map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                role="tab"
+                aria-selected={source === s.key}
+                className={`min-h-10 rounded-lg px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                  source === s.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                onClick={() => setParam({ source: s.key === 'pattern' ? 'pattern' : null })}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <p className="text-sm text-slate-600">{source === 'pattern' ? PATTERN_HINT : TAB_HINT[tab]}</p>
       </header>
 
       {loading ? (
@@ -280,6 +319,7 @@ export function BetBuilderV3Page() {
             <BetBuilderV3ResultsSummary tally={totals} />
           ) : (
             <BetBuilderV3PrematchSummary
+              source={source}
               fixtures={covered}
               fixturesWithOpportunity={groups.length}
               tally={totals}
@@ -293,6 +333,7 @@ export function BetBuilderV3Page() {
             countries={countries}
             leagues={leagues}
             tab={tab}
+            source={source}
             showOutcome={showOutcome}
             secondaryOpen={secondaryOpen}
             onToggleSecondary={() => setSecondaryOpen((v) => !v)}
@@ -318,7 +359,7 @@ export function BetBuilderV3Page() {
               <div className={bbGridCards} data-testid="bb-v3-cards">
                 {groups.slice(0, visible).map((g) => (
                   <BetBuilderV3FixtureCard
-                    key={`${tab}-${g.fixture.today_fixture_id}`}
+                    key={`${tab}-${source}-${g.fixture.today_fixture_id}`}
                     group={g}
                     tab={tab}
                     showOutcome={showOutcome}

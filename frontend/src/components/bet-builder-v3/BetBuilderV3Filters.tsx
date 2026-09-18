@@ -13,6 +13,7 @@ import {
   type BbV3Filters,
   type BbV3OutcomeFilter,
   type BbV3SortKey,
+  type BbV3Source,
   type BbV3Tab,
 } from './bbV3Utils'
 
@@ -22,6 +23,7 @@ type Props = {
   countries: string[]
   leagues: string[]
   tab: BbV3Tab
+  source: BbV3Source
   showOutcome: boolean
   secondaryOpen: boolean
   onToggleSecondary: () => void
@@ -51,13 +53,19 @@ export function BetBuilderV3Filters({
   countries,
   leagues,
   tab,
+  source,
   showOutcome,
   secondaryOpen,
   onToggleSecondary,
   onChange,
 }: Props) {
   const activeSecondary = countSecondary(filters)
-  const agreeLabel = tab === 'combo' ? 'Confermate da un pattern' : 'Indice + pattern d’accordo'
+  const agreeLabel =
+    tab === 'combo'
+      ? 'Confermate da un pattern'
+      : source === 'pattern'
+        ? 'Pattern + indice d’accordo'
+        : 'Indice + pattern d’accordo'
 
   return (
     <section className="space-y-2" aria-label="Filtri Bet Builder V3">
@@ -138,7 +146,7 @@ export function BetBuilderV3Filters({
           >
             {SORT_OPTIONS.map((o) => (
               <option key={o.key} value={o.key}>
-                {o.label}
+                {o.key === 'score_desc' && source === 'pattern' ? 'Pattern concordi ↓' : o.label}
               </option>
             ))}
           </select>
@@ -196,14 +204,18 @@ export function BetBuilderV3Filters({
             </select>
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-500">Punteggio minimo</span>
+            <span className="text-xs font-semibold text-slate-500">
+              {source === 'pattern' ? 'Punteggio minimo dell’indice' : 'Punteggio minimo'}
+            </span>
             <select
               className={bbSelect}
               value={filters.minScore == null ? '' : String(filters.minScore)}
               onChange={(e) => onChange({ minScore: e.target.value === '' ? null : Number(e.target.value) })}
               aria-label="Punteggio minimo"
             >
-              <option value="">Da 70 (tutte le predizioni)</option>
+              <option value="">{source === 'pattern' ? 'Nessun filtro' : 'Da 70 (tutte le predizioni)'}</option>
+              {source === 'pattern' ? <option value="50">≥ 50</option> : null}
+              {source === 'pattern' ? <option value="70">≥ 70</option> : null}
               <option value="80">≥ 80</option>
               <option value="90">≥ 90</option>
             </select>

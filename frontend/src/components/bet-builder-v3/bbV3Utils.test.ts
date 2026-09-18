@@ -101,3 +101,55 @@ describe('bbV3Utils', () => {
     expect(t.roiPct).toBeCloseTo(150)
   })
 })
+
+describe('bbV3Utils · solo pattern', () => {
+  const withPatterns: BbV3FixtureItem = {
+    ...item(3, [pred('HOME', 80)], null),
+  }
+  withPatterns.models['V2.5']!.patterns = [
+    {
+      market_key: 'HOME',
+      family: 'esito',
+      patterns_count: 1,
+      hist_win_pct: 55,
+      hist_roi_pct: 6,
+      quota: 1.9,
+      playable: true,
+      index_score: 80,
+      index_probability: 0.6,
+      index_base_rate: 0.45,
+      index_relation: 'confermato',
+      won: null,
+    },
+    {
+      market_key: 'UNDER_2_5',
+      family: 'gol',
+      patterns_count: 3,
+      hist_win_pct: 62,
+      hist_roi_pct: 9,
+      quota: 1.7,
+      playable: true,
+      index_score: 58,
+      index_probability: 0.5,
+      index_base_rate: 0.48,
+      index_relation: 'indice_altri_mercati',
+      won: false,
+    },
+  ]
+
+  it('mostra i pattern accesi, prima quelli con più pattern concordi', () => {
+    const groups = buildGroups([withPatterns], 'V2.5', DEFAULT_BB_V3_FILTERS, 'pattern')
+    expect(groups[0].opportunities.map((o) => o.marketKey)).toEqual(['UNDER_2_5', 'HOME'])
+    expect(groups[0].opportunities[0].score).toBe(58) // il cerchio mostra l'indice sul mercato del pattern
+  })
+
+  it('pattern + indice d’accordo = indice conferma lo stesso mercato', () => {
+    const groups = buildGroups([withPatterns], 'V2.5', { ...DEFAULT_BB_V3_FILTERS, patternAgree: true }, 'pattern')
+    expect(groups[0].opportunities.map((o) => o.marketKey)).toEqual(['HOME'])
+  })
+
+  it('la modalità indice non cambia', () => {
+    const groups = buildGroups([withPatterns], 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(groups[0].opportunities.map((o) => o.marketKey)).toEqual(['HOME'])
+  })
+})

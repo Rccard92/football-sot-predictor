@@ -17,19 +17,35 @@ export type BbV3Prediction = {
   won: boolean | null
 }
 
+export type BbV3IndexRelation =
+  | 'confermato'
+  | 'in_contrasto'
+  | 'indice_altri_mercati'
+  | 'nessuna_predizione'
+  | 'indice_non_disponibile'
+
+/** Pattern con quota acceso su un mercato (uno per mercato) e cosa dice l'indice dello stesso modello. */
+export type BbV3PatternSignal = {
+  market_key: string
+  family: BbV3Family
+  patterns_count: number
+  hist_win_pct: number | null
+  hist_roi_pct: number | null
+  quota: number | null
+  playable: boolean
+  index_score: number | null
+  index_probability: number | null
+  index_base_rate: number | null
+  index_relation: BbV3IndexRelation
+  won: boolean | null
+}
+
 export type BbV3ModelBlock = {
   available: boolean
   status: string
   frozen_at: string | null
   predictions: BbV3Prediction[]
-  patterns: {
-    market_key: string
-    patterns_count: number
-    hist_win_pct: number | null
-    hist_roi_pct: number | null
-    quota: number | null
-    won: boolean | null
-  }[]
+  patterns: BbV3PatternSignal[]
 }
 
 export type BbV3Combo = {

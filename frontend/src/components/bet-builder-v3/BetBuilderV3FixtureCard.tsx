@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { BbV3PatternRelation } from '../../lib/cecchinoBetBuilderV3Api'
+import type { BbV3IndexRelation, BbV3PatternRelation } from '../../lib/cecchinoBetBuilderV3Api'
 import {
   bbBadge,
   bbCard,
@@ -20,7 +20,13 @@ import {
 import { formatKickoffShort } from '../bet-builder/betBuilderUtils'
 import { indexClassLabel } from '../cecchino/CecchinoPurchasabilityIndexV25'
 import { PurchasabilityScoreRing } from '../cecchino/PurchasabilityScoreRing'
-import { PATTERN_RELATION_LABEL, type BbV3Group, type BbV3Opportunity, type BbV3Tab } from './bbV3Utils'
+import {
+  INDEX_RELATION_LABEL,
+  PATTERN_RELATION_LABEL,
+  type BbV3Group,
+  type BbV3Opportunity,
+  type BbV3Tab,
+} from './bbV3Utils'
 
 type Props = {
   group: BbV3Group
@@ -70,6 +76,16 @@ function relationBadgeClass(rel: BbV3PatternRelation): string {
   if (rel === 'confermata') return `${bbBadge} border-emerald-200 bg-emerald-50 text-emerald-900`
   if (rel === 'in_contrasto') return `${bbBadge} border-rose-200 bg-rose-50 text-rose-900`
   return `${bbBadge} border-slate-200 bg-slate-50 text-slate-600`
+}
+
+function indexRelationBadgeClass(rel: BbV3IndexRelation): string {
+  if (rel === 'confermato') return `${bbBadge} border-emerald-200 bg-emerald-50 text-emerald-900`
+  if (rel === 'in_contrasto') return `${bbBadge} border-rose-200 bg-rose-50 text-rose-900`
+  return `${bbBadge} border-slate-200 bg-slate-50 text-slate-600`
+}
+
+function patternsText(n: number | undefined): string {
+  return `${n ?? 0} pattern`
 }
 
 function OutcomeBadge({ won }: { won: boolean | null }) {
@@ -141,9 +157,11 @@ function OpportunityTabs({
               : op.won === false
                 ? 'Persa'
                 : 'In attesa'
-            : op.playable
-              ? `Quota ${fmtQuota(op.quota)}`
-              : 'Non giocabile'
+            : op.source === 'pattern'
+              ? `Riuscita ${fmtPct(op.patternInfo?.hist_win_pct)}`
+              : op.playable
+                ? `Quota ${fmtQuota(op.quota)}`
+                : 'Non giocabile'
           return (
             <button
               key={op.key}
@@ -164,8 +182,14 @@ function OpportunityTabs({
                 ) : null}
               </span>
               <span className={scoreClass}>
-                {Math.round(op.score)}
-                <span className={mutedClass}> / 100</span>
+                {op.source === 'pattern' ? (
+                  patternsText(op.patternInfo?.patterns_count)
+                ) : (
+                  <>
+                    {Math.round(op.score ?? 0)}
+                    <span className={mutedClass}> / 100</span>
+                  </>
+                )}
               </span>
               <span className={microClass}>{micro}</span>
             </button>
@@ -198,7 +222,7 @@ function SelectedPanel({
           ...(op.patternV25 ? [{ label: 'V2.5', rel: op.patternV25 }] : []),
           ...(op.patternV3 ? [{ label: 'V3', rel: op.patternV3 }] : []),
         ]
-      : op.pattern
+      : op.pattern && op.source === 'index'
         ? [{ label: '', rel: op.pattern }]
         : []
 
@@ -224,6 +248,9 @@ function SelectedPanel({
               {showOutcome ? <OutcomeBadge won={op.won} /> : null}
             </div>
             <div className="flex flex-wrap gap-1.5">
+              {op.source === 'pattern' && op.indexRelation ? (
+                <span className={indexRelationBadgeClass(op.indexRelation)}>{INDEX_RELATION_LABEL[op.indexRelation]}</span>
+              ) : null}
               {relations.map((r) => (
                 <span key={r.label || r.rel} className={relationBadgeClass(r.rel)}>
                   {r.label ? `${r.label}: ` : ''}
@@ -247,9 +274,10 @@ function SelectedPanel({
           <div className={bbMetricCell}>
             <PurchasabilityScoreRing
               score={op.score}
-              classLabel={indexClassLabel(op.score)}
+              classLabel={op.score != null ? indexClassLabel(op.score) : null}
               size="md"
-              title={TAB_RING_TITLE[tab]}
+              title={op.source === 'pattern' ? `${TAB_RING_TITLE[tab]} su questo mercato` : TAB_RING_TITLE[tab]}
+              unavailableMessage="Indice non disponibile"
               testId="bb-v3-ring"
             />
           </div>
@@ -261,7 +289,7 @@ function SelectedPanel({
             <p className="mt-1 text-base font-semibold tabular-nums text-slate-800">
               <span className="whitespace-nowrap">{fmtQuota(op.minQuota)}</span>
               <span className="mt-0.5 block text-xs font-medium text-slate-500 sm:ml-1 sm:mt-0 sm:inline">
-                Quota minima
+                {op.source === 'pattern' ? 'Quota minima (storica)' : 'Quota minima'}
               </span>
             </p>
           </div>
@@ -295,7 +323,7 @@ function SelectedPanel({
             {op.patternInfo ? (
               <>
                 <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                  {op.patternInfo.patterns_count} {op.patternInfo.patterns_count === 1 ? 'pattern' : 'pattern'}
+                  {patternsText(op.patternInfo.patterns_count)}
                 </p>
                 <p className="mt-1 text-sm text-slate-700">
                   Riuscita storica <span className="font-semibold tabular-nums">{fmtPct(op.patternInfo.hist_win_pct)}</span>
