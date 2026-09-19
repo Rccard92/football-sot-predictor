@@ -115,6 +115,21 @@ from app.models.odds_discovery_snapshot import OddsDiscoverySnapshot
 from app.models.sportapi_fixture_odds_snapshot import SportApiFixtureOddsSnapshot
 from app.models.sportapi_odds_market_mapping import SportApiOddsMarketMapping
 from app.models.sportapi_odds_provider import SportApiOddsProvider
+from app.models.cecchino_v4 import (  # Cecchino V4: tabelle proprie, additive
+    CecchinoV4Challenger,
+    CecchinoV4Exam,
+    CecchinoV4Explanation,
+    CecchinoV4Fixture,
+    CecchinoV4Job,
+    CecchinoV4LeagueDay,
+    CecchinoV4OddsSnapshot,
+    CecchinoV4PlayerMinutes,
+    CecchinoV4Prediction,
+    CecchinoV4Run,
+    CecchinoV4Shortlist,
+    CecchinoV4ShortlistItem,
+    CecchinoV4TeamMap,
+)
 
 __all__ = [
     "ApiUsageEvent",
@@ -212,4 +227,17 @@ __all__ = [
     "SportApiOddsProvider",
     "SportApiFixtureOddsSnapshot",
     "SportApiOddsMarketMapping",
+    "CecchinoV4Challenger",
+    "CecchinoV4Exam",
+    "CecchinoV4Explanation",
+    "CecchinoV4Fixture",
+    "CecchinoV4Job",
+    "CecchinoV4LeagueDay",
+    "CecchinoV4OddsSnapshot",
+    "CecchinoV4PlayerMinutes",
+    "CecchinoV4Prediction",
+    "CecchinoV4Run",
+    "CecchinoV4Shortlist",
+    "CecchinoV4ShortlistItem",
+    "CecchinoV4TeamMap",
 ]
