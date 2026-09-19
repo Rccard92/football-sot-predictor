@@ -1,0 +1,13 @@
+{
+  "get": "odds/bookmakers",
+  "parameters": [],
+  "errors": [],
+  "results": 4,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {"id": 1, "name": "10Bet"},
+    {"id": 3, "name": "Betfair"},
+    {"id": 8, "name": "Bet365"},
+    {"id": 11, "name": "1xBet"}
+  ]
+}

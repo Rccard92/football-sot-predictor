@@ -1,0 +1,54 @@
+{
+  "get": "fixtures/lineups",
+  "parameters": {"fixture": "1001"},
+  "errors": [],
+  "results": 2,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "team": {"id": 489, "name": "AC Milan", "logo": "", "colors": {"player": {"primary": "ff0000", "number": "ffffff", "border": "ff0000"}, "goalkeeper": {"primary": "00ff00", "number": "000000", "border": "00ff00"}}},
+      "coach": {"id": 1, "name": "M. Allegri", "photo": ""},
+      "formation": "3-5-2",
+      "startXI": [
+        {"player": {"id": 301, "name": "M. Maignan", "number": 16, "pos": "G", "grid": "1:1"}},
+        {"player": {"id": 302, "name": "F. Tomori", "number": 23, "pos": "D", "grid": "2:3"}},
+        {"player": {"id": 303, "name": "M. Gabbia", "number": 46, "pos": "D", "grid": "2:2"}},
+        {"player": {"id": 304, "name": "S. Pavlovic", "number": 31, "pos": "D", "grid": "2:1"}},
+        {"player": {"id": 305, "name": "A. Saelemaekers", "number": 56, "pos": "M", "grid": "3:5"}},
+        {"player": {"id": 306, "name": "Y. Fofana", "number": 29, "pos": "M", "grid": "3:4"}},
+        {"player": {"id": 307, "name": "L. Modric", "number": 14, "pos": "M", "grid": "3:3"}},
+        {"player": {"id": 308, "name": "A. Rabiot", "number": 12, "pos": "M", "grid": "3:2"}},
+        {"player": {"id": 309, "name": "P. Estupinan", "number": 2, "pos": "M", "grid": "3:1"}},
+        {"player": {"id": 310, "name": "C. Pulisic", "number": 11, "pos": "F", "grid": "4:2"}},
+        {"player": {"id": 311, "name": "R. Leao", "number": 10, "pos": "F", "grid": "4:1"}}
+      ],
+      "substitutes": [
+        {"player": {"id": 312, "name": "P. Terracciano", "number": 96, "pos": "G", "grid": null}},
+        {"player": {"id": 313, "name": "S. Ricci", "number": 4, "pos": "M", "grid": null}},
+        {"player": {"id": 314, "name": "C. Nkunku", "number": 18, "pos": "F", "grid": null}}
+      ]
+    },
+    {
+      "team": {"id": 505, "name": "Inter", "logo": "", "colors": null},
+      "coach": {"id": 2, "name": "C. Chivu", "photo": ""},
+      "formation": "3-5-2",
+      "startXI": [
+        {"player": {"id": 401, "name": "Y. Sommer", "number": 1, "pos": "G", "grid": "1:1"}},
+        {"player": {"id": 402, "name": "M. Akanji", "number": 25, "pos": "D", "grid": "2:3"}},
+        {"player": {"id": 403, "name": "F. Acerbi", "number": 15, "pos": "D", "grid": "2:2"}},
+        {"player": {"id": 404, "name": "A. Bastoni", "number": 95, "pos": "D", "grid": "2:1"}},
+        {"player": {"id": 405, "name": "D. Dumfries", "number": 2, "pos": "M", "grid": "3:5"}},
+        {"player": {"id": 406, "name": "N. Barella", "number": 23, "pos": "M", "grid": "3:4"}},
+        {"player": {"id": 407, "name": "H. Calhanoglu", "number": 20, "pos": "M", "grid": "3:3"}},
+        {"player": {"id": 408, "name": "P. Sucic", "number": 8, "pos": "M", "grid": "3:2"}},
+        {"player": {"id": 409, "name": "F. Dimarco", "number": 32, "pos": "M", "grid": "3:1"}},
+        {"player": {"id": 410, "name": "M. Thuram", "number": 9, "pos": "F", "grid": "4:2"}},
+        {"player": {"id": 411, "name": "L. Martinez", "number": 10, "pos": "F", "grid": "4:1"}}
+      ],
+      "substitutes": [
+        {"player": {"id": 412, "name": "J. Martinez", "number": 13, "pos": "G", "grid": null}},
+        {"player": {"id": 413, "name": "A. Bonny", "number": 14, "pos": "F", "grid": null}}
+      ]
+    }
+  ]
+}

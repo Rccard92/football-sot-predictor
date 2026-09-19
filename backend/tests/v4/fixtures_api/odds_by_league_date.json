@@ -1,0 +1,39 @@
+{
+  "get": "odds",
+  "parameters": {"league": "135", "season": "2026", "date": "2026-09-21", "bookmaker": "8", "page": "1"},
+  "errors": [],
+  "results": 2,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "league": {"id": 135, "name": "Serie A", "country": "Italy", "logo": "", "flag": "", "season": 2026},
+      "fixture": {"id": 1001, "timezone": "UTC", "date": "2026-09-21T18:45:00+00:00", "timestamp": 1790016300},
+      "update": "2026-09-20T09:55:00+00:00",
+      "bookmakers": [
+        {
+          "id": 8,
+          "name": "Bet365",
+          "bets": [
+            {"id": 1, "name": "Match Winner", "values": [{"value": "Home", "odd": "2.60"}, {"value": "Draw", "odd": "3.30"}, {"value": "Away", "odd": "2.75"}]},
+            {"id": 5, "name": "Goals Over/Under", "values": [{"value": "Over 2.5", "odd": "1.85"}, {"value": "Under 2.5", "odd": "1.95"}]},
+            {"id": 145, "name": "Total ShotOnGoal", "values": [{"value": "Over 8.5", "odd": "1.90"}, {"value": "Under 8.5", "odd": "1.85"}]}
+          ]
+        }
+      ]
+    },
+    {
+      "league": {"id": 135, "name": "Serie A", "country": "Italy", "logo": "", "flag": "", "season": 2026},
+      "fixture": {"id": 1004, "timezone": "UTC", "date": "2026-09-21T16:00:00+00:00", "timestamp": 1790006400},
+      "update": "2026-09-20T09:55:00+00:00",
+      "bookmakers": [
+        {
+          "id": 8,
+          "name": "Bet365",
+          "bets": [
+            {"id": 1, "name": "Match Winner", "values": [{"value": "Home", "odd": "1.90"}, {"value": "Draw", "odd": "3.50"}, {"value": "Away", "odd": "4.20"}]}
+          ]
+        }
+      ]
+    }
+  ]
+}

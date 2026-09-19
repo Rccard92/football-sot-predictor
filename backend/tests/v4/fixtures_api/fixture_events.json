@@ -1,0 +1,54 @@
+{
+  "get": "fixtures/events",
+  "parameters": {"fixture": "1003"},
+  "errors": [],
+  "results": 5,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "time": {"elapsed": 23, "extra": null},
+      "team": {"id": 496, "name": "Juventus", "logo": ""},
+      "player": {"id": 30410, "name": "D. Vlahovic"},
+      "assist": {"id": 1, "name": "K. Yildiz"},
+      "type": "Goal",
+      "detail": "Normal Goal",
+      "comments": null
+    },
+    {
+      "time": {"elapsed": 41, "extra": null},
+      "team": {"id": 492, "name": "Napoli", "logo": ""},
+      "player": {"id": 2, "name": "A. Anguissa"},
+      "assist": {"id": null, "name": null},
+      "type": "Card",
+      "detail": "Yellow Card",
+      "comments": "Foul"
+    },
+    {
+      "time": {"elapsed": 60, "extra": null},
+      "team": {"id": 492, "name": "Napoli", "logo": ""},
+      "player": {"id": 3, "name": "S. Lukaku"},
+      "assist": {"id": 4, "name": "R. Lukaku"},
+      "type": "subst",
+      "detail": "Substitution 1",
+      "comments": null
+    },
+    {
+      "time": {"elapsed": 78, "extra": null},
+      "team": {"id": 492, "name": "Napoli", "logo": ""},
+      "player": {"id": 5, "name": "A. Buongiorno"},
+      "assist": {"id": null, "name": null},
+      "type": "Card",
+      "detail": "Red Card",
+      "comments": "Violent conduct"
+    },
+    {
+      "time": {"elapsed": 90, "extra": 3},
+      "team": {"id": 492, "name": "Napoli", "logo": ""},
+      "player": {"id": 6, "name": "S. Lukaku"},
+      "assist": {"id": null, "name": null},
+      "type": "Goal",
+      "detail": "Penalty",
+      "comments": null
+    }
+  ]
+}

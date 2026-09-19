@@ -126,3 +126,42 @@ Le stesse chiavi identificano le quote nel registro (`markets_json` di `cecchino
 | `POST /exams/{code}/run` | Ricalcola un esame storico dai CSV |
 
 Tutti gli endpoint rispondono `{"status": "error", "message": "…"}` in caso di errore, con codice HTTP coerente.
+
+## Appendice Fase 4 (20 settembre 2026): campi aggiunti da selezione, spiegazione e misura
+
+Solo aggiunte; le forme sopra restano valide.
+
+### Riga di mercato: campi in più
+
+- `provisional` (bool): formazioni non note al momento del calcolo; la giocata nasce `provvisoria`. Non e' un verdetto.
+- `advised` (bool): `false` quando l'esame E4 della famiglia non e' superato (docs/v4/PREREGISTRAZIONE_FASE_4.md, par. 2.3). La riga resta visibile con il suo verdetto; la Shortlist mostra il banner "Esame E4 non superato: giocate classiche in osservazione, non consigliate".
+- `bookmaker_id` (int|null): id API-Football del book di `quota_used` (8 Bet365, 3 Betfair).
+- `base_rate` (float): tasso base usato dalla probabilita' prudente.
+- `stat_exam` (`superato|non_superato|in_attesa`|null): esame E2 della statistica; null per i mercati non statistici.
+
+### Esiti del regolamento
+
+`result` di una voce puo' valere anche `mezza_vinta` e `mezza_persa` (handicap asiatico a quarti). `profit_units` a puntata piatta 1: vinta `q − 1`, persa `−1`, void `0`, mezza vinta `(q − 1)/2`, mezza persa `−0,5`.
+
+### `GET /shortlist?date=`: campi in più
+
+- Risposta: `advised` (bool), `banner` (string|null).
+- `ShortlistItem`: `advised`, `league_code`, `profit_units`, `closing_quota`, `reason` (frasi del blocco 5 se salvate), `id` (id della voce, per ritiro e regolamento).
+- `abstentions[]`: anche `label` (etichetta italiana del motivo).
+
+### `FixtureDetail.blocks`: campi in più
+
+- `who.home|away`: anche `team`, `trend` (`in crescita|in calo|stabile`|null), `known` in `bene|abbastanza|poco` (soglie: ≥ 15 partite equivalenti "bene", < 5 "poco").
+- `how.rows[]`: anche `exam`, `home_rank_for`, `away_rank_for`, `total`. `home_against`/`away_against` vengono dal campo opzionale `mean_against` del payload statistiche; null se assente.
+- `context.form`: `{"home": {"trend","goals_delta","shots_delta","matches"}, "away": {...}}`; `context.rest` anche `final_phase`.
+- `predicts`: anche `most_likely_score` `{"home","away","p"}`, `most_likely` (segno 1X2), `expected_goals`. `score_matrix` e' 6×6 (0-5 gol), `max_goals` 5.
+- `why`: anche `reason` (verdetto bloccante quando `play` e' null); in quel caso `sentences` contiene la frase "Nessuna giocata: …" e `would_change` e' vuoto.
+- `aftermath`: `{"sentence", "result", "goals": {"expected_home","expected_away","actual_home","actual_away"}, "stats": [{"stat","label","expected_home","expected_away","actual_home","actual_away"}], "play": {"label","market_key","outcome","profit_units"}|null, "luck": "…"}`.
+
+### `GET /measure/summary`: forma dettagliata
+
+- `by_league[]`: `{"league_code","plays","profit_units","roi","roi_lo","roi_hi","clv","alarm"}`.
+- `by_market[]`: `{"market_family","label","plays","profit_units","roi","roi_lo","roi_hi","clv","alarm"}`.
+- `totals`: anche `profit_units`.
+- `alerts[]`: `{"scope": "league|market", "key", "plays", "alarm_at", "roi", "sentence"}` da CUSUM a un lato (`k` = 0,03, `h` = 6 unita') sui gruppi con almeno 30 giocate regolate.
+- CLV = quota presa / quota di chiusura − 1 (positivo: prezzo migliore della chiusura). Intervalli ROI: bootstrap a blocchi per giornata al 90%.

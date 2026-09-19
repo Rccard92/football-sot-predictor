@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { LegacyLabRedirect } from './components/module-monitoring/LegacyLabRedirect'
@@ -20,6 +21,10 @@ import { ModelsGuidePage } from './pages/ModelsGuidePage'
 import { MasterPatternPage } from './pages/MasterPatternPage'
 import { LiveObservationPage } from './pages/LiveObservationPage'
 
+const CecchinoV4Page = lazy(() =>
+  import('./pages/CecchinoV4Page').then((m) => ({ default: m.CecchinoV4Page })),
+)
+
 function RedirectHistoricalRunToPatternLab() {
   const { runId } = useParams()
   const qs = new URLSearchParams()
@@ -36,6 +41,14 @@ export default function App() {
           <Route path="/" element={<CecchinoTodayPage />} />
           <Route path="/cecchino" element={<Navigate to="/cecchino-today" replace />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
+          <Route
+            path="/cecchino-v4"
+            element={
+              <Suspense fallback={<p className="text-base text-slate-500">Carico Cecchino V4…</p>}>
+                <CecchinoV4Page />
+              </Suspense>
+            }
+          />
           <Route path="/bet-builder" element={<BetBuilderPage />} />
           <Route path="/bet-builder-v3" element={<BetBuilderV3Page />} />
           <Route path="/cecchino-lab" element={<CecchinoLabPage />} />

@@ -1,0 +1,65 @@
+{
+  "get": "standings",
+  "parameters": {"league": "135", "season": "2026"},
+  "errors": [],
+  "results": 1,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "league": {
+        "id": 135,
+        "name": "Serie A",
+        "country": "Italy",
+        "logo": "",
+        "flag": "",
+        "season": 2026,
+        "standings": [
+          [
+            {
+              "rank": 1,
+              "team": {"id": 496, "name": "Juventus", "logo": ""},
+              "points": 9,
+              "goalsDiff": 6,
+              "group": "Serie A",
+              "form": "WWW",
+              "status": "same",
+              "description": "Promotion - Champions League (Group Stage: )",
+              "all": {"played": 3, "win": 3, "draw": 0, "lose": 0, "goals": {"for": 8, "against": 2}},
+              "home": {"played": 2, "win": 2, "draw": 0, "lose": 0, "goals": {"for": 5, "against": 1}},
+              "away": {"played": 1, "win": 1, "draw": 0, "lose": 0, "goals": {"for": 3, "against": 1}},
+              "update": "2026-09-20T00:00:00+00:00"
+            },
+            {
+              "rank": 2,
+              "team": {"id": 492, "name": "Napoli", "logo": ""},
+              "points": 6,
+              "goalsDiff": 2,
+              "group": "Serie A",
+              "form": "LWW",
+              "status": "same",
+              "description": "Promotion - Champions League (Group Stage: )",
+              "all": {"played": 3, "win": 2, "draw": 0, "lose": 1, "goals": {"for": 5, "against": 3}},
+              "home": {"played": 1, "win": 1, "draw": 0, "lose": 0, "goals": {"for": 2, "against": 0}},
+              "away": {"played": 2, "win": 1, "draw": 0, "lose": 1, "goals": {"for": 3, "against": 3}},
+              "update": "2026-09-20T00:00:00+00:00"
+            },
+            {
+              "rank": 3,
+              "team": {"id": 505, "name": "Inter", "logo": ""},
+              "points": 6,
+              "goalsDiff": 3,
+              "group": "Serie A",
+              "form": "WLW",
+              "status": "same",
+              "description": null,
+              "all": {"played": 3, "win": 2, "draw": 0, "lose": 1, "goals": {"for": 7, "against": 4}},
+              "home": {"played": 2, "win": 1, "draw": 0, "lose": 1, "goals": {"for": 5, "against": 3}},
+              "away": {"played": 1, "win": 1, "draw": 0, "lose": 0, "goals": {"for": 2, "against": 1}},
+              "update": "2026-09-20T00:00:00+00:00"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "get": "fixtures",
+  "parameters": {"date": "2026-09-21", "timezone": "Europe/Rome"},
+  "errors": [],
+  "results": 4,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "fixture": {
+        "id": 1001,
+        "referee": "D. Orsato",
+        "timezone": "Europe/Rome",
+        "date": "2026-09-21T20:45:00+02:00",
+        "timestamp": 1790016300,
+        "periods": {"first": null, "second": null},
+        "venue": {"id": 907, "name": "Stadio Giuseppe Meazza", "city": "Milano"},
+        "status": {"long": "Not Started", "short": "NS", "elapsed": null}
+      },
+      "league": {"id": 135, "name": "Serie A", "country": "Italy", "logo": "", "flag": "", "season": 2026, "round": "Regular Season - 4"},
+      "teams": {
+        "home": {"id": 489, "name": "AC Milan", "logo": "", "winner": null},
+        "away": {"id": 505, "name": "Inter", "logo": "", "winner": null}
+      },
+      "goals": {"home": null, "away": null},
+      "score": {"halftime": {"home": null, "away": null}, "fulltime": {"home": null, "away": null}, "extratime": {"home": null, "away": null}, "penalty": {"home": null, "away": null}}
+    },
+    {
+      "fixture": {
+        "id": 1002,
+        "referee": null,
+        "timezone": "Europe/Rome",
+        "date": "2026-09-21T17:30:00+02:00",
+        "timestamp": 1790004600,
+        "periods": {"first": null, "second": null},
+        "venue": {"id": 555, "name": "Etihad Stadium", "city": "Manchester"},
+        "status": {"long": "Not Started", "short": "NS", "elapsed": null}
+      },
+      "league": {"id": 39, "name": "Premier League", "country": "England", "logo": "", "flag": "", "season": 2026, "round": "Regular Season - 5"},
+      "teams": {
+        "home": {"id": 50, "name": "Manchester City", "logo": "", "winner": null},
+        "away": {"id": 33, "name": "Manchester United", "logo": "", "winner": null}
+      },
+      "goals": {"home": null, "away": null},
+      "score": {"halftime": {"home": null, "away": null}, "fulltime": {"home": null, "away": null}, "extratime": {"home": null, "away": null}, "penalty": {"home": null, "away": null}}
+    },
+    {
+      "fixture": {
+        "id": 1003,
+        "referee": "M. Guida",
+        "timezone": "Europe/Rome",
+        "date": "2026-09-19T20:45:00+02:00",
+        "timestamp": 1789843500,
+        "periods": {"first": 1789843500, "second": 1789847100},
+        "venue": {"id": 909, "name": "Allianz Stadium", "city": "Torino"},
+        "status": {"long": "Match Finished", "short": "FT", "elapsed": 90}
+      },
+      "league": {"id": 135, "name": "Serie A", "country": "Italy", "logo": "", "flag": "", "season": 2026, "round": "Regular Season - 3"},
+      "teams": {
+        "home": {"id": 496, "name": "Juventus", "logo": "", "winner": true},
+        "away": {"id": 492, "name": "Napoli", "logo": "", "winner": false}
+      },
+      "goals": {"home": 2, "away": 1},
+      "score": {"halftime": {"home": 1, "away": 0}, "fulltime": {"home": 2, "away": 1}, "extratime": {"home": null, "away": null}, "penalty": {"home": null, "away": null}}
+    },
+    {
+      "fixture": {
+        "id": 1999,
+        "referee": null,
+        "timezone": "Europe/Rome",
+        "date": "2026-09-21T21:00:00+02:00",
+        "timestamp": 1790017200,
+        "periods": {"first": null, "second": null},
+        "venue": {"id": 1, "name": "Somewhere", "city": "Lisbon"},
+        "status": {"long": "Not Started", "short": "NS", "elapsed": null}
+      },
+      "league": {"id": 2, "name": "UEFA Champions League", "country": "World", "logo": "", "flag": null, "season": 2026, "round": "League Stage - 1"},
+      "teams": {
+        "home": {"id": 211, "name": "Benfica", "logo": "", "winner": null},
+        "away": {"id": 165, "name": "Borussia Dortmund", "logo": "", "winner": null}
+      },
+      "goals": {"home": null, "away": null},
+      "score": {"halftime": {"home": null, "away": null}, "fulltime": {"home": null, "away": null}, "extratime": {"home": null, "away": null}, "penalty": {"home": null, "away": null}}
+    }
+  ]
+}

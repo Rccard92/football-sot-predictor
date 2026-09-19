@@ -1,0 +1,43 @@
+{
+  "get": "fixtures/players",
+  "parameters": {"fixture": "1003"},
+  "errors": [],
+  "results": 2,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "team": {"id": 496, "name": "Juventus", "logo": "", "update": "2026-09-19T22:40:00+00:00"},
+      "players": [
+        {
+          "player": {"id": 101, "name": "M. Di Gregorio", "photo": ""},
+          "statistics": [{"games": {"minutes": 90, "number": 29, "position": "G", "rating": "7.1", "captain": false, "substitute": false}, "offsides": null, "shots": {"total": null, "on": null}, "goals": {"total": null, "conceded": 1, "assists": null, "saves": 3}}]
+        },
+        {
+          "player": {"id": 102, "name": "D. Vlahovic", "photo": ""},
+          "statistics": [{"games": {"minutes": 78, "number": 9, "position": "F", "rating": "8.2", "captain": false, "substitute": false}, "shots": {"total": 4, "on": 3}, "goals": {"total": 1, "conceded": 0, "assists": null, "saves": null}}]
+        },
+        {
+          "player": {"id": 103, "name": "J. David", "photo": ""},
+          "statistics": [{"games": {"minutes": 12, "number": 30, "position": "F", "rating": "6.5", "captain": false, "substitute": true}, "shots": {"total": null, "on": null}, "goals": {"total": null, "conceded": 0, "assists": null, "saves": null}}]
+        },
+        {
+          "player": {"id": 104, "name": "Panchina Inutilizzata", "photo": ""},
+          "statistics": [{"games": {"minutes": null, "number": 40, "position": "D", "rating": null, "captain": false, "substitute": true}}]
+        }
+      ]
+    },
+    {
+      "team": {"id": 492, "name": "Napoli", "logo": "", "update": "2026-09-19T22:40:00+00:00"},
+      "players": [
+        {
+          "player": {"id": 201, "name": "A. Meret", "photo": ""},
+          "statistics": [{"games": {"minutes": 90, "number": 1, "position": "G", "rating": "6.8", "captain": false, "substitute": false}}]
+        },
+        {
+          "player": {"id": 202, "name": "A. Buongiorno", "photo": ""},
+          "statistics": [{"games": {"minutes": 78, "number": 4, "position": "D", "rating": "5.4", "captain": false, "substitute": false}}]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "get": "injuries",
+  "parameters": {"league": "135", "season": "2026"},
+  "errors": [],
+  "results": 2,
+  "paging": {"current": 1, "total": 1},
+  "response": [
+    {
+      "player": {"id": 30410, "name": "D. Vlahovic", "photo": "", "type": "Missing Fixture", "reason": "Knee Injury"},
+      "team": {"id": 496, "name": "Juventus", "logo": ""},
+      "fixture": {"id": 1010, "timezone": "UTC", "date": "2026-09-27T18:45:00+00:00", "timestamp": 1790534700},
+      "league": {"id": 135, "season": 2026, "name": "Serie A", "country": "Italy", "logo": "", "flag": ""}
+    },
+    {
+      "player": {"id": 5, "name": "A. Buongiorno", "photo": "", "type": "Questionable", "reason": "Suspended"},
+      "team": {"id": 492, "name": "Napoli", "logo": ""},
+      "fixture": {"id": 1011, "timezone": "UTC", "date": "2026-09-27T16:00:00+00:00", "timestamp": 1790524800},
+      "league": {"id": 135, "season": 2026, "name": "Serie A", "country": "Italy", "logo": "", "flag": ""}
+    }
+  ]
+}
