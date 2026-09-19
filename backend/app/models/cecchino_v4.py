@@ -29,6 +29,8 @@ from app.models.base import Base
 from app.models.mixins import TimestampMixin
 
 PortableJSON = JSON().with_variant(JSONB(), "postgresql")
+# SQLite autoincrementa solo INTEGER PRIMARY KEY: BigInteger su PostgreSQL, Integer nei test locali.
+PkInteger = BigInteger().with_variant(Integer(), "sqlite")
 
 
 class CecchinoV4Fixture(Base, TimestampMixin):
@@ -39,7 +41,7 @@ class CecchinoV4Fixture(Base, TimestampMixin):
         Index("ix_cecchino_v4_fixtures_league_day", "league_code", "match_date"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     api_fixture_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     league_code: Mapped[str] = mapped_column(String(8), nullable=False)
     api_league_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -76,7 +78,7 @@ class CecchinoV4TeamMap(Base, TimestampMixin):
     __tablename__ = "cecchino_v4_team_map"
     __table_args__ = (UniqueConstraint("league_code", "api_team_id", name="uq_cecchino_v4_team_map_league_team"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     league_code: Mapped[str] = mapped_column(String(8), nullable=False)
     api_team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     api_team_name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -92,7 +94,7 @@ class CecchinoV4OddsSnapshot(Base):
         Index("ix_cecchino_v4_odds_taken_at", "taken_at"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     fixture_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cecchino_v4_fixtures.id", ondelete="CASCADE"), nullable=False)
     bookmaker_id: Mapped[int] = mapped_column(Integer, nullable=False)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)  # mattina|pomeriggio|sera|chiusura
@@ -107,7 +109,7 @@ class CecchinoV4LeagueDay(Base, TimestampMixin):
     __tablename__ = "cecchino_v4_league_days"
     __table_args__ = (UniqueConstraint("league_code", "day", name="uq_cecchino_v4_league_days"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     league_code: Mapped[str] = mapped_column(String(8), nullable=False)
     day: Mapped[date] = mapped_column(Date, nullable=False)
     standings_json: Mapped[list[dict[str, Any]] | None] = mapped_column(PortableJSON, nullable=True)
@@ -121,7 +123,7 @@ class CecchinoV4PlayerMinutes(Base):
         Index("ix_cecchino_v4_player_minutes_team", "team_api_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     fixture_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cecchino_v4_fixtures.id", ondelete="CASCADE"), nullable=False)
     team_api_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     player_api_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -137,7 +139,7 @@ class CecchinoV4Run(Base):
 
     __tablename__ = "cecchino_v4_runs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)  # goals|stats|selection|live
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     config_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON, nullable=True)
@@ -155,7 +157,7 @@ class CecchinoV4Prediction(Base):
         Index("ix_cecchino_v4_predictions_run", "run_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     run_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("cecchino_v4_runs.id", ondelete="SET NULL"), nullable=True)
     fixture_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("cecchino_v4_fixtures.id", ondelete="CASCADE"), nullable=True)
     history_match_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # id del CSV storico
@@ -170,7 +172,7 @@ class CecchinoV4Explanation(Base):
     __tablename__ = "cecchino_v4_explanations"
     __table_args__ = (UniqueConstraint("fixture_id", name="uq_cecchino_v4_explanations_fixture"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     fixture_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cecchino_v4_fixtures.id", ondelete="CASCADE"), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False)  # i 6 blocchi
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -180,7 +182,7 @@ class CecchinoV4Shortlist(Base):
     __tablename__ = "cecchino_v4_shortlists"
     __table_args__ = (UniqueConstraint("day", name="uq_cecchino_v4_shortlists_day"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     day: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="provvisoria")
     sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -197,7 +199,7 @@ class CecchinoV4ShortlistItem(Base):
         Index("ix_cecchino_v4_shortlist_items_fixture", "fixture_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     shortlist_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cecchino_v4_shortlists.id", ondelete="CASCADE"), nullable=False)
     fixture_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cecchino_v4_fixtures.id", ondelete="CASCADE"), nullable=False)
     market_key: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -224,7 +226,7 @@ class CecchinoV4ShortlistItem(Base):
 class CecchinoV4Exam(Base):
     __tablename__ = "cecchino_v4_exams"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(16), nullable=False)  # E1, E2_sot, E4, G6_classici...
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     preregistration_path: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -236,7 +238,7 @@ class CecchinoV4Exam(Base):
 class CecchinoV4Challenger(Base):
     __tablename__ = "cecchino_v4_challengers"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="candidato")  # candidato|superato|non_superato
