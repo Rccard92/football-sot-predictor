@@ -17,6 +17,7 @@ from app.services.cecchino_v3.constants import group_of
 from app.services.cecchino_v3.data import MatchRecord, annotate_season_context
 
 from app.services.cecchino_v4.constants import (
+    CURRENT_SEASON,
     HISTORY_SEASONS,
     LEAGUE_BY_CODE,
     LOCKBOX_SEASON,
@@ -73,7 +74,7 @@ def _float(v: str | None) -> float | None:
         out = float(v)
     except ValueError:
         return None
-    return out if out > 0 or "AH" else None
+    return out
 
 
 def _date(v: str) -> date | None:
@@ -145,15 +146,24 @@ def load_history(
     seasons: Iterable[str] | None = None,
     league_codes: Iterable[str] | None = None,
     include_lockbox: bool = False,
+    include_current: bool = False,
     data_dir: Path | None = None,
 ) -> History:
-    """Carica lo storico. Di default esclude 2025/26 (regola 3 di docs/v4/REGOLE.md)."""
+    """Carica lo storico. Di default esclude 2025/26 e la stagione in corso (regola 3 di docs/v4/REGOLE.md).
+
+    `include_lockbox` aggiunge 2025/26, `include_current` la stagione in corso: entrambe solo come
+    input del live, mai per stimare parametri o esami.
+    """
     base = data_dir or DATA_DIR
     wanted_seasons = set(seasons) if seasons is not None else set(HISTORY_SEASONS)
     if include_lockbox:
         wanted_seasons.add(LOCKBOX_SEASON)
+    if include_current:
+        wanted_seasons.add(CURRENT_SEASON)
     if not include_lockbox and LOCKBOX_SEASON in wanted_seasons:
         raise ValueError("Stagione sotto chiave richiesta senza include_lockbox=True")
+    if not include_current and CURRENT_SEASON in wanted_seasons:
+        raise ValueError("Stagione in corso richiesta senza include_current=True")
     codes = list(league_codes) if league_codes is not None else list(LEAGUE_BY_CODE)
 
     matches: list[MatchRecord] = []

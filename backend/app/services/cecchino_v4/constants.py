@@ -17,11 +17,17 @@ SEASON_CODES: dict[str, str] = {
     "2324": "2023/2024",
     "2425": "2024/2025",
     "2526": "2025/2026",
+    "2627": "2026/2027",
 }
 WARMUP_SEASON = "2021/2022"
 JUDGE_SEASONS: tuple[str, ...] = ("2022/2023", "2023/2024", "2024/2025")
 LOCKBOX_SEASON = "2025/2026"
+# Stagione in corso (live): mai usata per stimare nulla, solo input walk-forward e giudizio prospettico.
+CURRENT_SEASON = "2026/2027"
+CURRENT_SEASON_API = 2026  # parametro `season` di API-Football
 HISTORY_SEASONS: tuple[str, ...] = (WARMUP_SEASON, *JUDGE_SEASONS)  # mai il lockbox negli esami
+# Stagioni che il live puo' leggere come input (tutte quelle giocate): storico + lockbox + corrente.
+LIVE_INPUT_SEASONS: tuple[str, ...] = (*HISTORY_SEASONS, LOCKBOX_SEASON, CURRENT_SEASON)
 
 
 def is_lockbox(season_label: str | None) -> bool:
