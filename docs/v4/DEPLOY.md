@@ -53,7 +53,7 @@ Poi aprire il frontend: Cecchino Today deve mostrare la scansione come prima; la
 |---|---|---|---|
 | `cecchino-v4-daily` | `python -m app.jobs.cecchino_v4_daily daily` | `0 6 * * *` | partite a 7 giorni, quote del mattino, statistiche post-partita, previsioni + ragionamenti + shortlist, regolamento |
 | `cecchino-v4-odds` | `python -m app.jobs.cecchino_v4_daily odds` | `0 12,16 * * *` | istantanee quote pomeriggio e sera, shortlist aggiornata, regolamento |
-| `cecchino-v4-prematch` | `python -m app.jobs.cecchino_v4_daily prematch` | `*/30 * * * *` | formazioni ufficiali e quota di chiusura delle partite entro 65 minuti, risultati appena finite |
+| `cecchino-v4-prematch` | `python -m app.jobs.cecchino_v4_daily prematch` | `*/15 * * * *` | formazioni ufficiali e quota di chiusura delle partite entro 65 minuti (chiusura letta 20-35 minuti prima), risultati appena finite, shortlist aggiornata |
 
 Variabili per ognuno (riferimenti, nessun valore da copiare a mano):
 
@@ -91,3 +91,10 @@ La matrice compare nella vista Motore → Dati.
 - Mercati classici: sempre etichettati "in osservazione, non consigliati" (esame E4 non superato). Si vedono, non si giocano.
 - Mercati speciali: tiri, tiri in porta e falli con verdetto pieno dove Bet365 li quota; corner e cartellini solo descrittivi. Il giudizio sulla redditivita' arriva dalla vista Misura (CLV) dopo almeno otto settimane di shortlist sigillate.
 - Le shortlist si sigillano oggi solo a mano (`POST /api/admin/cecchino/v4/shortlist/{data}/seal`); il sigillo automatico all'ora dell'ultima istantanea e' il primo miglioramento da fare quando i cron girano stabilmente.
+
+## Nota sulle quote (20/09/2026)
+
+Le quote nella V4 arrivano da API-Football, che aggiorna i prezzi di bet365.com a intervalli: non sono in tempo reale e possono
+differire da bet365.it. Nel blocco "Perche'" e' indicata l'ora di lettura e la soglia sotto cui la giocata non regge piu':
+il prezzo va sempre controllato sul sito al momento di giocare. La differenza tra prezzo letto e prezzo preso e' il CLV
+misurato nella vista Misura.
