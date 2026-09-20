@@ -94,7 +94,8 @@ MARKET_FAMILY: dict[str, str] = {
 }
 # Handicap asiatico: mercato "AH_HOME"/"AH_AWAY" con linea (es. -0.5, +0.25).
 AH_MARKETS: tuple[str, ...] = ("AH_HOME", "AH_AWAY")
-AH_LINES: tuple[float, ...] = (-2.0, -1.75, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+# Solo linee a meta' (decisione dell'utente, 20/09/2026): niente quarti, niente interi, niente linea zero.
+AH_LINES: tuple[float, ...] = (-2.5, -1.5, -0.5, 0.5, 1.5, 2.5)
 
 # --- Statistiche (mercati speciali) ------------------------------------------------
 # chiave -> etichetta italiana

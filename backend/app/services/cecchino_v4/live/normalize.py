@@ -483,6 +483,9 @@ def _market_key(family: str, info: dict[str, Any], raw_value: str) -> str | None
         # (Manchester City - Sunderland: "Away -1.5" a 1,92 = Sunderland +1,5).
         if side == "AWAY":
             line = -line
+        # solo linee a meta' (0,5 · 1,5 · 2,5): quarti, interi e linea zero non si registrano
+        if abs(abs(line) % 1.0 - 0.5) > 1e-9:
+            return None
         return f"AH_{side}:{format_line(line)}"
     if family == "STAT":
         ou = _parse_over_under(v)

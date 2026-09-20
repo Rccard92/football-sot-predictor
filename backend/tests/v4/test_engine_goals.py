@@ -126,7 +126,7 @@ def test_payload_shape_matches_api(full_run):
     for line in AH_LINES:
         assert distributions.ah_line_key("AH_HOME", line) in payload["markets"]
         assert distributions.ah_line_key("AH_AWAY", line) in payload["markets"]
-    assert "AH_HOME:-0.5" in payload["markets"] and "AH_HOME:+0.25" in payload["markets"] and "AH_HOME:0.0" in payload["markets"]
+    assert "AH_HOME:-0.5" in payload["markets"] and "AH_HOME:+0.5" in payload["markets"] and "AH_HOME:+0.25" not in payload["markets"]
     for side in ("home", "away"):
         assert set(payload["ratings"][side]) == {"attack", "defence", "attack_rank", "defence_rank", "teams_in_division", "home_advantage"}
         assert 1 <= payload["ratings"][side]["attack_rank"] <= payload["ratings"][side]["teams_in_division"]
@@ -169,24 +169,19 @@ def test_baseline_config_reproduces_v3_phase4(history, baseline):
 # --- handicap asiatico -----------------------------------------------------------------------------------
 
 
-def test_ah_sign_convention_and_quarter_lines():
+def test_ah_sign_convention_and_half_lines_only():
     probs = distributions.all_markets(1.7, 1.1, -0.05, 0.45)
     assert probs["AH_HOME:-0.5"] == pytest.approx(probs["HOME"])
     assert probs["AH_HOME:+0.5"] == pytest.approx(probs["ONE_X"])
     assert probs["AH_AWAY:-0.5"] == pytest.approx(probs["AWAY"])
     assert probs["AH_AWAY:+0.5"] == pytest.approx(probs["X_TWO"])
-    assert probs["AH_HOME:0.0"] == pytest.approx(probs["HOME"] / (probs["HOME"] + probs["AWAY"]))
+    # solo linee a meta': niente quarti, interi o linea zero
+    assert not any(k in probs for k in ("AH_HOME:0.0", "AH_HOME:-0.75", "AH_HOME:-1.0", "AH_AWAY:+1.0"))
     # piu' handicap contro la casa = meno probabilita'
     home_lines = [probs[distributions.ah_line_key("AH_HOME", line)] for line in AH_LINES]
     assert home_lines == sorted(home_lines)
-    # linea a quarto tra le due adiacenti
-    assert probs["AH_HOME:-1.0"] < probs["AH_HOME:-0.75"] < probs["AH_HOME:-0.5"]
-    # casa -1.0 e ospite +1.0 sono la stessa puntata da lati opposti (con rimborso sul pareggio a un gol)
-    ft = distributions.score_matrix_v4(1.7, 1.1, -0.05)
-    win_h = float(ft[np.tril_indices(11, -2)].sum())
-    push = float(np.trace(ft, offset=-1))
-    assert probs["AH_HOME:-1.0"] == pytest.approx(win_h / (1.0 - push))
-
+    # casa -1,5 e ospite +1,5 sono la stessa puntata da lati opposti, senza rimborso
+    assert probs["AH_HOME:-1.5"] + probs["AH_AWAY:+1.5"] == pytest.approx(1.0)
 
 def test_score_matrix_v4_matches_v3_without_dispersion_and_is_wider_with():
     from app.services.cecchino_v3.markets import score_matrix

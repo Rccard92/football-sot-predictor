@@ -233,7 +233,7 @@ def test_odds_closing_per_fixture_all_bookmakers(db):
     assert fake.calls == [("odds", {"fixture": 1001})]
     snaps = db.scalars(select(CecchinoV4OddsSnapshot).order_by(CecchinoV4OddsSnapshot.bookmaker_id)).all()
     assert [(s.bookmaker_id, s.kind) for s in snaps] == [(3, "chiusura"), (8, "chiusura")]
-    assert snaps[0].markets_json["AH_HOME:-0.75"] == 3.1
+    assert snaps[0].markets_json["AH_HOME:-0.5"] == 3.1
     assert all(s.taken_at is not None for s in snaps)
 
     job2, fake2 = _run(db, "odds_closing", now=before + timedelta(minutes=5))

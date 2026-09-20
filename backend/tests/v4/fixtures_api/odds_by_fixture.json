@@ -440,11 +440,11 @@
               "name": "Asian Handicap",
               "values": [
                 {
-                  "value": "Home -0.75",
+                  "value": "Home -0.5",
                   "odd": "3.10"
                 },
                 {
-                  "value": "Away -0.75",
+                  "value": "Away -0.5",
                   "odd": "1.36"
                 }
               ]

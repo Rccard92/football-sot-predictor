@@ -200,10 +200,8 @@ def test_normalize_bets_full_bet365_sample():
     # handicap asiatico: segno della squadra indicata, formato -0.5 / +0.25 / 0.0 / -1.0
     assert markets["AH_HOME:-0.5"] == 2.60
     assert markets["AH_AWAY:+0.5"] == 1.50
-    assert markets["AH_HOME:+0.25"] == 1.80
-    assert markets["AH_AWAY:-0.25"] == 2.05
-    assert markets["AH_HOME:0.0"] == 2.00 and markets["AH_AWAY:0.0"] == 1.85
-    assert markets["AH_HOME:-1.0"] == 4.20 and markets["AH_AWAY:+1.0"] == 1.22
+    # quarti, interi e linea zero non si registrano (solo linee a meta')
+    assert not any(k in markets for k in ("AH_HOME:+0.25", "AH_AWAY:-0.25", "AH_HOME:0.0", "AH_AWAY:0.0", "AH_HOME:-1.0", "AH_AWAY:+1.0"))
     # statistiche
     assert markets["STAT:corners:total:over:9.5"] == 1.85 and markets["STAT:corners:total:under:10.5"] == 1.60
     assert not any(k.startswith("STAT:corners:total:over:10.0") for k in markets)  # linea intera scartata
@@ -224,7 +222,7 @@ def test_normalize_bets_full_bet365_sample():
 def test_normalize_bets_split_asian_line_is_averaged():
     # API-Football scrive la linea di casa su entrambi i lati: "Away -0.5/-1" = ospite +0,75
     markets, _ = normalize_bets([{"name": "Asian Handicap", "values": [{"value": "Home -0.5, -1", "odd": "3.00"}, {"value": "Away -0.5/-1", "odd": "1.40"}]}])
-    assert markets == {"AH_HOME:-0.75": 3.0, "AH_AWAY:+0.75": 1.4}
+    assert markets == {}  # linea a quarti: scartata
 
 
 def test_normalize_odds_item_filters_bookmakers():
@@ -232,7 +230,7 @@ def test_normalize_odds_item_filters_bookmakers():
     out = normalize_odds_item(item, bookmaker_ids={8, 3})
     assert set(out) == {8, 3}
     assert out[3].bookmaker_name == "Betfair"
-    assert out[3].markets["AH_HOME:-0.75"] == 3.10 and out[3].markets["AH_AWAY:+0.75"] == 1.36
+    assert out[3].markets["AH_HOME:-0.5"] == 3.10 and out[3].markets["AH_AWAY:+0.5"] == 1.36
     assert out[3].unmapped_bets == []
     everything = normalize_odds_item(item)
     assert 11 in everything
