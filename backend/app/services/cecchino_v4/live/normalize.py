@@ -478,6 +478,11 @@ def _market_key(family: str, info: dict[str, Any], raw_value: str) -> str | None
         line = float(m.group(2))
         if m.group(3) is not None:  # linea doppia "Home -0.5, -1" -> media
             line = (line + float(m.group(3))) / 2.0
+        # API-Football scrive la LINEA DI CASA su entrambi i lati ("Home -1.5" e "Away -1.5" sono la stessa
+        # linea): l'handicap dell'ospite e' l'opposto. Verificato sui dati reali del 20/09/2026
+        # (Manchester City - Sunderland: "Away -1.5" a 1,92 = Sunderland +1,5).
+        if side == "AWAY":
+            line = -line
         return f"AH_{side}:{format_line(line)}"
     if family == "STAT":
         ou = _parse_over_under(v)

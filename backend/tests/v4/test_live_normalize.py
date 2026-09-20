@@ -222,7 +222,8 @@ def test_normalize_bets_full_bet365_sample():
 
 
 def test_normalize_bets_split_asian_line_is_averaged():
-    markets, _ = normalize_bets([{"name": "Asian Handicap", "values": [{"value": "Home -0.5, -1", "odd": "3.00"}, {"value": "Away +0.5/+1", "odd": "1.40"}]}])
+    # API-Football scrive la linea di casa su entrambi i lati: "Away -0.5/-1" = ospite +0,75
+    markets, _ = normalize_bets([{"name": "Asian Handicap", "values": [{"value": "Home -0.5, -1", "odd": "3.00"}, {"value": "Away -0.5/-1", "odd": "1.40"}]}])
     assert markets == {"AH_HOME:-0.75": 3.0, "AH_AWAY:+0.75": 1.4}
 
 

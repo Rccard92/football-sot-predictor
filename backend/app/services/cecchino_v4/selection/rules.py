@@ -20,6 +20,8 @@ import numpy as np
 
 from app.services.cecchino_v3.markets import score_matrix
 from app.services.cecchino_v4.constants import (
+    ANOMALY_RATIO,
+    VERDICT_ANOMALOUS,
     BOOKMAKER_BET365_ID,
     BOOKMAKER_BETFAIR_ID,
     BOOKMAKERS,
@@ -229,6 +231,10 @@ def evaluate_market(inputs: RowInputs) -> MarketRow:
         verdict = VERDICT_DESCRIPTIVE
     elif quota_used is None:
         verdict = VERDICT_NO_ODDS
+    elif quota_used * float(inputs.p) > ANOMALY_RATIO:
+        # il modello vede l'esito 2,5+ volte piu' probabile del prezzo: errore di lettura della quota o quota
+        # sbagliata, mai una giocata (protezione contro chiavi di mercato invertite)
+        verdict = VERDICT_ANOMALOUS
     elif (inputs.uncertainty_level or "").lower() == _UNCERTAINTY_HIGH:
         verdict = VERDICT_UNCERTAIN
     elif expected_profit is not None and expected_profit >= PROFIT_MARGIN and quota_used >= MIN_QUOTA:

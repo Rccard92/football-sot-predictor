@@ -139,6 +139,8 @@ VERDICT_UNCERTAIN = "incertezza_alta"
 VERDICT_NO_ODDS = "non_quotato"
 VERDICT_DESCRIPTIVE = "solo_descrittivo"
 VERDICT_LINEUPS_PENDING = "formazioni_non_note"
+VERDICT_ANOMALOUS = "quota_anomala"  # quota x probabilita' del modello oltre ANOMALY_RATIO: quasi certamente un errore di lettura
+ANOMALY_RATIO = 2.5
 VERDICT_LABELS: dict[str, str] = {
     VERDICT_PLAYABLE: "Giocabile",
     VERDICT_FAIR_PRICE: "Prezzo giusto",
@@ -146,6 +148,7 @@ VERDICT_LABELS: dict[str, str] = {
     VERDICT_NO_ODDS: "Non quotato",
     VERDICT_DESCRIPTIVE: "Solo descrittivo",
     VERDICT_LINEUPS_PENDING: "Formazioni non note",
+    VERDICT_ANOMALOUS: "Quota anomala",
 }
 
 # Stati della shortlist
