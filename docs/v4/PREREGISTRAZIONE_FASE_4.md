@@ -84,6 +84,14 @@ La shortlist **esiste comunque**: l'utente vuole vedere tutto, e la V4 mostra tu
 
 Se E4 fallisce per il solo criterio E4.2 (poche giocate) ma E4.1, E4.3 ed E4.4 sono superati, il verdetto è comunque "non superato": non si abbassa il margine per far salire il conteggio.
 
+### 2.5 Precisazioni scritte prima del calcolo di E4 (20/09/2026)
+
+- L'esame E1 **non** e' stato superato: nessuna novita' V4 e' stata adottata. Il payload `goals` usato in E4 e' quindi la configurazione adottata da E1 (`engine_goals.config.ADOPTED_CONFIG`): V3 Fase 4 come libreria piu' handicap asiatico e ratings descrittivi. Senza intervalli, `lo = p` e la probabilita' prudente si riduce a `p − (p − tasso base) × u`, con `u` il punteggio di incertezza del payload.
+- I CSV football-data non hanno il campo `round`: il blocco per il bootstrap e per il nullo di E4.3 e' la coppia (campionato, data). La permutazione degli esiti avviene tra le partite dello stesso campionato nella stessa data (risultato finale, primo tempo e statistiche insieme); un gruppo con una sola partita resta invariato.
+- La shortlist storica e' costruita per data di calendario su tutti i campionati insieme, come nel live (una giocata per partita, massimo 50 al giorno).
+- Le quote di chiusura dell'handicap asiatico si abbinano alla linea di chiusura `AHCh` con le chiavi `AH_HOME:<linea>` e `AH_AWAY:<−linea>`; se il motore non produce quella linea, il mercato resta non quotato.
+- Seme dei ricampionamenti e delle permutazioni: 20260920.
+
 ### 2.4 Mercati speciali
 
 Per le statistiche (tiri, tiri in porta, corner, cartellini, falli) non esistono quote storiche: il giudizio è **solo prospettico**, con l'esame G6 della Fase 6 (CLV medio positivo con intervallo che esclude lo zero e numero minimo di giocate per gruppo). Fino ad allora, le righe statistiche con esame E2 superato sono `giocabile` quando la regola lo dice, ma il banner della Shortlist ricorda che il giudizio sulla redditività arriva dopo il paper trading.

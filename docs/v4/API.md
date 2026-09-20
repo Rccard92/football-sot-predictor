@@ -165,3 +165,14 @@ Solo aggiunte; le forme sopra restano valide.
 - `totals`: anche `profit_units`.
 - `alerts[]`: `{"scope": "league|market", "key", "plays", "alarm_at", "roi", "sentence"}` da CUSUM a un lato (`k` = 0,03, `h` = 6 unita') sui gruppi con almeno 30 giocate regolate.
 - CLV = quota presa / quota di chiusura − 1 (positivo: prezzo migliore della chiusura). Intervalli ROI: bootstrap a blocchi per giornata al 90%.
+
+## Appendice integrazione (20/09/2026)
+
+- `GET /cecchino/v4/status` → `{"enabled": bool, "module": "cecchino_v4"}`.
+- `FixtureDetail` include anche `rows` (tutte le righe di mercato, stessa forma di `blocks.predicts.markets`) e `computed_at`.
+- Prima del calcolo del giorno la scheda e' minima: `best_play = null`, `no_play_reason = "in_attesa_calcolo"`, `most_likely`, `expected_goals`, `uncertainty` a `null`.
+- `GET /fixtures` aggiunge `abstention_labels` (`{motivo: etichetta}`).
+- Payload `stats`: ogni lato porta anche `evidence` (partite equivalenti) e, se il motore lo fornisce, `mean_against`; per `total` i rank sono `null`.
+- Payload `goals` con la configurazione adottata da E1: `uncertainty` e' presente (punteggio, livello, evidenze) ma gli intervalli non sono calcolati, quindi `lo = hi = p`.
+- Nomi job ammessi in `POST /admin/cecchino/v4/jobs/{name}/run`: `fixtures, post_match, lineups, injuries, standings, odds_snapshot, odds_closing, coverage_scan, backfill` (pipeline live), `predict, shortlist, settle, daily` (calcolo), `exam_E1, exam_E2, exam_E4` (esami storici in processo separato). Con `CECCHINO_V4_ENABLED` falso rispondono 409.
+- Orari: su PostgreSQL `kickoff_at` e' UTC con fuso; su SQLite (test locale) un orario senza fuso va letto come Europe/Rome.

@@ -192,9 +192,34 @@ export const ROADMAP_STEPS: RoadmapStep[] = [
     ],
     doneWhen: 'Il tool gira in produzione con i tre motori, Master Pattern e osservazione live.',
   },
+  {
+    id: 11,
+    title: 'Cecchino V4 (modulo affiancato)',
+    goal: "Un quarto modulo, accanto a V2, V2.5 e V3, che analizza tutte le partite dei 16 campionati dalla prima giornata, predice mercati classici e speciali (tiri, tiri in porta, corner, cartellini, falli) e mostra per ogni partita il ragionamento completo. Quote del book solo come prezzo e come metro.",
+    status: 'in_corso',
+    dependsOn: [9],
+    tasks: [
+      { text: 'Ramo feature/cecchino-v4, regole e roadmap in docs/v4, contratto API, tabelle proprie cecchino_v4_* con migrazione additiva', status: 'fatto' },
+      { text: 'Storico dai CSV pubblici football-data (16 campionati, 2021/22-2026/27): 24.945 partite di giudizio identiche al Lab', status: 'fatto' },
+      { text: "Motore gol V4: V3 Fase 4 come libreria piu' handicap asiatico. Esame E1 NON superato: nessuna delle cinque novita' (vantaggio casa per squadra, rho per divisione, binomiale negativa, incertezza, isotonica) migliora la V3 entro tolleranza", status: 'fatto' },
+      { text: 'Motore statistiche walk-forward. Esame E2: tiri, tiri in porta e falli superati (precisione e informazione oltre le quote gol in ogni stagione); corner e cartellini solo descrittivi', status: 'fatto' },
+      { text: 'Pipeline live API-Football: 9 job con budget, registro quote Bet365/Betfair, formazioni, mappa squadre 316/316; si accende al deploy con CECCHINO_V4_ENABLED', status: 'fatto' },
+      { text: "Regola del profitto (probabilita' prudente x quota >= 1,03, una per partita, max 50, top 15), shortlist sigillata con impronta, regolamento, CLV/ROI/CUSUM", status: 'fatto' },
+      { text: 'Esame E4 sui mercati classici alla chiusura Bet365 (11.307 giocate 2022/23-2024/25): ROI -10,3%, NON superato. Le giocate classiche restano visibili ma in osservazione, non consigliate', status: 'fatto' },
+      { text: 'Pagina /cecchino-v4 con quattro viste (Partite, Shortlist, Misura, Motore) e Ragionamento in sei blocchi, 16 px', status: 'fatto' },
+      { text: 'Deploy: migrazione, CECCHINO_V4_ENABLED=true, job daily + odds_snapshot + lineups + odds_closing; coverage_scan per la matrice dei mercati speciali', status: 'da_fare' },
+      { text: 'Paper trading prospettico: verdetto G6 sui mercati speciali (CLV) dopo almeno 8 settimane di shortlist sigillate', status: 'da_fare' },
+      { text: 'Fase 5: assenze da formazioni, motivazione, arbitro come sfidanti con esame', status: 'da_fare' },
+    ],
+    doneWhen: "La V4 gira online con shortlist sigillata ogni giorno e l'esame G6 ha dato un verdetto per ogni gruppo di mercati.",
+  },
 ]
 
 export const ROADMAP_UPDATES: RoadmapUpdate[] = [
+  {
+    date: '2026-09-20',
+    text: "Cecchino V4 costruita nel ramo feature/cecchino-v4 senza toccare gli altri modelli: motori gol e statistiche con esami pre-registrati (E1 non superato, E2 superato per tiri/tiri in porta/falli, E4 non superato alla chiusura Bet365), pipeline live API-Football, selezione con regola del profitto e shortlist sigillata, pagina con Ragionamento in sei blocchi. Test: 254 backend, 17 frontend.",
+  },
   {
     date: '2026-09-18',
     text: "Scheda V3 di Cecchino Today: card 'Forma' riscritta. Per ogni squadra gioco (tiri) e risultati (gol) in parole e percentuale rispetto alle attese (es. 'Leggermente sopra le attese (+15%)'), soglie dalla distribuzione di 31 mila partite del Lab, frase finale su chi favorisce il gioco e su chi raccoglie più o meno di quanto produce. Calcoli invariati.",

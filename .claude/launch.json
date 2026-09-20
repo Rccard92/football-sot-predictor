@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend-v4-local",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "cwd": "backend",
+      "env": {
+        "DATABASE_URL": "sqlite:///.runtime/v4/local.db",
+        "API_FOOTBALL_KEY": "non-usata-in-locale",
+        "CECCHINO_V4_ENABLED": "true",
+        "CORS_ORIGINS": "http://localhost:8080,http://127.0.0.1:8080"
+      },
+      "port": 8000
+    },
+    {
+      "name": "frontend-v4-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "env": {
+        "VITE_API_BASE_URL": "http://127.0.0.1:8000"
+      },
+      "port": 8080
+    }
+  ]
+}

@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 ROME = ZoneInfo("Europe/Rome")
 FINISHED_STATUSES = {"FT", "AET", "PEN"}
-EXAMS_DIR = Path(__file__).resolve().parents[4] / "docs" / "v4" / "esami"
+EXAMS_DIR = Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami"
 CLASSIC_FAMILIES = ("FT_1X2", "DOUBLE_CHANCE", "FT_OVER_UNDER", "HT_1X2", "AH")
 
 # Firme dei motori (docs/v4/ROADMAP.md, Fase 1 e 2): storico + bersagli -> payload per chiave bersaglio.
@@ -78,12 +78,16 @@ def _now() -> datetime:
 
 
 def _default_goals_predictor() -> GoalsPredictor:
-    from app.services.cecchino_v4.engine_goals.config import ADOPTED_CONFIG
+    from app.services.cecchino_v4.engine_goals.cache import matches_digest
+    from app.services.cecchino_v4.engine_goals.config import ADOPTED_CONFIG, V4GoalsConfig
     from app.services.cecchino_v4.engine_goals.live import TargetMatch, predict_targets
+
+    config = V4GoalsConfig(**ADOPTED_CONFIG) if isinstance(ADOPTED_CONFIG, dict) else ADOPTED_CONFIG
 
     def run(history_matches: list, targets: list, _config: Any = None) -> dict[str, dict]:
         tm = [TargetMatch(**t) for t in targets]
-        return predict_targets(history_matches, tm, ADOPTED_CONFIG)
+        # gli oggetti "live" (walk-forward sulle stagioni precedenti) sono in cache per storico identico
+        return predict_targets(history_matches, tm, config, cache_key="live_" + matches_digest(history_matches))
 
     return run
 
@@ -322,6 +326,10 @@ def build_days(
     for f in fixtures:
         g = goals_payloads.get(str(f.id))
         s = stats_payloads.get(str(f.id))
+        if g is None and s is None:
+            # nessuna previsione (partita gia' passata o motore fallito): resta la scheda minima "in attesa di calcolo"
+            without_play[f.match_date].append({"home_team": f.home_team, "away_team": f.away_team, "no_play_reason": "in_attesa_calcolo"})
+            continue
         rows = evaluate_fixture(g, s, odds.get(f.id), f.home_team, f.away_team, f.lineups_status, advised_families=families)
         meta = fixture_meta(f)
         card = fixture_card(meta, g, rows, lineups_status=f.lineups_status, result=_result(f))

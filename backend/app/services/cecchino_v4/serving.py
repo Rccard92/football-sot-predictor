@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -27,7 +28,7 @@ from app.services.cecchino_v4.pipeline.day import FINISHED_STATUSES, default_day
 from app.services.cecchino_v4.selection.labels import market_family
 from app.services.cecchino_v4.selection.shortlist import shortlist_payload
 
-DOCS_V4 = Path(__file__).resolve().parents[3] / "docs" / "v4"
+DOCS_V4 = Path(__file__).resolve().parents[4] / "docs" / "v4"
 EXAMS_DIR = DOCS_V4 / "esami"
 
 EXAM_TITLES = {
@@ -200,12 +201,23 @@ def measure_summary(db: Session, start: date | None = None, end: date | None = N
     return out
 
 
+def _json_safe(value: Any) -> Any:
+    """NaN e infiniti (numpy negli esami) non sono JSON: diventano null."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def _exam_from_file(code: str) -> dict[str, Any] | None:
     path = EXAMS_DIR / f"{code}.json"
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = _json_safe(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
     passed = data.get("passed")
