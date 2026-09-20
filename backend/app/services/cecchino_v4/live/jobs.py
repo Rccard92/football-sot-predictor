@@ -555,7 +555,8 @@ def job_odds_snapshot(ctx: JobContext) -> dict[str, Any]:
                 if not fixtures:
                     skipped_calls += 1
                     continue
-                recent = _recent_snapshot_fixture_ids(ctx.db, [f.id for f in fixtures], bookmaker_id, kind, since)
+                # `force`: rilegge tutte le quote anche se un'istantanea dello stesso tipo e' recente (usato dal cron `odds`)
+                recent = set() if ctx.params.get("force") else _recent_snapshot_fixture_ids(ctx.db, [f.id for f in fixtures], bookmaker_id, kind, since)
                 if len(recent) >= len(fixtures):
                     skipped_calls += 1
                     continue

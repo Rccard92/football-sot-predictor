@@ -25,7 +25,7 @@ logger = logging.getLogger("cecchino_v4_daily")
 
 PLANS: dict[str, list[str]] = {
     "daily": ["fixtures", "odds_snapshot", "post_match", "predict", "settle"],
-    "odds": ["odds_snapshot", "shortlist", "settle"],
+    "odds": ["odds_snapshot", "shortlist", "settle"],  # odds_snapshot con `force`: quote sempre fresche
     "prematch": ["lineups", "odds_closing", "post_match", "shortlist", "settle"],
     "predict": ["predict"],
     "settle": ["settle"],
@@ -44,7 +44,8 @@ def run_plan(name: str) -> dict[str, Any]:
         for step in PLANS[name]:
             try:
                 if step in dispatch.LIVE_JOBS:
-                    row = live_jobs.run_job(db, step, client=client, params={})
+                    params = {"force": True} if (name == "odds" and step == "odds_snapshot") else {}
+                    row = live_jobs.run_job(db, step, client=client, params=params)
                     out["steps"][step] = {"status": row.status, "api_calls": row.api_calls, "error": row.error_message}
                 else:
                     out["steps"][step] = dispatch.run_compute(db, step, {})
