@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from app.services.cecchino_v4.constants import EXAMS_DATA_DIR, JUDGE_SEASONS, LEAGUE_BY_COMPETITION
+from app.services.cecchino_v4.constants import EXAMS_DOCS_DIR, EXAMS_DATA_DIR, JUDGE_SEASONS, LEAGUE_BY_COMPETITION
 from app.services.cecchino_v4.engine_goals.baseline_v3 import run_v3_phase4_full
 from app.services.cecchino_v4.engine_goals.cache import matches_digest
 from app.services.cecchino_v4.engine_goals.config import ADOPTED_CONFIG as GOALS_CONFIG
@@ -34,7 +34,7 @@ from app.services.cecchino_v4.selection.rules import evaluate_fixture, best_play
 from app.services.cecchino_v4.selection.settlement import profit_units, settle
 from app.services.cecchino_v4.selection.shortlist import build_shortlist
 
-DOCS = Path(__file__).resolve().parents[5] / "docs" / "v4"
+DOCS = EXAMS_DOCS_DIR.parent
 OUT_JSON = DOCS / "esami" / "E4.json"
 OUT_MD = DOCS / "esami" / "E4.md"
 PREREG = "docs/v4/PREREGISTRAZIONE_FASE_4.md"

@@ -24,14 +24,14 @@ import numpy as np
 
 from app.services.cecchino_v3.markets import market_outcomes
 
-from app.services.cecchino_v4.constants import CLASSIC_MARKETS, EXAMS_DATA_DIR, JUDGE_SEASONS, MARKET_FAMILY, WARMUP_SEASON
+from app.services.cecchino_v4.constants import EXAMS_DOCS_DIR, CLASSIC_MARKETS, EXAMS_DATA_DIR, JUDGE_SEASONS, MARKET_FAMILY, WARMUP_SEASON
 from app.services.cecchino_v4.engine_goals.baseline_v3 import run_v3_phase4_full
 from app.services.cecchino_v4.engine_goals.cache import matches_digest
 from app.services.cecchino_v4.engine_goals.config import LEVEL_HIGH, LEVEL_LOW, LEVEL_MEDIUM, LEVELS, V4GoalsConfig
 from app.services.cecchino_v4.engine_goals.engine import MatchRow, V4Run, compute_strength_params, predict_history_full
 from app.services.cecchino_v4.history.football_data import History, load_history
 
-DOCS_DIR = Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami"
+DOCS_DIR = EXAMS_DOCS_DIR
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "engine_goals" / "config.py"
 PREREGISTRATION = "docs/v4/PREREGISTRAZIONE_FASE_1.md"
 

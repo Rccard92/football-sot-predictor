@@ -30,7 +30,7 @@ from app.services.cecchino_v4.engine_stats.counts import stat_pair
 from app.services.cecchino_v4.engine_stats.engine import StatPredictions, fit_history
 from app.services.cecchino_v4.history.football_data import History, load_history
 
-REPO = Path(__file__).resolve().parents[5]
+from app.services.cecchino_v4.constants import REPO_ROOT as REPO  # radice del repo o cartella backend nel container
 OUT_DIR = REPO / "docs" / "v4" / "esami"
 PREREG = "docs/v4/PREREGISTRAZIONE_FASE_2.md"
 

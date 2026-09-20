@@ -176,5 +176,9 @@ API_DAILY_STOP = 7000
 # gli script degli esami ne scrivono una copia leggibile anche in docs/v4/esami/.
 from pathlib import Path as _Path  # noqa: E402
 
-EXAMS_DATA_DIR = _Path(__file__).resolve().parents[2] / "data" / "v4" / "esami"
-EXAMS_DOCS_DIR = _Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami"
+_HERE = _Path(__file__).resolve()
+BACKEND_DIR = _HERE.parents[3]  # .../backend (su Railway e' /app: non ha una cartella padre del repo)
+# Radice del repository se esiste (sviluppo locale), altrimenti la cartella backend stessa (container).
+REPO_ROOT = _HERE.parents[4] if len(_HERE.parents) > 4 and (_HERE.parents[4] / "docs").exists() else BACKEND_DIR
+EXAMS_DATA_DIR = BACKEND_DIR / "app" / "data" / "v4" / "esami"
+EXAMS_DOCS_DIR = REPO_ROOT / "docs" / "v4" / "esami"
