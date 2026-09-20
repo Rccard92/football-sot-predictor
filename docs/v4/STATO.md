@@ -20,4 +20,4 @@ Aggiornato ad ogni passo. Serve a riprendere il lavoro senza contesto.
 - [ ] Fase 5: contesto e arena (struttura tabelle e vista pronte; sfidanti da registrare)
 - [ ] Fase 6: paper trading prospettico: parte con il primo giorno di shortlist sigillata online; verdetto G6 dopo almeno 8 settimane
 - [x] Test backend (254) e frontend (17) verdi, tsc e eslint puliti; verifica visiva locale delle quattro viste con dati reali del fine settimana (SQLite + fixtures.csv)
-- [ ] Push su GitHub
+- [x] Push su GitHub e messa online (20/09/2026 08:17 Roma): main avanzato a 104fa8b, migrazione V4 eseguita all'avvio del backend, backend e frontend online con healthcheck `/api/health`; variabili `CECCHINO_V4_ENABLED=true`, `CECCHINO_V4_WORKERS=1`; tre servizi cron Railway `cecchino-v4-daily` (06:00 UTC), `cecchino-v4-odds` (12:00 e 16:00 UTC), `cecchino-v4-prematch` (ogni 30 min) con root `/backend` e variabili per riferimento
