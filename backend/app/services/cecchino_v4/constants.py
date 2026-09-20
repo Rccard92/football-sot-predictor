@@ -142,7 +142,8 @@ VERDICT_DESCRIPTIVE = "solo_descrittivo"
 VERDICT_LINEUPS_PENDING = "formazioni_non_note"
 VERDICT_OBSERVED = "in_osservazione"  # mercato classico: si guarda, non si gioca (decisione utente 20/09/2026, esame E4 non superato)
 VERDICT_ANOMALOUS = "quota_anomala"  # quota x probabilita' del modello oltre ANOMALY_RATIO: quasi certamente un errore di lettura
-ANOMALY_RATIO = 2.5
+ANOMALY_RATIO = 1.5  # il modello vede l'esito 1,5+ volte piu' probabile del prezzo: quota o lettura sbagliata
+BOOK_DISAGREEMENT_RATIO = 1.6  # Bet365 e Betfair in disaccordo oltre questo rapporto sulla stessa chiave: lettura sbagliata
 VERDICT_LABELS: dict[str, str] = {
     VERDICT_PLAYABLE: "Giocabile",
     VERDICT_FAIR_PRICE: "Prezzo giusto",

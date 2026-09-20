@@ -21,6 +21,7 @@ import numpy as np
 from app.services.cecchino_v3.markets import score_matrix
 from app.services.cecchino_v4.constants import (
     ANOMALY_RATIO,
+    BOOK_DISAGREEMENT_RATIO,
     PLAYABLE_FAMILY_PREFIX,
     PLAYABLE_STATS,
     VERDICT_ANOMALOUS,
@@ -220,6 +221,14 @@ def choose_quota(quota_bet365: float | None, quota_betfair: float | None) -> tup
     return None, None, None
 
 
+def _books_disagree(quota_bet365: float | None, quota_betfair: float | None) -> bool:
+    """Due book sulla stessa chiave con prezzi incompatibili (es. 1,91 contro 1,01): una lettura e' sbagliata."""
+    if not quota_bet365 or not quota_betfair or quota_bet365 <= 1.0 or quota_betfair <= 1.0:
+        return False
+    hi, lo = max(quota_bet365, quota_betfair), min(quota_bet365, quota_betfair)
+    return hi / lo > BOOK_DISAGREEMENT_RATIO
+
+
 # Solo per test ed esami storici: True rende giocabili anche i mercati classici.
 CLASSIC_PLAYABLE_DEFAULT = False
 
@@ -240,7 +249,7 @@ def evaluate_market(inputs: RowInputs) -> MarketRow:
         verdict = VERDICT_DESCRIPTIVE
     elif quota_used is None:
         verdict = VERDICT_NO_ODDS
-    elif quota_used * float(inputs.p) > ANOMALY_RATIO:
+    elif _books_disagree(inputs.quota_bet365, inputs.quota_betfair) or quota_used * float(inputs.p) > ANOMALY_RATIO:
         # il modello vede l'esito 2,5+ volte piu' probabile del prezzo: errore di lettura della quota o quota
         # sbagliata, mai una giocata (protezione contro chiavi di mercato invertite)
         verdict = VERDICT_ANOMALOUS
