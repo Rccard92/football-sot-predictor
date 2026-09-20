@@ -179,9 +179,32 @@ def latest_odds(db: Session, fixture_ids: list[int]) -> dict[int, dict[int, dict
         if key in closing_seen:
             continue
         out.setdefault(snap.fixture_id, {})[snap.bookmaker_id] = dict(snap.markets_json or {})
+        ODDS_TAKEN_AT[key] = (snap.taken_at, snap.kind)
         if snap.kind == "chiusura":
             closing_seen.add(key)
     return out
+
+
+# (partita, bookmaker) -> (orario di lettura, tipo di istantanea) dell'ultima `latest_odds`
+ODDS_TAKEN_AT: dict[tuple[int, int], tuple[datetime, str]] = {}
+
+
+def odds_age_sentence(fixture_id: int, bookmaker_id: int | None, bookmaker_name: str | None) -> str | None:
+    """Frase per il blocco Perche': quando e' stata letta la quota e l'invito a controllare il prezzo attuale."""
+    if bookmaker_id is None:
+        return None
+    hit = ODDS_TAKEN_AT.get((fixture_id, bookmaker_id))
+    if not hit:
+        return None
+    taken_at, kind = hit
+    if taken_at.tzinfo is None:
+        taken_at = taken_at.replace(tzinfo=timezone.utc)
+    when = taken_at.astimezone(ROME).strftime("%H:%M")
+    quale = "di chiusura" if kind == "chiusura" else "del mattino" if kind == "mattina" else f"({kind})"
+    return (
+        f"Quota {bookmaker_name or 'del book'} letta alle {when} ({quale}) tramite API-Football, che non e' in tempo reale: "
+        "prima di giocare controlla il prezzo attuale e usa la soglia indicata sotto."
+    )
 
 
 def _replace_prediction(db: Session, fixture: CecchinoV4Fixture, kind: str, payload: dict, now: datetime) -> None:
@@ -336,6 +359,14 @@ def build_days(
         meta = fixture_meta(f)
         card = fixture_card(meta, g, rows, lineups_status=f.lineups_status, result=_result(f))
         blocks = build_explanation(meta, g, s, rows, context=_context(f, g), aftermath=_aftermath(f, rows))
+        play_for_age = best_play(rows)
+        if play_for_age is not None and isinstance(blocks.get("why"), dict):
+            age = odds_age_sentence(f.id, play_for_age.bookmaker_id, play_for_age.bookmaker_used)
+            if age:
+                blocks["why"].setdefault("sentences", []).append(age)
+                card_play = card.get("best_play")
+                if isinstance(card_play, dict):
+                    card_play["quota_taken_at"] = ODDS_TAKEN_AT[(f.id, play_for_age.bookmaker_id)][0].isoformat()
         _save_explanation(db, f, {"card": card, "blocks": blocks, "rows": rows_to_dicts(rows), "computed_at": now.isoformat()}, now)
         play = best_play(rows)
         if play is not None and f.status not in FINISHED_STATUSES:
