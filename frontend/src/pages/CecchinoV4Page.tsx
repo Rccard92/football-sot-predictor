@@ -1,8 +1,14 @@
 import { useCallback, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CecchinoTodayFixtureDrawer } from '../components/cecchino/CecchinoTodayFixtureDrawer'
-import { todayCard, todayCardPadding, todayPageGrid, todayStickyListColumn } from '../components/cecchino/cecchinoTodayStyles'
-import { parseV4View, v4SectionTitle, v4Title, type V4View } from '../components/cecchino-v4/constants'
+import {
+  todayCard,
+  todayCardPadding,
+  todayPageGrid,
+  todaySectionTitle,
+  todayStickyListColumn,
+} from '../components/cecchino/cecchinoTodayStyles'
+import { parseV4View, v4SmallButton, v4Title, type V4View } from '../components/cecchino-v4/constants'
 import { isIsoDate } from '../components/cecchino-v4/format'
 import { useIsDesktopPanel } from '../components/cecchino-v4/useMediaQuery'
 import { useV4Query } from '../components/cecchino-v4/useV4Query'
@@ -91,10 +97,14 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
   let detailContent = null
   if (selectedId == null) {
     detailContent = (
-      <div className={`${todayCard} ${todayCardPadding}`} data-testid="v4-detail-placeholder">
-        <p className="text-base text-slate-600">
-          Scegli una partita dalla lista per leggere il ragionamento: chi sono, come giocano, contesto, cosa
-          prevede, perché sì e perché no.
+      <div
+        className={`${todayCard} ${todayCardPadding} flex min-h-[200px] flex-col items-center justify-center text-center`}
+        data-testid="v4-detail-placeholder"
+      >
+        <p className="text-sm font-medium text-slate-700">Seleziona una partita dalla lista</p>
+        <p className="mt-2 max-w-xs text-xs text-slate-500">
+          Qui compare il ragionamento in sei blocchi: perché sì e perché no, chi sono, come giocano, contesto, cosa
+          prevede, come è andata.
         </p>
       </div>
     )
@@ -107,12 +117,14 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
   }
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-5">
       <header className="space-y-3">
         <div>
           <h1 className={v4Title}>Cecchino V4</h1>
-          <p className="text-base text-slate-600">
-            Vedi tutto, gioca poco: ogni partita dei 16 campionati con il ragionamento completo
+          <p className="mt-1 text-sm text-slate-500">Vedi tutto, gioca poco: le partite dei 16 campionati con il ragionamento completo.</p>
+          <p className="mt-1 text-xs text-slate-500" data-testid="v4-help">
+            Ogni partita mostra la giocata migliore secondo la regola del profitto; apri la partita per il ragionamento in
+            sei blocchi. &quot;In osservazione&quot; = esame E4 non superato: si guarda, non si gioca.
           </p>
         </div>
         <V4ViewSwitch view={view} onChange={handleView} />
@@ -144,15 +156,11 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
               />
             </div>
             {isDesktop ? (
-              <section className="min-w-0 space-y-4" aria-label="Ragionamento" data-testid="v4-detail-panel">
+              <section className="min-w-0 space-y-3" aria-label="Ragionamento" data-testid="v4-detail-panel">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className={v4SectionTitle}>Ragionamento</h2>
+                  <h2 className={todaySectionTitle}>Ragionamento</h2>
                   {selectedId != null ? (
-                    <button
-                      type="button"
-                      onClick={closeDetail}
-                      className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-base font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                    >
+                    <button type="button" onClick={closeDetail} className={v4SmallButton}>
                       Chiudi
                     </button>
                   ) : null}

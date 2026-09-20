@@ -7,6 +7,7 @@ import type {
   V4WhoTeam,
   V4WhyBlock,
 } from '../../lib/cecchinoV4Api'
+import { todayBadgeMuted, todayBadgeOk, todayCard, todayCardPadding } from '../cecchino/cecchinoTodayStyles'
 import {
   noPlayReasonLabel,
   V4_BLOCK_TITLES,
@@ -14,23 +15,13 @@ import {
   V4_PLAY_RESULT_CHIP,
   V4_PLAY_RESULT_LABELS,
   V4_TREND_ARROW,
+  V4_UNCERTAINTY_LABELS,
   v4Chip,
   v4Label,
+  v4Mono,
 } from './constants'
-import {
-  capitalize,
-  fmtDateTimeRome,
-  fmtDecimal,
-  fmtInterval,
-  fmtOrdinal,
-  fmtPct,
-  fmtProfit,
-  fmtQuota,
-  fmtScore,
-  fmtSigned,
-} from './format'
-import { V4LineupsDot } from './V4Chips'
-import { V4UncertaintyBar } from './V4FixtureCard'
+import { capitalize, fmtDateTimeRome, fmtDecimal, fmtOrdinal, fmtPct, fmtScore, fmtSigned } from './format'
+import { V4PlayLine } from './V4FixtureCard'
 import { V4HowBars } from './V4HowBars'
 import { V4MarketsTable } from './V4MarketsTable'
 import { V4ReasoningBlock } from './V4ReasoningBlock'
@@ -40,74 +31,74 @@ type Props = {
   detail: V4FixtureDetail
 }
 
-// --- Intestazione -------------------------------------------------------------------------
+// --- Intestazione (come CecchinoTodayDetailHeader) -----------------------------------------
 
 function Header({ fixture }: { fixture: V4FixtureCard }) {
+  const uncertainty = fixture.uncertainty
   return (
-    <div className="space-y-2" data-testid="v4-reasoning-header">
-      <p className={v4Label}>
-        {fixture.competition} · {fmtDateTimeRome(fixture.kickoff_at)}
-      </p>
-      <h3 className="text-2xl font-bold text-slate-900">
-        {fixture.home_team} - {fixture.away_team}
-      </h3>
-      {fixture.result ? (
-        <p className="text-base text-slate-800">
-          Finita <span className="font-semibold tabular-nums">{fmtScore(fixture.result.ft_home, fixture.result.ft_away)}</span>
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-4">
-        <V4LineupsDot status={fixture.lineups_status} />
-        {fixture.uncertainty ? (
-          <div className="min-w-[220px] flex-1">
-            <V4UncertaintyBar score={fixture.uncertainty.score} level={fixture.uncertainty.level} />
-          </div>
-        ) : null}
+    <header className={`${todayCard} ${todayCardPadding}`} data-testid="v4-reasoning-header">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {fixture.competition} · {fixture.season_label}
+          </p>
+          <h3 className="mt-1 text-xl font-bold text-slate-900">
+            {fixture.home_team} - {fixture.away_team}
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Calcio d&apos;inizio <span className={`${v4Mono} font-medium text-slate-800`}>{fmtDateTimeRome(fixture.kickoff_at)}</span>
+            {fixture.result ? (
+              <>
+                {' '}
+                · finita <span className={`${v4Mono} font-semibold text-slate-800`}>{fmtScore(fixture.result.ft_home, fixture.result.ft_away)}</span>
+              </>
+            ) : null}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={fixture.lineups_status === 'ufficiali' ? todayBadgeOk : todayBadgeMuted}>
+            {V4_LINEUPS_LABELS[fixture.lineups_status]}
+          </span>
+          {uncertainty ? (
+            <span className={uncertainty.level === 'bassa' ? todayBadgeOk : todayBadgeMuted}>
+              {V4_UNCERTAINTY_LABELS[uncertainty.level]}
+            </span>
+          ) : null}
+        </div>
       </div>
+    </header>
+  )
+}
+
+// --- Blocco 1: piccola griglia di definizioni ------------------------------------------------
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className={v4Label}>{label}</p>
+      <p className={`${v4Mono} text-sm font-semibold text-slate-900`}>{value}</p>
     </div>
   )
 }
 
-// --- Blocco 1 -------------------------------------------------------------------------------
-
 function TeamWho({ name, team }: { name: string; team: V4WhoTeam }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-      <p className="text-base font-semibold text-slate-900">
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3">
+      <p className="text-sm font-semibold text-slate-900">
         {name}
         {team.trend ? (
-          <span className="ml-2 font-normal text-slate-600" title={`Tendenza ${team.trend}`}>
+          <span className="ml-2 text-xs font-normal text-slate-500" title={`Tendenza ${team.trend}`}>
             {V4_TREND_ARROW[team.trend] ?? ''} {team.trend}
           </span>
         ) : null}
       </p>
-      <dl className="mt-2 space-y-1 text-base text-slate-700">
-        <div className="flex justify-between gap-3">
-          <dt>Attacco</dt>
-          <dd className="tabular-nums">
-            {fmtOrdinal(team.attack_rank)} su {team.teams_in_division} ({fmtSigned(team.attack)})
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>Difesa</dt>
-          <dd className="tabular-nums">
-            {fmtOrdinal(team.defence_rank)} su {team.teams_in_division} ({fmtSigned(team.defence)})
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>Conoscenza</dt>
-          <dd className="text-right">
-            {team.known} ({fmtDecimal(team.evidence, 0)} partite equivalenti)
-          </dd>
-        </div>
-        {team.home_advantage != null ? (
-          <div className="flex justify-between gap-3">
-            <dt>Vantaggio casa</dt>
-            <dd className="tabular-nums">{fmtSigned(team.home_advantage)}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {team.inherited ? <p className="mt-2 text-base text-slate-600">{team.inherited}</p> : null}
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+        <Stat label="Attacco" value={`${fmtOrdinal(team.attack_rank)} su ${team.teams_in_division} (${fmtSigned(team.attack)})`} />
+        <Stat label="Difesa" value={`${fmtOrdinal(team.defence_rank)} su ${team.teams_in_division} (${fmtSigned(team.defence)})`} />
+        <Stat label="Conoscenza" value={`${team.known} · ${fmtDecimal(team.evidence, 0)} partite eq.`} />
+        {team.home_advantage != null ? <Stat label="Vantaggio casa" value={fmtSigned(team.home_advantage)} /> : null}
+      </div>
+      {team.inherited ? <p className="mt-2 text-xs text-slate-500">{team.inherited}</p> : null}
     </div>
   )
 }
@@ -176,18 +167,17 @@ function contextLines(ctx: V4ContextBlock, home: string, away: string): string[]
 
 function WhyBody({ why }: { why: V4WhyBlock }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {why.play ? (
-        <p className="text-base font-semibold text-emerald-700" data-testid="v4-why-play">
-          {why.play.label} · {fmtInterval(why.play.p, why.play.lo, why.play.hi)} · quota {fmtQuota(why.play.quota_used)}{' '}
-          · profitto atteso {fmtProfit(why.play.expected_profit)}
-        </p>
+        <div data-testid="v4-why-play">
+          <V4PlayLine play={why.play} align="left" />
+        </div>
       ) : (
-        <p className="text-base font-semibold text-slate-600" data-testid="v4-why-no-play">
-          Nessuna giocata: {noPlayReasonLabel(why.reason)}
+        <p className="text-sm font-medium text-slate-600" data-testid="v4-why-no-play">
+          Nessuna giocata · {noPlayReasonLabel(why.reason)}
         </p>
       )}
-      <ul className="list-disc space-y-2 pl-5 text-base leading-relaxed text-slate-800">
+      <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-800">
         {why.sentences.map((s, i) => (
           <li key={i}>{s}</li>
         ))}
@@ -195,7 +185,7 @@ function WhyBody({ why }: { why: V4WhyBlock }) {
       {why.would_change.length > 0 ? (
         <div>
           <p className={v4Label}>Cosa la farebbe cambiare</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-base text-slate-800">
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
             {why.would_change.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -207,9 +197,9 @@ function WhyBody({ why }: { why: V4WhyBlock }) {
 }
 
 function AftermathBody({ aftermath, home, away }: { aftermath: V4AftermathBlock; home: string; away: string }) {
-  const th = 'px-3 py-2 text-left text-base font-semibold uppercase tracking-wide text-slate-500'
-  const td = 'px-3 py-2 text-base text-slate-800'
-  const numCell = `${td} text-right tabular-nums`
+  const th = 'px-2 py-1.5 text-left text-xs font-medium text-slate-500'
+  const td = 'px-2 py-1.5 text-sm text-slate-800'
+  const numCell = `${td} ${v4Mono} text-right`
   const actual = (v: number | null) => (v == null ? '–' : String(v))
   const rows: Array<{ key: string; label: string; expected: number | null; actual: number | null }> = [
     { key: 'goals-home', label: `Gol ${home}`, expected: aftermath.goals.expected_home, actual: aftermath.goals.actual_home },
@@ -220,7 +210,7 @@ function AftermathBody({ aftermath, home, away }: { aftermath: V4AftermathBlock;
     rows.push({ key: `${s.stat}-away`, label: `${capitalize(s.label)} ${away}`, expected: s.expected_away, actual: s.actual_away })
   }
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full border-collapse">
           <thead className="bg-slate-50">
@@ -242,7 +232,7 @@ function AftermathBody({ aftermath, home, away }: { aftermath: V4AftermathBlock;
         </table>
       </div>
       {aftermath.play ? (
-        <p className="flex flex-wrap items-center gap-2 text-base text-slate-800">
+        <p className="flex flex-wrap items-center gap-2 text-sm text-slate-800">
           Giocata {aftermath.play.label}
           {aftermath.play.outcome ? (
             <span className={`${v4Chip} ${V4_PLAY_RESULT_CHIP[aftermath.play.outcome]}`}>
@@ -250,19 +240,23 @@ function AftermathBody({ aftermath, home, away }: { aftermath: V4AftermathBlock;
             </span>
           ) : null}
           {aftermath.play.profit_units != null ? (
-            <span className="tabular-nums text-slate-600">
+            <span className={`${v4Mono} text-xs text-slate-500`}>
               ({fmtSigned(aftermath.play.profit_units, 2)} unità a puntata piatta)
             </span>
           ) : null}
         </p>
       ) : null}
-      {aftermath.luck ? <p className="text-base text-slate-700">{aftermath.luck}</p> : null}
+      {aftermath.luck ? <p className="text-sm text-slate-700">{aftermath.luck}</p> : null}
     </div>
   )
 }
 
 // --- Il Ragionamento -------------------------------------------------------------------------------
 
+/**
+ * Sei blocchi. Aperti all'avvio: "Perché sì, perché no" (la risposta) in testa e "Chi sono";
+ * gli altri chiusi, si aprono a richiesta.
+ */
 export function V4Reasoning({ detail }: Props) {
   const { fixture, blocks } = detail
   const home = fixture.home_team
@@ -271,8 +265,14 @@ export function V4Reasoning({ detail }: Props) {
   const showContext = blocks.context != null && (ctxLines.length > 0 || Boolean(blocks.context.sentence))
 
   return (
-    <div className="space-y-4" data-testid="v4-reasoning">
+    <div className="space-y-3" data-testid="v4-reasoning">
       <Header fixture={fixture} />
+
+      {blocks.why ? (
+        <V4ReasoningBlock index={5} title={V4_BLOCK_TITLES[4]} defaultOpen>
+          <WhyBody why={blocks.why} />
+        </V4ReasoningBlock>
+      ) : null}
 
       {blocks.who ? (
         <V4ReasoningBlock index={1} title={V4_BLOCK_TITLES[0]} sentence={blocks.who.sentence} defaultOpen>
@@ -292,7 +292,7 @@ export function V4Reasoning({ detail }: Props) {
       {showContext && blocks.context ? (
         <V4ReasoningBlock index={3} title={V4_BLOCK_TITLES[2]} sentence={blocks.context.sentence}>
           {ctxLines.length > 0 ? (
-            <ul className="space-y-1 text-base text-slate-800">
+            <ul className="space-y-1 text-sm text-slate-800">
               {ctxLines.map((line, i) => (
                 <li key={i}>{line}</li>
               ))}
@@ -302,14 +302,20 @@ export function V4Reasoning({ detail }: Props) {
       ) : null}
 
       {blocks.predicts ? (
-        <V4ReasoningBlock index={4} title={V4_BLOCK_TITLES[3]} sentence={blocks.predicts.sentence} defaultOpen>
+        <V4ReasoningBlock index={4} title={V4_BLOCK_TITLES[3]} sentence={blocks.predicts.sentence}>
+          <V4MarketsTable
+            markets={blocks.predicts.markets}
+            homeTeam={home}
+            awayTeam={away}
+            bestKey={fixture.best_play?.market_key ?? null}
+          />
           {blocks.predicts.most_likely_score ? (
-            <p className="text-base text-slate-700">
+            <p className="text-sm text-slate-700">
               Risultato più probabile{' '}
-              <span className="font-semibold tabular-nums">
+              <span className={`${v4Mono} font-semibold`}>
                 {fmtScore(blocks.predicts.most_likely_score.home, blocks.predicts.most_likely_score.away)}
               </span>{' '}
-              al <span className="tabular-nums">{fmtPct(blocks.predicts.most_likely_score.p)}</span>
+              al <span className={v4Mono}>{fmtPct(blocks.predicts.most_likely_score.p)}</span>
             </p>
           ) : null}
           {blocks.predicts.score_matrix.length > 0 ? (
@@ -320,18 +326,6 @@ export function V4Reasoning({ detail }: Props) {
               awayTeam={away}
             />
           ) : null}
-          <V4MarketsTable
-            markets={blocks.predicts.markets}
-            homeTeam={home}
-            awayTeam={away}
-            bestKey={fixture.best_play?.market_key ?? null}
-          />
-        </V4ReasoningBlock>
-      ) : null}
-
-      {blocks.why ? (
-        <V4ReasoningBlock index={5} title={V4_BLOCK_TITLES[4]}>
-          <WhyBody why={blocks.why} />
         </V4ReasoningBlock>
       ) : null}
 

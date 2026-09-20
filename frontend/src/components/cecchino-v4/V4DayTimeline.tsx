@@ -11,8 +11,7 @@ import {
   clampWindowStart,
   useTimelineVisibleCount,
 } from '../cecchino/useTimelineVisibleCount'
-import { fmtDayLabel } from './format'
-import { v4Label } from './constants'
+import { fmtDateShort, fmtDayLabel } from './format'
 
 type Props = {
   days: V4Day[]
@@ -21,7 +20,11 @@ type Props = {
   onSelectDay: (date: string) => void
 }
 
-/** Selettore a 7 giorni con la grafica di Cecchino Today, tutto a 16 px. */
+function weekday(dateIso: string): string {
+  return fmtDayLabel(dateIso).split(' ')[0] ?? dateIso
+}
+
+/** Selettore a 7 giorni con le pillole compatte di CecchinoDayTimeline: giorno, data, partite, giocate. */
 export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) {
   const visibleCount = useTimelineVisibleCount()
   const daysKey = useMemo(() => days.map((d) => d.date).join('|'), [days])
@@ -45,7 +48,7 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
 
   return (
     <section className={`${todayCard} ${todayCardPadding}`} aria-label="Giorni">
-      <p className={`${v4Label} mb-3`}>Giorni</p>
+      <p className="mb-3 text-sm font-medium text-slate-800">Giorni</p>
       <div className="flex items-stretch gap-2">
         <button
           type="button"
@@ -60,6 +63,11 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
           {visible.map((day) => {
             const active = day.date === selectedDay
             const isToday = day.date === today
+            const playsBadge = active
+              ? 'bg-white/20 text-white'
+              : day.plays > 0
+                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80'
+                : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'
             return (
               <button
                 key={day.date}
@@ -67,7 +75,7 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
                 onClick={() => onSelectDay(day.date)}
                 aria-pressed={active}
                 aria-label={`${fmtDayLabel(day.date)}, ${day.fixtures} partite, ${day.plays} giocate`}
-                className={`rounded-xl border px-2 py-3 text-center transition ${
+                className={`rounded-xl border px-2 py-2.5 text-center transition sm:px-3 ${
                   active
                     ? 'border-blue-500 bg-blue-600 text-white shadow-md ring-2 ring-blue-300'
                     : day.fixtures > 0
@@ -75,24 +83,27 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
                       : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
                 }`}
               >
-                <div className={`text-base ${isToday ? 'font-bold' : 'font-medium'}`}>
-                  {isToday ? 'Oggi' : fmtDayLabel(day.date)}
+                <div className={`text-xs ${isToday && !active ? 'font-bold' : 'font-medium'}`}>
+                  {weekday(day.date)}
+                  {isToday ? (
+                    <span className={`ml-1 rounded px-1 text-xs ${active ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>
+                      Oggi
+                    </span>
+                  ) : null}
                 </div>
-                {isToday ? (
-                  <div className={`text-base ${active ? 'text-blue-100' : 'text-slate-500'}`}>
-                    {fmtDayLabel(day.date)}
-                  </div>
-                ) : null}
-                <div className="mt-1 text-2xl font-bold tabular-nums">{day.fixtures}</div>
-                <div className={`text-base ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                <div className={`mt-0.5 text-xs ${active ? 'text-blue-100' : 'text-slate-500'}`}>
+                  {fmtDateShort(day.date)}
+                </div>
+                <div className={`mt-1 text-lg font-bold tabular-nums ${isToday && !active ? 'text-blue-700' : ''}`}>
+                  {day.fixtures}
+                </div>
+                <div className={`text-xs ${active ? 'text-blue-100' : 'text-slate-400'}`}>
                   {day.fixtures === 1 ? 'partita' : 'partite'}
                 </div>
-                <div
-                  className={`text-base font-semibold ${
-                    active ? 'text-emerald-100' : day.plays > 0 ? 'text-emerald-700' : 'text-slate-400'
-                  }`}
-                >
-                  {day.plays} {day.plays === 1 ? 'giocata' : 'giocate'}
+                <div className="mt-1.5">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${playsBadge}`}>
+                    {day.plays} {day.plays === 1 ? 'giocata' : 'giocate'}
+                  </span>
                 </div>
               </button>
             )

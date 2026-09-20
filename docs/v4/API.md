@@ -56,7 +56,7 @@ Le stesse chiavi identificano le quote nel registro (`markets_json` di `cecchino
 
 ## Verdetti (`verdict`)
 
-`giocabile`, `prezzo_giusto`, `incertezza_alta`, `non_quotato`, `solo_descrittivo`, `formazioni_non_note`. Etichette in `constants.VERDICT_LABELS`.
+`giocabile`, `prezzo_giusto`, `incertezza_alta`, `non_quotato`, `solo_descrittivo`, `formazioni_non_note`, `quota_anomala` (quota × probabilita' del modello oltre 2,5: errore di lettura, mai giocabile). Etichette in `constants.VERDICT_LABELS`.
 
 ## Riga di mercato (usata nel Ragionamento e nella shortlist)
 

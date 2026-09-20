@@ -4,7 +4,6 @@ import type {
   V4LineupsStatus,
   V4PlayResult,
   V4ShortlistItemStatus,
-  V4Verdict,
 } from '../../lib/cecchinoV4Api'
 import {
   V4_CHALLENGER_STATUS_CHIP,
@@ -19,14 +18,17 @@ import {
   V4_SHORTLIST_STATUS_LABELS,
   V4_VERDICT_CHIP,
   V4_VERDICT_LABELS,
+  type V4VerdictKey,
   v4Chip,
 } from './constants'
 
-export function V4VerdictChip({ verdict, label }: { verdict: V4Verdict; label?: string | null }) {
-  const cls = V4_VERDICT_CHIP[verdict] ?? V4_VERDICT_CHIP.prezzo_giusto
+/** `verdict` e' una stringa: il backend puo' mandare verdetti nuovi (es. `quota_anomala`). */
+export function V4VerdictChip({ verdict, label }: { verdict: string; label?: string | null }) {
+  const key = verdict as V4VerdictKey
+  const cls = V4_VERDICT_CHIP[key] ?? V4_VERDICT_CHIP.prezzo_giusto
   return (
     <span className={`${v4Chip} ${cls}`} data-testid="v4-verdict-chip" data-verdict={verdict}>
-      {label || V4_VERDICT_LABELS[verdict] || verdict}
+      {label || V4_VERDICT_LABELS[key] || verdict}
     </span>
   )
 }
@@ -68,11 +70,12 @@ export function V4ChallengerChip({ status }: { status: V4ChallengerStatus }) {
   )
 }
 
+/** Pallino formazioni: piccolo, con etichetta opzionale a 12 px. */
 export function V4LineupsDot({ status, withText = true }: { status: V4LineupsStatus; withText?: boolean }) {
   const label = V4_LINEUPS_LABELS[status]
   return (
-    <span className="inline-flex items-center gap-2 text-base text-slate-600" title={label}>
-      <span className={`inline-block h-3 w-3 shrink-0 rounded-full ${V4_LINEUPS_DOT[status]}`} aria-hidden />
+    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500" title={label}>
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${V4_LINEUPS_DOT[status]}`} aria-hidden />
       {withText ? label : <span className="sr-only">{label}</span>}
     </span>
   )

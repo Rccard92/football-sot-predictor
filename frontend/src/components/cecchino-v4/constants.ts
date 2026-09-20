@@ -57,31 +57,54 @@ export const V4_API_DAILY_STOP = 7000
 
 // --- Verdetti (colori fissi) --------------------------------------------------------
 
-export const V4_VERDICT_LABELS: Record<V4Verdict, string> = {
+/**
+ * Verdetti conosciuti dall'interfaccia: quelli del contratto piu' `quota_anomala`
+ * (quota fuori scala rispetto al mercato: si guarda, non si gioca).
+ */
+export type V4VerdictKey = V4Verdict | 'quota_anomala'
+
+export const V4_VERDICT_LABELS: Record<V4VerdictKey, string> = {
   giocabile: 'Giocabile',
   prezzo_giusto: 'Prezzo giusto',
   incertezza_alta: 'Incertezza alta',
   non_quotato: 'Non quotato',
   solo_descrittivo: 'Solo descrittivo',
   formazioni_non_note: 'Formazioni non note',
+  quota_anomala: 'Quota anomala',
 }
 
-export const V4_VERDICT_CHIP: Record<V4Verdict, string> = {
+export const V4_VERDICT_CHIP: Record<V4VerdictKey, string> = {
   giocabile: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
   prezzo_giusto: 'bg-slate-100 text-slate-700 ring-slate-200',
   incertezza_alta: 'bg-amber-100 text-amber-800 ring-amber-200',
   non_quotato: 'bg-slate-200 text-slate-600 ring-slate-300',
   solo_descrittivo: 'bg-sky-100 text-sky-800 ring-sky-200',
   formazioni_non_note: 'bg-amber-100 text-amber-800 ring-amber-200',
+  quota_anomala: 'bg-rose-100 text-rose-800 ring-rose-200',
 }
 
-/** Motivo dell'astensione in parole minuscole, da leggere dopo "Nessuna giocata:". */
+/** Verdetti che non producono una giocata (come `prezzo_giusto`). */
+export const V4_NON_PLAYABLE_VERDICTS: ReadonlySet<string> = new Set<string>([
+  'prezzo_giusto',
+  'incertezza_alta',
+  'non_quotato',
+  'solo_descrittivo',
+  'formazioni_non_note',
+  'quota_anomala',
+])
+
+export function isPlayableVerdict(verdict: string | null | undefined): boolean {
+  return verdict != null && !V4_NON_PLAYABLE_VERDICTS.has(verdict)
+}
+
+/** Motivo dell'astensione in parole minuscole, da leggere dopo "Nessuna giocata ·". */
 export const V4_NO_PLAY_REASON_LABELS: Record<string, string> = {
   prezzo_giusto: 'prezzo giusto',
   incertezza_alta: 'incertezza alta',
   formazioni_non_note: 'formazioni non note',
   non_quotato: 'mercato non quotato',
   solo_descrittivo: 'statistica solo descrittiva',
+  quota_anomala: 'quota anomala',
 }
 
 export function noPlayReasonLabel(reason: string | null | undefined): string {
@@ -247,9 +270,32 @@ export const V4_BLOCK_TITLES = [
   'Come è andata',
 ] as const
 
-/** Classi comuni: etichetta 16 px in maiuscoletto pesante, mai testo piccolo. */
-export const v4Label = 'text-base font-semibold uppercase tracking-wide text-slate-500'
+/**
+ * Classi comuni, stessa scala di Cecchino Today: corpo 14 px (text-sm), etichette 12 px (text-xs),
+ * numeri in monospazio con cifre tabulari.
+ */
+export const v4Label = 'text-xs font-medium uppercase tracking-wide text-slate-500'
 export const v4Chip =
-  'inline-flex items-center whitespace-nowrap rounded-full px-3 py-0.5 text-base font-semibold ring-1'
-export const v4Title = 'text-2xl font-bold text-slate-900'
-export const v4SectionTitle = 'text-xl font-semibold text-slate-900'
+  'inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1'
+export const v4Title = 'text-2xl font-semibold text-slate-900'
+export const v4SectionTitle = 'text-base font-semibold text-slate-900'
+export const v4Mono = 'font-mono tabular-nums'
+
+/** Giocata migliore sulla scheda: etichetta in verde (consigliata) o in grigio (in osservazione / nessuna). */
+export const v4BadgePlay =
+  'inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/80'
+export const v4BadgeObserved =
+  'inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200'
+export const v4BadgeNoPlay =
+  'inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200'
+
+/** Bottoncini secondari (come "Nascondi partite" di Today). */
+export const v4SmallButton =
+  'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400'
+export const v4SmallButtonActive =
+  'rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400'
+
+/** Chip filtro come in CecchinoTodayFilters. */
+export const v4FilterChip = 'rounded-full px-3 py-1 text-xs font-medium transition'
+export const v4FilterChipOn = 'bg-blue-600 text-white'
+export const v4FilterChipOff = 'bg-slate-100 text-slate-700 hover:bg-slate-200'

@@ -103,6 +103,27 @@ export function deriveUnderRow(over: V4MarketRow, label: string): V4MarketRow {
   }
 }
 
+const KEY_1X2 = ['HOME', 'DRAW', 'AWAY']
+const KEY_OU = ['OVER_2_5', 'UNDER_2_5']
+const KEY_COUNT = 6
+
+/** I sei mercati da leggere per primi: giocata migliore, 1X2, over/under 2,5; poi i piu' redditizi. */
+export function keyMarkets(markets: V4MarketRow[], bestKey: string | null): V4MarketRow[] {
+  const byKey = new Map(markets.map((r) => [r.market_key, r]))
+  const out: V4MarketRow[] = []
+  const push = (r: V4MarketRow | undefined) => {
+    if (r && !out.includes(r) && out.length < KEY_COUNT) out.push(r)
+  }
+  if (bestKey) push(byKey.get(bestKey))
+  for (const k of KEY_1X2) push(byKey.get(k))
+  for (const k of KEY_OU) push(byKey.get(k))
+  if (out.length < KEY_COUNT) {
+    const rest = [...markets].sort((a, b) => compareByProfitDesc(a.expected_profit, b.expected_profit))
+    for (const r of rest) push(r)
+  }
+  return out
+}
+
 /** Linea di partenza del selettore: quella della giocata migliore se nel gruppo, altrimenti la centrale. */
 export function defaultLine(group: StatGroup, bestKey: string | null): string {
   if (bestKey) {

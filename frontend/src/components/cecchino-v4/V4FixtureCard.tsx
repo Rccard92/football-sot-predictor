@@ -1,13 +1,14 @@
-import type { V4FixtureCard as V4FixtureCardData } from '../../lib/cecchinoV4Api'
+import type { V4FixtureCard as V4FixtureCardData, V4MarketRow } from '../../lib/cecchinoV4Api'
 import {
+  todayBadgeActive,
+  todayBadgeMuted,
   todayFixtureCardBase,
   todayFixtureCardDefault,
   todayFixtureCardFinished,
   todayFixtureCardSelected,
 } from '../cecchino/cecchinoTodayStyles'
-import { noPlayReasonLabel, V4_UNCERTAINTY_BAR, V4_UNCERTAINTY_LABELS, v4Label } from './constants'
-import { fmtGoalsRange, fmtPct, fmtProfit, fmtQuota, fmtScore, fmtTimeRome } from './format'
-import { V4LineupsDot } from './V4Chips'
+import { noPlayReasonLabel, v4BadgeNoPlay, v4BadgeObserved, v4BadgePlay, v4Mono } from './constants'
+import { fmtPct, fmtProfit, fmtQuota, fmtScore, fmtTimeRome } from './format'
 
 type Props = {
   fixture: V4FixtureCardData
@@ -20,22 +21,37 @@ const FINISHED = new Set(['FT', 'AET', 'PEN'])
 
 function statusWord(status: string): string | null {
   if (LIVE.has(status)) return 'In corso'
-  if (FINISHED.has(status)) return 'Finita'
   if (status === 'PST') return 'Rinviata'
   if (status === 'CANC') return 'Annullata'
   if (status === 'ABD') return 'Sospesa'
   return null
 }
 
-export function V4UncertaintyBar({ score, level }: { score: number; level: keyof typeof V4_UNCERTAINTY_BAR }) {
-  const pct = Math.round(Math.max(0, Math.min(1, score)) * 100)
+/**
+ * Una riga sola per l'esito: etichetta della giocata, probabilita', quota e profitto.
+ * Con `advised === false` la giocata e' in osservazione: grigia, non verde.
+ */
+export function V4PlayLine({ play, align = 'right' }: { play: V4MarketRow; align?: 'left' | 'right' }) {
+  const observed = play.advised === false
+  const profitOk = play.expected_profit != null && play.expected_profit >= 0.03
   return (
-    <div className="flex items-center gap-3" aria-label={`${V4_UNCERTAINTY_LABELS[level]}, ${pct} su 100`}>
-      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden>
-        <div className={`h-full rounded-full ${V4_UNCERTAINTY_BAR[level]}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="shrink-0 text-base text-slate-600">{V4_UNCERTAINTY_LABELS[level]}</span>
-    </div>
+    <span
+      className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 ${align === 'right' ? 'justify-end' : ''}`}
+      data-testid="v4-best-play"
+    >
+      <span className={observed ? v4BadgeObserved : v4BadgePlay}>{play.label}</span>{' '}
+      {observed ? <span className="text-xs text-slate-500">· in osservazione </span> : null}
+      <span className={`${v4Mono} text-xs text-slate-600`}>
+        · {fmtPct(play.p)} · {fmtQuota(play.quota_used)} ·
+      </span>{' '}
+      <span
+        className={`${v4Mono} text-xs font-semibold ${
+          observed ? 'text-slate-600' : profitOk ? 'text-emerald-700' : 'text-slate-700'
+        }`}
+      >
+        {fmtProfit(play.expected_profit)}
+      </span>
+    </span>
   )
 }
 
@@ -55,67 +71,49 @@ export function V4FixtureCard({ fixture, selected, onSelect }: Props) {
       onClick={() => onSelect(fixture.id)}
       aria-pressed={selected}
       aria-label={`${fixture.home_team} - ${fixture.away_team}, apri il ragionamento`}
-      className={`${todayFixtureCardBase} ${cls} space-y-2`}
+      className={`${todayFixtureCardBase} ${cls} cursor-pointer`}
       data-testid="v4-fixture-card"
       data-fixture-id={fixture.id}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className={v4Label}>
-            {fixture.competition} · {fmtTimeRome(fixture.kickoff_at)}
-            {status ? ` · ${status}` : ''}
-          </p>
-          <h3 className="truncate text-xl font-semibold text-slate-900">
-            {fixture.home_team} - {fixture.away_team}
-          </h3>
-        </div>
-        <V4LineupsDot status={fixture.lineups_status} withText={false} />
+      <div className="flex items-center gap-2">
+        <span className={`${v4Mono} text-base font-bold text-blue-700`}>{fmtTimeRome(fixture.kickoff_at)}</span>
+        <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {fixture.competition}
+        </span>
+        {fixture.result ? (
+          <span className={`${todayBadgeMuted} ${v4Mono}`}>
+            Finita {fmtScore(fixture.result.ft_home, fixture.result.ft_away)}
+          </span>
+        ) : status ? (
+          <span className={LIVE.has(fixture.status) ? todayBadgeActive : todayBadgeMuted}>{status}</span>
+        ) : null}
+        {fixture.lineups_status === 'ufficiali' ? (
+          <span
+            className="inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+            title="Formazioni ufficiali"
+            aria-label="Formazioni ufficiali"
+          />
+        ) : null}
+        <span className="ml-auto shrink-0 text-lg leading-none text-slate-400" aria-hidden>
+          ›
+        </span>
       </div>
 
-      {fixture.result ? (
-        <p className="text-base text-slate-800">
-          Finita <span className="font-semibold tabular-nums">{fmtScore(fixture.result.ft_home, fixture.result.ft_away)}</span>
-          {fixture.result.ht_home != null && fixture.result.ht_away != null
-            ? ` (primo tempo ${fmtScore(fixture.result.ht_home, fixture.result.ht_away)})`
-            : ''}
-        </p>
-      ) : null}
-
-      {fixture.most_likely || fixture.expected_goals ? (
-        <p className="text-base text-slate-700">
-          {fixture.most_likely ? (
-            <>
-              Segno più probabile <span className="font-semibold">{fixture.most_likely.label}</span> al{' '}
-              <span className="tabular-nums">{fmtPct(fixture.most_likely.p)}</span>
-            </>
-          ) : null}
-          {fixture.most_likely && fixture.expected_goals ? ' · ' : ''}
-          {fixture.expected_goals ? (
-            <>
-              gol attesi{' '}
-              <span className="tabular-nums">
-                {fmtGoalsRange(fixture.expected_goals.home, fixture.expected_goals.away)}
-              </span>
-            </>
-          ) : null}
-        </p>
-      ) : (
-        <p className="text-base text-slate-500">Previsione non ancora calcolata</p>
-      )}
-
-      {play ? (
-        <p className="text-base font-semibold text-emerald-700" data-testid="v4-best-play">
-          {play.label} · {fmtPct(play.p)} · {fmtQuota(play.quota_used)} · {fmtProfit(play.expected_profit)}
-        </p>
-      ) : (
-        <p className="text-base text-slate-500" data-testid="v4-no-play">
-          Nessuna giocata: {noPlayReasonLabel(fixture.no_play_reason)}
-        </p>
-      )}
-
-      {fixture.uncertainty ? (
-        <V4UncertaintyBar score={fixture.uncertainty.score} level={fixture.uncertainty.level} />
-      ) : null}
+      <div className="mt-2.5 flex items-center justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="truncate text-sm font-semibold leading-snug text-slate-900">{fixture.home_team}</p>
+          <p className="truncate text-sm font-semibold leading-snug text-slate-900">{fixture.away_team}</p>
+        </div>
+        <div className="max-w-[62%] shrink-0 text-right">
+          {play ? (
+            <V4PlayLine play={play} />
+          ) : (
+            <span className={v4BadgeNoPlay} data-testid="v4-no-play">
+              Nessuna giocata · {noPlayReasonLabel(fixture.no_play_reason)}
+            </span>
+          )}
+        </div>
+      </div>
     </button>
   )
 }
