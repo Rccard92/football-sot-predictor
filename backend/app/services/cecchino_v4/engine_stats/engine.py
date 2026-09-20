@@ -10,6 +10,8 @@ dall'incertezza a posteriori (PREREGISTRAZIONE_FASE_2 §2.4).
 
 from __future__ import annotations
 
+from app.services.cecchino_v4.settings import cap_workers
+
 import hashlib
 import json
 import math
@@ -175,6 +177,7 @@ def _run_task(args: tuple[GroupData, Hyper, float]) -> RunArrays:
 
 
 def _run_many(tasks: list[tuple[GroupData, Hyper, float]], workers: int) -> list[RunArrays]:
+    workers = cap_workers(workers)
     if workers <= 1 or len(tasks) <= 1:
         return [_run_task(t) for t in tasks]
     with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as ex:

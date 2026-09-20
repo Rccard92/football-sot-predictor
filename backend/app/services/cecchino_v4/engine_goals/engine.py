@@ -9,6 +9,8 @@ live (`LiveArtifacts`). Nessuna quota del book entra qui.
 
 from __future__ import annotations
 
+from app.services.cecchino_v4.settings import cap_workers
+
 import math
 import os
 import time
@@ -82,6 +84,7 @@ def compute_strength_params(
     jobs.sort(key=lambda j: -len(groups[j[0]]))
     if workers is None:
         workers = max(1, min(8, (os.cpu_count() or 2) - 1))
+    workers = cap_workers(workers)
     results: dict[tuple[str, str], dict[int, DayParams]] = {}
     if workers <= 1 or len(jobs) <= 1:
         for group, hyper, name in jobs:

@@ -11,6 +11,8 @@ perche' quel modulo istanzia le impostazioni del database all'import.
 
 from __future__ import annotations
 
+from app.services.cecchino_v4.settings import cap_workers
+
 import math
 import os
 import time
@@ -124,6 +126,7 @@ def run_grids(
     out: dict[str, dict[str, dict[int, Any]]] = {s: {h.key: {} for h in grid} for s in stats}
     if workers is None:
         workers = max(1, min(8, (os.cpu_count() or 2) - 1))
+    workers = cap_workers(workers)
     t0 = time.monotonic()
     if workers <= 1 or len(jobs) <= 1:
         for stat, group, hyper, name in jobs:

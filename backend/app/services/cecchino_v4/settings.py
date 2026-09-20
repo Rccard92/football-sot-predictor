@@ -22,3 +22,14 @@ def api_daily_stop() -> int:
         return int(raw) if raw else 7000
     except ValueError:
         return 7000
+
+
+def cap_workers(requested: int | None) -> int:
+    """Processi paralleli dei motori: `CECCHINO_V4_WORKERS` li limita (su Railway 1). Senza variabile: quello richiesto."""
+    raw = os.environ.get("CECCHINO_V4_WORKERS")
+    try:
+        cap = int(raw) if raw else None
+    except ValueError:
+        cap = None
+    n = max(1, int(requested or 1))
+    return max(1, min(n, cap)) if cap else n
