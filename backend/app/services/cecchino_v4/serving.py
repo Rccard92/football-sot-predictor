@@ -334,6 +334,14 @@ def _try_live_helpers(db: Session) -> dict[str, Any]:
 
 def engine_data(db: Session) -> dict[str, Any]:
     data = _try_live_helpers(db)
+    try:
+        from app.services.cecchino_v4.live.jobs import league_stat_coverage
+
+        data["stat_coverage"] = [
+            {"league_code": code, **rec} for code, rec in sorted(league_stat_coverage(db).items())
+        ]
+    except Exception:  # noqa: BLE001
+        data["stat_coverage"] = []
     data["leagues"] = [{"code": lg.code, "competition": lg.competition, "tier": lg.tier} for lg in LEAGUES]
     return data
 

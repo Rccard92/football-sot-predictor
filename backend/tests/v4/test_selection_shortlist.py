@@ -31,6 +31,20 @@ from app.services.cecchino_v4.selection.shortlist import (
     withdraw_item,
 )
 
+import pytest as _pytest
+
+from app.services.cecchino_v4.selection import rules as _rules
+
+
+@_pytest.fixture(autouse=True)
+def _classic_markets_playable_for_rule_tests(monkeypatch):
+    """Questi test verificano la meccanica della regola sui mercati classici: nel prodotto i classici
+    restano "in osservazione" (focus statistiche), qui si abilitano per esercitare la regola."""
+    monkeypatch.setattr(_rules, "CLASSIC_PLAYABLE_DEFAULT", True)
+    # i campioni di questi test furono scritti quando corner e cartellini erano solo descrittivi
+    monkeypatch.setattr(_rules, "PLAYABLE_STATS", ("shots", "sot"))
+
+
 DAY = date(2026, 9, 21)
 
 

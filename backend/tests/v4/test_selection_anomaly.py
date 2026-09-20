@@ -17,6 +17,6 @@ def test_price_incompatible_with_model_is_anomalous_not_playable():
 
 
 def test_reasonable_price_stays_playable():
-    rows = evaluate_fixture(_goals(0.50), None, {8: {"AWAY": 2.6}}, "Casa", "Ospite", "ufficiali")
+    rows = evaluate_fixture(_goals(0.50), None, {8: {"AWAY": 2.6}}, "Casa", "Ospite", "ufficiali", allow_classic=True)
     away = next(r for r in rows if r.market_key == "AWAY")
     assert away.verdict == VERDICT_PLAYABLE

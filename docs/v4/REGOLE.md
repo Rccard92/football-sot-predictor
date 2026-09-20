@@ -11,3 +11,10 @@ Regole fissate il 19 settembre 2026, prima di scrivere il codice. Valgono per og
 7. **Interfaccia.** A specchio di Cecchino Today: stessa tipografia (testo 14 px, etichette 13 px, titoli 16-24 px), stesse card e badge. Regola aggiornata il 20/09/2026 su richiesta dell'utente (il 16 px iniziale era troppo grande). Poche informazioni in lista, tutto il resto nel Ragionamento. Quote con la virgola. Parole prima dei numeri.
 8. **Riuso.** Il motore V3 si importa come libreria e non si modifica. Se serve una variante, si scrive in V4.
 9. **Codice.** Funzioni pure per motori e regole; database solo nei servizi di persistenza; test per ogni regola di decisione.
+
+## Decisioni dell'utente del 20/09/2026 (prevalgono sulle regole sopra dove indicato)
+
+- **Focus sui mercati statistici.** Si giocano solo tiri, tiri in porta, corner e cartellini (totali, casa, fuori). I mercati classici (1X2, doppia chance, over/under gol, primo tempo, handicap) restano nel Ragionamento con il verdetto "in osservazione" e non entrano mai in scheda o shortlist. Coerente con l'esame E4 (non superato).
+- **Corner e cartellini giocabili nonostante E2(a).** L'esame E2 li ha bocciati per scarti minimi sulla sola precisione contro le medie ingenue (parte a), mentre la parte (b), informazione oltre il mercato, e' superata in ogni stagione. L'utente ha deciso di giocarli: e' una deroga esplicita alla regola 4, e il giudizio arriva dal paper trading (G6), non da un'altra riesecuzione dell'esame. I falli restano descrittivi (Bet365 non li quota).
+- **Solo linee a meta'** (0,5 · 1,5 · 2,5 ...) per handicap e statistiche: quarti, interi e linea zero non si calcolano e non si registrano.
+- **Campionati senza mercati statistici** (nessuna quota STAT nelle ultime 10 giornate di istantanee, con almeno 3 istantanee) escono dalle letture delle quote per non consumare chiamate; rientrano appena una lettura li mostra quotati. La copertura e' nella vista Motore, sezione Dati.

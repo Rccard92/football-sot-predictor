@@ -17,6 +17,7 @@ export type V4Verdict =
   | 'solo_descrittivo'
   | 'formazioni_non_note'
   | 'quota_anomala'
+  | 'in_osservazione'
 
 export type V4UncertaintyLevel = 'bassa' | 'media' | 'alta'
 export type V4LineupsStatus = 'non_note' | 'probabili' | 'ufficiali'

@@ -61,7 +61,7 @@ export const V4_API_DAILY_STOP = 7000
  * Verdetti conosciuti dall'interfaccia: quelli del contratto piu' `quota_anomala`
  * (quota fuori scala rispetto al mercato: si guarda, non si gioca).
  */
-export type V4VerdictKey = V4Verdict | 'quota_anomala'
+export type V4VerdictKey = V4Verdict | 'quota_anomala' | 'in_osservazione'
 
 export const V4_VERDICT_LABELS: Record<V4VerdictKey, string> = {
   giocabile: 'Giocabile',
@@ -71,6 +71,7 @@ export const V4_VERDICT_LABELS: Record<V4VerdictKey, string> = {
   solo_descrittivo: 'Solo descrittivo',
   formazioni_non_note: 'Formazioni non note',
   quota_anomala: 'Quota anomala',
+  in_osservazione: 'In osservazione',
 }
 
 export const V4_VERDICT_CHIP: Record<V4VerdictKey, string> = {
@@ -81,6 +82,7 @@ export const V4_VERDICT_CHIP: Record<V4VerdictKey, string> = {
   solo_descrittivo: 'bg-sky-100 text-sky-800 ring-sky-200',
   formazioni_non_note: 'bg-amber-100 text-amber-800 ring-amber-200',
   quota_anomala: 'bg-rose-100 text-rose-800 ring-rose-200',
+  in_osservazione: 'bg-slate-100 text-slate-600 ring-slate-200',
 }
 
 /** Verdetti che non producono una giocata (come `prezzo_giusto`). */
@@ -91,6 +93,7 @@ export const V4_NON_PLAYABLE_VERDICTS: ReadonlySet<string> = new Set<string>([
   'solo_descrittivo',
   'formazioni_non_note',
   'quota_anomala',
+  'in_osservazione',
 ])
 
 export function isPlayableVerdict(verdict: string | null | undefined): boolean {
@@ -105,6 +108,7 @@ export const V4_NO_PLAY_REASON_LABELS: Record<string, string> = {
   non_quotato: 'mercato non quotato',
   solo_descrittivo: 'statistica solo descrittiva',
   quota_anomala: 'quota anomala',
+  in_osservazione: 'classico in osservazione',
 }
 
 export function noPlayReasonLabel(reason: string | null | undefined): string {

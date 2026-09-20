@@ -45,8 +45,8 @@ def _goals_payload(p_away: float = 0.50, level: str = "bassa") -> dict:
 def _stats_payload() -> dict:
     def side(mean):
         return {"mean": mean, "dispersion": None, "division_mean": 4.6, "rank_for": 3, "rank_against": 9, "teams_in_division": 20, "evidence": 30,
-                "lines": {f"{x + 0.5}": {"over": max(0.02, min(0.98, 1 - (x + 0.5) / (2 * mean))), "lo": 0.5, "hi": 0.7} for x in range(2, 10)}}
-    return {"engine_version": "test", "stats": {"sot": {"exam": "superato", "home": side(4.9), "away": side(6.8), "total": side(11.7)}}}
+                "lines": {f"{x + 0.5}": {"over": (q := max(0.02, min(0.98, 1 - (x + 0.5) / (2 * mean)))), "lo": max(0.01, q - 0.03), "hi": min(0.99, q + 0.03)} for x in range(2, 10)}}
+    return {"engine_version": "test", "stats": {"sot": {"exam": "superato", "home": side(4.9), "away": side(9.0), "total": side(13.9)}}}
 
 
 def _fixture(db, home="Milan", away="Inter", kickoff_hour=18, odds=None, status="NS"):
@@ -77,7 +77,7 @@ def _fixture(db, home="Milan", away="Inter", kickoff_hour=18, odds=None, status=
 
 @pytest.fixture()
 def seeded(v4_db):
-    f1 = _fixture(v4_db, odds={8: {"HOME": 3.1, "DRAW": 3.4, "AWAY": 2.6, "OVER_2_5": 1.9, "UNDER_2_5": 1.95, "STAT:sot:away:over:6.5": 1.85}, 3: {"AWAY": 2.65}})
+    f1 = _fixture(v4_db, odds={8: {"HOME": 3.1, "DRAW": 3.4, "AWAY": 2.6, "OVER_2_5": 1.9, "UNDER_2_5": 1.95, "STAT:sot:away:over:6.5": 2.2}, 3: {"AWAY": 2.65}})
     f2 = _fixture(v4_db, "Bologna", "Torino", 15, odds={8: {"HOME": 2.0, "DRAW": 3.3, "AWAY": 3.9}})
     v4_db.commit()
     return f1, f2
@@ -109,8 +109,8 @@ def test_build_days_writes_predictions_explanations_and_shortlist(v4_db, seeded)
     assert blocks["predicts"]["markets"], "la tabella mercati deve avere righe"
     card = expl[f1.id]["card"]
     assert card["home_team"] == "Milan" and card["most_likely"]["market_key"] == "AWAY"
-    # segno 2 a 2,60 con probabilita' prudente ~43%: profitto atteso sopra il 3% -> giocata
-    assert card["best_play"] is not None
+    # tiri in porta ospite over 6,5 a 2,20 con probabilita' prudente ~53%: profitto sopra il 3% -> giocata statistica
+    assert card["best_play"] is not None and card["best_play"]["market_key"].startswith("STAT:")
     sl = serving.shortlist(v4_db, DAY)
     assert sl["status"] == "provvisoria" and len(sl["items"]) >= 1
     assert sl["items"][0]["rank"] == 1 and sl["items"][0]["top"] is True
@@ -146,7 +146,7 @@ def test_settle_finished_updates_items(v4_db, seeded):
     f1.status = "FT"
     f1.ft_home, f1.ft_away, f1.ht_home, f1.ht_away = 0, 2, 0, 1
     f1.stats_json = {"home": {"sot": 3, "shots": 9, "corners": 4, "yellow": 2, "red": 0, "fouls": 11}, "away": {"sot": 8, "shots": 15, "corners": 6, "yellow": 1, "red": 0, "fouls": 9}}
-    v4_db.add(CecchinoV4OddsSnapshot(fixture_id=f1.id, bookmaker_id=8, kind="chiusura", taken_at=NOW + timedelta(hours=10), markets_json={"AWAY": 2.1, "STAT:sot:away:over:6.5": 1.7}, created_at=NOW))
+    v4_db.add(CecchinoV4OddsSnapshot(fixture_id=f1.id, bookmaker_id=8, kind="chiusura", taken_at=NOW + timedelta(hours=10), markets_json={"AWAY": 2.1, "STAT:sot:away:over:6.5": 2.0}, created_at=NOW))
     v4_db.commit()
     n = day_mod.settle_finished(v4_db, now=NOW + timedelta(hours=12))
     assert n >= 1

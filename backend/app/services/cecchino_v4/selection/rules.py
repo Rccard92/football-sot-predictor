@@ -21,7 +21,10 @@ import numpy as np
 from app.services.cecchino_v3.markets import score_matrix
 from app.services.cecchino_v4.constants import (
     ANOMALY_RATIO,
+    PLAYABLE_FAMILY_PREFIX,
+    PLAYABLE_STATS,
     VERDICT_ANOMALOUS,
+    VERDICT_OBSERVED,
     BOOKMAKER_BET365_ID,
     BOOKMAKER_BETFAIR_ID,
     BOOKMAKERS,
@@ -175,6 +178,7 @@ class RowInputs:
     quota_betfair: float | None = None
     lineups_status: str = "non_note"
     stat_exam: str = "superato"  # superato | non_superato | in_attesa (solo statistiche)
+    allow_classic: bool = False  # True solo negli esami storici (E4) sui mercati classici
     advised: bool = True  # False quando l'esame E4 della famiglia non è superato
 
 
@@ -216,6 +220,10 @@ def choose_quota(quota_bet365: float | None, quota_betfair: float | None) -> tup
     return None, None, None
 
 
+# Solo per test ed esami storici: True rende giocabili anche i mercati classici.
+CLASSIC_PLAYABLE_DEFAULT = False
+
+
 def evaluate_market(inputs: RowInputs) -> MarketRow:
     """Applica la regola a un mercato e produce la riga con il verdetto.
 
@@ -227,7 +235,8 @@ def evaluate_market(inputs: RowInputs) -> MarketRow:
     quota_used, bookmaker_used, bookmaker_id = choose_quota(inputs.quota_bet365, inputs.quota_betfair)
     expected_profit = None if quota_used is None else round(p_prudent * quota_used - 1.0, 4)
 
-    if parsed.kind == KIND_STAT and inputs.stat_exam != "superato":
+    if parsed.kind == KIND_STAT and parsed.stat not in PLAYABLE_STATS:
+        # statistica non giocabile (falli: mai quotati); il verdetto dell'esame resta visibile in `stat_exam`
         verdict = VERDICT_DESCRIPTIVE
     elif quota_used is None:
         verdict = VERDICT_NO_ODDS
@@ -238,7 +247,8 @@ def evaluate_market(inputs: RowInputs) -> MarketRow:
     elif (inputs.uncertainty_level or "").lower() == _UNCERTAINTY_HIGH:
         verdict = VERDICT_UNCERTAIN
     elif expected_profit is not None and expected_profit >= PROFIT_MARGIN and quota_used >= MIN_QUOTA:
-        verdict = VERDICT_PLAYABLE
+        # i mercati classici non si giocano (focus statistiche): supererebbero la regola, restano in osservazione
+        verdict = VERDICT_PLAYABLE if (parsed.family.startswith(PLAYABLE_FAMILY_PREFIX) or inputs.allow_classic or CLASSIC_PLAYABLE_DEFAULT) else VERDICT_OBSERVED
     else:
         verdict = VERDICT_FAIR_PRICE
 
@@ -286,6 +296,7 @@ def evaluate_fixture(
     away_team: str,
     lineups_status: str = "non_note",
     advised_families: dict[str, bool] | None = None,
+    allow_classic: bool = False,
 ) -> list[MarketRow]:
     """Tutte le righe di mercato di una partita: classici e handicap dal payload gol, tutte le linee
     (over e under) dal payload statistiche. `odds` = {id_book: {chiave: quota}}.
@@ -317,6 +328,7 @@ def evaluate_fixture(
                     quota_betfair=betfair,
                     lineups_status=lineups_status,
                     advised=advised_families.get(parsed.family, True),
+                    allow_classic=allow_classic,
                 )
             )
         )

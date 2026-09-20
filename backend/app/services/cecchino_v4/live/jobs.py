@@ -150,6 +150,44 @@ class JobContext:
         return self.history_names.get(league_code, set())
 
 
+# --- campionati con mercati statistici ------------------------------------------------------------------------
+STAT_COVERAGE_LOOKBACK_DAYS = 10
+STAT_COVERAGE_MIN_SNAPSHOTS = 3
+
+
+def league_stat_coverage(db: Session, *, now: datetime | None = None) -> dict[str, dict[str, Any]]:
+    """Per campionato: istantanee recenti e quante contengono almeno un mercato statistico (STAT:...).
+    `active` e' False solo quando ci sono abbastanza istantanee e nessuna ha mercati statistici."""
+    ref = now or _utcnow()
+    since = ref - timedelta(days=STAT_COVERAGE_LOOKBACK_DAYS)
+    rows = db.execute(
+        select(CecchinoV4Fixture.league_code, CecchinoV4OddsSnapshot.markets_json)
+        .join(CecchinoV4OddsSnapshot, CecchinoV4OddsSnapshot.fixture_id == CecchinoV4Fixture.id)
+        .where(CecchinoV4OddsSnapshot.taken_at >= since)
+    ).all()
+    out: dict[str, dict[str, Any]] = {lg.code: {"snapshots": 0, "with_stats": 0, "stats": set()} for lg in LEAGUES}
+    for code, markets in rows:
+        rec = out.setdefault(code, {"snapshots": 0, "with_stats": 0, "stats": set()})
+        rec["snapshots"] += 1
+        keys = [k for k in (markets or {}) if str(k).startswith("STAT:")]
+        if keys:
+            rec["with_stats"] += 1
+            rec["stats"].update(k.split(":")[1] for k in keys)
+    for code, rec in out.items():
+        rec["active"] = not (rec["snapshots"] >= STAT_COVERAGE_MIN_SNAPSHOTS and rec["with_stats"] == 0)
+        rec["stats"] = sorted(rec["stats"])
+    return out
+
+
+def _leagues_with_stat_markets(ctx: JobContext):
+    """Campionati da leggere: quelli non ancora osservati o con almeno un mercato statistico recente."""
+    coverage = league_stat_coverage(ctx.db, now=ctx.now)
+    selected = _selected_leagues(ctx)
+    if ctx.params.get("league_code"):
+        return selected
+    return tuple(lg for lg in selected if coverage.get(lg.code, {}).get("active", True))
+
+
 # --- job: gestione righe ---------------------------------------------------------------------------------
 def mark_stale_jobs(db: Session, *, now: datetime | None = None, stale_minutes: int = STALE_MINUTES) -> int:
     """Job `running` senza heartbeat da `stale_minutes` -> `stale`. Ritorna quanti."""
@@ -535,7 +573,7 @@ def job_odds_snapshot(ctx: JobContext) -> dict[str, Any]:
     kind = snapshot_kind_for(ctx.now)
     since = ctx.now - SNAPSHOT_REPEAT_GAP
     days = [ctx.today + timedelta(days=i) for i in range(int(ctx.params.get("days", ODDS_SNAPSHOT_DAYS)))]
-    leagues = _selected_leagues(ctx)
+    leagues = _leagues_with_stat_markets(ctx)  # campionati senza mercati statistici: nessuna chiamata
     stored = skipped_calls = calls_done = 0
     unmapped: dict[str, int] = {}
     total_steps = len(leagues) * len(days) * len(BOOKMAKERS)

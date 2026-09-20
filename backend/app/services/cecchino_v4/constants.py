@@ -140,6 +140,7 @@ VERDICT_UNCERTAIN = "incertezza_alta"
 VERDICT_NO_ODDS = "non_quotato"
 VERDICT_DESCRIPTIVE = "solo_descrittivo"
 VERDICT_LINEUPS_PENDING = "formazioni_non_note"
+VERDICT_OBSERVED = "in_osservazione"  # mercato classico: si guarda, non si gioca (decisione utente 20/09/2026, esame E4 non superato)
 VERDICT_ANOMALOUS = "quota_anomala"  # quota x probabilita' del modello oltre ANOMALY_RATIO: quasi certamente un errore di lettura
 ANOMALY_RATIO = 2.5
 VERDICT_LABELS: dict[str, str] = {
@@ -150,7 +151,16 @@ VERDICT_LABELS: dict[str, str] = {
     VERDICT_DESCRIPTIVE: "Solo descrittivo",
     VERDICT_LINEUPS_PENDING: "Formazioni non note",
     VERDICT_ANOMALOUS: "Quota anomala",
+    VERDICT_OBSERVED: "In osservazione",
 }
+
+# Focus del prodotto (decisione utente 20/09/2026): si giocano solo i mercati statistici. I classici restano
+# visibili nel Ragionamento con il verdetto "in osservazione" e non entrano mai in scheda o shortlist.
+PLAYABLE_FAMILY_PREFIX = "STAT_"
+# Statistiche giocabili: tiri, tiri in porta, corner e cartellini (totali, casa, fuori). Corner e cartellini non hanno
+# superato la parte (a) dell'esame E2 per scarti minimi: l'utente ha deciso di giocarli comunque e il giudizio
+# arriva dal paper trading (G6). I falli non sono quotati da Bet365: restano descrittivi.
+PLAYABLE_STATS: tuple[str, ...] = ("shots", "sot", "corners", "cards")
 
 # Stati della shortlist
 SHORTLIST_PROVISIONAL = "provvisoria"

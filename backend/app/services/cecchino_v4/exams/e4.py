@@ -87,7 +87,7 @@ def select_plays(history: History, goals: dict[int, dict], stats: dict[int, dict
         if not odds:
             abstentions["non_quotato"] += 1
             continue
-        rows = evaluate_fixture(g, stats.get(m.lab_match_id), {8: odds}, m.home_team, m.away_team, "ufficiali")
+        rows = evaluate_fixture(g, stats.get(m.lab_match_id), {8: odds}, m.home_team, m.away_team, "ufficiali", allow_classic=True)
         rows = [r for r in rows if not r.market_key.startswith("STAT:")]  # E4: solo mercati classici con quota
         play = best_play(rows)
         if play is None:

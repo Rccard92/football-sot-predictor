@@ -32,6 +32,20 @@ from tests.v4.test_selection_samples import AWAY, HOME, SOT_KEY, goals, odds, st
 
 
 # --- probabilità prudente ------------------------------------------------------------
+import pytest as _pytest
+
+from app.services.cecchino_v4.selection import rules as _rules
+
+
+@_pytest.fixture(autouse=True)
+def _classic_markets_playable_for_rule_tests(monkeypatch):
+    """Questi test verificano la meccanica della regola sui mercati classici: nel prodotto i classici
+    restano "in osservazione" (focus statistiche), qui si abilitano per esercitare la regola."""
+    monkeypatch.setattr(_rules, "CLASSIC_PLAYABLE_DEFAULT", True)
+    # i campioni di questi test furono scritti quando corner e cartellini erano solo descrittivi
+    monkeypatch.setattr(_rules, "PLAYABLE_STATS", ("shots", "sot"))
+
+
 def test_prudent_shrinks_toward_base_rate_by_uncertainty():
     # lo 0,55 sopra il tasso base 0,18 con incertezza 0,22: 0,55 - (0,55 - 0,18) * 0,22
     assert prudent_probability(0.61, 0.55, 0.22, 0.18) == pytest.approx(0.55 - 0.37 * 0.22)
@@ -144,9 +158,9 @@ def test_verdict_high_uncertainty_beats_profit():
 
 
 def test_verdict_descriptive_for_stat_without_passed_exam():
-    row = evaluate_market(_inputs(market_key="STAT:corners:home:over:4.5", label="Milan over 4,5 corner", stat_exam="non_superato", base_rate=0.5))
-    assert row.verdict == VERDICT_DESCRIPTIVE
-    assert row.family == "STAT_corners"
+    row = evaluate_market(_inputs(market_key="STAT:fouls:home:over:4.5", label="Milan over 4,5 falli", stat_exam="non_superato", base_rate=0.5))
+    assert row.verdict == VERDICT_DESCRIPTIVE  # i falli non sono tra le statistiche giocabili
+    assert row.family == "STAT_fouls"
     assert row.stat_exam == "non_superato"
 
 

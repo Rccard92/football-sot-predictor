@@ -21,3 +21,8 @@ Aggiornato ad ogni passo. Serve a riprendere il lavoro senza contesto.
 - [ ] Fase 6: paper trading prospettico: parte con il primo giorno di shortlist sigillata online; verdetto G6 dopo almeno 8 settimane
 - [x] Test backend (254) e frontend (17) verdi, tsc e eslint puliti; verifica visiva locale delle quattro viste con dati reali del fine settimana (SQLite + fixtures.csv)
 - [x] Push su GitHub e messa online (20/09/2026 08:17 Roma): main avanzato a 104fa8b, migrazione V4 eseguita all'avvio del backend, backend e frontend online con healthcheck `/api/health`; variabili `CECCHINO_V4_ENABLED=true`, `CECCHINO_V4_WORKERS=1`; tre servizi cron Railway `cecchino-v4-daily` (06:00 UTC), `cecchino-v4-odds` (12:00 e 16:00 UTC), `cecchino-v4-prematch` (ogni 30 min) con root `/backend` e variabili per riferimento
+
+## 20/09/2026, dopo la messa online
+- Bug corretti online: segno handicap asiatico di API-Football (linea di casa su entrambi i lati), percorsi degli esami nel container (Railway pubblica solo backend/), avvio con percorso a cinque livelli (IndexError) intercettato dal controllo di salute senza interruzioni.
+- Focus prodotto spostato sui mercati statistici; corner e cartellini giocabili per decisione utente; solo linee a meta'; campionati senza mercati statistici esclusi dalle letture quote.
+- Copertura misurata il 20/09 (istantanee del mattino Bet365): corner totali/casa/fuori in tutti i 13 campionati con partite; cartellini in 9; tiri e tiri in porta solo totali e solo nelle prime divisioni (D1, E0, E1, F1, I1, P1, SP1); falli mai.
