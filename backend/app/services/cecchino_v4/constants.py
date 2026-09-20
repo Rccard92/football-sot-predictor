@@ -169,3 +169,12 @@ FIXTURE_HORIZON_DAYS = 7
 
 # Budget API-Football: un solo contatore giornaliero; la V4 si ferma da sola oltre questa soglia.
 API_DAILY_STOP = 7000
+
+
+# --- Risultati degli esami ---------------------------------------------------------
+# Railway pubblica solo `backend/`: i JSON degli esami vivono qui (letti da motori, selezione e rotte);
+# gli script degli esami ne scrivono una copia leggibile anche in docs/v4/esami/.
+from pathlib import Path as _Path  # noqa: E402
+
+EXAMS_DATA_DIR = _Path(__file__).resolve().parents[2] / "data" / "v4" / "esami"
+EXAMS_DOCS_DIR = _Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami"

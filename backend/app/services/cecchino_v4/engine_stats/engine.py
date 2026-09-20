@@ -10,6 +10,8 @@ dall'incertezza a posteriori (PREREGISTRAZIONE_FASE_2 §2.4).
 
 from __future__ import annotations
 
+from app.services.cecchino_v4.constants import EXAMS_DATA_DIR
+
 from app.services.cecchino_v4.settings import cap_workers
 
 import hashlib
@@ -35,7 +37,7 @@ from app.services.cecchino_v4.engine_stats.walkforward import GroupData, Row, Ru
 from app.services.cecchino_v4.history.football_data import History, MatchExtras
 
 _EPOCH = date(2000, 1, 1)
-EXAM_RESULT_PATH = Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami" / "E2.json"
+EXAM_RESULT_PATH = EXAMS_DATA_DIR / "E2.json"
 EXAM_PENDING = "in_attesa"
 
 

@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from app.services.cecchino_v4.constants import JUDGE_SEASONS, LEAGUE_BY_COMPETITION
+from app.services.cecchino_v4.constants import EXAMS_DATA_DIR, JUDGE_SEASONS, LEAGUE_BY_COMPETITION
 from app.services.cecchino_v4.engine_goals.baseline_v3 import run_v3_phase4_full
 from app.services.cecchino_v4.engine_goals.cache import matches_digest
 from app.services.cecchino_v4.engine_goals.config import ADOPTED_CONFIG as GOALS_CONFIG
@@ -276,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    EXAMS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (EXAMS_DATA_DIR / OUT_JSON.name).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     OUT_MD.write_text(_md(result), encoding="utf-8")
     print(f"[E4] {'SUPERATO' if passed else 'NON SUPERATO'} · {criteria} · {result['runtime_s']} s")
     return 0

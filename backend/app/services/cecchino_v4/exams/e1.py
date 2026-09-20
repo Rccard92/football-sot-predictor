@@ -24,7 +24,7 @@ import numpy as np
 
 from app.services.cecchino_v3.markets import market_outcomes
 
-from app.services.cecchino_v4.constants import CLASSIC_MARKETS, JUDGE_SEASONS, MARKET_FAMILY, WARMUP_SEASON
+from app.services.cecchino_v4.constants import CLASSIC_MARKETS, EXAMS_DATA_DIR, JUDGE_SEASONS, MARKET_FAMILY, WARMUP_SEASON
 from app.services.cecchino_v4.engine_goals.baseline_v3 import run_v3_phase4_full
 from app.services.cecchino_v4.engine_goals.cache import matches_digest
 from app.services.cecchino_v4.engine_goals.config import LEVEL_HIGH, LEVEL_LOW, LEVEL_MEDIUM, LEVELS, V4GoalsConfig
@@ -407,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     (DOCS_DIR / "E1.json").write_text(json.dumps(result, indent=2, ensure_ascii=False, default=_json_default), encoding="utf-8")
+    EXAMS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (EXAMS_DATA_DIR / "E1.json").write_text(json.dumps(result, indent=2, ensure_ascii=False, default=_json_default), encoding="utf-8")
     (DOCS_DIR / "E1.md").write_text(_markdown(result), encoding="utf-8")
     _write_adopted_config(final_cfg)
     print(f"[E1] criteri: {criteria}")

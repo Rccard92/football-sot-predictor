@@ -11,6 +11,8 @@ Ordine per ogni giornata:
 
 from __future__ import annotations
 
+from app.services.cecchino_v4.constants import EXAMS_DATA_DIR
+
 import json
 import logging
 from collections.abc import Callable, Iterable
@@ -55,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 ROME = ZoneInfo("Europe/Rome")
 FINISHED_STATUSES = {"FT", "AET", "PEN"}
-EXAMS_DIR = Path(__file__).resolve().parents[5] / "docs" / "v4" / "esami"
+EXAMS_DIR = EXAMS_DATA_DIR
 CLASSIC_FAMILIES = ("FT_1X2", "DOUBLE_CHANCE", "FT_OVER_UNDER", "HT_1X2", "AH")
 
 # Firme dei motori (docs/v4/ROADMAP.md, Fase 1 e 2): storico + bersagli -> payload per chiave bersaglio.

@@ -1,0 +1,188 @@
+{
+  "code": "E4",
+  "title": "Selezione sui mercati classici con quote di chiusura",
+  "preregistration": "docs/v4/PREREGISTRAZIONE_FASE_4.md",
+  "computed_at": "2026-09-19T22:59:24+00:00",
+  "passed": false,
+  "criteria": {
+    "E4.1": false,
+    "E4.2": true,
+    "E4.3": false,
+    "E4.4": false
+  },
+  "roi": {
+    "plays": 11307,
+    "profit_units": -1159.575,
+    "roi": -0.1026
+  },
+  "roi_ci": [
+    -0.1277,
+    -0.0778
+  ],
+  "null": {
+    "n": 200,
+    "p95": 3950.7752500000083,
+    "median": 3664.80250000001,
+    "mean": 3670.9884000000065
+  },
+  "league_share": {
+    "league": "Championship",
+    "share": 1.0
+  },
+  "by_season": [
+    {
+      "season": "2022/2023",
+      "plays": 3790,
+      "profit_units": -354.37,
+      "roi": -0.0935
+    },
+    {
+      "season": "2023/2024",
+      "plays": 3742,
+      "profit_units": -446.395,
+      "roi": -0.1193
+    },
+    {
+      "season": "2024/2025",
+      "plays": 3775,
+      "profit_units": -358.81,
+      "roi": -0.095
+    }
+  ],
+  "by_family": [
+    {
+      "market_family": "AH",
+      "plays": 1790,
+      "profit_units": -48.625,
+      "roi": -0.0272
+    },
+    {
+      "market_family": "FT_1X2",
+      "plays": 7259,
+      "profit_units": -977.96,
+      "roi": -0.1347
+    },
+    {
+      "market_family": "FT_OVER_UNDER",
+      "plays": 2258,
+      "profit_units": -132.99,
+      "roi": -0.0589
+    }
+  ],
+  "by_league": [
+    {
+      "competition": "Bundesliga",
+      "plays": 585,
+      "profit_units": -40.32,
+      "roi": -0.0689
+    },
+    {
+      "competition": "Bundesliga 2",
+      "plays": 442,
+      "profit_units": -15.57,
+      "roi": -0.0352
+    },
+    {
+      "competition": "Championship",
+      "plays": 960,
+      "profit_units": 18.78,
+      "roi": 0.0196
+    },
+    {
+      "competition": "Eredivisie",
+      "plays": 529,
+      "profit_units": -26.27,
+      "roi": -0.0497
+    },
+    {
+      "competition": "Jupiler Pro League",
+      "plays": 533,
+      "profit_units": -54.91,
+      "roi": -0.103
+    },
+    {
+      "competition": "La Liga",
+      "plays": 823,
+      "profit_units": -125.02,
+      "roi": -0.1519
+    },
+    {
+      "competition": "La Liga 2",
+      "plays": 798,
+      "profit_units": -104.73,
+      "roi": -0.1312
+    },
+    {
+      "competition": "League One",
+      "plays": 980,
+      "profit_units": -65.345,
+      "roi": -0.0667
+    },
+    {
+      "competition": "League Two",
+      "plays": 997,
+      "profit_units": -15.06,
+      "roi": -0.0151
+    },
+    {
+      "competition": "Ligue 1",
+      "plays": 696,
+      "profit_units": -57.37,
+      "roi": -0.0824
+    },
+    {
+      "competition": "Ligue 2",
+      "plays": 518,
+      "profit_units": -53.235,
+      "roi": -0.1028
+    },
+    {
+      "competition": "Premier League",
+      "plays": 756,
+      "profit_units": -125.365,
+      "roi": -0.1658
+    },
+    {
+      "competition": "Primeira Liga",
+      "plays": 623,
+      "profit_units": -86.36,
+      "roi": -0.1386
+    },
+    {
+      "competition": "Serie A",
+      "plays": 785,
+      "profit_units": -167.365,
+      "roi": -0.2132
+    },
+    {
+      "competition": "Serie B",
+      "plays": 652,
+      "profit_units": -104.33,
+      "roi": -0.16
+    },
+    {
+      "competition": "Süper Lig",
+      "plays": 630,
+      "profit_units": -137.105,
+      "roi": -0.2176
+    }
+  ],
+  "abstentions": {
+    "prezzo_giusto": 4096,
+    "non_quotato": 29
+  },
+  "unsettled": 0,
+  "goals_config": {
+    "team_home_advantage": false,
+    "division_rho": false,
+    "division_dispersion": false,
+    "uncertainty": false,
+    "isotonic_calibration": false,
+    "asian_handicap": true,
+    "ratings": true,
+    "live_hyper_xi": 0.002,
+    "live_hyper_sigma": 0.4
+  },
+  "reading": "Alla chiusura Bet365 la regola del profitto, applicata alle probabilita' V4 (che coincidono con la V3 Fase 4, esame E1 non superato), non produce un profitto: e' lo stesso esito del valutatore V3. Le giocate classiche restano visibili ma in osservazione. Il giudizio sui mercati speciali e' solo prospettico (G6).",
+  "runtime_s": 402.4
+}

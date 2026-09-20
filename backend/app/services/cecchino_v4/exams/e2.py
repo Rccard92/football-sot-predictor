@@ -320,6 +320,10 @@ def run_exam(config: StatsConfig = ADOPTED_CONFIG, *, history: History | None = 
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "E2.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    from app.services.cecchino_v4.constants import EXAMS_DATA_DIR
+
+    EXAMS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (EXAMS_DATA_DIR / "E2.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     (out_dir / "E2.md").write_text(render_markdown(report), encoding="utf-8")
     return report
 

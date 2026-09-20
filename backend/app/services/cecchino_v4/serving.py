@@ -22,14 +22,14 @@ from app.models.cecchino_v4 import (
     CecchinoV4Shortlist,
     CecchinoV4ShortlistItem,
 )
-from app.services.cecchino_v4.constants import LEAGUES, VERDICT_LABELS
+from app.services.cecchino_v4.constants import EXAMS_DATA_DIR, LEAGUES, VERDICT_LABELS
 from app.services.cecchino_v4.measure.metrics import summary as measure_summary_fn
 from app.services.cecchino_v4.pipeline.day import FINISHED_STATUSES, default_days, kickoff_iso
 from app.services.cecchino_v4.selection.labels import market_family
 from app.services.cecchino_v4.selection.shortlist import shortlist_payload
 
 DOCS_V4 = Path(__file__).resolve().parents[4] / "docs" / "v4"
-EXAMS_DIR = DOCS_V4 / "esami"
+EXAMS_DIR = EXAMS_DATA_DIR
 
 EXAM_TITLES = {
     "E1": "Motore gol V4 contro V3 Fase 4",
