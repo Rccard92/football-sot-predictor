@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_v4 import CecchinoV4Job
-from app.services.cecchino_v4.pipeline.day import build_days, settle_finished
+from app.services.cecchino_v4.pipeline.day import build_days, recover_missing_shortlists, settle_finished
 from app.services.cecchino_v4.selection.shortlist import seal_shortlist, shortlist_payload
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,8 @@ def run_compute(db: Session, name: str, params: dict[str, Any]) -> dict[str, Any
     if name == "shortlist":
         return {"report": str(build_days(db, days=days, recompute_predictions=False))}
     if name == "settle":
-        return {"settled": settle_finished(db)}
+        recovered = recover_missing_shortlists(db)
+        return {"recovered_days": recovered, "settled": settle_finished(db)}
     if name == "daily":
         out: dict[str, Any] = {}
         from app.services.cecchino_v4.live import jobs as live_jobs

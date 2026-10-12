@@ -18,14 +18,18 @@ type Props = {
   selectedDay: string
   today: string
   onSelectDay: (date: string) => void
+  /** Chiesto quando le frecce superano i giorni gia' caricati: sposta la finestra di `deltaDays` (anche nel passato). */
+  onShiftWindow?: (deltaDays: number) => void
+  /** Torna a oggi (data e finestra). */
+  onToday?: () => void
 }
 
 function weekday(dateIso: string): string {
   return fmtDayLabel(dateIso).split(' ')[0] ?? dateIso
 }
 
-/** Selettore a 7 giorni con le pillole compatte di CecchinoDayTimeline: giorno, data, partite, giocate. */
-export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) {
+/** Selettore giorni con le pillole compatte di CecchinoDayTimeline: scorre avanti e indietro senza limiti (anche i giorni passati, con i risultati). */
+export function V4DayTimeline({ days, selectedDay, today, onSelectDay, onShiftWindow, onToday }: Props) {
   const visibleCount = useTimelineVisibleCount()
   const daysKey = useMemo(() => days.map((d) => d.date).join('|'), [days])
   const defaultStart = useMemo(
@@ -40,20 +44,39 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
   const maxStart = Math.max(0, days.length - visibleCount)
   const windowStart = clampWindowStart(defaultStart + pages * visibleCount, visibleCount, days.length)
   const visible = days.slice(windowStart, windowStart + visibleCount)
-  const move = (delta: number) =>
+  const move = (delta: number) => {
+    const atStart = delta < 0 && windowStart <= 0
+    const atEnd = delta > 0 && windowStart >= maxStart
+    if ((atStart || atEnd) && onShiftWindow) {
+      onShiftWindow(delta * visibleCount)
+      return
+    }
     setNav((prev) => {
       const current = prev.daysKey === daysKey && prev.anchor === selectedDay ? prev.pages : 0
       return { daysKey, anchor: selectedDay, pages: current + delta }
     })
+  }
+  const todayVisible = visible.some((d) => d.date === today)
 
   return (
     <section className={`${todayCard} ${todayCardPadding}`} aria-label="Giorni">
-      <p className="mb-3 text-sm font-medium text-slate-800">Giorni</p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-800">Giorni</p>
+        {onToday && (!todayVisible || selectedDay !== today) ? (
+          <button
+            type="button"
+            onClick={onToday}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 hover:border-blue-300"
+          >
+            Oggi
+          </button>
+        ) : null}
+      </div>
       <div className="flex items-stretch gap-2">
         <button
           type="button"
           onClick={() => move(-1)}
-          disabled={windowStart <= 0}
+          disabled={windowStart <= 0 && !onShiftWindow}
           aria-label="Giorni precedenti"
           className={todayTimelineArrow}
         >
@@ -112,7 +135,7 @@ export function V4DayTimeline({ days, selectedDay, today, onSelectDay }: Props) 
         <button
           type="button"
           onClick={() => move(1)}
-          disabled={windowStart >= maxStart}
+          disabled={windowStart >= maxStart && !onShiftWindow}
           aria-label="Giorni successivi"
           className={todayTimelineArrow}
         >

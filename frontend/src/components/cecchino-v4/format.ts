@@ -195,3 +195,10 @@ export function isIsoDate(value: string | null | undefined): value is string {
 export function capitalize(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
 }
+
+/** Somma giorni a una data ISO (YYYY-MM-DD) senza passare dal fuso del browser. */
+export function shiftIsoDate(dateIso: string, days: number): string {
+  const [y, m, d] = dateIso.split('-').map(Number)
+  const t = Date.UTC(y, (m ?? 1) - 1, (d ?? 1) + days)
+  return new Date(t).toISOString().slice(0, 10)
+}

@@ -157,6 +157,35 @@ describe('CecchinoV4Page', () => {
     expect(within(table).getByText('Inter over 7,5 tiri in porta')).toBeTruthy()
   })
 
+  it('le frecce dei giorni scorrono oltre la finestra caricata, anche nel passato', async () => {
+    const calls: string[] = []
+    const api = {
+      ...mockCecchinoV4Api,
+      getDays: (params: { from: string; days?: number }, signal?: AbortSignal) => {
+        calls.push(params.from)
+        return mockCecchinoV4Api.getDays(params, signal)
+      },
+    }
+    render(
+      <MemoryRouter initialEntries={['/cecchino-v4']}>
+        <Routes>
+          <Route path="/cecchino-v4" element={<CecchinoV4Page api={api} />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByRole('button', { name: 'Giorni precedenti' })
+    const firstFrom = calls[0]
+    expect(firstFrom).toBeDefined()
+    // la finestra parte 7 giorni prima di oggi: tornando indietro si chiede una finestra ancora precedente
+    for (let i = 0; i < 3; i += 1) {
+      const prev = await screen.findByRole('button', { name: 'Giorni precedenti' })
+      fireEvent.click(prev)
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Giorni precedenti' })).not.toBeNull())
+      if (calls.some((from) => from < firstFrom)) break
+    }
+    await waitFor(() => expect(calls.some((from) => from < firstFrom)).toBe(true))
+  })
+
   it('la vista Shortlist divide Top e Altre e mostra la sigillatura con impronta', async () => {
     renderPage()
     fireEvent.click(screen.getByRole('tab', { name: 'Shortlist' }))

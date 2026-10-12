@@ -26,3 +26,8 @@ Aggiornato ad ogni passo. Serve a riprendere il lavoro senza contesto.
 - Bug corretti online: segno handicap asiatico di API-Football (linea di casa su entrambi i lati), percorsi degli esami nel container (Railway pubblica solo backend/), avvio con percorso a cinque livelli (IndexError) intercettato dal controllo di salute senza interruzioni.
 - Focus prodotto spostato sui mercati statistici; corner e cartellini giocabili per decisione utente; solo linee a meta'; campionati senza mercati statistici esclusi dalle letture quote.
 - Copertura misurata il 20/09 (istantanee del mattino Bet365): corner totali/casa/fuori in tutti i 13 campionati con partite; cartellini in 9; tiri e tiri in porta solo totali e solo nelle prime divisioni (D1, E0, E1, F1, I1, P1, SP1); falli mai.
+
+## 12/10/2026
+- Cron `cecchino-auto-scan` fermo dal 10/10: SQLAlchemy 2.1 (uscita il 24/09) sceglie `psycopg` 3 per `postgresql://`; i servizi ricostruiti la installavano. Vincolo `sqlalchemy<2.1` in requirements.
+- Shortlist: le giocate delle partite gia' iniziate si congelano (quota pubblicata) e la lista si sigilla da sola quando tutte sono iniziate; prima venivano riscritte e svuotate a fine giornata (misura falsata: solo 18 giocate regolate in tre settimane). Le giornate passate svuotate si ricostruiscono dalle schede salvate (`recover_missing_shortlists`, nel passo `settle` del cron).
+- Pagina V4: finestra di 14 giorni ancorata alla data scelta, frecce senza limiti anche nel passato, pulsante "Oggi"; parametro `from` nell'URL.

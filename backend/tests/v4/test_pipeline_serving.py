@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
-from app.models.cecchino_v4 import CecchinoV4Fixture, CecchinoV4OddsSnapshot, CecchinoV4Prediction, CecchinoV4Explanation
+from app.models.cecchino_v4 import CecchinoV4Fixture, CecchinoV4OddsSnapshot, CecchinoV4Prediction, CecchinoV4Explanation, CecchinoV4ShortlistItem
 from app.routes import cecchino_v4 as v4_routes
 from app.services.cecchino_v4 import serving
 from app.services.cecchino_v4.pipeline import day as day_mod
@@ -178,3 +178,44 @@ def test_routes_read_endpoints(v4_db, seeded, monkeypatch):
     assert client.get("/api/cecchino/v4/measure/summary").status_code == 200
     # senza sessione admin le azioni sono chiuse (503 non configurata o 401)
     assert client.post("/api/admin/cecchino/v4/jobs/predict/run").status_code in (401, 503)
+
+
+def test_started_fixtures_keep_their_play_then_list_seals_and_recovers(v4_db, seeded):
+    """Le giocate pubblicate non spariscono quando la partita inizia: si congelano, la lista si sigilla da sola,
+    il regolamento le chiude; una lista svuotata per errore si ricostruisce dalle schede salvate."""
+    f1, f2 = seeded
+    day_mod.build_days(v4_db, days=[DAY], now=NOW, goals_predictor=_fake_goals, stats_predictor=_fake_stats, history=_FakeHistory())
+    before = serving.shortlist(v4_db, DAY)
+    assert before["status"] == "provvisoria" and len(before["items"]) >= 1
+    kept = {(i["fixture_id"], i["market_key"], i["quota_used"]) for i in before["items"]}
+
+    # tutte le partite iniziate: le quote cambiano (giocata non piu' conveniente), ma la lista non deve svuotarsi
+    original = {snap.id: dict(snap.markets_json) for snap in v4_db.query(CecchinoV4OddsSnapshot).all()}
+    for snap in v4_db.query(CecchinoV4OddsSnapshot).all():
+        snap.markets_json = {k: 1.01 for k in snap.markets_json}
+    v4_db.commit()
+    later = NOW + timedelta(hours=12)
+    day_mod.build_days(v4_db, days=[DAY], now=later, goals_predictor=_fake_goals, stats_predictor=_fake_stats, history=_FakeHistory())
+    after = serving.shortlist(v4_db, DAY)
+    assert {(i["fixture_id"], i["market_key"], i["quota_used"]) for i in after["items"]} == kept
+    assert after["status"] == "confermata" and after["digest"]
+
+    # regolamento e recupero
+    f1.status, f1.ft_home, f1.ft_away, f1.ht_home, f1.ht_away = "FT", 0, 2, 0, 1
+    f1.stats_json = {"home": {"sot": 3, "shots": 9, "corners": 4, "yellow": 2, "red": 0, "fouls": 11}, "away": {"sot": 8, "shots": 15, "corners": 6, "yellow": 1, "red": 0, "fouls": 9}}
+    v4_db.commit()
+    assert day_mod.settle_finished(v4_db, now=later) >= 1
+    # le schede salvate tornano a mostrare la giocata (quote di chiusura ragionevoli), poi la lista viene persa
+    for snap in v4_db.query(CecchinoV4OddsSnapshot).all():
+        snap.markets_json = original[snap.id]
+    v4_db.commit()
+    day_mod.build_days(v4_db, days=[DAY], now=later, goals_predictor=_fake_goals, stats_predictor=_fake_stats, history=_FakeHistory())
+    rec = v4_db.query(day_mod.CecchinoV4Shortlist).filter_by(day=DAY).one()
+    for it in v4_db.query(CecchinoV4ShortlistItem).filter_by(shortlist_id=rec.id).all():
+        v4_db.delete(it)
+    rec.status = "provvisoria"
+    v4_db.commit()
+    recovered = day_mod.recover_missing_shortlists(v4_db, days_back=5, now=datetime(2026, 9, 22, 8, 0, tzinfo=timezone.utc))
+    assert recovered == 1
+    again = serving.shortlist(v4_db, DAY)
+    assert again["status"] == "confermata" and any(i["fixture_id"] == f1.id for i in again["items"])

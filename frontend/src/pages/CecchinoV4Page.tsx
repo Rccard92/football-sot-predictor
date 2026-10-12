@@ -9,7 +9,7 @@ import {
   todayStickyListColumn,
 } from '../components/cecchino/cecchinoTodayStyles'
 import { parseV4View, v4SmallButton, v4Title, type V4View } from '../components/cecchino-v4/constants'
-import { isIsoDate } from '../components/cecchino-v4/format'
+import { isIsoDate, shiftIsoDate } from '../components/cecchino-v4/format'
 import { useIsDesktopPanel } from '../components/cecchino-v4/useMediaQuery'
 import { useV4Query } from '../components/cecchino-v4/useV4Query'
 import { V4DayTimeline } from '../components/cecchino-v4/V4DayTimeline'
@@ -63,8 +63,11 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
   )
 
   const showTimeline = view === 'partite' || view === 'shortlist'
-  const daysQ = useV4Query(showTimeline ? `days:${today}` : null, (signal) =>
-    api.getDays({ from: today, days: 7 }, signal),
+  // Finestra di 14 giorni: di default parte 7 giorni prima della data scelta, cosi' si vedono passato e futuro.
+  const fromParam = searchParams.get('from')
+  const windowFrom = isIsoDate(fromParam) ? fromParam : shiftIsoDate(date, -7)
+  const daysQ = useV4Query(showTimeline ? `days:${windowFrom}` : null, (signal) =>
+    api.getDays({ from: windowFrom, days: 14 }, signal),
   )
 
   const fixturesKey =
@@ -89,6 +92,8 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
 
   const handleView = (next: V4View) => updateParams({ view: next === 'partite' ? null : next })
   const handleDay = (next: string) => updateParams({ date: next === today ? null : next, fixture: null })
+  const handleShiftWindow = (deltaDays: number) => updateParams({ from: shiftIsoDate(windowFrom, deltaDays) })
+  const handleToday = () => updateParams({ date: null, from: null, fixture: null })
   const handleSelectFixture = (id: number) => updateParams({ fixture: String(id) })
   const closeDetail = () => updateParams({ fixture: null })
 
@@ -136,7 +141,14 @@ export function CecchinoV4Page({ api = cecchinoV4Api }: CecchinoV4PageProps) {
         ) : daysQ.error ? (
           <V4Error message={daysQ.error} onRetry={daysQ.reload} />
         ) : daysQ.data ? (
-          <V4DayTimeline days={daysQ.data.days} selectedDay={date} today={today} onSelectDay={handleDay} />
+          <V4DayTimeline
+            days={daysQ.data.days}
+            selectedDay={date}
+            today={today}
+            onSelectDay={handleDay}
+            onShiftWindow={handleShiftWindow}
+            onToday={handleToday}
+          />
         ) : null
       ) : null}
 
