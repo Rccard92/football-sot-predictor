@@ -1,6 +1,6 @@
 fastapi>=0.115.0,<1.0.0
 uvicorn[standard]>=0.30.0,<1.0.0
-sqlalchemy>=2.0.0,<3.0.0
+sqlalchemy>=2.0.0,<2.1  # 2.1 (24/09/2026) usa psycopg 3 come driver predefinito: con psycopg2-binary i cron ricostruiti si fermano all'avvio
 alembic>=1.13.0,<2.0.0
 psycopg2-binary>=2.9.9,<3.0.0
 psutil>=5.9.0,<7.0.0
