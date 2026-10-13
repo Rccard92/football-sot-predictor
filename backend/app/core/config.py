@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     cecchino_auto_scan_morning_minute: int = 0
     cecchino_auto_scan_morning_recovery_hour: int = 6
     cecchino_auto_scan_morning_recovery_minute: int = 45
+    # Al giro del mattino, prima della scansione: risultati dei giorni precedenti (stessa funzione del
+    # pulsante "Aggiorna risultati giornata"). Spegnibile senza toccare il codice.
+    cecchino_auto_results_enabled: bool = True
+    cecchino_auto_results_days_back: int = 3
+    cecchino_auto_results_stale_lookback_days: int = 30
+    cecchino_auto_results_max_days: int = 10
 
     # Acquistabilità operativa (default V3; V3.1 solo post GO_FINAL via JSON runtime)
     operational_purchasability_version: str = "v3"

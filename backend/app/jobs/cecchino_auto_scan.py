@@ -556,6 +556,30 @@ def run_auto_scan(
         clear_alarm()
 
 
+def run_auto_results(*, settings: Any, local_date: date, timezone_name: str) -> dict[str, Any] | None:
+    """Risultati dei giorni precedenti prima della scansione del mattino (stessa funzione del pulsante).
+    Mai bloccante: qualunque errore viene registrato e la scansione parte comunque."""
+    if getattr(settings, "cecchino_auto_results_enabled", True) is False:
+        logger.info("cecchino_auto_results disabled")
+        return None
+    try:
+        from app.services.cecchino.cecchino_today_auto_results import refresh_recent_results
+
+        summary = refresh_recent_results(
+            session_factory=SessionLocal,
+            local_date=local_date,
+            timezone=timezone_name,
+            days_back=int(getattr(settings, "cecchino_auto_results_days_back", 3)),
+            stale_lookback_days=int(getattr(settings, "cecchino_auto_results_stale_lookback_days", 30)),
+            max_days=int(getattr(settings, "cecchino_auto_results_max_days", 10)),
+        )
+        logger.info("cecchino_auto_results summary=%s", summary)
+        return summary
+    except Exception:  # noqa: BLE001
+        logger.exception("cecchino_auto_results failed")
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
     global _abort_requested
     _abort_requested = False
@@ -648,6 +672,9 @@ def main(argv: list[str] | None = None) -> int:
             slot=slot if args.scheduled else (slot or SLOT_PRIMARY),
             local_date=local_date,
         )
+
+    if args.scheduled and slot == SLOT_MORNING:
+        run_auto_results(settings=settings, local_date=local_date, timezone_name=timezone_name)
 
     effective_slot = slot
     if args.force_run and effective_slot is None:
