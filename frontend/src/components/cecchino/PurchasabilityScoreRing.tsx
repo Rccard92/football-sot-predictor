@@ -14,6 +14,8 @@ export type PurchasabilityScoreRingProps = {
   title?: string
   unavailableMessage?: string
   testId?: string
+  /** Testo sotto il numero (default "/100"); "%" per una probabilita' 0-100. */
+  suffix?: string
 }
 
 /** Colore stroke/tint da fasce score (allineate CLASS_THRESHOLDS backend). Non ricalcola class. */
@@ -50,6 +52,7 @@ export function PurchasabilityScoreRing({
   title = 'Acquistabilità',
   unavailableMessage = 'Indice V3.6 non disponibile',
   testId = 'purchasability-score-ring',
+  suffix = '/100',
 }: PurchasabilityScoreRingProps) {
   const hasScore = score != null && !Number.isNaN(Number(score))
   const clamped = hasScore ? Math.max(0, Math.min(100, Number(score))) : 0
@@ -63,7 +66,7 @@ export function PurchasabilityScoreRing({
     : { stroke: '#94a3b8', tint: 'rgba(148, 163, 184, 0.06)', track: '#e2e8f0' }
 
   const aria = hasScore
-    ? `${title} ${rounded} su 100${classLabel ? `, ${classLabel}` : ''}`
+    ? `${title} ${rounded}${suffix === '%' ? '%' : ' su 100'}${classLabel ? `, ${classLabel}` : ''}`
     : unavailableMessage
 
   return (
@@ -76,7 +79,7 @@ export function PurchasabilityScoreRing({
         className="relative shrink-0 overflow-hidden rounded-full"
         style={{ width: dim, height: dim, backgroundColor: palette.tint }}
         role="img"
-        aria-label={hasScore ? `${rounded} su 100` : 'N/D'}
+        aria-label={hasScore ? (suffix === '%' ? `${rounded}%` : `${rounded} su 100`) : 'N/D'}
       >
         <svg width={dim} height={dim} viewBox={`0 0 ${dim} ${dim}`} aria-hidden>
           <circle
@@ -109,7 +112,7 @@ export function PurchasabilityScoreRing({
             {hasScore ? rounded : 'N/D'}
           </span>
           {hasScore ? (
-            <span className="text-[10px] font-medium text-slate-500">/100</span>
+            <span className="text-[10px] font-medium text-slate-500">{suffix}</span>
           ) : null}
         </div>
       </div>

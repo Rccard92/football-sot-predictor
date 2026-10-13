@@ -1,7 +1,8 @@
 import { useId, useMemo, useState } from 'react'
 import type { LiveIndexMarket, LiveModelPrediction } from '../../lib/cecchinoLiveApi'
 import { MARKET_LABELS } from '../../lib/masterPatternApi'
-import { bbOppTabIdle, bbOppTabScroll, bbOppTabSelected } from '../bet-builder/betBuilderStyles'
+import { bbInEvidenzaBadge, bbOppTabIdle, bbOppTabScroll, bbOppTabSelected } from '../bet-builder/betBuilderStyles'
+import { PLAYABLE_MIN_QUOTA, oppositeAlerts } from '../bet-builder-v3/bbV3Utils'
 import { PatternRelationBadge } from './CecchinoPatternHero'
 import { patternRelation } from './cecchinoPatternUtils'
 import { v36BadgeClass } from './cecchinoPurchasabilityV36UiUtils'
@@ -58,10 +59,30 @@ const MODULES_READ: Record<string, string> = {
 export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveModelPrediction; model?: string }) {
   const panelId = useId()
   const index = p.modules?.purchasability_index
-  const markets = index?.markets ?? {}
-  const predictions = index?.predictions ?? []
+  const markets = useMemo(() => index?.markets ?? {}, [index?.markets])
+  const predictions = useMemo(() => index?.predictions ?? [], [index?.predictions])
   const minScore = index?.prediction_min_score ?? 70
-  const minQuota = index?.playable_min_quota ?? 1.5
+  // soglia operativa 1,41 (decisione 13/10/2026): vale anche per le partite calcolate prima, con 1,50
+  const minQuota = PLAYABLE_MIN_QUOTA
+  const isPlayable = (it: LiveIndexMarket | undefined) => it != null && it.quota != null && it.quota >= minQuota
+  // in evidenza: la piu' probabile con quota da 1,41 e non sotto la quota minima; poi per probabilita'
+  const evidenceKey = useMemo(() => {
+    let best: string | null = null
+    for (const k of index?.predictions ?? []) {
+      const it = markets[k]
+      if (!it || it.quota == null || it.min_quota == null || it.quota < minQuota || it.quota < it.min_quota) continue
+      if (best == null || it.probability > markets[best].probability) best = k
+    }
+    return best
+  }, [index?.predictions, markets, minQuota])
+  const ordered = useMemo(
+    () =>
+      [...(index?.predictions ?? [])].sort(
+        (a, b) => Number(b === evidenceKey) - Number(a === evidenceKey) || markets[b].probability - markets[a].probability,
+      ),
+    [index?.predictions, markets, evidenceKey],
+  )
+  const alerts = useMemo(() => oppositeAlerts(index?.predictions ?? []), [index?.predictions])
   // conferma solo dai pattern costruiti sui moduli (quelli che usano la quota restano a parte)
   const patternMarkets = useMemo(
     () => [...new Set((p.modules?.patterns?.active ?? []).filter((x) => x.target_type === 'market' && !x.uses_book).map((x) => x.target_key))],
@@ -72,7 +93,7 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
     [markets, predictions],
   )
   const [selected, setSelected] = useState<string | null>(null)
-  const current = selected && predictions.includes(selected) ? selected : predictions[0]
+  const current = selected && predictions.includes(selected) ? selected : ordered[0]
   const m: LiveIndexMarket | undefined = current ? markets[current] : undefined
   const relation = current ? patternRelation(current, patternMarkets) : null
 
@@ -87,8 +108,9 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
           </span>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Predizioni dei moduli {model}: il punteggio dice quanto la giocata è più probabile del normale per quel mercato. I pattern accesi le
-          confermano o no; la quota Bet365 serve solo a capire se vale la pena (da {num(minQuota)} in su).
+          Predizioni dei moduli {model}: la percentuale è la probabilità stimata di vittoria, il punteggio dice quanto la giocata supera il
+          normale di quel mercato. I pattern accesi le confermano o no. In evidenza la più probabile con quota da {num(minQuota)} in su e non
+          sotto la quota minima.
         </p>
       </div>
 
@@ -98,10 +120,15 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
         <p className="text-sm text-slate-600">Nessuna predizione forte: nessun mercato arriva a {minScore}/100 per i moduli {model}.</p>
       ) : (
         <>
+          {alerts.length ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" data-testid="index-opposite-alert">
+              Mercati opposti entrambi predetti: {alerts.join(' · ')}. Partita a due poli, investire con cautela.
+            </p>
+          ) : null}
           <div className="space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Predizioni dell&apos;indice</p>
             <div className={`${bbOppTabScroll} gap-1.5`} role="tablist" aria-label={`Predizioni indice ${model}`}>
-              {predictions.map((k) => {
+              {ordered.map((k) => {
                 const it = markets[k]
                 const active = k === current
                 const cls = indexClassLabel(it.score)
@@ -116,9 +143,13 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
                     onClick={() => setSelected(k)}
                   >
                     <span className="flex flex-col items-start gap-0.5 text-left">
-                      <span className="text-[11px] font-medium">{label(k)}</span>
+                      <span className="flex items-center gap-1 text-[11px] font-medium">
+                        {label(k)}
+                        {k === evidenceKey ? <span className={bbInEvidenzaBadge}>In evidenza</span> : null}
+                      </span>
                       <span className="flex flex-wrap items-center gap-1">
-                        <span className="text-sm font-bold tabular-nums">{Math.round(it.score)} / 100</span>
+                        <span className="text-sm font-bold tabular-nums">{pct(it.probability)}</span>
+                        <span className="text-[10px] tabular-nums text-slate-500">{Math.round(it.score)}/100</span>
                         <span className={v36BadgeClass(cls)}>{cls}</span>
                       </span>
                       <span className="text-[10px] tabular-nums text-slate-500">quota {num(it.quota)}</span>
@@ -133,7 +164,14 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
           {m && current && (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4" id={`${panelId}-index-detail`} role="tabpanel">
               <div className="flex flex-wrap items-center gap-4">
-                <PurchasabilityScoreRing score={m.score} classLabel={indexClassLabel(m.score)} size="lg" title={`Indice ${model}`} testId="index-v25-ring" />
+                <PurchasabilityScoreRing
+                  score={m.probability * 100}
+                  suffix="%"
+                  classLabel={`Indice ${model} ${Math.round(m.score)}/100 · ${indexClassLabel(m.score)}`}
+                  size="lg"
+                  title="Vince (stima)"
+                  testId="index-v25-ring"
+                />
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Mercato</p>
                   <h4 className="text-base font-bold text-slate-900">{MARKET_LABELS[current] ?? label(current)}</h4>
@@ -144,7 +182,7 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
                 <Metric label="Vince (stima moduli)" value={pct(m.probability)} />
                 <Metric label="Frequenza normale" value={pct(m.base_rate)} hint="quante volte esce questo mercato nello storico" />
                 <Metric label="Quota minima" value={num(m.min_quota)} hint="sotto questa quota non rende" />
-                <Metric label="Quota Bet365" value={num(m.quota)} hint={m.playable ? 'giocabile' : m.quota == null ? 'quota non disponibile' : `sotto ${num(minQuota)}: non giocabile`} />
+                <Metric label="Quota Bet365" value={num(m.quota)} hint={isPlayable(m) ? 'giocabile' : m.quota == null ? 'quota non disponibile' : `sotto ${num(minQuota)}: non giocabile`} />
               </div>
 
               <details open className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
@@ -175,7 +213,7 @@ export function CecchinoPurchasabilityIndexV25({ p, model = 'V2.5' }: { p: LiveM
                     <dd>
                       {m.quota == null
                         ? 'Quota Bet365 non disponibile per questo mercato.'
-                        : m.playable
+                        : isPlayable(m)
                           ? `Quota ${num(m.quota)}: da ${num(minQuota)} in su, vale la pena considerarla.`
                           : `Quota ${num(m.quota)}: sotto ${num(minQuota)}, non vale la pena investire.`}
                     </dd>

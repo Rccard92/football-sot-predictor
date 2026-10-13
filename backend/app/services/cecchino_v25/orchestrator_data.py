@@ -20,7 +20,7 @@ from app.services.cecchino_data_lab.run_v2.constants import LAYER_CORE_STRICT
 from app.services.cecchino_v25.constants import RUN_V25_VERSION
 from app.services.cecchino_v25.orchestrator import (
     FEATURES,
-    PLAYABLE_MIN_QUOTA,
+    PLAYABLE_MIN_QUOTA_LIVE,
     PREDICTION_MIN_SCORE,
     MarketModel,
     decision,
@@ -172,7 +172,7 @@ def purchasability_index_live(pre: dict[str, Any], quotas: dict[str, float | Non
         "module_version": frozen.get("module_version"),
         "trained_on": frozen.get("trained_on"),
         "prediction_min_score": PREDICTION_MIN_SCORE,
-        "playable_min_quota": PLAYABLE_MIN_QUOTA,
+        "playable_min_quota": PLAYABLE_MIN_QUOTA_LIVE,
         "markets": markets,
         "predictions": predictions,
     }

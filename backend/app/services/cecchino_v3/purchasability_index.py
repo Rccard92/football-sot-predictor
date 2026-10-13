@@ -26,7 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services.cecchino_v25.orchestrator import (
-    PLAYABLE_MIN_QUOTA,
+    PLAYABLE_MIN_QUOTA_LIVE,
     PREDICTION_MIN_SCORE,
     MarketModel,
     _f,
@@ -276,7 +276,7 @@ def purchasability_index_live(result: dict[str, Any], quotas: dict[str, float | 
         "module_version": frozen.get("module_version"),
         "trained_on": frozen.get("trained_on"),
         "prediction_min_score": PREDICTION_MIN_SCORE,
-        "playable_min_quota": PLAYABLE_MIN_QUOTA,
+        "playable_min_quota": PLAYABLE_MIN_QUOTA_LIVE,
         "markets": markets,
         "predictions": predictions,
     }

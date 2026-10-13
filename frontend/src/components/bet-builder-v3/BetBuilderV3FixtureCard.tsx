@@ -22,6 +22,7 @@ import { PurchasabilityScoreRing } from '../cecchino/PurchasabilityScoreRing'
 import {
   INDEX_RELATION_LABEL,
   PATTERN_RELATION_LABEL,
+  fmtMinQuotaLabel,
   type BbV3Group,
   type BbV3Opportunity,
   type BbV3Tab,
@@ -115,12 +116,12 @@ function OpportunityTabs({
   showOutcome: boolean
 }) {
   const n = opportunities.length
-  const primaryKey = opportunities[0]?.key
+  const primaryKey = opportunities.find((o) => o.evidence)?.key
   if (n === 1) {
     return (
       <div className="flex flex-wrap items-center gap-2" data-testid="bb-v3-opportunity-selector">
         <span className={`${bbBadge} border-slate-200 bg-slate-50 text-slate-700`}>1 opportunità</span>
-        <span className={bbInEvidenzaBadge}>In evidenza</span>
+        {opportunities[0]?.evidence ? <span className={bbInEvidenzaBadge}>In evidenza</span> : null}
       </div>
     )
   }
@@ -185,6 +186,11 @@ function OpportunityTabs({
               <span className={scoreClass}>
                 {op.source === 'pattern' ? (
                   patternsText(op.patternInfo?.patterns_count)
+                ) : op.winProb != null ? (
+                  <>
+                    {Math.round(op.winProb * 100)}
+                    <span className={mutedClass}>%</span>
+                  </>
                 ) : (
                   <>
                     {Math.round(op.score ?? 0)}
@@ -265,7 +271,7 @@ function SelectedPanel({
                     : `${bbBadge} border-amber-200 bg-amber-50 text-amber-900`
                 }
               >
-                {op.playable ? 'Giocabile' : 'Quota sotto 1,50'}
+                {op.playable ? 'Giocabile' : `Quota sotto ${fmtMinQuotaLabel()}`}
               </span>
             </div>
           </div>
@@ -273,14 +279,28 @@ function SelectedPanel({
 
         <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2" data-testid="bb-v3-core-metrics">
           <div className={bbMetricCell}>
-            <PurchasabilityScoreRing
-              score={op.score}
-              classLabel={op.score != null ? indexClassLabel(op.score) : null}
-              size="md"
-              title={op.source === 'pattern' ? `${TAB_RING_TITLE[tab]} su questo mercato` : TAB_RING_TITLE[tab]}
-              unavailableMessage="Indice non disponibile"
-              testId="bb-v3-ring"
-            />
+            {op.winProb != null ? (
+              <PurchasabilityScoreRing
+                score={op.winProb * 100}
+                suffix="%"
+                classLabel={
+                  op.score != null ? `${TAB_RING_TITLE[tab]} ${Math.round(op.score)}/100 · ${indexClassLabel(op.score)}` : null
+                }
+                size="md"
+                title="Vince (stima)"
+                unavailableMessage="Probabilità non disponibile"
+                testId="bb-v3-ring"
+              />
+            ) : (
+              <PurchasabilityScoreRing
+                score={op.score}
+                classLabel={op.score != null ? indexClassLabel(op.score) : null}
+                size="md"
+                title={op.source === 'pattern' ? `${TAB_RING_TITLE[tab]} su questo mercato` : TAB_RING_TITLE[tab]}
+                unavailableMessage="Indice non disponibile"
+                testId="bb-v3-ring"
+              />
+            )}
           </div>
 
           <div className={bbMetricCell} aria-label="Quota">
@@ -398,6 +418,15 @@ export function BetBuilderV3FixtureCard({ group, tab, showOutcome, onOpenAnalysi
         </div>
       </header>
 
+      {group.alerts.length ? (
+        <p
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+          data-testid="bb-v3-opposite-alert"
+        >
+          Mercati opposti entrambi predetti: {group.alerts.join(' · ')}. Partita a due poli, investire con cautela.
+        </p>
+      ) : null}
+
       <OpportunityTabs
         opportunities={group.opportunities}
         selectedKey={selected?.key ?? ''}
@@ -410,7 +439,7 @@ export function BetBuilderV3FixtureCard({ group, tab, showOutcome, onOpenAnalysi
         <SelectedPanel
           op={selected}
           tab={tab}
-          isPrimary={selected.key === group.opportunities[0]?.key}
+          isPrimary={selected.evidence}
           panelId={panelId}
           showOutcome={showOutcome}
         />

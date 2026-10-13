@@ -9,6 +9,7 @@ import {
 } from '../bet-builder/betBuilderStyles'
 import {
   FAMILY_CHIPS,
+  fmtMinQuotaLabel,
   marketLabel,
   type BbV3FamilyFilter,
   type BbV3Filters,
@@ -34,7 +35,7 @@ type Props = {
 }
 
 const SORT_OPTIONS: { key: BbV3SortKey; label: string }[] = [
-  { key: 'score_desc', label: 'Punteggio ↓' },
+  { key: 'score_desc', label: 'Probabilità ↓' },
   { key: 'kickoff_asc', label: 'Kickoff ↑' },
   { key: 'quota_desc', label: 'Quota ↓' },
 ]
@@ -149,7 +150,7 @@ export function BetBuilderV3Filters({
           data-testid="bb-v3-filter-playable"
           onClick={() => onChange({ playableOnly: !filters.playableOnly })}
         >
-          Solo giocabili (quota ≥ 1,50)
+          Solo giocabili (quota ≥ {fmtMinQuotaLabel()})
         </button>
 
         <button

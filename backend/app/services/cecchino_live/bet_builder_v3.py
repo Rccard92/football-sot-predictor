@@ -1,7 +1,7 @@
 """Bet Builder V3: le giocate consigliate da V2.5 e V3, lette dal registro live (sola lettura).
 
 Ogni modello lavora da solo: opportunita' = predizioni del suo Indice di Acquistabilita' (punteggio
->= 70); giocabile = quota Bet365 >= 1,50; pattern che confermano = pattern con quota (senza condizioni
+>= 70); giocabile = quota Bet365 >= 1,41 (dal 13/10/2026, prima 1,50); pattern che confermano = pattern con quota (senza condizioni
 sulla quota del bookmaker) accesi sullo stesso mercato. Combo = stesso mercato predetto da V2.5 e V3,
 nessun pattern dei due modelli in contrasto. Stesse regole di Osservazione live.
 """
@@ -19,9 +19,9 @@ from app.models.cecchino_live_prediction import CecchinoLivePrediction
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.cecchino.cecchino_bet_builder_results import normalize_match_status
 from app.services.cecchino_live.observation import group_active_patterns, markets_conflict
+from app.services.cecchino_v25.orchestrator import PLAYABLE_MIN_QUOTA_LIVE as PLAYABLE_MIN_QUOTA
 from app.services.cecchino_live.observation_models import (
     INDEX_MIN_SCORE,
-    PLAYABLE_MIN_QUOTA,
     _annotated_patterns,
     _won,
     market_family,

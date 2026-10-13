@@ -6,7 +6,9 @@ import {
   familyCounts,
   fixturesCovered,
   marketOptions,
+  oppositeAlerts,
   opportunitiesFor,
+  pickEvidenceKey,
   tally,
 } from './bbV3Utils'
 
@@ -184,5 +186,58 @@ describe('scelta del singolo mercato (come il vecchio Bet Builder)', () => {
   it('la famiglia restringe la lista dei mercati', () => {
     const opts = marketOptions(ITEMS, 'V2.5', { ...DEFAULT_BB_V3_FILTERS, family: 'gol' })
     expect(opts.map((o) => o.key)).toEqual(['OVER_2_5'])
+  })
+})
+
+describe('decisioni di Giovanni del 13/10/2026', () => {
+  it('giocabile da 1,41: 1,41 sì, 1,40 no', () => {
+    const it41 = item(50, [pred('HOME', 80, { quota: 1.41, playable: false }), pred('AWAY', 80, { quota: 1.4, playable: true })], null)
+    const ops = opportunitiesFor(it41, 'V2.5')
+    expect(ops.find((o) => o.marketKey === 'HOME')?.playable).toBe(true)
+    expect(ops.find((o) => o.marketKey === 'AWAY')?.playable).toBe(false)
+  })
+
+  it('in evidenza: probabilità più alta tra le giocate con quota >= 1,41 e non sotto la quota minima', () => {
+    const it2 = item(
+      51,
+      [
+        pred('OVER_3_5', 100, { probability: 0.48, quota: 2.2, min_quota: 2.08 }),
+        pred('OVER_2_5', 80, { probability: 0.72, quota: 1.5, min_quota: 1.39 }),
+        pred('OVER_1_5', 76, { probability: 0.88, quota: 1.14, min_quota: 1.14 }),
+      ],
+      null,
+    )
+    const ops = opportunitiesFor(it2, 'V2.5')
+    // Over 1.5 ha la probabilità più alta ma quota sotto 1,41; Over 2.5 batte Over 3.5 anche con voto più basso
+    expect(pickEvidenceKey(ops)).toBe(ops.find((o) => o.marketKey === 'OVER_2_5')?.key)
+    const [g] = buildGroups([it2], 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(g.opportunities[0].marketKey).toBe('OVER_2_5')
+    expect(g.opportunities[0].evidence).toBe(true)
+    expect(g.opportunities.filter((o) => o.evidence)).toHaveLength(1)
+  })
+
+  it('nessuna evidenza se nessuna giocata regge quota minima e soglia', () => {
+    const it3 = item(52, [pred('HOME', 90, { probability: 0.6, quota: 1.5, min_quota: 1.67 })], null)
+    const [g] = buildGroups([it3], 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(g.opportunities[0].evidence).toBe(false)
+  })
+
+  it('il filtro mercato non sposta l’evidenza della partita', () => {
+    const it4 = item(
+      53,
+      [pred('HOME', 80, { probability: 0.62, quota: 1.9, min_quota: 1.61 }), pred('OVER_2_5', 75, { probability: 0.55, quota: 2, min_quota: 1.82 })],
+      null,
+    )
+    const [g] = buildGroups([it4], 'V2.5', { ...DEFAULT_BB_V3_FILTERS, market: 'OVER_2_5' })
+    expect(g.opportunities).toHaveLength(1)
+    expect(g.opportunities[0].evidence).toBe(false)
+  })
+
+  it('avviso mercati opposti quando entrambi sono predizioni', () => {
+    expect(oppositeAlerts(['HOME_PT', 'AWAY_PT', 'OVER_2_5'])).toEqual(['1 primo tempo e 2 primo tempo'])
+    expect(oppositeAlerts(['OVER_2_5', 'UNDER_3_5'])).toEqual([])
+    const it5 = item(54, [pred('HOME', 75), pred('AWAY', 72)], null)
+    const [g] = buildGroups([it5], 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(g.alerts).toEqual(['1 e 2'])
   })
 })

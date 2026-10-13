@@ -39,7 +39,11 @@ describe('CecchinoPurchasabilityIndexV25', () => {
   it('mostra le predizioni con punteggio e conferma solo dai pattern senza quota', () => {
     render(<CecchinoPurchasabilityIndexV25 p={prediction(['DRAW', 'OVER_2_5'], [pattern('DRAW'), pattern('UNDER_2_5', true)])} />)
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map((t) => t.textContent)).toEqual([expect.stringContaining('82 / 100'), expect.stringContaining('74 / 100')])
+    expect(tabs.map((t) => t.textContent)).toEqual([expect.stringContaining('82/100'), expect.stringContaining('74/100')])
+    // in evidenza (13/10/2026): la X a 3,20 regge soglia 1,41 e quota minima; l'Over 2.5 a 1,40 no
+    expect(tabs[0].textContent).toContain('In evidenza')
+    expect(tabs[1].textContent).not.toContain('In evidenza')
+    expect(tabs[0].textContent).toContain('46,0%')
     expect(tabs[0].textContent).toContain('Confermata dal pattern')
     // il pattern sull'Under usa la quota come condizione: non conta come contrasto
     expect(tabs[1].textContent).not.toContain('In contrasto')

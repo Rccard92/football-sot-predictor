@@ -10,6 +10,7 @@ import { PurchasabilityScoreRing } from '../cecchino/PurchasabilityScoreRing'
 import {
   INDEX_RELATION_LABEL,
   PATTERN_RELATION_LABEL,
+  fmtMinQuotaLabel,
   type BbV3Group,
   type BbV3Opportunity,
   type BbV3Tab,
@@ -184,6 +185,11 @@ export function BetBuilderV3AnalysisDrawer({ open, group, tab, initialKey, onClo
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              {group.alerts.length ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                  Mercati opposti entrambi predetti: {group.alerts.join(' · ')}. Partita a due poli, investire con cautela.
+                </p>
+              ) : null}
               <div className="grid gap-4 md:grid-cols-2">
                 <Section title="Match / risultato" testId="bb-v3-drawer-score">
                   <p className="text-2xl font-bold tabular-nums text-slate-900">
@@ -203,7 +209,7 @@ export function BetBuilderV3AnalysisDrawer({ open, group, tab, initialKey, onClo
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xl font-semibold text-slate-900">{op.label}</span>
                     <OutcomeBadge won={op.won} />
-                    {op.key === opportunities[0]?.key ? (
+                    {op.evidence ? (
                       <span className={`${bbBadge} border-emerald-200 bg-white text-emerald-800`}>In evidenza</span>
                     ) : null}
                   </div>
@@ -212,7 +218,7 @@ export function BetBuilderV3AnalysisDrawer({ open, group, tab, initialKey, onClo
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <Section title="Indice">
+                <Section title="Probabilità e indice">
                   <PurchasabilityScoreRing
                     score={op.score}
                     classLabel={op.score != null ? indexClassLabel(op.score) : null}
@@ -251,7 +257,7 @@ export function BetBuilderV3AnalysisDrawer({ open, group, tab, initialKey, onClo
                     </div>
                     <div className="col-span-2">
                       <dt className="text-slate-500">Giocabile</dt>
-                      <dd className="font-semibold">{op.playable ? 'Sì (quota da 1,50 in su)' : 'No'}</dd>
+                      <dd className="font-semibold">{op.playable ? `Sì (quota da ${fmtMinQuotaLabel()} in su)` : 'No'}</dd>
                     </div>
                   </dl>
                 </Section>
@@ -274,7 +280,7 @@ export function BetBuilderV3AnalysisDrawer({ open, group, tab, initialKey, onClo
                       >
                         <span className="font-semibold">{o.label}</span>
                         <span className="ml-2 tabular-nums opacity-80">
-                          {o.score != null ? `${Math.round(o.score)}/100` : '—'}
+                          {o.winProb != null ? `${Math.round(o.winProb * 100)}%` : o.score != null ? `${Math.round(o.score)}/100` : '—'}
                         </span>
                       </button>
                     ))}

@@ -8,6 +8,17 @@ import type {
 import { MARKET_LABELS } from '../../lib/masterPatternApi'
 
 export type BbV3Tab = 'V2.5' | 'V3' | 'combo'
+
+/** Soglia di "giocabile" e di "In evidenza" (decisione di Giovanni, 13/10/2026; prima 1,50). */
+export const PLAYABLE_MIN_QUOTA = 1.41
+
+export function fmtMinQuotaLabel(): string {
+  return PLAYABLE_MIN_QUOTA.toLocaleString('it-IT', { minimumFractionDigits: 2 })
+}
+
+function isPlayableQuota(quota: number | null | undefined): boolean {
+  return quota != null && quota >= PLAYABLE_MIN_QUOTA
+}
 /** V2.5/V3: giocate dell'indice (predefinito) oppure solo i pattern accesi. */
 export type BbV3Source = 'index' | 'pattern'
 
@@ -44,9 +55,18 @@ export type BbV3Opportunity = {
   /** Solo pattern: cosa dice l'indice dello stesso modello su questo mercato. */
   indexRelation: BbV3IndexRelation | null
   won: boolean | null
+  /** Probabilita' di vittoria stimata (0-1): il dato principale della scheda. Combo: 1 / quota minima. */
+  winProb: number | null
+  /** La giocata in evidenza della partita (vedi pickEvidenceKey). */
+  evidence: boolean
 }
 
-export type BbV3Group = { fixture: BbV3Fixture; opportunities: BbV3Opportunity[] }
+export type BbV3Group = {
+  fixture: BbV3Fixture
+  opportunities: BbV3Opportunity[]
+  /** Mercati opposti entrambi predetti (es. "1 primo tempo e 2 primo tempo"): partita a due poli. */
+  alerts: string[]
+}
 
 export type BbV3FamilyFilter = 'all' | BbV3Family
 export type BbV3SortKey = 'score_desc' | 'kickoff_asc' | 'quota_desc'
@@ -103,10 +123,10 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
       label: marketLabel(c.market_key),
       family: c.family,
       score: c.score,
-      rank: c.score,
+      rank: c.min_quota ? 100 / c.min_quota : c.score,
       quota: c.quota,
       minQuota: c.min_quota,
-      playable: c.playable,
+      playable: isPlayableQuota(c.quota),
       probability: null,
       baseRate: null,
       pattern: null,
@@ -117,6 +137,8 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
       patternV3: c.pattern_v3,
       indexRelation: null,
       won: c.won,
+      winProb: c.min_quota ? 1 / c.min_quota : null,
+      evidence: false,
     }))
   }
   const block = item.models[tab]
@@ -132,7 +154,7 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
       rank: p.patterns_count * 1000 + (p.hist_win_pct ?? 0),
       quota: p.quota,
       minQuota: p.hist_win_pct ? Math.round((10000 / p.hist_win_pct)) / 100 : null,
-      playable: p.playable,
+      playable: isPlayableQuota(p.quota),
       probability: p.index_probability,
       baseRate: p.index_base_rate,
       pattern: 'confermata' as const,
@@ -143,6 +165,8 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
       patternV3: null,
       indexRelation: p.index_relation,
       won: p.won,
+      winProb: p.index_probability ?? (p.hist_win_pct != null ? p.hist_win_pct / 100 : null),
+      evidence: false,
     }))
   }
   if (!block?.available) return []
@@ -154,10 +178,10 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
     label: marketLabel(p.market_key),
     family: p.family,
     score: p.score,
-    rank: p.score,
+    rank: p.probability != null ? p.probability * 100 : p.score,
     quota: p.quota,
     minQuota: p.min_quota,
-    playable: p.playable,
+    playable: isPlayableQuota(p.quota),
     probability: p.probability,
     baseRate: p.base_rate,
     pattern: p.pattern,
@@ -168,7 +192,39 @@ export function opportunitiesFor(item: BbV3FixtureItem, tab: BbV3Tab, source: Bb
     patternV3: tab === 'V3' ? p.pattern : null,
     indexRelation: null,
     won: p.won,
+    winProb: p.probability ?? null,
+    evidence: false,
   }))
+}
+
+/** "In evidenza" (decisione 13/10/2026): la giocata con la probabilita' di vittoria piu' alta tra
+ *  quelle con quota da 1,41 in su e non sotto la quota minima. Nessuna che regge: nessuna evidenza. */
+export function pickEvidenceKey(opps: BbV3Opportunity[]): string | null {
+  let best: BbV3Opportunity | null = null
+  for (const o of opps) {
+    if (o.winProb == null || o.quota == null || o.minQuota == null) continue
+    if (o.quota < PLAYABLE_MIN_QUOTA || o.quota < o.minQuota) continue
+    if (best == null || o.winProb > (best.winProb ?? 0)) best = o
+  }
+  return best?.key ?? null
+}
+
+const OPPOSITE_PAIRS: [string, string][] = [
+  ['HOME', 'AWAY'],
+  ['HOME_PT', 'AWAY_PT'],
+  ['OVER_0_5', 'UNDER_0_5'],
+  ['OVER_1_5', 'UNDER_1_5'],
+  ['OVER_2_5', 'UNDER_2_5'],
+  ['OVER_3_5', 'UNDER_3_5'],
+]
+
+/** Avviso "mercati opposti" (decisione 13/10/2026, prima ipotesi): scatta quando entrambi i mercati di
+ *  una coppia opposta sono predizioni del modello sulla stessa partita. */
+export function oppositeAlerts(marketKeys: Iterable<string>): string[] {
+  const keys = new Set(marketKeys)
+  return OPPOSITE_PAIRS.filter(([a, b]) => keys.has(a) && keys.has(b)).map(
+    ([a, b]) => `${marketLabel(a)} e ${marketLabel(b)}`,
+  )
 }
 
 /** Partite che il modello (o entrambi, per Combo) ha analizzato. */
@@ -215,10 +271,22 @@ export function buildGroups(
     if (f.country && fx.country !== f.country) continue
     if (f.league && fx.league !== f.league) continue
     if (!matchesSearch(fx, f.search)) continue
-    const opportunities = opportunitiesFor(item, tab, source)
+    const all = opportunitiesFor(item, tab, source)
+    // l'evidenza e' la scelta della partita: non cambia con i filtri
+    const evidenceKey = pickEvidenceKey(all)
+    const opportunities = all
       .filter((o) => passesFilters(o, f))
-      .sort((a, b) => b.rank - a.rank || Number(b.playable) - Number(a.playable))
-    if (opportunities.length) groups.push({ fixture: fx, opportunities })
+      .map((o) => ({ ...o, evidence: o.key === evidenceKey }))
+      .sort(
+        (a, b) =>
+          // nella vista indice l'evidenza va per prima; in "Solo pattern" resta l'ordine dei pattern concordi
+          (source === 'index' ? Number(b.evidence) - Number(a.evidence) : 0) ||
+          b.rank - a.rank ||
+          Number(b.playable) - Number(a.playable),
+      )
+    const predicted = source === 'pattern' ? opportunitiesFor(item, tab, 'index') : all
+    if (opportunities.length)
+      groups.push({ fixture: fx, opportunities, alerts: oppositeAlerts(predicted.map((o) => o.marketKey)) })
   }
   const best = (g: BbV3Group) => g.opportunities[0]
   groups.sort((a, b) => {

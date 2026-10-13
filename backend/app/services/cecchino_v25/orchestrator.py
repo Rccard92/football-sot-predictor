@@ -65,7 +65,10 @@ PROB_EPS = 1e-4
 SCORE_BASE = 50.0
 SCORE_POINTS_PER_PT = 2.5  # ogni punto percentuale sopra la frequenza normale del mercato
 PREDICTION_MIN_SCORE = 70.0  # da qui una giocata entra tra le predizioni finali dell'indice
-PLAYABLE_MIN_QUOTA = 1.50  # "vale la pena": sotto questa quota non si investe
+PLAYABLE_MIN_QUOTA = 1.50  # soglia degli ESAMI gia' fatti (E4 ecc.): non si tocca, i risultati restano confrontabili
+# Soglia OPERATIVA di "giocabile" e di "In evidenza" (decisione di Giovanni, 13/10/2026): da 1,41 in su.
+# Vale per Cecchino Today, Bet Builder V3 e i riepiloghi; sotto 1,41 la giocata resta visibile come informazione.
+PLAYABLE_MIN_QUOTA_LIVE = 1.41
 
 
 def _f(value: Any) -> float | None:
@@ -293,7 +296,7 @@ def decision(p_est: float, base_rate: float, quota: float | None) -> dict[str, A
         "is_prediction": is_prediction,
         "quota": quota,
         "min_quota": round(1.0 / p_est, 4) if p_est > 0 else None,
-        "playable": bool(is_prediction and quota is not None and quota >= PLAYABLE_MIN_QUOTA),
+        "playable": bool(is_prediction and quota is not None and quota >= PLAYABLE_MIN_QUOTA_LIVE),
     }
 
 
