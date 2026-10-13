@@ -432,6 +432,158 @@ def _build_summary(fixtures: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# --- Rapporti (richiesta di Giovanni, 13/10/2026) ---------------------------------------------
+# Fasce di quota, contributo dell'Acquistabilita' a scalini, mese per mese e mappa mercato x fascia.
+# Solo primary concluse (vinta/persa) con quota Bet365 > 1, come Profitto e ROI del riepilogo.
+# Forbice di incertezza al 90% sul ROI (approssimazione normale sul profitto per giocata).
+
+QUOTA_BANDS: tuple[tuple[str, float, float], ...] = (
+    ("sotto 1,41", 0.0, 1.405),
+    ("1,41-1,60", 1.405, 1.605),
+    ("1,61-1,80", 1.605, 1.805),
+    ("1,81-2,00", 1.805, 2.005),
+    ("2,01-2,20", 2.005, 2.205),
+    ("da 2,21", 2.205, 1e9),
+)
+INDEX_STEPS: tuple[float | None, ...] = (None, 50.0, 60.0, 70.0)
+VALUE_MIN_PLAYS = 30
+_Z90 = 1.645
+
+
+def quota_band(q: float) -> str:
+    for name, lo, hi in QUOTA_BANDS:
+        if lo <= q < hi:
+            return name
+    return QUOTA_BANDS[-1][0]
+
+
+def roi_stats(plays: list[tuple[bool, float]]) -> dict[str, Any]:
+    """plays = (vinta, quota). ROI e forbice al 90% sul profitto medio per giocata da 1 unita'."""
+    n = len(plays)
+    if n == 0:
+        return {"plays": 0, "won": 0, "win_pct": None, "break_even_pct": None, "avg_quota": None,
+                "profit": 0.0, "roi_pct": None, "roi_low_pct": None, "roi_high_pct": None}
+    profits = [(q - 1.0) if w else -1.0 for w, q in plays]
+    mean = sum(profits) / n
+    var = sum((p - mean) ** 2 for p in profits) / (n - 1) if n > 1 else 0.0
+    half = _Z90 * (var ** 0.5) / (n ** 0.5) if n > 1 else None
+    won = sum(1 for w, _ in plays if w)
+    return {
+        "plays": n,
+        "won": won,
+        "win_pct": round(100.0 * won / n, 1),
+        "break_even_pct": round(100.0 * sum(1.0 / q for _, q in plays) / n, 1),
+        "avg_quota": round(sum(q for _, q in plays) / n, 2),
+        "profit": round(sum(profits), 2),
+        "roi_pct": round(100.0 * mean, 1),
+        "roi_low_pct": round(100.0 * (mean - half), 1) if half is not None else None,
+        "roi_high_pct": round(100.0 * (mean + half), 1) if half is not None else None,
+    }
+
+
+def _settled_play(primary: dict[str, Any]) -> tuple[bool, float] | None:
+    outcome = primary.get("prediction_outcome")
+    if outcome not in (OUTCOME_WON, OUTCOME_LOST):
+        return None
+    q = _primary_quota_book(primary)
+    if q is None or q <= 1.0:
+        return None
+    return outcome == OUTCOME_WON, q
+
+
+def build_results_report(
+    entries: list[dict[str, Any]],
+    *,
+    match_status: str | None,
+    market_key: str | None,
+    origin: str | None,
+    min_purchasability: float | None,
+) -> dict[str, Any]:
+    def select_plays(*, market: str | None, min_p: float | None) -> list[tuple[dict[str, Any], dict[str, Any], tuple[bool, float]]]:
+        out = []
+        for entry in entries:
+            if match_status and entry["match_status"] != match_status:
+                continue
+            ranked = entry["ranked"]
+            if not ranked:
+                continue
+            primary = ranked[0]
+            if not _primary_passes_filters(primary, outcome=None, market_key=market, origin=origin, min_purchasability=min_p):
+                continue
+            play = _settled_play(primary)
+            if play is not None:
+                out.append((entry, primary, play))
+        return out
+
+    current = select_plays(market=market_key, min_p=min_purchasability)
+    without_index = select_plays(market=market_key, min_p=None)
+    all_markets = select_plays(market=None, min_p=min_purchasability)
+
+    bands = []
+    for name, _lo, _hi in QUOTA_BANDS:
+        bands.append({"band": name, **roi_stats([p for _, _, p in current if quota_band(p[1]) == name])})
+
+    baseline = roi_stats([p for _, _, p in without_index])
+    steps = []
+    for step in INDEX_STEPS:
+        chosen = []
+        for _entry, primary, p in without_index:
+            if step is None:
+                chosen.append(p)
+                continue
+            score = (primary.get("purchasability_v36") or {}).get("score")
+            try:
+                if score is not None and float(score) >= step:
+                    chosen.append(p)
+            except (TypeError, ValueError):
+                continue
+        s = roi_stats(chosen)
+        s["step"] = "senza indice" if step is None else f"indice da {int(step)}"
+        s["roi_vs_baseline_pct"] = (
+            round(s["roi_pct"] - baseline["roi_pct"], 1)
+            if s["roi_pct"] is not None and baseline["roi_pct"] is not None
+            else None
+        )
+        steps.append(s)
+
+    by_month: dict[str, list[tuple[bool, float]]] = defaultdict(list)
+    for entry, _primary, p in current:
+        month = str((entry["fixture"] or {}).get("scan_date") or "")[:7]
+        if month:
+            by_month[month].append(p)
+    monthly = [{"month": m, **roi_stats(v)} for m, v in sorted(by_month.items())]
+
+    cells: dict[tuple[str, str], list[tuple[bool, float]]] = defaultdict(list)
+    labels: dict[str, str] = {}
+    for _entry, primary, p in all_markets:
+        market = primary.get("market") or {}
+        mk = str(market.get("market_key") or "")
+        labels[mk] = str(market.get("label") or mk)
+        cells[(mk, quota_band(p[1]))].append(p)
+    market_bands = []
+    for (mk, band), plays in cells.items():
+        s = roi_stats(plays)
+        s.update(
+            {
+                "market_key": mk,
+                "market_label": labels.get(mk, mk),
+                "band": band,
+                "value": bool(s["plays"] >= VALUE_MIN_PLAYS and (s["roi_low_pct"] or -1) > 0),
+            }
+        )
+        market_bands.append(s)
+    market_bands.sort(key=lambda c: (c["market_key"], [b[0] for b in QUOTA_BANDS].index(c["band"])))
+
+    return {
+        "summary": roi_stats([p for _, _, p in current]),
+        "quota_bands": bands,
+        "index_steps": steps,
+        "monthly": monthly,
+        "market_bands": market_bands,
+        "value_rule": f"valore = almeno {VALUE_MIN_PLAYS} giocate e ROI positivo anche nel caso peggiore della forbice al 90%",
+    }
+
+
 # --- Memoria per partita (13/10/2026) -----------------------------------------------------------
 # Prima ogni ricerca rileggeva tutte le partite del periodo con i loro dati pesanti e ricalcolava tutte
 # le opportunity: circa 50 secondi su due mesi, a ogni cambio di filtro. Il risultato di una partita
@@ -638,6 +790,13 @@ def aggregate_bet_builder_results(
     total = len(fixture_results)
     page = fixture_results[offset : offset + limit]
     summary = _build_summary(fixture_results)
+    report = build_results_report(
+        entries,
+        match_status=match_status_filter,
+        market_key=market_filter,
+        origin=origin_filter,
+        min_purchasability=min_purchasability,
+    )
 
     return {
         "contract_version": BET_BUILDER_RESULTS_CONTRACT_VERSION,
@@ -651,5 +810,6 @@ def aggregate_bet_builder_results(
         "offset": offset,
         "total": total,
         "summary": summary,
+        "report": report,
         "fixtures": page,
     }

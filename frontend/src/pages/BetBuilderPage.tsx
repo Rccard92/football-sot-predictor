@@ -8,6 +8,7 @@ import { BetBuilderHeader } from '../components/bet-builder/BetBuilderHeader'
 import { BetBuilderResultDetailDrawer } from '../components/bet-builder/BetBuilderResultDetailDrawer'
 import { BetBuilderResultFixtureCard } from '../components/bet-builder/BetBuilderResultFixtureCard'
 import { BetBuilderResultsFilters } from '../components/bet-builder/BetBuilderResultsFilters'
+import { BetBuilderReports } from '../components/bet-builder/BetBuilderReports'
 import { BetBuilderResultsSummary } from '../components/bet-builder/BetBuilderResultsSummary'
 import { BetBuilderSummary } from '../components/bet-builder/BetBuilderSummary'
 import {
@@ -429,6 +430,7 @@ export function BetBuilderPage() {
       {!loading && !error && view === 'results' && resultsData ? (
         <>
           <BetBuilderResultsSummary summary={resultsData.summary} onFilterLost={filterLost} />
+          {resultsData.report ? <BetBuilderReports report={resultsData.report} /> : null}
           <BetBuilderResultsFilters
             filters={resultsFilters}
             onChange={onResultsFiltersChange}

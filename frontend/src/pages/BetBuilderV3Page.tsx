@@ -24,6 +24,8 @@ import {
   type BbV3Source,
   type BbV3Tab,
 } from '../components/bet-builder-v3/bbV3Utils'
+import { BetBuilderReports } from '../components/bet-builder/BetBuilderReports'
+import { buildV3Report, type ReportPlay } from '../components/bet-builder/betBuilderReportUtils'
 import { BetBuilderViewSwitch } from '../components/bet-builder/BetBuilderViewSwitch'
 import {
   bbCard,
@@ -138,6 +140,29 @@ export function BetBuilderV3Page() {
     [items, tab, effectiveFilters, source],
   )
   const totals = useMemo(() => tally(groups), [groups])
+  // rapporti: tutte le predizioni concluse con quota, con i filtri della pagina (esito escluso);
+  // la mappa del valore ignora anche il filtro mercato, per far emergere i mercati dai numeri
+  const report = useMemo(() => {
+    if (!showOutcome) return null
+    const toPlays = (gs: typeof groups): ReportPlay[] =>
+      gs.flatMap((g) =>
+        g.opportunities
+          .filter((o) => o.won != null && o.quota != null && o.quota > 1)
+          .map((o) => ({
+            won: Boolean(o.won),
+            quota: o.quota as number,
+            marketKey: o.marketKey,
+            marketLabel: o.label,
+            scanDate: g.fixture.scan_date,
+            score: o.score,
+            winProb: o.winProb,
+          })),
+      )
+    const base = { ...effectiveFilters, outcome: 'all' as const }
+    const main = buildV3Report(toPlays(buildGroups(items, tab, base, source)))
+    const map = buildV3Report(toPlays(buildGroups(items, tab, { ...base, market: '', family: 'all' }, source)))
+    return { ...main, market_bands: map.market_bands }
+  }, [showOutcome, items, tab, effectiveFilters, source])
   const confirmed = useMemo(
     () => groups.reduce((n, g) => n + g.opportunities.filter(isPatternAgree).length, 0),
     [groups],
@@ -325,7 +350,10 @@ export function BetBuilderV3Page() {
       {!loading && !error && data ? (
         <>
           {showOutcome ? (
-            <BetBuilderV3ResultsSummary tally={totals} />
+            <>
+              <BetBuilderV3ResultsSummary tally={totals} />
+              {report ? <BetBuilderReports report={report} /> : null}
+            </>
           ) : (
             <BetBuilderV3PrematchSummary
               source={source}

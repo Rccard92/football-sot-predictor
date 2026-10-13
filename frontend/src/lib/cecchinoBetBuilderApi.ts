@@ -395,6 +395,8 @@ export type BetBuilderResultsResponse = {
   offset: number
   total: number
   summary: BetBuilderResultsSummary
+  /** Rapporti (13/10/2026): fasce di quota, contributo dell'indice, mesi, mappa del valore. */
+  report?: import('../components/bet-builder/betBuilderReportUtils').BetBuilderReport
   fixtures: BetBuilderResultsFixture[]
 }
 
