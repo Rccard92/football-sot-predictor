@@ -168,7 +168,37 @@ def _combo(v25: dict[str, Any] | None, v3: dict[str, Any] | None) -> list[dict[s
     return out
 
 
+def _settled_score(pred: CecchinoLivePrediction) -> dict[str, Any] | None:
+    """Punteggio con cui la previsione e' stata regolata (result_json.score: ft/ht)."""
+    score = (pred.result_json or {}).get("score") if isinstance(pred.result_json, dict) else None
+    if not isinstance(score, dict) or score.get("ft_home") is None or score.get("ft_away") is None:
+        return None
+    return {
+        "home": score.get("ft_home"),
+        "away": score.get("ft_away"),
+        "halftime_home": score.get("ht_home"),
+        "halftime_away": score.get("ht_away"),
+    }
+
+
 def _fixture_block(today: CecchinoTodayFixture | None, pred: CecchinoLivePrediction) -> dict[str, Any]:
+    score = (
+        {
+            "home": today.goals_home,
+            "away": today.goals_away,
+            "halftime_home": getattr(today, "score_halftime_home", None),
+            "halftime_away": getattr(today, "score_halftime_away", None),
+        }
+        if today is not None and today.goals_home is not None and today.goals_away is not None
+        else None
+    )
+    match_status = normalize_match_status(today) if today is not None else "unknown"
+    # la riga di Cecchino Today a volte non viene aggiornata dopo la partita, mentre la previsione e'
+    # gia' regolata con il risultato dello storico: si mostra quel punteggio, partita conclusa
+    settled = _settled_score(pred)
+    if settled is not None and (score is None or match_status != "finished"):
+        score = settled
+        match_status = "finished"
     return {
         "today_fixture_id": int(pred.today_fixture_id),
         "scan_date": pred.scan_date.isoformat(),
@@ -177,17 +207,8 @@ def _fixture_block(today: CecchinoTodayFixture | None, pred: CecchinoLivePredict
         "league": pred.league_name,
         "home": {"name": pred.home_team_name, "logo": getattr(today, "home_team_logo_url", None)},
         "away": {"name": pred.away_team_name, "logo": getattr(today, "away_team_logo_url", None)},
-        "match_status": normalize_match_status(today) if today is not None else "unknown",
-        "score": (
-            {
-                "home": today.goals_home,
-                "away": today.goals_away,
-                "halftime_home": getattr(today, "score_halftime_home", None),
-                "halftime_away": getattr(today, "score_halftime_away", None),
-            }
-            if today is not None and today.goals_home is not None and today.goals_away is not None
-            else None
-        ),
+        "match_status": match_status,
+        "score": score,
     }
 
 
@@ -212,7 +233,8 @@ def bet_builder_v3(db: Session, *, date_from: date, date_to: date) -> dict[str, 
     fixtures = []
     for fid, preds in by_fixture.items():
         blocks = {model: _model_block(db, pred) for model, pred in preds.items()}
-        any_pred = next(iter(preds.values()))
+        # preferisce una previsione gia' regolata: porta il punteggio finale anche se Today non e' aggiornato
+        any_pred = next((p for p in preds.values() if _settled_score(p) is not None), next(iter(preds.values())))
         combo = _combo(blocks.get("V2.5"), blocks.get("V3"))
         for b in blocks.values():
             b.pop("_groups", None)
