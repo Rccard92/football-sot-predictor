@@ -137,10 +137,11 @@ def test_predicts_matrix_and_sentence(blocks):
     assert len(pred["score_matrix"]) == 6 and all(len(r) == 6 for r in pred["score_matrix"])
     assert 0.9 < sum(sum(r) for r in pred["score_matrix"]) <= 1.0
     assert pred["most_likely"] == {"market_key": "AWAY", "label": "2", "p": 0.42}
-    assert pred["most_likely_score"]["home"] <= 2 and pred["most_likely_score"]["away"] <= 2
-    assert "Segno più probabile: 2 al 42%." in pred["sentence"]
+    # niente risultato esatto "piu' probabile" (13/10/2026): resta solo la griglia
+    assert "most_likely_score" not in pred
+    assert "Risultato più probabile" not in pred["sentence"]
+    assert pred["sentence"].startswith("Segno più probabile: 2 al 42%.")
     assert "Gol attesi: Milan 1,2, Inter 1,6; over 2,5 al 51%." in pred["sentence"]
-    assert pred["sentence"].startswith("Risultato più probabile ")
     markets = pred["markets"]
     assert markets[0]["market_key"] == SOT_KEY  # profitto atteso più alto in testa tra i mercati con verdetto pieno
     assert markets[-1]["expected_profit"] is None  # non quotati in coda
@@ -243,3 +244,19 @@ def test_fixture_card_without_play():
     assert card["no_play_reason"] == VERDICT_NO_ODDS
     assert card["result"] == RESULT
     assert card["lineups_status"] == "ufficiali"
+
+
+def test_saved_cards_lose_the_modal_score_when_read():
+    from app.services.cecchino_v4.serving import _without_modal_score
+
+    old = {"predicts": {
+        "sentence": "Risultato più probabile 1-1 (13%). Segno più probabile: 1 al 47%. Gol attesi: A 1,4, B 1,0.",
+        "most_likely_score": {"home": 1, "away": 1, "p": 0.13},
+        "score_matrix": [[0.1]],
+    }, "who": {"sentence": "x"}}
+    out = _without_modal_score(old)
+    assert out["predicts"]["sentence"] == "Segno più probabile: 1 al 47%. Gol attesi: A 1,4, B 1,0."
+    assert "most_likely_score" not in out["predicts"]
+    assert out["predicts"]["score_matrix"] == [[0.1]] and out["who"] == {"sentence": "x"}
+    assert old["predicts"]["most_likely_score"]  # i dati salvati non si toccano
+    assert _without_modal_score(None) is None

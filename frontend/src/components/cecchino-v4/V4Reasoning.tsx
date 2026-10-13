@@ -20,7 +20,7 @@ import {
   v4Label,
   v4Mono,
 } from './constants'
-import { capitalize, fmtDateTimeRome, fmtDecimal, fmtOrdinal, fmtPct, fmtScore, fmtSigned } from './format'
+import { capitalize, fmtDateTimeRome, fmtDecimal, fmtOrdinal, fmtScore, fmtSigned } from './format'
 import { V4PlayLine } from './V4FixtureCard'
 import { V4HowBars } from './V4HowBars'
 import { V4MarketsTable } from './V4MarketsTable'
@@ -309,15 +309,6 @@ export function V4Reasoning({ detail }: Props) {
             awayTeam={away}
             bestKey={fixture.best_play?.market_key ?? null}
           />
-          {blocks.predicts.most_likely_score ? (
-            <p className="text-sm text-slate-700">
-              Risultato più probabile{' '}
-              <span className={`${v4Mono} font-semibold`}>
-                {fmtScore(blocks.predicts.most_likely_score.home, blocks.predicts.most_likely_score.away)}
-              </span>{' '}
-              al <span className={v4Mono}>{fmtPct(blocks.predicts.most_likely_score.p)}</span>
-            </p>
-          ) : null}
           {blocks.predicts.score_matrix.length > 0 ? (
             <V4ScoreMatrix
               matrix={blocks.predicts.score_matrix}

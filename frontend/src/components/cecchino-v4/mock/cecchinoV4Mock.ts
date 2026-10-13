@@ -253,7 +253,6 @@ function milanInterDetail(fixture: V4FixtureCard): V4FixtureDetail {
         score_matrix: scoreMatrix(1.2, 1.6),
         max_goals: 5,
         markets: milanInterMarkets(),
-        most_likely_score: { home: 1, away: 1, p: 0.12 },
         most_likely: { market_key: 'AWAY', label: '2', p: 0.42 },
         expected_goals: { home: 1.2, away: 1.6 },
       },

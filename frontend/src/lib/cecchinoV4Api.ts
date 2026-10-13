@@ -158,7 +158,6 @@ export type V4PredictsBlock = {
   score_matrix: number[][]
   max_goals: number
   markets: V4MarketRow[]
-  most_likely_score?: { home: number; away: number; p: number } | null
   most_likely?: { market_key: string; label: string; p: number } | null
   expected_goals?: { home: number; away: number } | null
 }

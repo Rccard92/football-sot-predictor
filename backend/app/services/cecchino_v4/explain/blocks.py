@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 
 from app.services.cecchino_v3.markets import score_matrix
 from app.services.cecchino_v4.constants import EVIDENCE_FULL_KNOWLEDGE, PROFIT_MARGIN, STATS, VERDICT_DESCRIPTIVE, VERDICT_LABELS
@@ -254,11 +253,10 @@ def build_predicts(goals: dict[str, Any] | None, rows: list[MarketRow], home_tea
     goals = goals or {}
     lam_home, lam_away = goals.get("lambda_home"), goals.get("lambda_away")
     matrix_list: list[list[float]] = []
-    most_likely_score: dict[str, Any] | None = None
+    # Nessun "risultato piu' probabile" (decisione utente 13/10/2026): con gol attesi tra 1 e 2 vince quasi
+    # sempre l'1-1 con il 12-13%, a un punto da 1-0 e 2-1. Resta solo la griglia completa dei risultati.
     if lam_home is not None and lam_away is not None:
         matrix = score_matrix(float(lam_home), float(lam_away), float(goals.get("rho") or 0.0))
-        h, a = np.unravel_index(int(np.argmax(matrix)), matrix.shape)
-        most_likely_score = {"home": int(h), "away": int(a), "p": round(float(matrix[h, a]), 4)}
         shown = matrix[: MAX_GOALS_SHOWN + 1, : MAX_GOALS_SHOWN + 1]
         matrix_list = [[round(float(x), 4) for x in line] for line in shown]
 
@@ -268,8 +266,6 @@ def build_predicts(goals: dict[str, Any] | None, rows: list[MarketRow], home_tea
     p_over = over.p if over else _get(goals, "markets", "OVER_2_5", "p")
 
     parts: list[str] = []
-    if most_likely_score:
-        parts.append(f"Risultato più probabile {most_likely_score['home']}-{most_likely_score['away']} ({fmt_pct(most_likely_score['p'])}).")
     if sign:
         parts.append(f"Segno più probabile: {sign['label']} al {fmt_pct(sign['p'])}.")
     if lam_home is not None and lam_away is not None:
@@ -282,7 +278,6 @@ def build_predicts(goals: dict[str, Any] | None, rows: list[MarketRow], home_tea
         "sentence": " ".join(parts),
         "score_matrix": matrix_list,
         "max_goals": MAX_GOALS_SHOWN,
-        "most_likely_score": most_likely_score,
         "most_likely": sign,
         "expected_goals": {"home": lam_home, "away": lam_away},
         "markets": markets,

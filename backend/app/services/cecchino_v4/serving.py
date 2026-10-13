@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import json
 import math
 from collections import Counter
@@ -140,6 +142,21 @@ def fixtures(
     }
 
 
+_MODAL_SCORE_SENTENCE = re.compile(r"^Risultato più probabile \d+-\d+ \([^)]*\)\.\s*")
+
+
+def _without_modal_score(blocks: Any) -> Any:
+    """Schede salvate prima del 13/10/2026: niente "risultato piu' probabile" (resta la griglia).
+    Si toglie in lettura, senza riscrivere i dati gia' in archivio."""
+    if not isinstance(blocks, dict) or not isinstance(blocks.get("predicts"), dict):
+        return blocks
+    predicts = {k: v for k, v in blocks["predicts"].items() if k != "most_likely_score"}
+    sentence = predicts.get("sentence")
+    if isinstance(sentence, str):
+        predicts["sentence"] = _MODAL_SCORE_SENTENCE.sub("", sentence) or sentence
+    return {**blocks, "predicts": predicts}
+
+
 def fixture_detail(db: Session, fixture_id: int) -> dict[str, Any]:
     f = db.get(CecchinoV4Fixture, fixture_id)
     if f is None:
@@ -147,7 +164,7 @@ def fixture_detail(db: Session, fixture_id: int) -> dict[str, Any]:
     expl = _explanations(db, [f.id]).get(f.id)
     return {
         "fixture": _card(f, expl),
-        "blocks": (expl or {}).get("blocks"),
+        "blocks": _without_modal_score((expl or {}).get("blocks")),
         "rows": (expl or {}).get("rows") or [],
         "computed_at": (expl or {}).get("computed_at"),
     }

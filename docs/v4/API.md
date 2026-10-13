@@ -154,7 +154,7 @@ Solo aggiunte; le forme sopra restano valide.
 - `who.home|away`: anche `team`, `trend` (`in crescita|in calo|stabile`|null), `known` in `bene|abbastanza|poco` (soglie: ≥ 15 partite equivalenti "bene", < 5 "poco").
 - `how.rows[]`: anche `exam`, `home_rank_for`, `away_rank_for`, `total`. `home_against`/`away_against` vengono dal campo opzionale `mean_against` del payload statistiche; null se assente.
 - `context.form`: `{"home": {"trend","goals_delta","shots_delta","matches"}, "away": {...}}`; `context.rest` anche `final_phase`.
-- `predicts`: anche `most_likely_score` `{"home","away","p"}`, `most_likely` (segno 1X2), `expected_goals`. `score_matrix` e' 6×6 (0-5 gol), `max_goals` 5.
+- `predicts`: `most_likely` (segno 1X2), `expected_goals`. Nessun risultato esatto "piu' probabile" dal 13/10/2026 (quasi sempre 1-1 al 12-13%, a un punto dagli altri): resta solo la griglia. `score_matrix` e' 6×6 (0-5 gol), `max_goals` 5.
 - `why`: anche `reason` (verdetto bloccante quando `play` e' null); in quel caso `sentences` contiene la frase "Nessuna giocata: …" e `would_change` e' vuoto.
 - `aftermath`: `{"sentence", "result", "goals": {"expected_home","expected_away","actual_home","actual_away"}, "stats": [{"stat","label","expected_home","expected_away","actual_home","actual_away"}], "play": {"label","market_key","outcome","profit_units"}|null, "luck": "…"}`.
 
