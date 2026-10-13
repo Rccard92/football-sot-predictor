@@ -363,7 +363,24 @@ def _mock_db(rows: list) -> MagicMock:
     db.scalars.side_effect = _scalars
     db.scalar.return_value = None
     db.get.return_value = None
+
+    def _execute(stmt):
+        # lettura leggera (id, updated_at) usata dalla memoria per partita
+        result = MagicMock()
+        result.all.return_value = [(r.id, getattr(r, "updated_at", None)) for r in rows]
+        return result
+
+    db.execute.side_effect = _execute
     return db
+
+
+@pytest.fixture(autouse=True)
+def _empty_results_cache():
+    from app.services.cecchino import cecchino_bet_builder_results as svc
+
+    svc._ENTRY_CACHE.clear()
+    yield
+    svc._ENTRY_CACHE.clear()
 
 
 def _opp_built(
@@ -1262,3 +1279,43 @@ class TestProfitRoiSummary:
         assert price_origin["summary"]["priced_settled"] == 1
         assert price_origin["summary"]["profit_units"] == pytest.approx(0.5)
         assert price_origin["summary"]["roi_pct"] == pytest.approx(50.0)
+
+
+class TestResultsCache:
+    """La pagina Risultati ricalcola solo le partite nuove o cambiate (13/10/2026)."""
+
+    def test_second_search_reuses_unchanged_fixtures(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results._load_gi_payloads_batch",
+            lambda db, rows: ({}, None),
+        )
+        built: list[int] = []
+
+        def fake_build(rows, **kwargs):
+            built.extend(int(r.id) for r in rows)
+            return [_opp_built(fid=int(r.id), market_key=SEL_DRAW, origin=ORIGIN_PRICE, v31=60) for r in rows], None
+
+        monkeypatch.setattr(
+            "app.services.cecchino.cecchino_bet_builder_results.build_opportunities_for_rows",
+            fake_build,
+        )
+        r1 = _row(fid=1, ft_home=1, ft_away=1)
+        r2 = _row(fid=2, ft_home=2, ft_away=0)
+        r1.updated_at = datetime(2026, 10, 1, 10, 0)
+        r2.updated_at = datetime(2026, 10, 1, 10, 0)
+        db = _mock_db([r1, r2])
+
+        first = aggregate_bet_builder_results(db, date_from=date(2026, 8, 8), date_to=date(2026, 8, 8))
+        assert sorted(built) == [1, 2]
+        assert first["summary"]["primary_predictions"] == 2
+
+        built.clear()
+        second = aggregate_bet_builder_results(
+            db, date_from=date(2026, 8, 8), date_to=date(2026, 8, 8), market_key=SEL_DRAW
+        )
+        assert built == []  # nessun ricalcolo: stessi dati
+        assert second["summary"]["primary_predictions"] == 2
+
+        r2.updated_at = datetime(2026, 10, 2, 9, 0)  # la partita 2 cambia (es. risultato aggiornato)
+        aggregate_bet_builder_results(db, date_from=date(2026, 8, 8), date_to=date(2026, 8, 8))
+        assert built == [2]

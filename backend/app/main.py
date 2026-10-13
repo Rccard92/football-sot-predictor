@@ -47,6 +47,24 @@ def warm_pattern_cache() -> None:
     threading.Thread(target=warm_winners_cache, name="warm-pattern-cache", daemon=True).start()
 
 
+@app.on_event("startup")
+def warm_bet_builder_results_cache() -> None:
+    """Risultati del Bet Builder pre-calcolati in sottofondo, 60 secondi dopo l'avvio: la prima ricerca
+    sulla pagina Risultati non attende il calcolo di due mesi di partite."""
+    if not getattr(settings, "cecchino_warm_bet_builder_results", True):
+        return
+    import threading
+    import time
+
+    def _run() -> None:
+        time.sleep(60)
+        from app.services.cecchino.cecchino_bet_builder_results import warm_bet_builder_results_cache as warm
+
+        warm()
+
+    threading.Thread(target=_run, name="warm-bet-builder-results", daemon=True).start()
+
+
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_unhandled_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Log degli errori SQLAlchemy non gestiti a livello di route (senza URL/credenziali)."""

@@ -8,6 +8,8 @@ Nessun freeze, nessun backfill, nessuna API esterna, nessuna migration.
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -430,6 +432,122 @@ def _build_summary(fixtures: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# --- Memoria per partita (13/10/2026) -----------------------------------------------------------
+# Prima ogni ricerca rileggeva tutte le partite del periodo con i loro dati pesanti e ricalcolava tutte
+# le opportunity: circa 50 secondi su due mesi, a ogni cambio di filtro. Il risultato di una partita
+# dipende solo dalla sua riga Today e dalla sua anteprima Intensita' Goal: si calcola una volta e si
+# ricalcola solo quando una delle due cambia (updated_at della riga, istante dello snapshot GI, bundle
+# attivo). Stessa logica e stessi numeri di prima; cambia solo quanto spesso si rifanno i conti.
+
+_ENTRY_CACHE: dict[int, tuple[tuple[Any, ...], dict[str, Any]]] = {}
+_ENTRY_CACHE_LOCK = threading.Lock()
+_ENTRY_CACHE_MAX = 6000  # ~16 KB a partita: circa 100 MB al massimo
+_ENTRY_BUILD_CHUNK = 200
+
+
+def _gi_signatures(db: Session, ids: list[int]) -> tuple[Any, dict[int, Any]]:
+    """Bundle GI attivo e istante dell'ultimo snapshot per partita (solo colonne leggere)."""
+    from app.models.cecchino_goal_intensity_v5_preview import CecchinoGoalIntensityV5PreviewSnapshot
+    from app.services.cecchino.cecchino_goal_intensity_v5_preview import get_active_bundle
+
+    bundle = get_active_bundle(db)
+    if bundle is None or not ids:
+        return None, {}
+    snap = CecchinoGoalIntensityV5PreviewSnapshot
+    out: dict[int, Any] = {}
+    for start_i in range(0, len(ids), 1000):
+        chunk = ids[start_i : start_i + 1000]
+        for fid, a, b, c in db.execute(
+            select(snap.today_fixture_id, snap.last_computed_at, snap.source_snapshot_at, snap.updated_at).where(
+                snap.bundle_id == bundle.id, snap.today_fixture_id.in_(chunk)
+            )
+        ).all():
+            out[int(fid)] = (a, b, c)
+    return (bundle.id, getattr(bundle, "updated_at", None)), out
+
+
+def _build_entries(db: Session, ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Calcolo completo (come prima) per le sole partite nuove o cambiate, a blocchi."""
+    out: dict[int, dict[str, Any]] = {}
+    for start_i in range(0, len(ids), _ENTRY_BUILD_CHUNK):
+        chunk = ids[start_i : start_i + _ENTRY_BUILD_CHUNK]
+        wanted = set(chunk)
+        rows = [
+            r
+            for r in db.scalars(select(CecchinoTodayFixture).where(CecchinoTodayFixture.id.in_(chunk))).all()
+            if int(r.id) in wanted
+        ]
+        gi_by_fixture, _max_gi = _load_gi_payloads_batch(db, rows)
+        all_opps, _max_v31 = build_opportunities_for_rows(
+            rows,
+            gi_by_fixture=gi_by_fixture,
+            market_filter=None,
+            origin_filter=None,
+            freshness_scan_date=None,
+        )
+        by_fixture: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for opp in all_opps:
+            fid = int((opp.get("fixture") or {}).get("today_fixture_id") or 0)
+            if fid:
+                by_fixture[fid].append(opp)
+        for row in rows:
+            opps = by_fixture.get(int(row.id), [])
+            enriched = [_enrich_opportunity_with_outcome(o, row) for o in opps]
+            out[int(row.id)] = {
+                "match_status": normalize_match_status(row),
+                "fixture": _fixture_results_block(row),
+                "ranked": sort_opportunities_by_evidence_strength(enriched),
+            }
+        # le righe complete non servono piu': si libera la sessione blocco per blocco
+        for row in rows:
+            db.expunge(row)
+    return out
+
+
+def _fixture_entries_for_range(db: Session, *, d_from: date, d_to: date, start: date) -> list[dict[str, Any]]:
+    """Voci per partita nell'ordine di prima (kickoff decrescente), dalla memoria quando possibile."""
+    light = db.execute(
+        select(CecchinoTodayFixture.id, CecchinoTodayFixture.updated_at)
+        .where(
+            CecchinoTodayFixture.scan_date >= d_from,
+            CecchinoTodayFixture.scan_date <= d_to,
+            CecchinoTodayFixture.scan_date >= start,
+            CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+        )
+        .order_by(CecchinoTodayFixture.kickoff.desc().nullslast())
+    ).all()
+    ids = [int(r[0]) for r in light]
+    bundle_sig, gi_sig = _gi_signatures(db, ids)
+    signatures = {int(fid): (updated_at, bundle_sig, gi_sig.get(int(fid))) for fid, updated_at in light}
+
+    with _ENTRY_CACHE_LOCK:
+        stale = [fid for fid in ids if (_ENTRY_CACHE.get(fid) or (None,))[0] != signatures[fid]]
+        if stale:
+            built = _build_entries(db, stale)
+            if len(_ENTRY_CACHE) + len(built) > _ENTRY_CACHE_MAX:
+                _ENTRY_CACHE.clear()
+            for fid, entry in built.items():
+                _ENTRY_CACHE[fid] = (signatures[fid], entry)
+        return [_ENTRY_CACHE[fid][1] for fid in ids if fid in _ENTRY_CACHE]
+
+
+def warm_bet_builder_results_cache(days: int = 70) -> None:
+    """Riempie la memoria all'avvio del backend, in background: la prima ricerca non attende."""
+    from datetime import timedelta
+
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        today = datetime.now(ROME_TZ).date()
+        d_from = max(BET_BUILDER_RESULTS_START_DATE, today - timedelta(days=days))
+        _fixture_entries_for_range(db, d_from=d_from, d_to=today, start=BET_BUILDER_RESULTS_START_DATE)
+    except Exception:  # noqa: BLE001 - la memoria e' un'ottimizzazione, mai un errore per l'app
+        logging.getLogger(__name__).exception("bet builder results: riscaldamento memoria fallito")
+    finally:
+        db.close()
+
+
 def aggregate_bet_builder_results(
     db: Session,
     *,
@@ -488,47 +606,13 @@ def aggregate_bet_builder_results(
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
 
-    rows = list(
-        db.scalars(
-            select(CecchinoTodayFixture)
-            .where(
-                CecchinoTodayFixture.scan_date >= d_from,
-                CecchinoTodayFixture.scan_date <= d_to,
-                CecchinoTodayFixture.scan_date >= start,
-                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
-            )
-            .order_by(CecchinoTodayFixture.kickoff.desc().nullslast())
-        ).all()
-    )
-
-    gi_by_fixture, _max_gi = _load_gi_payloads_batch(db, rows)
-    # Costruisci TUTTE le opportunity (senza filtro market/origin a livello build
-    # se filtriamo sulla primary — ma se market/origin filter sono impostati
-    # applicarli dopo sulla primary. Build completo per ranking corretto.
-    all_opps, _max_v31 = build_opportunities_for_rows(
-        rows,
-        gi_by_fixture=gi_by_fixture,
-        market_filter=None,
-        origin_filter=None,
-        freshness_scan_date=None,
-    )
-
-    by_fixture: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    row_by_id: dict[int, CecchinoTodayFixture] = {int(r.id): r for r in rows}
-    for opp in all_opps:
-        fid = int((opp.get("fixture") or {}).get("today_fixture_id") or 0)
-        if fid:
-            by_fixture[fid].append(opp)
+    entries = _fixture_entries_for_range(db, d_from=d_from, d_to=d_to, start=start)
 
     fixture_results: list[dict[str, Any]] = []
-    for fid, opps in by_fixture.items():
-        row = row_by_id.get(fid)
-        if row is None:
+    for entry in entries:
+        if match_status_filter and entry["match_status"] != match_status_filter:
             continue
-        if match_status_filter and normalize_match_status(row) != match_status_filter:
-            continue
-        enriched = [_enrich_opportunity_with_outcome(o, row) for o in opps]
-        ranked = sort_opportunities_by_evidence_strength(enriched)
+        ranked = entry["ranked"]
         primary = ranked[0] if ranked else None
         if primary is None:
             continue
@@ -543,7 +627,7 @@ def aggregate_bet_builder_results(
         others = ranked[1:]
         fixture_results.append(
             {
-                "fixture": _fixture_results_block(row),
+                "fixture": entry["fixture"],
                 "primary": primary,
                 "other_opportunities": others,
                 "primary_selection_version": BET_BUILDER_PRIMARY_SELECTION_VERSION,

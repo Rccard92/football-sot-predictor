@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     cecchino_auto_results_days_back: int = 3
     cecchino_auto_results_stale_lookback_days: int = 30
     cecchino_auto_results_max_days: int = 10
+    # Pagina Risultati del Bet Builder: memoria per partita riempita in sottofondo all'avvio.
+    cecchino_warm_bet_builder_results: bool = True
 
     # Acquistabilità operativa (default V3; V3.1 solo post GO_FINAL via JSON runtime)
     operational_purchasability_version: str = "v3"
