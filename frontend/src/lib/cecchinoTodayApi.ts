@@ -2108,6 +2108,9 @@ export type CecchinoTodayDetailResponse = {
   away_team_name?: string | null
   kickoff?: string | null
   fixture_status?: string | null
+  match_display_status?: string | null
+  /** Risultato primo tempo e finale (stesso formato della lista). */
+  score?: CecchinoTodayScore
   odds_snapshot?: Record<string, unknown>
   stats_snapshot?: Record<string, unknown>
   cecchino_output?: Record<string, unknown>

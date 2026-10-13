@@ -1,6 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useId, useState } from 'react'
-import { Link } from 'react-router-dom'
 import type { BbV3IndexRelation, BbV3PatternRelation } from '../../lib/cecchinoBetBuilderV3Api'
 import {
   bbBadge,
@@ -32,6 +31,8 @@ type Props = {
   group: BbV3Group
   tab: BbV3Tab
   showOutcome: boolean
+  /** Apre l'analisi manuale nel pannello laterale della stessa pagina, sull'opportunità selezionata. */
+  onOpenAnalysis: (group: BbV3Group, opportunityKey: string | null) => void
 }
 
 function TeamLogo({ name, logo, sizeClass }: { name: string; logo?: string | null; sizeClass: string }) {
@@ -346,7 +347,7 @@ function SelectedPanel({
   )
 }
 
-export function BetBuilderV3FixtureCard({ group, tab, showOutcome }: Props) {
+export function BetBuilderV3FixtureCard({ group, tab, showOutcome, onOpenAnalysis }: Props) {
   const reduceMotion = useReducedMotion()
   const panelId = useId()
   const [userKey, setUserKey] = useState<string | null>(null)
@@ -355,8 +356,11 @@ export function BetBuilderV3FixtureCard({ group, tab, showOutcome }: Props) {
   const homeName = fx.home.name ?? 'Casa'
   const awayName = fx.away.name ?? 'Ospite'
   const meta = [fx.country, fx.league].filter(Boolean).join(' · ')
-  const analysisHref = `/cecchino-today?date=${encodeURIComponent(fx.scan_date)}&fixture=${fx.today_fixture_id}`
-  const scoreText = fx.score ? `${fx.score.home} - ${fx.score.away}` : null
+  const htText =
+    fx.score?.halftime_home != null && fx.score?.halftime_away != null
+      ? ` (PT ${fx.score.halftime_home} - ${fx.score.halftime_away})`
+      : ''
+  const scoreText = fx.score ? `${fx.score.home} - ${fx.score.away}${htText}` : null
 
   return (
     <motion.article
@@ -413,13 +417,15 @@ export function BetBuilderV3FixtureCard({ group, tab, showOutcome }: Props) {
       ) : null}
 
       <div className="mt-auto flex justify-stretch pt-1 sm:justify-end">
-        <Link
-          to={analysisHref}
+        <button
+          type="button"
           className={`${bbSecondaryBtn} w-full sm:w-auto`}
           aria-label={`Apri analisi ${homeName} vs ${awayName}`}
+          data-testid="bb-v3-open-analysis"
+          onClick={() => onOpenAnalysis(group, selected?.key ?? null)}
         >
           Apri analisi manuale →
-        </Link>
+        </button>
       </div>
     </motion.article>
   )

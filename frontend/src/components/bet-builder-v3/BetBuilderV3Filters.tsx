@@ -9,8 +9,10 @@ import {
 } from '../bet-builder/betBuilderStyles'
 import {
   FAMILY_CHIPS,
+  marketLabel,
   type BbV3FamilyFilter,
   type BbV3Filters,
+  type BbV3MarketOption,
   type BbV3OutcomeFilter,
   type BbV3SortKey,
   type BbV3Source,
@@ -20,6 +22,7 @@ import {
 type Props = {
   filters: BbV3Filters
   counts: Record<BbV3FamilyFilter, number>
+  markets: BbV3MarketOption[]
   countries: string[]
   leagues: string[]
   tab: BbV3Tab
@@ -50,6 +53,7 @@ function countSecondary(f: BbV3Filters): number {
 export function BetBuilderV3Filters({
   filters,
   counts,
+  markets,
   countries,
   leagues,
   tab,
@@ -81,7 +85,7 @@ export function BetBuilderV3Filters({
                 role="tab"
                 aria-selected={active}
                 className={`${active ? bbChipActive : bbChipIdle} snap-start min-h-9 py-1.5`}
-                onClick={() => onChange({ family: chip.key })}
+                onClick={() => onChange({ family: chip.key, market: '' })}
               >
                 <span>{chip.label}</span>
                 <span className={active ? 'text-slate-300' : 'text-slate-400'} aria-hidden>
@@ -95,6 +99,27 @@ export function BetBuilderV3Filters({
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <label className="block min-w-0 sm:w-56">
+          <span className="sr-only">Mercato</span>
+          <select
+            className={bbSelect}
+            value={filters.market}
+            onChange={(e) => onChange({ market: e.target.value })}
+            aria-label="Mercato"
+            data-testid="bb-v3-filter-market"
+          >
+            <option value="">Mercato: tutti</option>
+            {markets.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label} · {m.count}
+              </option>
+            ))}
+            {filters.market && !markets.some((m) => m.key === filters.market) ? (
+              <option value={filters.market}>{marketLabel(filters.market)} · 0</option>
+            ) : null}
+          </select>
+        </label>
+
         <label className="block min-w-0 flex-1 sm:max-w-xs">
           <span className="sr-only">Cerca squadra</span>
           <input

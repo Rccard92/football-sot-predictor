@@ -54,6 +54,8 @@ export type BbV3OutcomeFilter = 'all' | 'won' | 'lost' | 'pending'
 
 export type BbV3Filters = {
   family: BbV3FamilyFilter
+  /** Singolo mercato (es. "DRAW", "AWAY_PT"); vuoto = tutti i mercati della famiglia. */
+  market: string
   search: string
   /** Indice e pattern d'accordo: il mercato ha un pattern acceso che lo conferma. */
   patternAgree: boolean
@@ -67,6 +69,7 @@ export type BbV3Filters = {
 
 export const DEFAULT_BB_V3_FILTERS: BbV3Filters = {
   family: 'all',
+  market: '',
   search: '',
   patternAgree: false,
   playableOnly: false,
@@ -190,6 +193,7 @@ function matchesSearch(f: BbV3Fixture, q: string): boolean {
 
 export function passesFilters(o: BbV3Opportunity, f: BbV3Filters): boolean {
   if (f.family !== 'all' && o.family !== f.family) return false
+  if (f.market && o.marketKey !== f.market) return false
   if (f.patternAgree && !isPatternAgree(o)) return false
   if (f.playableOnly && !o.playable) return false
   if (f.minScore != null && (o.score == null || o.score < f.minScore)) return false
@@ -233,13 +237,37 @@ export function familyCounts(
   source: BbV3Source = 'index',
 ): Record<BbV3FamilyFilter, number> {
   const out: Record<BbV3FamilyFilter, number> = { all: 0, esito: 0, gol: 0, primo_tempo: 0 }
-  for (const g of buildGroups(items, tab, { ...f, family: 'all' }, source)) {
+  for (const g of buildGroups(items, tab, { ...f, family: 'all', market: '' }, source)) {
     for (const o of g.opportunities) {
       out.all += 1
       out[o.family] += 1
     }
   }
   return out
+}
+
+export type BbV3MarketOption = { key: string; label: string; count: number }
+
+/** Mercati singoli presenti con i filtri attuali (famiglia compresa, mercato escluso), nell'ordine
+ *  canonico 1, X, 2, doppie, gol, primo tempo: come la scelta del segno del vecchio Bet Builder. */
+export function marketOptions(
+  items: BbV3FixtureItem[],
+  tab: BbV3Tab,
+  f: BbV3Filters,
+  source: BbV3Source = 'index',
+): BbV3MarketOption[] {
+  const counts = new Map<string, number>()
+  for (const g of buildGroups(items, tab, { ...f, market: '' }, source)) {
+    for (const o of g.opportunities) counts.set(o.marketKey, (counts.get(o.marketKey) ?? 0) + 1)
+  }
+  const order = Object.keys(MARKET_LABELS)
+  const rank = (k: string) => {
+    const i = order.indexOf(k)
+    return i === -1 ? order.length : i
+  }
+  return [...counts.entries()]
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+    .map(([key, count]) => ({ key, label: marketLabel(key), count }))
 }
 
 export type BbV3Tally = {

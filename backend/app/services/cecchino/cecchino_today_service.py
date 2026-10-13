@@ -2979,6 +2979,9 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "away_team_name": row.away_team_name,
         "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         "fixture_status": row.fixture_status,
+        # risultato primo tempo e finale anche nell'intestazione del dettaglio (richiesta 13/10/2026)
+        "match_display_status": row.match_display_status,
+        "score": row_score_payload(row),
         "odds_snapshot": row.odds_snapshot_json,
         "stats_snapshot": row.stats_snapshot_json,
         "cecchino_output": output,

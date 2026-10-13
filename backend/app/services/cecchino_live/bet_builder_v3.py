@@ -179,7 +179,12 @@ def _fixture_block(today: CecchinoTodayFixture | None, pred: CecchinoLivePredict
         "away": {"name": pred.away_team_name, "logo": getattr(today, "away_team_logo_url", None)},
         "match_status": normalize_match_status(today) if today is not None else "unknown",
         "score": (
-            {"home": today.goals_home, "away": today.goals_away}
+            {
+                "home": today.goals_home,
+                "away": today.goals_away,
+                "halftime_home": getattr(today, "score_halftime_home", None),
+                "halftime_away": getattr(today, "score_halftime_away", None),
+            }
             if today is not None and today.goals_home is not None and today.goals_away is not None
             else None
         ),

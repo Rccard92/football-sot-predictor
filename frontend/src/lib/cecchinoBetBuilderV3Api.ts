@@ -71,7 +71,12 @@ export type BbV3Fixture = {
   home: { name: string | null; logo: string | null }
   away: { name: string | null; logo: string | null }
   match_status: string
-  score: { home: number; away: number } | null
+  score: {
+    home: number
+    away: number
+    halftime_home?: number | null
+    halftime_away?: number | null
+  } | null
 }
 
 export type BbV3FixtureItem = {

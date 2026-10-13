@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { BetBuilderV3AnalysisDrawer } from '../components/bet-builder-v3/BetBuilderV3AnalysisDrawer'
 import { BetBuilderV3FixtureCard } from '../components/bet-builder-v3/BetBuilderV3FixtureCard'
 import { BetBuilderV3Filters } from '../components/bet-builder-v3/BetBuilderV3Filters'
 import {
@@ -14,9 +15,11 @@ import {
   familyCounts,
   fixturesCovered,
   isPatternAgree,
+  marketOptions,
   tally,
   uniqueSorted,
   type BbV3Filters,
+  type BbV3Group,
   type BbV3Period,
   type BbV3Source,
   type BbV3Tab,
@@ -85,6 +88,8 @@ export function BetBuilderV3Page() {
   const [filters, setFilters] = useState<BbV3Filters>(DEFAULT_BB_V3_FILTERS)
   const [secondaryOpen, setSecondaryOpen] = useState(false)
   const [visible, setVisible] = useState(PAGE_SIZE)
+  const [analysis, setAnalysis] = useState<{ group: BbV3Group; key: string | null } | null>(null)
+  const closeAnalysis = useCallback(() => setAnalysis(null), [setAnalysis])
 
   const setParam = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
@@ -126,6 +131,10 @@ export function BetBuilderV3Page() {
   )
   const counts = useMemo(
     () => familyCounts(items, tab, effectiveFilters, source),
+    [items, tab, effectiveFilters, source],
+  )
+  const markets = useMemo(
+    () => marketOptions(items, tab, effectiveFilters, source),
     [items, tab, effectiveFilters, source],
   )
   const totals = useMemo(() => tally(groups), [groups])
@@ -330,6 +339,7 @@ export function BetBuilderV3Page() {
           <BetBuilderV3Filters
             filters={filters}
             counts={counts}
+            markets={markets}
             countries={countries}
             leagues={leagues}
             tab={tab}
@@ -363,6 +373,7 @@ export function BetBuilderV3Page() {
                     group={g}
                     tab={tab}
                     showOutcome={showOutcome}
+                    onOpenAnalysis={(g, key) => setAnalysis({ group: g, key })}
                   />
                 ))}
               </div>
@@ -377,6 +388,14 @@ export function BetBuilderV3Page() {
           )}
         </>
       ) : null}
+
+      <BetBuilderV3AnalysisDrawer
+        open={analysis != null}
+        group={analysis?.group ?? null}
+        tab={tab}
+        initialKey={analysis?.key ?? null}
+        onClose={closeAnalysis}
+      />
     </div>
   )
 }

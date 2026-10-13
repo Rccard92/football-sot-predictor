@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { BbV3FixtureItem, BbV3Prediction } from '../../lib/cecchinoBetBuilderV3Api'
-import { DEFAULT_BB_V3_FILTERS, buildGroups, fixturesCovered, opportunitiesFor, tally } from './bbV3Utils'
+import {
+  DEFAULT_BB_V3_FILTERS,
+  buildGroups,
+  familyCounts,
+  fixturesCovered,
+  marketOptions,
+  opportunitiesFor,
+  tally,
+} from './bbV3Utils'
 
 function pred(market_key: string, score: number, extra: Partial<BbV3Prediction> = {}): BbV3Prediction {
   return {
@@ -151,5 +159,30 @@ describe('bbV3Utils · solo pattern', () => {
   it('la modalità indice non cambia', () => {
     const groups = buildGroups([withPatterns], 'V2.5', DEFAULT_BB_V3_FILTERS)
     expect(groups[0].opportunities.map((o) => o.marketKey)).toEqual(['HOME'])
+  })
+})
+
+describe('scelta del singolo mercato (come il vecchio Bet Builder)', () => {
+  it('elenca i mercati presenti in ordine 1, X, 2, gol, con il numero di opportunità', () => {
+    const opts = marketOptions(ITEMS, 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(opts.map((o) => o.key)).toEqual(['HOME', 'AWAY', 'OVER_2_5'])
+    expect(opts.find((o) => o.key === 'HOME')?.label).toBe('1')
+    expect(opts.every((o) => o.count >= 1)).toBe(true)
+  })
+
+  it('filtra le opportunità sul mercato scelto e i conteggi delle famiglie restano completi', () => {
+    const f = { ...DEFAULT_BB_V3_FILTERS, market: 'AWAY' }
+    const groups = buildGroups(ITEMS, 'V2.5', f)
+    expect(groups.flatMap((g) => g.opportunities.map((o) => o.marketKey))).toEqual(['AWAY'])
+    const all = familyCounts(ITEMS, 'V2.5', DEFAULT_BB_V3_FILTERS)
+    expect(familyCounts(ITEMS, 'V2.5', f)).toEqual(all)
+    const t = tally(groups)
+    expect(t.won).toBe(1)
+    expect(t.roiPct).toBeCloseTo(150)
+  })
+
+  it('la famiglia restringe la lista dei mercati', () => {
+    const opts = marketOptions(ITEMS, 'V2.5', { ...DEFAULT_BB_V3_FILTERS, family: 'gol' })
+    expect(opts.map((o) => o.key)).toEqual(['OVER_2_5'])
   })
 })
