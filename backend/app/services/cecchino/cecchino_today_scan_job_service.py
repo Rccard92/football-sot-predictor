@@ -366,8 +366,10 @@ def _mark_skipped_concurrent(
     }
 
 
-def _run_live_registry(db: Session, job: CecchinoTodayScanJob, job_id: str) -> None:
-    """Collegamento dati API-Football + registro previsioni live (V2, V2.5): mai bloccante per la scansione."""
+def _run_live_registry(db: Session, job: CecchinoTodayScanJob, job_id: str) -> dict[str, Any] | None:
+    """Collegamento dati API-Football + registro previsioni live (V2, V2.5): mai bloccante per la scansione.
+    Ritorna il riepilogo del collegamento dati (chiamate fatte) per il contatore del job."""
+    connector: dict[str, Any] | None = None
     try:
         from app.services.cecchino_live.bet365_lines import store_lines_for_scan_date
         from app.services.cecchino_live.data_connector import run_data_connector
@@ -390,6 +392,30 @@ def _run_live_registry(db: Session, job: CecchinoTodayScanJob, job_id: str) -> N
         logger.info("CecchinoTodayJob job_id=%s live_registry=%s settled=%s", job_id, summary, settled)
     except Exception:  # noqa: BLE001
         logger.exception("CecchinoTodayJob job_id=%s live registry fallito", job_id)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    return connector
+
+
+def _record_post_scan_api_usage(
+    db: Session, job_id: str, summary: dict[str, Any], connector: dict[str, Any] | None
+) -> None:
+    """Chiamate del collegamento dati dopo la scansione + contatore ufficiale aggiornato nel job."""
+    try:
+        from app.services.api_usage_service import read_provider_quota
+
+        updated = dict(summary or {})
+        if isinstance(connector, dict):
+            updated["post_scan_api_calls"] = int(connector.get("calls_made") or 0)
+        quota = read_provider_quota()
+        if quota is not None:
+            updated["provider_quota"] = quota
+        update_scan_job(db, job_id, result_summary_json=updated)
+        db.commit()
+    except Exception:  # noqa: BLE001 - il contatore non deve mai rompere il job
+        logger.exception("CecchinoTodayJob job_id=%s contatore post-scansione non aggiornato", job_id)
         try:
             db.rollback()
         except Exception:  # noqa: BLE001
@@ -626,7 +652,8 @@ def _execute_scan_job_body(
             (report.get("result_summary") or {}).get("duration_seconds"),
         )
         _run_goal_intensity_preview(db, job, job_id)
-        _run_live_registry(db, job, job_id)
+        connector = _run_live_registry(db, job, job_id)
+        _record_post_scan_api_usage(db, job_id, summary, connector)
         outcome = {
             "status": JOB_STATUS_COMPLETED,
             "job_id": job_id,

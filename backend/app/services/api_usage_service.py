@@ -240,3 +240,44 @@ def build_api_usage_debug_for_fixture(
             for r in rows[:5]
         ],
     }
+
+
+def read_provider_quota(client: Any | None = None) -> dict[str, Any] | None:
+    """Contatore ufficiale API-Football (`status`, non consuma la quota): chiamate usate oggi,
+    limite giornaliero e residuo reale. None se non leggibile (mai bloccante)."""
+    import logging
+
+    try:
+        if client is None:
+            from app.services.api_football_client import ApiFootballClient
+
+            client = ApiFootballClient()  # senza registrazione: non e' una chiamata di quota
+        body = client.get("status") or {}
+        response = body.get("response") or {}
+        if isinstance(response, list):  # alcuni piani rispondono con una lista
+            response = response[0] if response else {}
+        requests = response.get("requests") or {}
+        current = int(requests.get("current") or 0)
+        limit_day = int(requests.get("limit_day") or 0)
+        if limit_day <= 0:
+            return None
+        return {
+            "current": current,
+            "limit_day": limit_day,
+            "remaining": max(0, limit_day - current),
+            "read_at": _utcnow().isoformat(),
+            "source": "api_football_status",
+        }
+    except Exception as exc:  # noqa: BLE001
+        from app.services.api_football_client import ApiFootballQuotaExhausted
+
+        if isinstance(exc, ApiFootballQuotaExhausted):
+            return {
+                "current": None,
+                "limit_day": None,
+                "remaining": 0,
+                "read_at": _utcnow().isoformat(),
+                "source": "api_football_quota_exhausted",
+            }
+        logging.getLogger(__name__).warning("status API-Football non leggibile", exc_info=True)
+        return None

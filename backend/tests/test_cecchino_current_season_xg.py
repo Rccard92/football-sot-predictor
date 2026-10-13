@@ -333,28 +333,34 @@ def test_ensure_cache_miss_calls_only_fixture_statistics():
         "anti_leakage": {"current_fixture_excluded": True},
     }
 
+    from app.services.cecchino.cecchino_xg_statistics_fetch import StatisticsFetchOutcome
+
+    calls_seen: list[int] = []
+    outcome = StatisticsFetchOutcome(calls=1, fixtures_considered=1, fixtures_requested=1, fixtures_with_stats=1)
     with patch(
         "app.services.cecchino.cecchino_current_season_xg._prior_fixtures_both_teams",
         return_value=prior,
     ), patch(
-        "app.services.cecchino.cecchino_current_season_xg._fixture_has_xg",
-        return_value=False,
-    ), patch(
-        "app.services.cecchino.cecchino_current_season_xg._persist_fixture_statistics",
-        return_value=2,
-    ), patch(
+        "app.services.cecchino.cecchino_xg_statistics_fetch.fetch_prior_statistics",
+        return_value=outcome,
+    ) as fetch, patch(
         "app.services.cecchino.cecchino_current_season_xg.build_current_season_team_xg_profile",
         return_value=profile,
     ):
-        out = ensure_current_season_xg_profile_for_fixture(db, 501, client=client)
+        out = ensure_current_season_xg_profile_for_fixture(db, 501, client=client, on_call=calls_seen.append)
 
-    client.get_fixture_statistics.assert_called_once_with(1001)
+    # statistiche a gruppi (fixtures?ids) via il modulo dedicato, mai una chiamata per partita
+    fetch.assert_called_once()
+    assert fetch.call_args.args[1] == prior
+    assert fetch.call_args.kwargs["on_call"] == calls_seen.append
+    client.get_fixture_statistics.assert_not_called()
     client.get_fixture_events.assert_not_called()
     client.get_fixture_lineups.assert_not_called()
     client.get_fixture_players.assert_not_called()
     assert out["status"] == "ok"
     assert row.xg_profiles_json["profile_version"] == PROFILE_VERSION
     assert out["xg_api_usage"]["external_calls_made"] == 1
+    assert out["xg_api_usage"]["fixtures_backfilled"] == 1
 
 
 def test_maybe_ensure_does_not_raise_on_provider_error():

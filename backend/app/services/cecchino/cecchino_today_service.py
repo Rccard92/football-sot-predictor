@@ -46,6 +46,7 @@ from app.services.api_usage_context import ApiUsageContext
 from app.services.api_usage_service import (
     build_api_usage_debug_for_fixture,
     get_api_usage_summary,
+    read_provider_quota,
 )
 from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_selection_odds
 from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
@@ -377,7 +378,11 @@ def _persist_post_calc_snapshot(
         previous_status=previous_status,
     )
     if eligibility_status == ELIGIBILITY_ELIGIBLE:
-        maybe_ensure_xg_for_eligible_row(db, row)
+        if run_metrics is not None and run_metrics.defer_xg:
+            # profilo xG a fine scansione: prima quote ed eleggibilita' di tutte le partite
+            run_metrics.deferred_xg_row_ids.append(int(row.id))
+        else:
+            maybe_ensure_xg_for_eligible_row(db, row)
         _maybe_sync_kpi_signals_for_fixture(db, int(row.id))
         _maybe_sync_purchasability_validation_for_fixture(db, int(row.id))
         _maybe_sync_balance_empirical_for_fixture(db, int(row.id))
@@ -813,6 +818,40 @@ def _emit_progress(
         progress(**payload)
 
 
+def _run_deferred_xg(
+    db: Session,
+    run_metrics: ScanRunMetrics,
+    *,
+    client: ApiFootballClient,
+    usage_ctx: ApiUsageContext,
+    provider_quota_stopped: bool,
+    progress: ProgressReporter | None,
+    warnings: list[str],
+) -> None:
+    """Profili xG delle eleggibili a scansione finita. Mai bloccante; con la quota gia' finita si salta
+    (il profilo si calcola all'apertura del dettaglio)."""
+    row_ids = list(run_metrics.deferred_xg_row_ids)
+    if not row_ids:
+        return
+    if provider_quota_stopped:
+        run_metrics.xg_phase = {"status": "skipped_quota_exhausted", "rows": len(row_ids)}
+        return
+    from app.services.cecchino.cecchino_xg_statistics_fetch import run_deferred_xg_phase
+
+    _emit_progress(progress, current_step="fetching_xg_statistics")
+    try:
+        client.set_usage_context(usage_ctx)
+        run_metrics.xg_phase = run_deferred_xg_phase(
+            db, row_ids, client=client, on_call=run_metrics.count_statistics_call
+        )
+    except Exception:  # noqa: BLE001 - gli xG non fermano mai la scansione
+        logger.exception("xg phase failed rows=%s", len(row_ids))
+        recover_session_if_inactive(db)
+        run_metrics.xg_phase = {"status": "error", "rows": len(row_ids)}
+    if (run_metrics.xg_phase or {}).get("status") == "quota_exhausted":
+        warnings.append("xg_phase_quota_exhausted")
+
+
 def run_scan(
     db: Session,
     *,
@@ -841,6 +880,7 @@ def run_scan(
     run_metrics = metrics or ScanRunMetrics(started_at=time.time())
     if run_metrics.started_at <= 0:
         run_metrics.started_at = time.time()
+    run_metrics.defer_xg = True
     bootstrapped_leagues: set[tuple[int, int]] = set()
     provider_quota_stopped = False
     provider_quota_message = (
@@ -2023,6 +2063,15 @@ def run_scan(
     if odds_fetch_errors_final:
         warnings.append(f"odds_fetch_error_final:{odds_fetch_errors_final}")
     db.commit()
+    _run_deferred_xg(
+        db,
+        run_metrics,
+        client=af_client,
+        usage_ctx=usage_ctx,
+        provider_quota_stopped=provider_quota_stopped,
+        progress=progress,
+        warnings=warnings,
+    )
     signal_sync_summary = sync_signals_for_scan_date(db, resolved_date)
     db.commit()
 
@@ -2057,6 +2106,10 @@ def run_scan(
     # Consumo API attribuito al giorno reale di esecuzione, non a scan_date.
     api_usage_summary = get_api_usage_summary(db, usage_date=execution_date)
     run_metrics.budget_remaining_estimated = api_usage_summary.get("estimated_remaining_daily_budget")
+    # contatore ufficiale (chiamata `status`, gratuita): non registrata come consumo
+    af_client.set_usage_context(ApiUsageContext(record_events=False))
+    run_metrics.provider_quota = read_provider_quota(af_client)
+    af_client.set_usage_context(usage_ctx)
     report["result_summary"] = run_metrics.to_result_summary(
         fixtures_found=total,
         after_competition_filter=after_filter_count,

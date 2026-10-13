@@ -195,7 +195,25 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
           <p>Negative cache: {apiMetrics.negativeCache}</p>
           <p>Teams: {apiMetrics.teams}</p>
           <p>Fixtures: {apiMetrics.fixtures}</p>
-          {apiMetrics.budgetRemaining != null ? (
+          <p>Statistiche xG: {apiMetrics.statistics}</p>
+          {apiMetrics.postScan != null ? (
+            <p>Dopo la scansione (collegamento dati): {apiMetrics.postScan}</p>
+          ) : null}
+          {apiMetrics.providerRemaining != null ? (
+            <p className="font-medium text-slate-800" data-testid="cecchino-provider-remaining">
+              Residuo reale API-Football:{' '}
+              {apiMetrics.providerRemaining.toLocaleString('it-IT')}
+              {apiMetrics.providerLimit != null
+                ? ` su ${apiMetrics.providerLimit.toLocaleString('it-IT')}`
+                : ''}
+              {apiMetrics.providerReadAt
+                ? ` (alle ${new Date(apiMetrics.providerReadAt).toLocaleTimeString('it-IT', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })})`
+                : ''}
+            </p>
+          ) : apiMetrics.budgetRemaining != null ? (
             <p>
               Residuo teorico piano (informativo):{' '}
               {apiMetrics.budgetRemaining.toLocaleString('it-IT')}

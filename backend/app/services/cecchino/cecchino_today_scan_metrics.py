@@ -88,8 +88,14 @@ class ScanRunMetrics:
     odds_fetch_errors_final: int = 0  # partite ancora non lette dopo i passaggi extra
     api_calls_total: int = 0
     api_calls: dict[str, int] = field(
-        default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0},
+        default_factory=lambda: {"odds": 0, "fixtures": 0, "teams": 0, "statistics": 0},
     )
+    # Profili xG rimandati a fine scansione (statistiche a gruppi, dopo quote ed eleggibilita').
+    defer_xg: bool = False
+    deferred_xg_row_ids: list[int] = field(default_factory=list)
+    xg_phase: dict[str, Any] | None = None
+    # Contatore ufficiale API-Football letto a fine scansione (chiamata `status`, gratuita).
+    provider_quota: dict[str, Any] | None = None
     odds_strategy: dict[str, int] = field(
         default_factory=lambda: {
             "fixture_single_call": 0,
@@ -137,6 +143,10 @@ class ScanRunMetrics:
             self.odds_from_api += 1
             if "fallback" in strategy:
                 self.bookmaker_fallback_count += 1
+
+    def count_statistics_call(self, calls: int = 1) -> None:
+        self.api_calls["statistics"] = int(self.api_calls.get("statistics", 0)) + int(calls)
+        self.sync_api_calls_total()
 
     def sync_api_calls_total(self) -> None:
         self.api_calls_total = sum(int(v) for v in self.api_calls.values())
@@ -266,6 +276,8 @@ class ScanRunMetrics:
             "odds_retry_rounds": int(self.odds_retry_rounds),
             "odds_retry_fixtures": int(self.odds_retry_fixtures),
             "odds_fetch_errors_final": int(self.odds_fetch_errors_final),
+            "xg_phase": self.xg_phase,
+            "provider_quota": self.provider_quota,
         }
         summary.update(self.book_coverage_fields())
         if provider_items_received is not None:

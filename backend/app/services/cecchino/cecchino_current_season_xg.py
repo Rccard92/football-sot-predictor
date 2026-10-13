@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -468,35 +468,33 @@ def _backfill_prior_statistics(
     *,
     force_refresh: bool,
     client: ApiFootballClient,
+    on_call: Callable[[int], None] | None = None,
 ) -> tuple[int, int, int, list[str]]:
-    """Cache-first backfill FixtureTeamStat per fixture prior. Returns calls, hits, backfilled, warnings."""
-    external_calls = 0
-    cache_hits = 0
-    backfilled = 0
-    warnings: list[str] = []
+    """Statistiche mancanti delle partite precedenti, a gruppi di 20 e solo dove servono
+    (vedi `cecchino_xg_statistics_fetch`). Returns calls, hits, backfilled, warnings."""
+    from app.services.cecchino.cecchino_xg_statistics_fetch import fetch_prior_statistics
 
-    for fx in prior:
-        has_xg = _fixture_has_xg(db, fx)
-        if has_xg and not force_refresh:
-            cache_hits += 1
-            continue
-        try:
-            stats_payload = client.get_fixture_statistics(int(fx.api_fixture_id))
-            external_calls += 1
-            if stats_payload:
-                _persist_fixture_statistics(db, fx, stats_payload)
-                backfilled += 1
-                db.flush()
-        except ApiFootballError as exc:
-            msg = str(exc).lower()
-            if "429" in msg or "rate" in msg:
-                warnings.append("xg_api_rate_limited")
-            else:
-                warnings.append("xg_provider_error")
-            logger.warning("xg stats fetch failed fixture=%s: %s", fx.id, exc)
-        except Exception as exc:
-            warnings.append("xg_provider_error")
-            logger.warning("xg stats fetch failed fixture=%s: %s", fx.id, exc)
+    warnings: list[str] = []
+    try:
+        outcome = fetch_prior_statistics(
+            db, prior, client=client, force_refresh=force_refresh, on_call=on_call
+        )
+    except Exception as exc:
+        logger.warning("xg stats fetch failed: %s", exc)
+        return 0, 0, 0, ["xg_provider_error"]
+
+    external_calls = outcome.calls
+    cache_hits = outcome.skipped_total
+    backfilled = outcome.fixtures_with_stats
+    if outcome.quota_exhausted:
+        warnings.append("xg_provider_quota_exhausted")
+    for err in outcome.errors:
+        msg = err.lower()
+        code = "xg_api_rate_limited" if ("429" in msg or "rate" in msg) else "xg_provider_error"
+        if code not in warnings:
+            warnings.append(code)
+    if outcome.skipped_league_without_xg:
+        warnings.append("league_without_xg")
 
     if backfilled == 0 and external_calls == 0 and prior and cache_hits < len(prior):
         if "missing_xg_in_current_season_history" not in warnings:
@@ -511,6 +509,7 @@ def ensure_current_season_xg_profile_for_fixture(
     *,
     force_refresh: bool = False,
     client: ApiFootballClient | None = None,
+    on_call: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
     """Recupero automatico profilo xG storico current season (cache-first, idempotente)."""
     row = db.get(CecchinoTodayFixture, int(today_fixture_id))
@@ -543,9 +542,10 @@ def ensure_current_season_xg_profile_for_fixture(
             "xg_api_usage": cached.get("xg_api_usage"),
         }
 
+    # le chiamate entrano nel consumo API del giorno (prima non venivano registrate)
     api_client = client or ApiFootballClient(
         usage_db=db,
-        usage_context=ApiUsageContext(record_events=False),
+        usage_context=ApiUsageContext(record_events=True),
     )
 
     external_calls, cache_hits, backfilled, fetch_warnings = _backfill_prior_statistics(
@@ -553,6 +553,7 @@ def ensure_current_season_xg_profile_for_fixture(
         prior,
         force_refresh=force_refresh,
         client=api_client,
+        on_call=on_call,
     )
 
     home_profile = build_current_season_team_xg_profile(
@@ -594,7 +595,7 @@ def ensure_current_season_xg_profile_for_fixture(
         "cache_hits": cache_hits,
         "fixtures_checked": prior_count,
         "fixtures_backfilled": backfilled,
-        "endpoint": "fixture_statistics",
+        "endpoint": "fixtures?ids (gruppi da 20)",
     }
 
     profiles_payload = {

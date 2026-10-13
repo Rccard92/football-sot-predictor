@@ -191,6 +191,25 @@ export type CecchinoTodayScanJobResultSummary = {
   snapshot_eligible_protection_active?: boolean
   auto_scan?: CecchinoTodayAutoScanMeta
   diagnostic_code?: string
+  /** Fase xG a fine scansione (statistiche a gruppi da 20, campionati senza xG saltati). */
+  xg_phase?: {
+    status?: string
+    rows?: number
+    statistics?: {
+      calls?: number
+      skipped_league_without_xg?: number
+      leagues_tagged_no_xg?: number[]
+    }
+  } | null
+  /** Contatore ufficiale API-Football (chiamata `status`, gratuita). */
+  provider_quota?: {
+    current?: number | null
+    limit_day?: number | null
+    remaining?: number | null
+    read_at?: string | null
+  } | null
+  /** Chiamate del collegamento dati partito dopo la scansione. */
+  post_scan_api_calls?: number
 }
 
 export type CecchinoTodayBookCoverageView = {
@@ -363,12 +382,23 @@ export function getScanJobApiMetrics(job: CecchinoTodayScanJob): {
   negativeCache: number
   teams: number
   fixtures: number
+  statistics: number
+  postScan: number | null
+  providerRemaining: number | null
+  providerLimit: number | null
+  providerReadAt: string | null
   budgetRemaining: number | null
 } {
   const rs = job.result_summary
   const apiCalls = rs?.api_calls ?? rs?.api_calls_by_endpoint ?? {}
   const apiUsage = rs?.api_usage
+  const quota = rs?.provider_quota
   return {
+    statistics: Number(apiCalls.statistics ?? 0),
+    postScan: rs?.post_scan_api_calls != null ? Number(rs.post_scan_api_calls) : null,
+    providerRemaining: quota?.remaining != null ? Number(quota.remaining) : null,
+    providerLimit: quota?.limit_day != null ? Number(quota.limit_day) : null,
+    providerReadAt: quota?.read_at ?? null,
     apiCallsTotal: Number(rs?.api_calls_total ?? apiUsage?.total_calls ?? 0),
     oddsApi: Number(apiCalls.odds ?? apiUsage?.by_endpoint?.odds ?? 0),
     oddsCache: Number(rs?.odds_cache_hits ?? rs?.odds_from_cache ?? 0),
@@ -398,6 +428,7 @@ export const SCAN_STEP_LABELS: Record<string, string> = {
   fetching_fixtures: 'Recupero partite',
   filtering_competitions: 'Filtro competizioni',
   fetching_odds: 'Recupero quote bookmaker',
+  fetching_xg_statistics: 'Statistiche xG (a gruppi)',
   importing_stats: 'Import statistiche',
   calculating_cecchino: 'Calcolo Cecchino',
   validating_eligibility: 'Validazione eleggibilità',

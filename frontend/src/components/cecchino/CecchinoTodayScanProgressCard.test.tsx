@@ -5,7 +5,11 @@ import {
   scanJobTitle,
 } from './CecchinoTodayScanProgressCard'
 import type { CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
-import { formatBookCoveragePct, getScanJobBookCoverage } from '../../lib/cecchinoTodayApi'
+import {
+  formatBookCoveragePct,
+  getScanJobApiMetrics,
+  getScanJobBookCoverage,
+} from '../../lib/cecchinoTodayApi'
 
 function job(overrides: Partial<CecchinoTodayScanJob> = {}): CecchinoTodayScanJob {
   return {
@@ -85,5 +89,34 @@ describe('CecchinoTodayScanProgressCard status labels', () => {
     expect(cov.missingSelectionCount).toBe(12)
     expect(cov.bet365FallbackFixtureCount).toBe(18)
     expect(formatBookCoveragePct(cov.coveragePct)).toBe('97,5%')
+  })
+})
+
+describe('contatore API del job', () => {
+  it('conta le statistiche xG, il collegamento dati e il residuo reale', () => {
+    const m = getScanJobApiMetrics(
+      job({
+        result_summary: {
+          api_calls: { odds: 120, fixtures: 3, teams: 2, statistics: 41 },
+          api_calls_total: 166,
+          post_scan_api_calls: 12,
+          provider_quota: { current: 3300, limit_day: 7500, remaining: 4200, read_at: '2026-10-14T04:40:00Z' },
+          api_usage: { estimated_remaining_daily_budget: 6000 },
+        },
+      }),
+    )
+    expect(m.apiCallsTotal).toBe(166)
+    expect(m.statistics).toBe(41)
+    expect(m.postScan).toBe(12)
+    expect(m.providerRemaining).toBe(4200)
+    expect(m.providerLimit).toBe(7500)
+  })
+
+  it('job vecchi senza contatore ufficiale: resta il residuo teorico', () => {
+    const m = getScanJobApiMetrics(job({ result_summary: { api_usage: { estimated_remaining_daily_budget: 6233 } } }))
+    expect(m.statistics).toBe(0)
+    expect(m.postScan).toBeNull()
+    expect(m.providerRemaining).toBeNull()
+    expect(m.budgetRemaining).toBe(6233)
   })
 })
