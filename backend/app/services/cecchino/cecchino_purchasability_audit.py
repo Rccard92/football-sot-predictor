@@ -857,6 +857,124 @@ def _load_fixtures(
     return list(db.scalars(stmt).all())
 
 
+# --- Caricamento "leggero" per lo storico (Affidabilita' storica / HR history context) ---
+#
+# `_load_fixtures` carica OGNI colonna di OGNI partita Today come oggetto ORM (anche i JSONB
+# pesanti: cecchino_output_json, raw_fixture_json, stats_snapshot_json, xg_profiles_json, ...).
+# Per lo storico senza limite inferiore di data questo vuol dire tutta la tabella in memoria.
+# Le funzioni qui sotto leggono SOLO i campi che `iter_purchasability_rows` usa davvero:
+#   - colonne scalari: quelle in `_HISTORY_SCALAR_COLUMNS`
+#   - kpi_panel_json: solo le chiavi "rows", "bookmaker", "odds_meta"
+#   - odds_snapshot_json: solo la chiave "odds_meta"
+# Il risultato (righe del dataset) e' identico a `build_purchasability_rows`: stessi valori,
+# stesso ordine. Nessun oggetto ORM entra nella sessione e le righe arrivano a blocchi.
+
+# Colonne scalari lette da _build_observed_row, _settle_row (match_result_from_fixture)
+# e resolve_purchasability_snapshot_timestamp.
+_HISTORY_SCALAR_COLUMNS: tuple[str, ...] = (
+    "id",
+    "local_fixture_id",
+    "provider_fixture_id",
+    "competition_id",
+    "league_name",
+    "home_team_name",
+    "away_team_name",
+    "kickoff",
+    "scan_date",
+    "updated_at",
+    "odds_checked_at",
+    "score_fulltime_home",
+    "score_fulltime_away",
+    "score_halftime_home",
+    "score_halftime_away",
+    "match_display_status",
+    "fixture_status",
+)
+
+_HISTORY_STREAM_BATCH = 1000
+
+
+class _HistoryFixtureView:
+    """Vista minima di CecchinoTodayFixture con i soli attributi letti dallo storico.
+
+    `__slots__` fa fallire subito (AttributeError) un eventuale accesso a un campo non caricato,
+    invece di restituire silenziosamente un valore diverso.
+    """
+
+    __slots__ = _HISTORY_SCALAR_COLUMNS + ("kpi_panel_json", "odds_snapshot_json")
+
+
+def _history_fixture_view(mapping: Any) -> _HistoryFixtureView:
+    view = _HistoryFixtureView()
+    for name in _HISTORY_SCALAR_COLUMNS:
+        setattr(view, name, mapping[name])
+    # Pannello ridotto alle sole chiavi lette (rows / bookmaker / odds_meta).
+    # Se kpi_panel_json non e' un oggetto JSON (NULL, lista, scalare) l'estrazione per chiave
+    # restituisce NULL per tutte e tre: rows vuote → la partita viene saltata, esattamente
+    # come prima (panel non-dict → nessuna riga). Una chiave assente vale None: le letture
+    # usano sempre .get(...) con controllo isinstance, quindi il risultato non cambia.
+    view.kpi_panel_json = {
+        "rows": mapping["kpi_rows"],
+        "bookmaker": mapping["kpi_bookmaker"],
+        "odds_meta": mapping["kpi_odds_meta"],
+    }
+    # Di odds_snapshot_json si legge solo odds_meta (fallback del timestamp snapshot).
+    view.odds_snapshot_json = {"odds_meta": mapping["snapshot_odds_meta"]}
+    return view
+
+
+def _iter_history_fixture_views(
+    db: Session,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+    batch_size: int = _HISTORY_STREAM_BATCH,
+) -> Iterator[_HistoryFixtureView]:
+    """Stessi filtri e stesso ordinamento di `_load_fixtures`, ma colonne ridotte e a blocchi."""
+    t = CecchinoTodayFixture
+    columns = [getattr(t, name).label(name) for name in _HISTORY_SCALAR_COLUMNS]
+    columns += [
+        t.kpi_panel_json["rows"].label("kpi_rows"),
+        t.kpi_panel_json["bookmaker"].label("kpi_bookmaker"),
+        t.kpi_panel_json["odds_meta"].label("kpi_odds_meta"),
+        t.odds_snapshot_json["odds_meta"].label("snapshot_odds_meta"),
+    ]
+    stmt = select(*columns).order_by(t.scan_date.asc(), t.id.asc())
+    if date_from is not None:
+        stmt = stmt.where(t.scan_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(t.scan_date <= date_to)
+    if competition_id is not None:
+        stmt = stmt.where(t.competition_id == int(competition_id))
+    result = db.execute(stmt.execution_options(yield_per=batch_size))
+    for mapping in result.mappings():
+        yield _history_fixture_view(mapping)
+
+
+def build_purchasability_rows_for_history(
+    db: Session,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    competition_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Come `build_purchasability_rows` (senza filtri mercato/book) ma a memoria ridotta.
+
+    Usata dall'HR history context (scan Today e cache web). Output identico, riga per riga.
+    """
+    return list(
+        iter_purchasability_rows(
+            _iter_history_fixture_views(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+        )
+    )
+
+
 def _book_filter_match(
     book_filter: str | None,
     bookmaker_name: str | None,
