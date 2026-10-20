@@ -2320,15 +2320,6 @@ export async function getCecchinoTodayLatestScanJob(
   )
 }
 
-/** @deprecated Usare startCecchinoTodayScanDay + polling job */
-export async function scanCecchinoTodayDay(params: {
-  date: string
-  timezone?: string
-  forceRescan?: boolean
-}): Promise<CecchinoTodayScanJobStartResponse> {
-  return startCecchinoTodayScanDay(params)
-}
-
 export async function updateCecchinoTodayResults(params: {
   date: string
   timezone?: string
@@ -2460,35 +2451,6 @@ export async function getPurchasabilityAuditExport(
   )
 }
 
-export async function downloadDailyPurchasabilityAuditExport(scanDate: string): Promise<Blob> {
-  const base = getCecchinoApiBase()
-  const url = `${base}/api/cecchino/today/purchasability-audit-export/daily?scan_date=${encodeURIComponent(scanDate)}`
-  const res = await fetch(url)
-  if (!res.ok) {
-    let msg = res.statusText
-    const ct = res.headers.get('content-type') ?? ''
-    if (ct.includes('application/json')) {
-      try {
-        const parsed = (await res.json()) as { message?: string }
-        if (parsed.message) msg = parsed.message
-      } catch {
-        /* ignore */
-      }
-    }
-    throw new Error(msg)
-  }
-  return res.blob()
-}
-
-export function triggerDailyPurchasabilityAuditDownload(blob: Blob, scanDate: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `purchasability-audits-${scanDate}.zip`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 /** C1.3 — blocco fisso analisi V3.6 (non usare selectedDay). */
 export const V36_EVALUATION_BUNDLE_DATE_FROM = '2026-08-26'
 export const V36_EVALUATION_BUNDLE_DATE_TO = '2026-08-30'
@@ -2541,15 +2503,6 @@ export type CecchinoPurchasabilityV36AuditExport = {
   relation_registry: unknown[]
   market_order: string[]
   markets: Record<string, unknown>
-}
-
-/** Audit Structural V2 — etichetta UI V3.6. */
-export async function getPurchasabilityV36AuditExport(
-  todayFixtureId: number,
-): Promise<CecchinoPurchasabilityV36AuditExport> {
-  return requestJson<CecchinoPurchasabilityV36AuditExport>(
-    `/api/cecchino/today/${todayFixtureId}/purchasability-v35-v2-audit-export`,
-  )
 }
 
 export type CecchinoSignalConditionLeaf = {
@@ -2995,43 +2948,6 @@ function getCecchinoApiBase(): string {
   return String(raw).replace(/\/$/, '')
 }
 
-async function cecchinoPostJson<T>(path: string, body: unknown = {}): Promise<T> {
-  const base = getCecchinoApiBase()
-  const p = path.startsWith('/') ? path : `/${path}`
-  const res = await fetch(`${base}${p}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  })
-  const ct = res.headers.get('content-type') ?? ''
-  let parsed: unknown = null
-  if (ct.includes('application/json')) {
-    try {
-      parsed = await res.json()
-    } catch {
-      parsed = null
-    }
-  }
-  if (!res.ok) {
-    const msg =
-      parsed && typeof parsed === 'object' && parsed !== null && 'message' in parsed
-        ? String((parsed as { message?: string }).message ?? res.statusText)
-        : res.statusText
-    throw new Error(msg)
-  }
-  return parsed as T
-}
-
-export async function refreshBetfairOdds(
-  todayFixtureId: number,
-  opts: { force?: boolean; rebuild_kpi?: boolean } = {},
-): Promise<CecchinoBetfairRefreshResponse> {
-  return cecchinoPostJson<CecchinoBetfairRefreshResponse>(
-    `/api/cecchino/today/${todayFixtureId}/refresh-betfair-odds`,
-    { force: opts.force ?? true, rebuild_kpi: opts.rebuild_kpi ?? true },
-  )
-}
-
 export async function getCecchinoTodayExcluded(params: {
   date?: string
   timezone?: string
@@ -3048,14 +2964,6 @@ export async function debugSearchCecchinoToday(params: {
   return requestJson<CecchinoTodayDebugSearchResponse>(
     `/api/admin/cecchino/today/debug-search${qs({ date: params.date, q: params.q, timezone: 'Europe/Rome' })}`,
   )
-}
-
-export async function revalidateCecchinoTodayDay(params: {
-  date: string
-}): Promise<CecchinoTodayRevalidateDayResponse> {
-  return adminPostJson<CecchinoTodayRevalidateDayResponse>('/api/admin/cecchino/today/revalidate-day', {
-    date: params.date,
-  })
 }
 
 export type CecchinoRecomputeResponse = {

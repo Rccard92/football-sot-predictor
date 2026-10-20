@@ -1,6 +1,12 @@
-import ReactECharts from 'echarts-for-react'
+import * as echarts from 'echarts/core'
+import { HeatmapChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import LabEChartsCore from '../../cecchino-lab/LabEChartsCore'
 import { roiColor } from '../overview/overviewTheme'
 import type { LpaLatestPayload } from '../../../lib/leaguePatternAnalysisApi'
+
+echarts.use([HeatmapChart, GridComponent, TooltipComponent, VisualMapComponent, CanvasRenderer])
 
 type Props = {
   heatmap: LpaLatestPayload['heatmap']
@@ -114,7 +120,7 @@ export function PatternLeagueHeatmap({ heatmap, onSelectCell }: Props) {
         Colore = ROI pooled 4 stagioni. N sempre nel tooltip
         {heatmap.low_sample_n != null ? ` · low-sample se N < ${heatmap.low_sample_n}` : ''}.
       </p>
-      <ReactECharts
+      <LabEChartsCore echarts={echarts}
         option={option}
         style={{ height: Math.max(320, patternIds.length * 28 + 120), width: '100%' }}
         onEvents={{

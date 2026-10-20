@@ -1,7 +1,13 @@
-import ReactECharts from 'echarts-for-react'
+import * as echarts from 'echarts/core'
+import { BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import LabEChartsCore from '../../cecchino-lab/LabEChartsCore'
 import type { CecchinoLabAnalyticsOverview } from '../../../lib/cecchinoLabApi'
 import { MetricTooltip } from './MetricTooltip'
 import { formatPct, overviewColors } from './overviewTheme'
+
+echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 type Props = {
   movement: CecchinoLabAnalyticsOverview['odds_movement']
@@ -111,7 +117,7 @@ export function OddsMovementPanel({ movement, margins }: Props) {
           Nessun movimento calcolabile (serve pre e closing).
         </div>
       ) : (
-        <ReactECharts option={option} style={{ height: 240 }} opts={{ renderer: 'canvas' }} />
+        <LabEChartsCore echarts={echarts} option={option} style={{ height: 240 }} opts={{ renderer: 'canvas' }} />
       )}
     </section>
   )

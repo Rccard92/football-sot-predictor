@@ -1,7 +1,13 @@
-import ReactECharts from 'echarts-for-react'
+import * as echarts from 'echarts/core'
+import { BarChart } from 'echarts/charts'
+import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import LabEChartsCore from '../../cecchino-lab/LabEChartsCore'
 import type { PatternLabBreakdownBucket } from '../../../lib/patternLabApi'
 import { formatPct } from '../../../lib/patternLabApi'
 import { overviewColors, roiColor } from '../overview/overviewTheme'
+
+echarts.use([BarChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
 type Props = {
   bySeason: PatternLabBreakdownBucket[]
@@ -88,7 +94,7 @@ function StabilityChart({
         ) : null}
       </div>
       {data.length ? (
-        <ReactECharts option={option} style={{ height: Math.max(180, data.length * 28) }} opts={{ renderer: 'canvas' }} />
+        <LabEChartsCore echarts={echarts} option={option} style={{ height: Math.max(180, data.length * 28) }} opts={{ renderer: 'canvas' }} />
       ) : (
         <p className="text-sm" style={{ color: 'var(--lab-muted)' }}>
           Nessun segmento.
