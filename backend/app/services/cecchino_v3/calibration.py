@@ -31,8 +31,10 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.optimize import minimize
-from scipy.special import gammaln
+
+# scipy viene importato dentro `fit_calibration`, l'unica funzione che lo usa: il modulo e' caricato
+# all'avvio del processo web (router V3) e scipy.optimize pesa ~45 MB di RAM che il processo sempre
+# acceso paga solo quando una calibrazione viene davvero stimata.
 
 from app.services.cecchino_v3.constants import CALIBRATION_ALPHA_BOUNDS, CALIBRATION_SHIFT_BOUNDS
 
@@ -133,6 +135,9 @@ def fit_calibration(samples: list[CalibrationSample], *, preserve_total: bool = 
     identity = Calibration(preserve_total=preserve_total)
     if not samples:
         return identity
+    from scipy.optimize import minimize  # import pigro (vedi in cima)
+    from scipy.special import gammaln
+
     lam_h = np.array([max(x.lambda_home, 1e-9) for x in samples])
     lam_a = np.array([max(x.lambda_away, 1e-9) for x in samples])
     gh = np.array([x.goals_home for x in samples], dtype=float)

@@ -9,7 +9,9 @@ pydantic-settings>=2.4.0,<3.0.0
 python-dotenv>=1.0.1,<2.0.0
 python-multipart>=0.0.9,<1.0.0
 httpx>=0.27.0,<1.0.0
-tenacity>=8.5.0,<10.0.0
 numpy==2.5.1
 scikit-learn==1.9.0
+# importati direttamente dal codice (scipy.optimize/special/stats, threadpool_limits): fissati alle versioni che il resolver installa con numpy 2.5.1 e scikit-learn 1.9.0
+scipy==1.18.0
+threadpoolctl==3.6.0
 pyarrow>=17.0.0,<23.0.0

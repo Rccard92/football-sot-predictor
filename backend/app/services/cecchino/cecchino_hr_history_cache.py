@@ -30,6 +30,18 @@ def clear_hr_history_cache() -> None:
         _hr_history_cache.clear()
 
 
+def _purge_expired_locked(now: float) -> None:
+    """Toglie le voci scadute (da chiamare con il lock preso).
+
+    Prima una voce scaduta veniva tolta solo se si richiedeva di nuovo la stessa data: con una data
+    diversa ogni giorno restavano in memoria fino a 16 storici interi che nessuno poteva piu' leggere
+    (il controllo del TTL li avrebbe comunque scartati). Toglierle subito non cambia nessun risultato.
+    """
+    expired = [k for k, (stored_at, _) in _hr_history_cache.items() if now - stored_at > _HR_HISTORY_CACHE_TTL_S]
+    for k in expired:
+        _hr_history_cache.pop(k, None)
+
+
 def get_or_build_hr_history_context(
     db: Session,
     *,
@@ -40,6 +52,7 @@ def get_or_build_hr_history_context(
     now = time.monotonic()
 
     with _hr_history_cache_lock:
+        _purge_expired_locked(now)
         entry = _hr_history_cache.get(key)
         if entry is not None:
             stored_at, payload = entry
@@ -61,6 +74,7 @@ def get_or_build_hr_history_context(
     }
 
     with _hr_history_cache_lock:
+        _purge_expired_locked(time.monotonic())
         stale = [k for k in _hr_history_cache if k[0] != DATASET_VERSION]
         for k in stale:
             _hr_history_cache.pop(k, None)
