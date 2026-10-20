@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import threading
 import time
 from collections import OrderedDict
@@ -46,7 +45,12 @@ def get_or_build_hr_history_context(
             stored_at, payload = entry
             if now - stored_at <= _HR_HISTORY_CACHE_TTL_S and key[0] == DATASET_VERSION:
                 _hr_history_cache.move_to_end(key)
-                return copy.deepcopy(payload)
+                # Niente deepcopy: lo storico (centinaia di migliaia di righe) veniva copiato a
+                # ogni hit. I chiamanti (build_historical_reliability_for_panel,
+                # resolve_hr_by_market_for_fixture) leggono soltanto history_rows e indici,
+                # non li modificano mai: si condividono. Copia solo del dict esterno, cosi' un
+                # eventuale cambio di chiave di primo livello non tocca la cache.
+                return dict(payload)
             _hr_history_cache.pop(key, None)
 
     built = build_hr_history_context(db, date_to=date_to)
@@ -60,7 +64,9 @@ def get_or_build_hr_history_context(
         stale = [k for k in _hr_history_cache if k[0] != DATASET_VERSION]
         for k in stale:
             _hr_history_cache.pop(k, None)
-        _hr_history_cache[key] = (time.monotonic(), copy.deepcopy(built))
+        # Stessi oggetti interni del valore restituito (sola lettura, vedi sopra): nessuna
+        # seconda copia in memoria dello storico.
+        _hr_history_cache[key] = (time.monotonic(), dict(built))
         _hr_history_cache.move_to_end(key)
         while len(_hr_history_cache) > _HR_HISTORY_CACHE_MAX:
             _hr_history_cache.popitem(last=False)

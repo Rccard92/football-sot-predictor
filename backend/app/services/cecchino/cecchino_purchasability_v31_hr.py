@@ -15,7 +15,9 @@ from app.services.cecchino.cecchino_historical_reliability import (
     iter_current_kpi_panel_rows,
     panel_item_key,
 )
-from app.services.cecchino.cecchino_purchasability_audit import build_purchasability_rows
+from app.services.cecchino.cecchino_purchasability_audit import (
+    build_purchasability_rows_for_history,
+)
 
 
 def build_hr_history_context(
@@ -24,7 +26,9 @@ def build_hr_history_context(
     date_to: date,
 ) -> dict[str, Any]:
     """Costruisce indici storici una sola volta per un intervallo/job."""
-    history_rows = build_purchasability_rows(db, date_to=date_to)
+    # Caricamento a memoria ridotta: solo le colonne/chiavi JSON usate dallo storico, a blocchi,
+    # senza oggetti ORM in sessione. Righe identiche a build_purchasability_rows(db, date_to=...).
+    history_rows = build_purchasability_rows_for_history(db, date_to=date_to)
     return {
         "history_rows": history_rows,
         "local_index": build_historical_reliability_index(history_rows),
