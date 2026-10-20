@@ -53,7 +53,7 @@ Poi aprire il frontend: Cecchino Today deve mostrare la scansione come prima; la
 |---|---|---|---|
 | `cecchino-v4-daily` | `python -m app.jobs.cecchino_v4_daily daily` | `0 6 * * *` | partite a 7 giorni, quote del mattino, statistiche post-partita, previsioni + ragionamenti + shortlist, regolamento |
 | `cecchino-v4-odds` | `python -m app.jobs.cecchino_v4_daily odds` | `0 12,16 * * *` | istantanee quote pomeriggio e sera, shortlist aggiornata, regolamento |
-| `cecchino-v4-prematch` | `python -m app.jobs.cecchino_v4_daily prematch` | `*/15 * * * *` | formazioni ufficiali e quota di chiusura delle partite entro 65 minuti (chiusura letta 20-35 minuti prima), risultati appena finite, shortlist aggiornata |
+| `cecchino-v4-prematch` | `python -m app.jobs.cecchino_v4_daily prematch` | `*/15 9-23 * * *` (dal 20/10/2026: solo nelle ore delle partite, prima girava anche di notte) | formazioni ufficiali e quota di chiusura delle partite entro 65 minuti (chiusura letta 20-35 minuti prima), risultati appena finite, shortlist aggiornata |
 
 Variabili per ognuno (riferimenti, nessun valore da copiare a mano):
 
