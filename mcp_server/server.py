@@ -29,15 +29,30 @@ MCP_ACCESS_TOKEN = os.environ.get("MCP_ACCESS_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8080"))
 MAX_CHARS = 150_000  # oltre, la risposta viene tagliata (con avviso) per non saturare il contesto
 
-mcp = FastMCP(
-    "cecchino",
-    instructions=(
-        "Strumenti in sola lettura sul progetto Cecchino (pronostici calcio): dashboard, modelli, risultati, "
-        "database, consumo API e job. Per domande sui numeri usa prima gli strumenti dedicati, poi "
-        "cecchino_sql per analisi libere (solo SELECT). Date in formato YYYY-MM-DD, fuso Europe/Rome."
-    ),
-    stateless_http=True,
+_INSTRUCTIONS = (
+    "Strumenti in sola lettura sul progetto Cecchino (pronostici calcio): dashboard, modelli, risultati, "
+    "database, consumo API e job. Per domande sui numeri usa prima gli strumenti dedicati, poi "
+    "cecchino_sql per analisi libere (solo SELECT). Date in formato YYYY-MM-DD, fuso Europe/Rome."
 )
+
+
+def _build_mcp() -> FastMCP:
+    # Le versioni recenti dell'SDK rifiutano (421) gli Host diversi da localhost: protezione DNS-rebinding pensata
+    # per server locali senza autenticazione. Qui il server e' pubblico su Railway e protetto da MCP_ACCESS_TOKEN.
+    try:
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        return FastMCP(
+            "cecchino",
+            instructions=_INSTRUCTIONS,
+            stateless_http=True,
+            transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        )
+    except (ImportError, TypeError):
+        return FastMCP("cecchino", instructions=_INSTRUCTIONS, stateless_http=True)
+
+
+mcp = _build_mcp()
 
 
 def _client() -> httpx.Client:
