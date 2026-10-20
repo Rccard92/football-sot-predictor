@@ -1,7 +1,5 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
-import type { SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../types/sportapi'
-
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
 
 export type CompetitionSummary = {
@@ -1425,50 +1423,6 @@ export type LineupStatusPayload = {
   fetched_at?: string | null
 }
 
-export type LineupRefreshImpactReason = {
-  text: string
-  player_name?: string | null
-  previous_status?: string | null
-  new_status?: string | null
-  impact_type?: string | null
-  affected_team?: string | null
-  affected_prediction?: string | null
-  estimated_sot_impact?: number | null
-}
-
-export type LineupRefreshImpactDelta = {
-  direction_total?: string | null
-  delta_total_sot?: number | null
-  direction_home?: string | null
-  delta_home_sot?: number | null
-  direction_away?: string | null
-  delta_away_sot?: number | null
-  before_total_sot?: number | null
-  after_total_sot?: number | null
-  before_home_sot?: number | null
-  after_home_sot?: number | null
-  before_away_sot?: number | null
-  after_away_sot?: number | null
-  main_reason?: string | null
-  severity?: string | null
-  reasons?: LineupRefreshImpactReason[]
-}
-
-export type LineupRefreshImpactPayload = LineupRefreshImpactDelta & {
-  has_comparison: boolean
-  model_version?: string | null
-  created_at?: string | null
-}
-
-export type SportApiFetchLineupsResponse = {
-  status: string
-  message?: string
-  fixture_id?: number
-  refresh_result?: Record<string, unknown>
-  impact_delta?: LineupRefreshImpactDelta | null
-  impact_id?: number | null
-}
-
 export async function adminIngestStandings(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/standings`, {}, opts)
 }
@@ -1501,86 +1455,4 @@ export async function adminIngestLineups(
   const qs = params.toString()
   const path = `/api/admin/ingest/serie-a/${season}/lineups${qs ? `?${qs}` : ''}`
   return adminPostJson<unknown>(path, {}, opts)
-}
-
-export async function getSportApiFixtureDebug(
-  fixtureId: number,
-  opts?: AdminRequestOpts,
-): Promise<SportApiFixtureDebugResponse> {
-  return adminGetJson<SportApiFixtureDebugResponse>(
-    `/api/admin/sportapi/debug/fixture/${fixtureId}`,
-    { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 },
-  )
-}
-
-export async function confirmSportApiMapping(
-  fixtureId: number,
-  body: {
-    provider_event_id: number
-    confidence_score?: number | null
-    matched_by?: string | null
-    raw_payload?: Record<string, unknown> | null
-  },
-  opts?: AdminRequestOpts,
-): Promise<unknown> {
-  return adminPostJson<unknown>(`/api/admin/sportapi/mappings/${fixtureId}/confirm`, body, opts)
-}
-
-export async function fetchSportApiLineups(
-  fixtureId: number,
-  opts?: AdminRequestOpts & { trackImpact?: boolean; regenerateV20?: boolean },
-): Promise<SportApiFetchLineupsResponse> {
-  const p = new URLSearchParams()
-  if (opts?.trackImpact) p.set('track_impact', 'true')
-  if (opts?.regenerateV20 === false) p.set('regenerate_v20', 'false')
-  else if (opts?.trackImpact || opts?.regenerateV20) p.set('regenerate_v20', 'true')
-  const q = p.toString()
-  return adminPostJson<SportApiFetchLineupsResponse>(
-    `/api/admin/sportapi/lineups/${fixtureId}/fetch${q ? `?${q}` : ''}`,
-    {},
-    {
-      ...opts,
-      timeoutMs: opts?.timeoutMs ?? 120_000,
-    },
-  )
-}
-
-export async function getSportApiLineups(
-  fixtureId: number,
-  includeRaw = false,
-  opts?: AdminRequestOpts,
-): Promise<SportApiLineupsStoredResponse> {
-  const qs = includeRaw ? '?include_raw=true' : ''
-  return adminGetJson<SportApiLineupsStoredResponse>(
-    `/api/admin/sportapi/lineups/${fixtureId}${qs}`,
-    opts,
-  )
-}
-
-export type SportApiPlayerMatchingPreviewResponse = {
-  fixture_id: number
-  sportapi_lineups_available?: boolean
-  player_matching?: unknown
-  lineup_impact_simulation?: import('../types/lineupImpact').LineupImpactSimulationPayload
-}
-
-export async function getSportApiPlayerMatchingPreview(
-  fixtureId: number,
-  opts?: AdminRequestOpts,
-): Promise<SportApiPlayerMatchingPreviewResponse> {
-  return adminGetJson<SportApiPlayerMatchingPreviewResponse>(
-    `/api/admin/sportapi/fixture/${fixtureId}/player-matching`,
-    opts,
-  )
-}
-
-export async function syncSportApiFixtureSquads(
-  fixtureId: number,
-  opts?: AdminRequestOpts,
-): Promise<unknown> {
-  return adminPostJson<unknown>(
-    `/api/admin/sportapi/fixture/${fixtureId}/sync-api-squads`,
-    {},
-    opts,
-  )
 }

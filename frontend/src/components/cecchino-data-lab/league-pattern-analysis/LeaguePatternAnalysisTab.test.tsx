@@ -17,7 +17,7 @@ vi.mock('../../../lib/leaguePatternAnalysisApi', async () => {
   return { ...actual, ...apiMock }
 })
 
-vi.mock('echarts-for-react', () => ({
+vi.mock('../../cecchino-lab/LabEChartsCore', () => ({
   default: () => <div data-testid="lpa-heatmap-chart">heatmap</div>,
 }))
 

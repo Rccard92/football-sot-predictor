@@ -1,7 +1,13 @@
-import ReactECharts from 'echarts-for-react'
+import * as echarts from 'echarts/core'
+import { BarChart } from 'echarts/charts'
+import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import LabEChartsCore from '../../cecchino-lab/LabEChartsCore'
 import type { CecchinoLabAnalyticsOverview } from '../../../lib/cecchinoLabApi'
 import { MetricTooltip } from './MetricTooltip'
 import { overviewColors } from './overviewTheme'
+
+echarts.use([BarChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
 type Props = {
   outcomes: CecchinoLabAnalyticsOverview['outcomes_1x2']
@@ -86,7 +92,7 @@ export function FlatRoiExplorer({ outcomes, goals }: Props) {
           Nessuna giocata eleggibile (quote mancanti escluse).
         </div>
       ) : (
-        <ReactECharts option={option} style={{ height: 260 }} opts={{ renderer: 'canvas' }} />
+        <LabEChartsCore echarts={echarts} option={option} style={{ height: 260 }} opts={{ renderer: 'canvas' }} />
       )}
     </section>
   )

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import ReactECharts from 'echarts-for-react'
+import * as echarts from 'echarts/core'
+import { BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import LabEChartsCore from '../../cecchino-lab/LabEChartsCore'
 import {
   fetchLeaguePatternAnalysisNative,
   fetchLeaguePatternAnalysisPattern,
@@ -10,6 +14,8 @@ import {
 } from '../../../lib/leaguePatternAnalysisApi'
 import { roiColor } from '../overview/overviewTheme'
 import { LabInfoTooltip } from './LabInfoTooltip'
+
+echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 type Props = {
   patternId: string | null
@@ -172,7 +178,7 @@ export function PatternDetailDrawer({ patternId, kind, onClose }: Props) {
 
               <div className="lab-card p-3">
                 <div className="mb-2 text-sm font-semibold">ROI per stagione</div>
-                <ReactECharts option={chartOption} style={{ height: 200 }} />
+                <LabEChartsCore echarts={echarts} option={chartOption} style={{ height: 200 }} />
               </div>
 
               <div className="overflow-x-auto">
