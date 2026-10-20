@@ -155,3 +155,45 @@ def test_start_scan_job_has_no_budget_guard_call():
     source = open(mod.__file__, encoding="utf-8-sig").read()
     assert "check_api_budget_before_scan" not in source
     assert "BudgetGuardStop" not in source
+
+
+def _json_response(status_code: int, body: dict, headers: dict | None = None) -> MagicMock:
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.headers = httpx.Headers({"content-type": "application/json", **(headers or {})})
+    resp.json.return_value = body
+    if status_code >= 400:
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(str(status_code), request=MagicMock(), response=resp)
+    else:
+        resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_every_provider_response_is_recorded_even_without_context():
+    """Audit 20/10/2026: chiamate senza contesto e ritentativi sparivano dal registro. Ora una riga per risposta."""
+    client = ApiFootballClient(api_key="test-key")  # nessun contesto, nessuna sessione
+    responses = [
+        _json_response(429, {"errors": {}, "response": []}, {"Retry-After": "0"}),
+        _json_response(200, {"errors": {}, "response": [{"ok": True}]}),
+    ]
+    with patch("app.services.api_football_client.httpx.Client") as mock_cls, patch(
+        "app.services.api_football_client.record_api_usage_event_detached"
+    ) as record, patch("app.services.api_football_client.time.sleep"):
+        mock_cls.return_value.__enter__.return_value.get.side_effect = responses
+        client.get("fixtures", {"date": "2026-10-10"})
+    assert [c.kwargs["status_code"] for c in record.call_args_list] == [429, 200]
+    assert all(c.kwargs["endpoint"] == "fixtures" for c in record.call_args_list)
+
+
+def test_quota_exhausted_response_is_recorded_once_and_status_is_free():
+    client = ApiFootballClient(api_key="test-key")
+    exhausted = _json_response(200, {"errors": {"requests": "You have reached the request limit for the day"}, "response": []})
+    status = _json_response(200, {"errors": [], "response": {"requests": {"current": 10, "limit_day": 7500}}})
+    with patch("app.services.api_football_client.httpx.Client") as mock_cls, patch(
+        "app.services.api_football_client.record_api_usage_event_detached"
+    ) as record:
+        mock_cls.return_value.__enter__.return_value.get.side_effect = [exhausted, status]
+        with pytest.raises(ApiFootballQuotaExhausted):
+            client.get("odds", {"fixture": 1})
+        client.get("status")
+    assert record.call_count == 1  # la risposta di quota finita una volta; `status` non consuma quota

@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -46,6 +47,7 @@ from app.services.cecchino_v4.constants import (
 )
 from app.services.cecchino_v4.explain.blocks import build_explanation, fixture_card
 from app.services.cecchino_v4.history.football_data import History, load_history
+from app.services.cecchino_v4.measure.metrics import clv as clv_value
 from app.services.cecchino_v4.selection.rules import MarketRow, best_play, evaluate_fixture, no_play_reason, rows_to_dicts
 from app.services.cecchino_v4.selection.settlement import settle
 from app.services.cecchino_v4.selection.labels import market_family
@@ -66,6 +68,8 @@ ROME = ZoneInfo("Europe/Rome")
 FINISHED_STATUSES = {"FT", "AET", "PEN"}
 EXAMS_DIR = EXAMS_DATA_DIR
 CLASSIC_FAMILIES = ("FT_1X2", "DOUBLE_CHANCE", "FT_OVER_UNDER", "HT_1X2", "AH")
+# Finestra del CLV stimato: copre lo storico del registro quote (dal 20/09/2026) e non riprova all'infinito.
+ESTIMATED_CLV_DAYS_BACK = 60
 
 # Firme dei motori (docs/v4/ROADMAP.md, Fase 1 e 2): storico + bersagli -> payload per chiave bersaglio.
 GoalsPredictor = Callable[[list, list, Any], dict[str, dict]]
@@ -214,11 +218,37 @@ def odds_age_sentence(fixture_id: int, bookmaker_id: int | None, bookmaker_name:
     )
 
 
+def _same_json(a: Any, b: Any, *, ignore: tuple[str, ...] = ()) -> bool:
+    """Confronto di due payload come verrebbero salvati (JSON), senza le chiavi in `ignore` al primo livello."""
+
+    def norm(x: Any) -> str:
+        if isinstance(x, dict) and ignore:
+            x = {k: v for k, v in x.items() if k not in ignore}
+        return json.dumps(x, sort_keys=True, default=str)
+
+    return norm(a) == norm(b)
+
+
 def _replace_prediction(db: Session, fixture: CecchinoV4Fixture, kind: str, payload: dict, now: datetime) -> None:
-    for old in db.execute(
-        select(CecchinoV4Prediction).where(CecchinoV4Prediction.fixture_id == fixture.id, CecchinoV4Prediction.kind == kind)
-    ).scalars():
-        db.delete(old)
+    """Una riga per (partita, tipo), aggiornata sul posto e solo se cambia (audit 20/10/2026: prima si cancellava
+    e reinseriva a ogni ricalcolo, 6.358 righe cancellate per 1.258 rimaste)."""
+    rows = list(
+        db.execute(
+            select(CecchinoV4Prediction)
+            .where(CecchinoV4Prediction.fixture_id == fixture.id, CecchinoV4Prediction.kind == kind)
+            .order_by(CecchinoV4Prediction.id)
+        ).scalars()
+    )
+    if rows:
+        keep = rows[0]
+        for extra in rows[1:]:  # doppioni lasciati da versioni precedenti: la regola resta una riga sola
+            db.delete(extra)
+        if _same_json(keep.payload_json, payload) and keep.lineups_status == fixture.lineups_status:
+            return
+        keep.payload_json = payload
+        keep.computed_at = now
+        keep.lineups_status = fixture.lineups_status
+        return
     db.add(
         CecchinoV4Prediction(
             fixture_id=fixture.id,
@@ -281,10 +311,12 @@ def _aftermath(f: CecchinoV4Fixture, rows: list[MarketRow]) -> dict[str, Any] | 
 
 
 def _save_explanation(db: Session, f: CecchinoV4Fixture, payload: dict, now: datetime) -> None:
+    """Si riscrive solo se il contenuto cambia (audit 20/10/2026: 349.493 aggiornamenti per 629 righe). L'orario
+    `computed_at` dentro il payload non conta: resta quello dell'ultimo cambio."""
     rec = db.execute(select(CecchinoV4Explanation).where(CecchinoV4Explanation.fixture_id == f.id)).scalar_one_or_none()
     if rec is None:
         db.add(CecchinoV4Explanation(fixture_id=f.id, payload_json=payload, computed_at=now))
-    else:
+    elif not _same_json(rec.payload_json, payload, ignore=("computed_at",)):
         rec.payload_json = payload
         rec.computed_at = now
 
@@ -318,6 +350,24 @@ def _row_from_item(item: CecchinoV4ShortlistItem) -> MarketRow:
     )
 
 
+# Campi di una voce congelata (partita iniziata) che sopravvivono alla riscrittura della lista provvisoria.
+FROZEN_FIELDS = (
+    "status",
+    "withdraw_reason",
+    "closing_quota",
+    "clv",
+    "published_quota",
+    "published_bookmaker_id",
+    "published_at",
+    "first_snapshot_quota",
+    "first_snapshot_at",
+    "clv_estimated",
+    "result",
+    "profit_units",
+    "settled_at",
+)
+
+
 def _frozen_candidates(db: Session, day: date, started_ids: set[int], fixtures_by_id: dict[int, CecchinoV4Fixture]):
     """Voci gia' pubblicate di partite iniziate: non si ricalcolano e non si perdono (base della misura)."""
     record = get_shortlist(db, day)
@@ -338,11 +388,12 @@ def _frozen_candidates(db: Session, day: date, started_ids: set[int], fixtures_b
             "reason": item.reason_json,
         }
         candidates.append((meta, _row_from_item(item)))
-        frozen[(item.fixture_id, item.market_key)] = item
+        # copia dei valori, non la riga: `save_provisional` aggiorna le voci sul posto e la riga verrebbe sovrascritta
+        frozen[(item.fixture_id, item.market_key)] = SimpleNamespace(**{name: getattr(item, name) for name in FROZEN_FIELDS})
     return candidates, frozen
 
 
-def _restore_frozen_fields(db: Session, day: date, frozen: dict[tuple[int, str], CecchinoV4ShortlistItem]) -> None:
+def _restore_frozen_fields(db: Session, day: date, frozen: dict[tuple[int, str], SimpleNamespace]) -> None:
     """Dopo la riscrittura della lista, le voci congelate riprendono stato, esito, profitto e chiusura."""
     if not frozen:
         return
@@ -357,6 +408,9 @@ def _restore_frozen_fields(db: Session, day: date, frozen: dict[tuple[int, str],
         item.withdraw_reason = old.withdraw_reason
         item.closing_quota = old.closing_quota
         item.clv = old.clv
+        item.first_snapshot_quota = old.first_snapshot_quota
+        item.first_snapshot_at = old.first_snapshot_at
+        item.clv_estimated = old.clv_estimated
         if old.published_quota is not None:  # la prima quota pubblicata non cambia (base del CLV)
             item.published_quota = old.published_quota
             item.published_bookmaker_id = old.published_bookmaker_id
@@ -498,6 +552,7 @@ def settle_finished(db: Session, *, now: datetime | None = None) -> int:
         .where(CecchinoV4ShortlistItem.settled_at.is_(None), CecchinoV4Fixture.ft_home.is_not(None))
     ).all()
     if not items:
+        fill_estimated_clv(db, now=now)  # anche senza voci da regolare: recupera le stime mancanti
         return 0
     closing = {}
     for snap in db.execute(
@@ -516,6 +571,61 @@ def settle_finished(db: Session, *, now: datetime | None = None) -> int:
         if outcome is None and closing_quota is None and item.status != SHORTLIST_WITHDRAWN:
             continue
         settle_item(db, item.id, outcome, closing_quota=closing_quota, now=now)
+        done += 1
+    db.commit()
+    fill_estimated_clv(db, now=now)
+    return done
+
+
+def _first_day_quota(snaps: list[CecchinoV4OddsSnapshot], market_key: str, f: CecchinoV4Fixture) -> tuple[float, datetime] | None:
+    """Prima quota del mercato nel giorno della partita (ora italiana), prima del calcio d'inizio. `snaps` in ordine di orario."""
+    kickoff = _aware(f.kickoff_at)
+    for snap in snaps:
+        taken = snap.taken_at if snap.taken_at.tzinfo else snap.taken_at.replace(tzinfo=timezone.utc)
+        if kickoff is not None and taken >= kickoff:
+            break
+        if taken.astimezone(ROME).date() != f.match_date:
+            continue
+        quota = (snap.markets_json or {}).get(market_key)
+        if quota is not None and float(quota) > 1.0:
+            return float(quota), taken
+    return None
+
+
+def fill_estimated_clv(db: Session, *, now: datetime | None = None, days_back: int = ESTIMATED_CLV_DAYS_BACK) -> int:
+    """CLV stimato per le voci con chiusura e senza stima (dal 20/10/2026): prima istantanea del giorno della partita,
+    stesso book del prezzo di riferimento, contro `closing_quota`. Copre anche le voci vecchie, il cui `clv` e' 0
+    per costruzione. Scrive solo le colonne della stima; ritorna quante voci ha stimato."""
+    now = now or _now()
+    rows = db.execute(
+        select(CecchinoV4ShortlistItem, CecchinoV4Fixture)
+        .join(CecchinoV4Fixture, CecchinoV4Fixture.id == CecchinoV4ShortlistItem.fixture_id)
+        .where(
+            CecchinoV4ShortlistItem.closing_quota.is_not(None),
+            CecchinoV4ShortlistItem.clv_estimated.is_(None),
+            CecchinoV4Fixture.kickoff_at >= now - timedelta(days=days_back),  # voci senza istantanee: non si riprovano per sempre
+        )
+    ).all()
+    if not rows:
+        return 0
+    snaps: dict[tuple[int, int], list[CecchinoV4OddsSnapshot]] = {}
+    for snap in db.execute(
+        select(CecchinoV4OddsSnapshot)
+        .where(CecchinoV4OddsSnapshot.fixture_id.in_({f.id for _, f in rows}), CecchinoV4OddsSnapshot.kind != "chiusura")
+        .order_by(CecchinoV4OddsSnapshot.taken_at)
+    ).scalars():
+        snaps.setdefault((snap.fixture_id, snap.bookmaker_id), []).append(snap)
+    done = 0
+    for item, f in rows:
+        _, reference_bk = reference_price(item)
+        first = _first_day_quota(snaps.get((f.id, reference_bk), []), item.market_key, f)
+        if first is None:
+            continue
+        value = clv_value(first[0], item.closing_quota)
+        if value is None:
+            continue
+        item.first_snapshot_quota, item.first_snapshot_at = first
+        item.clv_estimated = value
         done += 1
     db.commit()
     return done
@@ -585,6 +695,7 @@ __all__ = [
     "DayReport",
     "build_days",
     "settle_finished",
+    "fill_estimated_clv",
     "live_history",
     "latest_odds",
     "fixture_meta",

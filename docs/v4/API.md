@@ -109,12 +109,12 @@ Le stesse chiavi identificano le quote nel registro (`markets_json` di `cecchino
 | `GET /fixtures?date=YYYY-MM-DD[&league=I1][&only_plays=true][&only_lineups=true][&sort=kickoff|profit]` | `{"date": "…", "items": [FixtureCard], "abstentions": {"prezzo_giusto": 5, "incertezza_alta": 2}}` |
 | `GET /fixtures/{id}` | `FixtureDetail` |
 | `GET /shortlist?date=YYYY-MM-DD` | `{"date": "…", "status": "provvisoria|confermata|regolata", "sealed_at": "…", "digest": "sha256…", "items": [ShortlistItem], "abstentions": [{"reason": "…", "count": 5, "examples": ["Milan - Inter"]}]}` |
-| `GET /measure/summary?from&to` | `{"by_league": [...], "by_market": [...], "totals": {"plays": 0, "roi": null, "roi_lo": null, "roi_hi": null, "clv": null}, "alerts": []}` |
+| `GET /measure/summary?from&to` | `{"by_league": [...], "by_market": [...], "totals": {"plays": 0, "roi": null, "roi_lo": null, "roi_hi": null, "clv": null, "clv_estimated": null, "clv_estimated_plays": 0}, "alerts": []}` |
 | `GET /engine/exams` | `{"items": [{"code": "E1", "title": "…", "passed": true, "preregistration": "docs/v4/…", "result": {...}, "computed_at": "…"}]}` |
 | `GET /engine/challengers` | `{"items": [{"name": "…", "status": "candidato|superato|non_superato", "exam": {...}}]}` |
 | `GET /engine/data` | `{"coverage": [{"league_code": "I1", "markets": {"STAT:sot": true}}], "quality": [{"league_code": "I1", "fixtures": 30, "missing_stats_pct": 1.2, "missing_lineups_pct": 4.0, "missing_odds_pct": 0}], "api_budget": {"date": "…", "calls": 412, "stop_at": 7000}, "odds_registry": {"snapshots_today": 96, "last_taken_at": "…"}}` |
 
-`ShortlistItem` = riga di mercato + `{"fixture_id": 12, "home_team": "…", "away_team": "…", "kickoff_at": "…", "rank": 1, "top": true, "status": "provvisoria|confermata|ritirata|regolata", "withdraw_reason": null, "result": "vinta|persa|void|null", "clv": 0.04}`.
+`ShortlistItem` = riga di mercato + `{"fixture_id": 12, "home_team": "…", "away_team": "…", "kickoff_at": "…", "rank": 1, "top": true, "status": "provvisoria|confermata|ritirata|regolata", "withdraw_reason": null, "result": "vinta|persa|void|null", "clv": 0.04, "first_snapshot_quota": 2.2, "clv_estimated": 0.048}`. `clv_estimated` (dal 21/10/2026) = prima quota salvata nel giorno della partita, stesso book, prima del calcio d'inizio / chiusura - 1; vale anche per le voci vecchie, il cui `clv` e' 0 per costruzione.
 
 ## Endpoint admin (prefisso `/api/admin/cecchino/v4`, sessione admin obbligatoria)
 

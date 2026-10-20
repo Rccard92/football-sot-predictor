@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.api_usage_event import PROVIDER_API_FOOTBALL, ApiUsageEvent
+
+logger = logging.getLogger(__name__)
 
 _SENSITIVE_PARAM_KEYS = frozenset({"key", "api_key", "x-apisports-key", "token"})
 
@@ -87,6 +90,30 @@ def record_api_usage_event(
         db.flush()
     except Exception:
         db.rollback()
+
+
+def record_api_usage_event_detached(**kwargs: Any) -> None:
+    """Registra una chiamata in una sessione propria, confermata subito (audit 20/10/2026).
+
+    L'evento resta anche se il chiamante annulla la sua transazione (es. scansione interrotta per quota finita:
+    il 10/10 il registro contava 1.267 chiamate su 7.500 consumate) e un errore qui non tocca mai la sessione
+    del chiamante. Mai bloccante: se il database non risponde, la chiamata resta solo nel log.
+    """
+    try:
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+    except Exception:  # noqa: BLE001
+        logger.warning("evento d'uso API-Football non registrato: sessione non disponibile", exc_info=True)
+        return
+    try:
+        record_api_usage_event(db, **kwargs)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.warning("evento d'uso API-Football non registrato", exc_info=True)
+    finally:
+        db.close()
 
 
 def count_api_calls_for_date(

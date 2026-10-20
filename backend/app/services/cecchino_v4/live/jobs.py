@@ -569,7 +569,11 @@ def _store_snapshot(ctx: JobContext, fixture_id: int, bookmaker_id: int, kind: s
 
 
 def job_odds_snapshot(ctx: JobContext) -> dict[str, Any]:
-    """Tre istantanee al giorno (mattina, pomeriggio, sera) per campionato, data e bookmaker."""
+    """Tre istantanee al giorno (mattina, pomeriggio, sera) per campionato, data e bookmaker.
+
+    Solo partite non ancora iniziate: dopo il calcio d'inizio le quote sono live e non servono al registro
+    (audit 20/10/2026: 182 istantanee prese a partita iniziata, 39 a partita finita). Se in un campionato e
+    data sono tutte iniziate, la chiamata si salta."""
     kind = snapshot_kind_for(ctx.now)
     since = ctx.now - SNAPSHOT_REPEAT_GAP
     days = [ctx.today + timedelta(days=i) for i in range(int(ctx.params.get("days", ODDS_SNAPSHOT_DAYS)))]
@@ -583,7 +587,10 @@ def job_odds_snapshot(ctx: JobContext) -> dict[str, Any]:
             fixtures = list(
                 ctx.db.scalars(
                     select(CecchinoV4Fixture).where(
-                        CecchinoV4Fixture.league_code == lg.code, CecchinoV4Fixture.match_date == day, CecchinoV4Fixture.status.notin_(tuple(FINAL_STATUSES))
+                        CecchinoV4Fixture.league_code == lg.code,
+                        CecchinoV4Fixture.match_date == day,
+                        CecchinoV4Fixture.status.notin_(tuple(FINAL_STATUSES)),
+                        CecchinoV4Fixture.kickoff_at > ctx.now,
                     )
                 ).all()
             )

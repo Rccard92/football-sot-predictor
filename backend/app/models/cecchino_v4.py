@@ -223,6 +223,11 @@ class CecchinoV4ShortlistItem(Base):
     published_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
     published_bookmaker_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # CLV stimato (dal 20/10/2026): prima istantanea del giorno della partita, stesso book del prezzo di riferimento
+    # e prima del calcio d'inizio, contro la chiusura. Esiste anche per le voci vecchie, che non hanno `published_quota`.
+    first_snapshot_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clv_estimated: Mapped[float | None] = mapped_column(Float, nullable=True)
     result: Mapped[str | None] = mapped_column(String(16), nullable=True)  # vinta|persa|void|mezza_vinta|mezza_persa
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

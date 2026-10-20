@@ -82,7 +82,7 @@ def test_summary_shape_and_alert():
         items.append(_item(f"2026-11-{d + 1:02d}", 0.8, league="E0", family="STAT_sot", quota=1.8, closing=1.9, idx=100 + d))
     out = summary(items, bootstrap_n=200)
     assert set(out) == {"by_league", "by_market", "totals", "alerts"}
-    assert set(out["totals"]) == {"plays", "profit_units", "roi", "roi_lo", "roi_hi", "clv"}
+    assert set(out["totals"]) == {"plays", "profit_units", "roi", "roi_lo", "roi_hi", "clv", "clv_estimated", "clv_estimated_plays"}
     assert out["totals"]["plays"] == 50
     leagues = {g["league_code"]: g for g in out["by_league"]}
     assert leagues["I1"]["plays"] == 40 and leagues["I1"]["alarm"] is True

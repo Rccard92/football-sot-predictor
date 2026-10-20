@@ -10,9 +10,12 @@ import httpx
 
 from app.core.config import get_settings
 from app.services.api_usage_context import ApiUsageContext
-from app.services.api_usage_service import record_api_usage_event
+from app.services.api_usage_service import record_api_usage_event_detached
 
 logger = logging.getLogger(__name__)
+
+# Endpoint che non consumano la quota giornaliera: non si registrano.
+FREE_ENDPOINTS = frozenset({"status"})
 
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
@@ -191,6 +194,7 @@ class ApiFootballClient:
         self._usage_context = ctx or ApiUsageContext(record_events=False)
 
     def set_usage_db(self, db: Any | None) -> None:
+        # Dal 20/10/2026 gli eventi d'uso si scrivono in una sessione propria; resta per compatibilita'.
         self._usage_db = db
 
     def _record_usage(
@@ -201,11 +205,16 @@ class ApiFootballClient:
         status_code: int | None,
         duration_ms: int,
     ) -> None:
-        ctx = self._usage_context
-        if ctx is None or not ctx.record_events:
+        """Registra ogni risposta del provider, anche errori e 429 (dal 20/10/2026).
+
+        Prima si registrava solo con un contesto attivo e nella sessione del chiamante: le chiamate senza contesto
+        e quelle di una transazione poi annullata sparivano. Ora si scrive sempre, in una sessione propria; il
+        contesto aggiunge solo job, giorno, partita e campionato. `status` e' gratuita e non si conta.
+        """
+        if path.split("?", 1)[0] in FREE_ENDPOINTS:
             return
-        record_api_usage_event(
-            self._usage_db,
+        ctx = self._usage_context or ApiUsageContext()
+        record_api_usage_event_detached(
             endpoint=path,
             params=params,
             status_code=status_code,
@@ -224,8 +233,6 @@ class ApiFootballClient:
         path: str,
         resp: httpx.Response,
         errors: Any = None,
-        elapsed_ms: int,
-        query: dict[str, Any],
     ) -> None:
         headers = _header_map(resp)
         if not is_provider_quota_exhausted(
@@ -234,12 +241,6 @@ class ApiFootballClient:
             headers=headers,
         ):
             return
-        self._record_usage(
-            path=path,
-            params=query,
-            status_code=resp.status_code,
-            duration_ms=elapsed_ms,
-        )
         raise ApiFootballQuotaExhausted(
             "API-Football ha confermato che non sono disponibili altre richieste.",
             endpoint=path,
@@ -275,6 +276,13 @@ class ApiFootballClient:
                     attempt,
                     list(query.keys()),
                 )
+                # Una riga per ogni risposta ricevuta (anche 429, 5xx e ritentativi): il provider le conta tutte.
+                self._record_usage(
+                    path=path,
+                    params=query,
+                    status_code=resp.status_code,
+                    duration_ms=elapsed_ms,
+                )
                 try:
                     _observe_minute_remaining(_header_map(resp))
                 except Exception:
@@ -293,8 +301,6 @@ class ApiFootballClient:
                     path=path,
                     resp=resp,
                     errors=errors_preview,
-                    elapsed_ms=elapsed_ms,
-                    query=query,
                 )
 
                 if resp.status_code == 429:
@@ -328,22 +334,8 @@ class ApiFootballClient:
                         path=path,
                         resp=resp,
                         errors=errors,
-                        elapsed_ms=elapsed_ms,
-                        query=query,
-                    )
-                    self._record_usage(
-                        path=path,
-                        params=query,
-                        status_code=resp.status_code,
-                        duration_ms=elapsed_ms,
                     )
                     raise ApiFootballError(f"API errors: {errors}")
-                self._record_usage(
-                    path=path,
-                    params=query,
-                    status_code=resp.status_code,
-                    duration_ms=elapsed_ms,
-                )
                 return data
             except (ApiFootballQuotaExhausted, ApiFootballRateLimited):
                 raise
@@ -359,8 +351,6 @@ class ApiFootballClient:
                         path=path,
                         resp=e.response,
                         errors=err_errors,
-                        elapsed_ms=int((time.perf_counter() - started) * 1000),
-                        query=query,
                     )
                 if e.response is not None and e.response.status_code in TRANSIENT_STATUS and attempt < MAX_RETRIES:
                     wait = BACKOFF_BASE_S * (2 ** (attempt - 1))
