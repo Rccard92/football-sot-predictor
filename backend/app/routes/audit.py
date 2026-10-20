@@ -8,6 +8,7 @@ tempo (vedi app/services/audit/readonly.py): da qui non si puo' scrivere ne' can
 from __future__ import annotations
 
 import hmac
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.services.audit import infra
+from app.services.audit.models_compare import compare_engines
 from app.services.audit.readonly import readonly_session, run_readonly_sql
 
 
@@ -62,6 +64,20 @@ def audit_sql(body: SqlBody, db: Session = Depends(readonly_session)) -> dict[st
     except DBAPIError as exc:
         # errore di Postgres (sintassi, timeout, tentativo di scrittura in transazione READ ONLY...)
         raise HTTPException(status_code=400, detail=str(exc.orig).strip()[:600]) from exc
+
+
+@router.get("/models/compare")
+def audit_models_compare(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    group_by: str = Query("engine"),
+    min_plays: int = Query(1, ge=1),
+    db: Session = Depends(readonly_session),
+) -> dict[str, Any]:
+    try:
+        return compare_engines(db, date_from=date_from, date_to=date_to, group_by=group_by, min_plays=min_plays)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api-usage")
