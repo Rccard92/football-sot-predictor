@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     admin_password: str = ""
     admin_session_secret: str = ""
     admin_session_ttl_minutes: int = 720
+    # Audit in sola lettura per il server MCP (dal 20/10/2026): vuota = audit spento.
+    audit_api_token: str = ""
 
     prematch_refresh_minutes_before: int = 30
     prematch_refresh_window_minutes: int = 10

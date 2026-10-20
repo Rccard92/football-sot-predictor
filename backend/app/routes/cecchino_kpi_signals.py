@@ -10,6 +10,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.database import get_db
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.schemas.cecchino_kpi_signals import (
@@ -513,7 +514,7 @@ def purchasability_validation_export_csv(
     return PlainTextResponse(content=csv_text, media_type="text/csv")
 
 
-@router.post("/purchasability-validation/jobs", status_code=202)
+@router.post("/purchasability-validation/jobs", status_code=202, dependencies=[Depends(require_admin_session)])
 def purchasability_validation_start_job(
     body: CecchinoPurchasabilityValidationJobBody,
 ):

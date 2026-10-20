@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.db_tables import EXPECTED_TABLES, get_existing_table_names
@@ -29,7 +30,7 @@ def _error_payload(message: str, season: int) -> dict[str, Any]:
     }
 
 
-@router.get("/api-football/test")
+@router.get("/api-football/test", dependencies=[Depends(require_admin_session)])
 def api_football_test() -> dict[str, Any]:
     """Chiamata di prova a API-Sports /leagues per id e stagione (nessuna persistenza)."""
     settings = get_settings()

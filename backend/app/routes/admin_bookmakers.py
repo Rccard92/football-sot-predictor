@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.bookmakers import (
@@ -376,7 +377,7 @@ def sportapi_odds_scan_sot_providers(
     return jsonable_encoder(out)
 
 
-@router.get("/fixture-markets-debug", response_model=None)
+@router.get("/fixture-markets-debug", response_model=None, dependencies=[Depends(require_admin_session)])
 def fixture_markets_debug(
     fixture_id: int | None = None,
     provider_fixture_id: int | None = None,
@@ -407,7 +408,7 @@ def fixture_markets_debug(
     return jsonable_encoder(out)
 
 
-@router.get("/fixture-raw-odds", response_model=None)
+@router.get("/fixture-raw-odds", response_model=None, dependencies=[Depends(require_admin_session)])
 def fixture_raw_odds(
     provider_fixture_id: int,
     provider_source: str = "api_football",

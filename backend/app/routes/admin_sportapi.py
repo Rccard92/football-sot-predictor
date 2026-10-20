@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.sportapi import SportApiMappingConfirmBody
@@ -91,7 +92,7 @@ def _refresh_next_round_lineups_handler(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/debug/fixture/{fixture_id}/lineup-unavailable", response_model=None)
+@router.get("/debug/fixture/{fixture_id}/lineup-unavailable", response_model=None, dependencies=[Depends(require_admin_session)])
 def sportapi_debug_fixture_lineup_unavailable(
     fixture_id: int,
     competition_id: int = Query(...),
@@ -119,7 +120,7 @@ def sportapi_debug_fixture_lineup_unavailable(
     return jsonable_encoder(payload)
 
 
-@router.get("/debug/fixture/{fixture_id}/mapping", response_model=None)
+@router.get("/debug/fixture/{fixture_id}/mapping", response_model=None, dependencies=[Depends(require_admin_session)])
 def sportapi_debug_fixture_mapping(
     fixture_id: int,
     competition_id: int = Query(...),
@@ -320,7 +321,7 @@ def sportapi_sync_api_squads_batch(
     return jsonable_encoder(out)
 
 
-@router.get("/debug/fixture/{fixture_id}", response_model=None)
+@router.get("/debug/fixture/{fixture_id}", response_model=None, dependencies=[Depends(require_admin_session)])
 def sportapi_debug_fixture_match(
     fixture_id: int,
     db: Session = Depends(get_db),

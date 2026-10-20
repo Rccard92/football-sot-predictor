@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.cecchino_today import (
     CecchinoTodayCleanupBody,
@@ -135,7 +137,7 @@ def cecchino_today_purchasability_v36_evaluation_bundle(
     )
 
 
-@router.post("/{today_fixture_id}/refresh-betfair-odds")
+@router.post("/{today_fixture_id}/refresh-betfair-odds", dependencies=[Depends(require_admin_session)])
 def cecchino_today_refresh_betfair_odds(
     today_fixture_id: int,
     body: CecchinoTodayRefreshBetfairBody | None = None,
@@ -156,10 +158,13 @@ def cecchino_today_refresh_betfair_odds(
 
 @router.get("/{today_fixture_id}/betfair-markets-json")
 def cecchino_today_betfair_markets_json(
+    request: Request,
     today_fixture_id: int,
     force: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
+    if force:  # rilettura da API-Football: solo con sessione admin (20/10/2026)
+        require_admin_session(request, get_settings())
     payload = get_betfair_markets_json_by_id(db, today_fixture_id, force=force)
     if payload is None:
         return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})

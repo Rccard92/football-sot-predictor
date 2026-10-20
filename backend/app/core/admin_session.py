@@ -194,3 +194,18 @@ def require_admin_session(
     if session is None:
         raise HTTPException(status_code=401, detail="Sessione admin assente o scaduta")
     return session
+
+
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def require_admin_session_for_writes(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> AdminSession | None:
+    """Protezione dei router /admin (dal 20/10/2026): sessione admin obbligatoria per le operazioni che
+    scrivono o lanciano lavoro (POST/PUT/PATCH/DELETE). Le letture (GET) restano libere come prima, cosi'
+    le pagine di sola consultazione non cambiano; i GET che chiamano API esterne sono protetti uno per uno."""
+    if request.method.upper() not in WRITE_METHODS:
+        return None
+    return require_admin_session(request, settings)

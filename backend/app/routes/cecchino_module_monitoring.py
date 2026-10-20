@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
 from app.core.database import get_db
 from app.services.cecchino.cecchino_module_monitoring_exports import (
     VALID_MODULE_KEYS,
@@ -528,7 +529,7 @@ class BalanceEmpiricalAnalysisJobBody(BaseModel):
     bootstrap_iterations: int = Field(default=2000, ge=500, le=10000)
 
 
-@router.post("/balance-v5/empirical/analysis/jobs", status_code=202)
+@router.post("/balance-v5/empirical/analysis/jobs", status_code=202, dependencies=[Depends(require_admin_session)])
 def balance_empirical_analysis_jobs_create(
     body: BalanceEmpiricalAnalysisJobBody,
     db: Session = Depends(get_db),

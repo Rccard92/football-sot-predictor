@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
+import { AdminSessionGate } from './AdminSessionGate'
 import { CompetitionProvider } from '../contexts/CompetitionContext'
 import { ModelSelectionProvider } from '../contexts/ModelSelectionContext'
 import { SidebarLayoutProvider } from '../contexts/SidebarLayoutContext'
@@ -54,6 +55,7 @@ export function Layout() {
               </main>
             </div>
           </div>
+          <AdminSessionGate />
         </SidebarLayoutProvider>
       </ModelSelectionProvider>
     </CompetitionProvider>

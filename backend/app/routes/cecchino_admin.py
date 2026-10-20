@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.admin_session import require_admin_session
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.cecchino_recompute import CecchinoRecomputeBody
 from app.schemas.cecchino_signal_min_book_odds import (
@@ -216,6 +218,7 @@ def audit_fixture_identity(
 
 @router.get("/fixtures/{today_fixture_id}/api-raw-inspector")
 def api_raw_inspector(
+    request: Request,
     today_fixture_id: int,
     force_refresh: bool = Query(False),
     include_raw: bool = Query(False),
@@ -223,6 +226,8 @@ def api_raw_inspector(
     db: Session = Depends(get_db),
 ):
     """Ispezione manuale dati raw/cache/API — non invocare da scan automatici."""
+    if force_refresh:  # rilettura da API-Football: solo con sessione admin (20/10/2026)
+        require_admin_session(request, get_settings())
     payload = build_api_raw_inspector(
         db,
         today_fixture_id,

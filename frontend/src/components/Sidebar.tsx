@@ -1,3 +1,4 @@
+import { AdminSessionButton } from './AdminSessionGate'
 import { NAV_CECCHINO, NAV_MAIN, NAV_TECH } from '../config/navItems'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
 import { CompetitionSelector } from './CompetitionSelector'
@@ -78,6 +79,7 @@ export function Sidebar() {
       </div>
 
       <div className="border-t border-slate-200/80 p-2">
+        <AdminSessionButton collapsed={collapsed} />
         <button
           type="button"
           onClick={toggleCollapsed}
