@@ -4,6 +4,8 @@ Convenzioni:
 - ogni "voce" è un dict o un oggetto con `profit_units` (None se non regolata), `day` (o `match_date`) per il blocco,
   `league_code`, `family` (o `market_family`), `quota_used` (o `quota`), `closing_quota`, `clv`;
 - CLV = quota presa / quota di chiusura - 1: positivo quando abbiamo preso un prezzo migliore della chiusura;
+  la quota presa e' la prima pubblicata nella lista (`published_quota`), non quella riscritta vicino al calcio
+  d'inizio; le voci regolate prima del 20/10/2026 hanno un CLV storico non significativo (spesso 0);
 - ROI = profitto in unità / numero di giocate (puntata piatta 1).
 """
 
@@ -93,7 +95,8 @@ def clv_summary(items: Iterable[Any]) -> dict[str, Any]:
     for it in items:
         value = _get(it, "clv")
         if value is None:
-            value = clv(_get(it, "quota_used", "quota"), _get(it, "closing_quota", "quota_closing"))
+            # prima quota pubblicata se c'e' (quella vista nella lista), altrimenti la quota della voce
+            value = clv(_get(it, "published_quota", "quota_used", "quota"), _get(it, "closing_quota", "quota_closing"))
         if value is not None:
             values.append(float(value))
     if not values:
