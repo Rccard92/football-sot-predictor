@@ -217,7 +217,13 @@ class CecchinoV4ShortlistItem(Base):
     reason_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON, nullable=True)  # frasi del perche'
     closing_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
     clv: Mapped[float | None] = mapped_column(Float, nullable=True)
-    result: Mapped[str | None] = mapped_column(String(8), nullable=True)  # vinta|persa|void
+    # Prima quota pubblicata per (giorno, partita, mercato): resta ferma nei ricalcoli della lista provvisoria,
+    # mentre `quota` segue l'ultima lettura (vicino al calcio d'inizio e' la chiusura). Il CLV si misura da qui.
+    # NULL sulle voci create prima del 20/10/2026: il loro CLV storico non e' significativo (spesso quota = chiusura).
+    published_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
+    published_bookmaker_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[str | None] = mapped_column(String(16), nullable=True)  # vinta|persa|void|mezza_vinta|mezza_persa
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

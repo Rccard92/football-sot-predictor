@@ -200,6 +200,7 @@ def _settled_items(db: Session, start: date | None, end: date | None) -> list[di
                 "market_key": item.market_key,
                 "market_family": market_family(item.market_key),
                 "quota_used": item.quota,
+                "published_quota": item.published_quota,
                 "closing_quota": item.closing_quota,
                 "clv": item.clv,
                 "profit_units": item.profit_units,

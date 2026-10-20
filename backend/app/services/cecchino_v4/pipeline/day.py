@@ -54,6 +54,7 @@ from app.services.cecchino_v4.selection.shortlist import (
     build_shortlist,
     get_shortlist,
     list_items,
+    reference_price,
     save_provisional,
     seal_shortlist,
     settle_item,
@@ -356,6 +357,10 @@ def _restore_frozen_fields(db: Session, day: date, frozen: dict[tuple[int, str],
         item.withdraw_reason = old.withdraw_reason
         item.closing_quota = old.closing_quota
         item.clv = old.clv
+        if old.published_quota is not None:  # la prima quota pubblicata non cambia (base del CLV)
+            item.published_quota = old.published_quota
+            item.published_bookmaker_id = old.published_bookmaker_id
+            item.published_at = old.published_at
         item.result = old.result
         item.profit_units = old.profit_units
         item.settled_at = old.settled_at
@@ -485,7 +490,7 @@ def build_days(
 
 
 def settle_finished(db: Session, *, now: datetime | None = None) -> int:
-    """Regola le voci di shortlist con partita finita; CLV dalla quota di chiusura registrata."""
+    """Regola le voci di shortlist con partita finita; CLV = prima quota pubblicata / chiusura registrata - 1."""
     now = now or _now()
     items = db.execute(
         select(CecchinoV4ShortlistItem, CecchinoV4Fixture)
@@ -505,7 +510,9 @@ def settle_finished(db: Session, *, now: datetime | None = None) -> int:
     for item, f in items:
         result = _result(f)
         outcome = None if item.status == SHORTLIST_WITHDRAWN else settle(item.market_key, result, f.stats_json)
-        closing_quota = (closing.get((f.id, item.bookmaker_id)) or {}).get(item.market_key)
+        # chiusura dello stesso book della prima quota pubblicata (il CLV si misura su quella, non su `quota`)
+        _, reference_bk = reference_price(item)
+        closing_quota = (closing.get((f.id, reference_bk)) or {}).get(item.market_key)
         if outcome is None and closing_quota is None and item.status != SHORTLIST_WITHDRAWN:
             continue
         settle_item(db, item.id, outcome, closing_quota=closing_quota, now=now)

@@ -221,10 +221,29 @@ def list_items(db: Session, shortlist_id: int) -> list[CecchinoV4ShortlistItem]:
     )
 
 
+def _published_of(item: CecchinoV4ShortlistItem) -> tuple[float, int | None, datetime | None]:
+    """Prima quota pubblicata di una voce salvata. Le voci create prima del 20/10/2026 non la hanno:
+    si prende la quota mostrata fino a quel momento (la migliore approssimazione rimasta)."""
+    if item.published_quota is not None:
+        return float(item.published_quota), item.published_bookmaker_id or item.bookmaker_id, item.published_at
+    return float(item.quota), item.bookmaker_id, item.created_at
+
+
+def reference_price(item: CecchinoV4ShortlistItem) -> tuple[float, int]:
+    """Prezzo di riferimento del CLV: la prima quota pubblicata e il suo book; senza, la quota della voce."""
+    if item.published_quota is not None:
+        return float(item.published_quota), int(item.published_bookmaker_id or item.bookmaker_id)
+    return float(item.quota), int(item.bookmaker_id)
+
+
 def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = None) -> CecchinoV4Shortlist:
-    """Crea o sostituisce la lista provvisoria del giorno. Una lista già sigillata non si tocca (ValueError)."""
+    """Crea o sostituisce la lista provvisoria del giorno. Una lista già sigillata non si tocca (ValueError).
+
+    La prima quota pubblicata di ogni (partita, mercato) passa da una riscrittura all'altra: `quota` segue
+    l'ultima lettura (vicino al calcio d'inizio è la chiusura), `published_quota` resta quella vista per prima."""
     now = now or _now()
     record = get_shortlist(db, shortlist.day)
+    published: dict[tuple[int, str], tuple[float, int | None, datetime | None]] = {}
     if record is None:
         record = CecchinoV4Shortlist(day=shortlist.day, status=SHORTLIST_PROVISIONAL, created_at=now, updated_at=now)
         db.add(record)
@@ -233,11 +252,16 @@ def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = N
         raise ValueError(f"shortlist del {shortlist.day.isoformat()} già {record.status}: non si sostituisce")
     else:
         for old in list_items(db, record.id):
+            published[(old.fixture_id, old.market_key)] = _published_of(old)
             db.delete(old)
         db.flush()
 
     for item in shortlist.items:
         row = item.row
+        first_quota, first_bk, first_at = published.get(
+            (item.fixture_id, row.market_key),
+            (float(row.quota_used or 0.0), row.bookmaker_id or BOOKMAKER_BET365_ID, now),
+        )
         db.add(
             CecchinoV4ShortlistItem(
                 shortlist_id=record.id,
@@ -254,6 +278,9 @@ def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = N
                 rank=item.rank,
                 status=SHORTLIST_PROVISIONAL,
                 reason_json=item.reason,
+                published_quota=first_quota,
+                published_bookmaker_id=first_bk,
+                published_at=first_at,
                 created_at=now,
             )
         )
@@ -320,14 +347,17 @@ def settle_item(
     now: datetime | None = None,
 ) -> CecchinoV4ShortlistItem:
     """Regola una voce con l'esito di `settlement.settle`; calcola profitto e CLV; se tutte le voci della lista
-    sono regolate o ritirate, la lista passa a `regolata`. Voci ritirate: solo la quota di chiusura (CLV)."""
+    sono regolate o ritirate, la lista passa a `regolata`. Voci ritirate: solo la quota di chiusura (CLV).
+
+    Il CLV confronta la prima quota pubblicata (`reference_price`) con `closing_quota`, che deve essere la
+    chiusura dello stesso book: la quota della voce, riscritta vicino al calcio d'inizio, darebbe sempre ~0."""
     item = db.get(CecchinoV4ShortlistItem, item_id)
     if item is None:
         raise ValueError(f"voce {item_id} inesistente")
     now = now or _now()
     if closing_quota is not None:
         item.closing_quota = float(closing_quota)
-        item.clv = clv_value(item.quota, float(closing_quota))
+        item.clv = clv_value(reference_price(item)[0], float(closing_quota))
     if item.status != SHORTLIST_WITHDRAWN and outcome is not None:
         item.result = outcome
         item.profit_units = profit_units(outcome, item.quota)
@@ -370,6 +400,7 @@ def shortlist_payload(db: Session, day: date) -> dict[str, Any] | None:
                 "hi": it.prob_high,
                 "p_prudent": it.prob_prudent,
                 "quota_used": it.quota,
+                "published_quota": it.published_quota,
                 "bookmaker_id": it.bookmaker_id,
                 "expected_profit": it.expected_profit,
                 "rank": it.rank,
@@ -404,6 +435,7 @@ __all__ = [
     "build_shortlist",
     "get_shortlist",
     "list_items",
+    "reference_price",
     "save_provisional",
     "seal_digest",
     "seal_shortlist",
