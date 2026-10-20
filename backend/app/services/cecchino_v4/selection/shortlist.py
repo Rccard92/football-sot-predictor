@@ -236,14 +236,23 @@ def reference_price(item: CecchinoV4ShortlistItem) -> tuple[float, int]:
     return float(item.quota), int(item.bookmaker_id)
 
 
+def _json_text(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
 def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = None) -> CecchinoV4Shortlist:
-    """Crea o sostituisce la lista provvisoria del giorno. Una lista già sigillata non si tocca (ValueError).
+    """Crea o aggiorna la lista provvisoria del giorno. Una lista già sigillata non si tocca (ValueError).
 
     La prima quota pubblicata di ogni (partita, mercato) passa da una riscrittura all'altra: `quota` segue
-    l'ultima lettura (vicino al calcio d'inizio è la chiusura), `published_quota` resta quella vista per prima."""
+    l'ultima lettura (vicino al calcio d'inizio è la chiusura), `published_quota` resta quella vista per prima.
+
+    Le voci si aggiornano sul posto per (partita, mercato) e si scrivono solo i campi cambiati; si cancellano solo
+    le giocate uscite dalla lista (audit 20/10/2026: prima si cancellava e reinseriva tutto, 14.203 righe inserite
+    e 14.138 cancellate per tenerne 65). Ogni voce riparte comunque come una voce nuova (stato provvisorio, senza
+    esito né chiusura): le voci di partite iniziate le ripristina chi chiama (`_restore_frozen_fields`)."""
     now = now or _now()
     record = get_shortlist(db, shortlist.day)
-    published: dict[tuple[int, str], tuple[float, int | None, datetime | None]] = {}
+    old_by_key: dict[tuple[int, str], list[CecchinoV4ShortlistItem]] = {}
     if record is None:
         record = CecchinoV4Shortlist(day=shortlist.day, status=SHORTLIST_PROVISIONAL, created_at=now, updated_at=now)
         db.add(record)
@@ -252,42 +261,59 @@ def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = N
         raise ValueError(f"shortlist del {shortlist.day.isoformat()} già {record.status}: non si sostituisce")
     else:
         for old in list_items(db, record.id):
-            published[(old.fixture_id, old.market_key)] = _published_of(old)
-            db.delete(old)
-        db.flush()
+            old_by_key.setdefault((old.fixture_id, old.market_key), []).append(old)
 
+    changed = False
     for item in shortlist.items:
         row = item.row
-        first_quota, first_bk, first_at = published.get(
-            (item.fixture_id, row.market_key),
-            (float(row.quota_used or 0.0), row.bookmaker_id or BOOKMAKER_BET365_ID, now),
-        )
-        db.add(
-            CecchinoV4ShortlistItem(
-                shortlist_id=record.id,
-                fixture_id=item.fixture_id,
-                market_key=row.market_key,
-                label=row.label,
-                probability=row.p,
-                prob_low=row.lo if row.lo is not None else row.p,
-                prob_high=row.hi if row.hi is not None else row.p,
-                prob_prudent=row.p_prudent,
-                quota=float(row.quota_used or 0.0),
-                bookmaker_id=row.bookmaker_id or BOOKMAKER_BET365_ID,
-                expected_profit=float(row.expected_profit or 0.0),
-                rank=item.rank,
-                status=SHORTLIST_PROVISIONAL,
-                reason_json=item.reason,
-                published_quota=first_quota,
-                published_bookmaker_id=first_bk,
-                published_at=first_at,
-                created_at=now,
-            )
-        )
-    record.status = SHORTLIST_PROVISIONAL
-    record.sealed_at = None
-    record.digest = None
-    record.summary_json = {
+        olds = old_by_key.get((item.fixture_id, row.market_key))
+        existing = olds.pop(0) if olds else None
+        if existing is not None:
+            first_quota, first_bk, first_at = _published_of(existing)
+        else:
+            first_quota, first_bk, first_at = (float(row.quota_used or 0.0), row.bookmaker_id or BOOKMAKER_BET365_ID, now)
+        values = {
+            "label": row.label,
+            "probability": row.p,
+            "prob_low": row.lo if row.lo is not None else row.p,
+            "prob_high": row.hi if row.hi is not None else row.p,
+            "prob_prudent": row.p_prudent,
+            "quota": float(row.quota_used or 0.0),
+            "bookmaker_id": row.bookmaker_id or BOOKMAKER_BET365_ID,
+            "expected_profit": float(row.expected_profit or 0.0),
+            "rank": item.rank,
+            "status": SHORTLIST_PROVISIONAL,
+            "withdraw_reason": None,
+            "reason_json": item.reason,
+            "closing_quota": None,
+            "clv": None,
+            "published_quota": first_quota,
+            "published_bookmaker_id": first_bk,
+            "published_at": first_at,
+            "first_snapshot_quota": None,
+            "first_snapshot_at": None,
+            "clv_estimated": None,
+            "result": None,
+            "profit_units": None,
+            "settled_at": None,
+        }
+        if existing is None:
+            db.add(CecchinoV4ShortlistItem(shortlist_id=record.id, fixture_id=item.fixture_id, market_key=row.market_key, created_at=now, **values))
+            changed = True
+            continue
+        for name, value in values.items():
+            if name == "reason_json":
+                if _json_text(existing.reason_json) != _json_text(value):
+                    existing.reason_json = value
+            elif getattr(existing, name) != value:
+                setattr(existing, name, value)
+        changed = changed or db.is_modified(existing)
+    for leftovers in old_by_key.values():
+        for old in leftovers:  # giocata uscita dalla lista provvisoria
+            db.delete(old)
+            changed = True
+
+    summary = {
         "advised": shortlist.advised,
         "banner": shortlist.banner,
         "plays": len(shortlist.items),
@@ -298,7 +324,16 @@ def save_provisional(db: Session, shortlist: Shortlist, now: datetime | None = N
             for i in shortlist.items
         },
     }
-    record.updated_at = now
+    if _json_text(record.summary_json) != _json_text(summary):
+        record.summary_json = summary
+        changed = True
+    if record.status != SHORTLIST_PROVISIONAL or record.sealed_at is not None or record.digest is not None:
+        record.status = SHORTLIST_PROVISIONAL
+        record.sealed_at = None
+        record.digest = None
+        changed = True
+    if changed:
+        record.updated_at = now
     db.commit()
     return record
 
@@ -412,6 +447,8 @@ def shortlist_payload(db: Session, day: date) -> dict[str, Any] | None:
                 "profit_units": it.profit_units,
                 "closing_quota": it.closing_quota,
                 "clv": it.clv,
+                "first_snapshot_quota": it.first_snapshot_quota,
+                "clv_estimated": it.clv_estimated,
                 "reason": it.reason_json,
             }
         )

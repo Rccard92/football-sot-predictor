@@ -14,6 +14,8 @@ class ApiUsageContext:
     provider_league_id: int | None = None
     cache_hit: bool = False
     negative_cache_hit: bool = False
+    # Dal 20/10/2026 il client reale registra ogni chiamata a pagamento comunque (audit: chiamate perse);
+    # il campo resta per i client finti dei test.
     record_events: bool = True
 
     def with_fixture(self, provider_fixture_id: int | None) -> ApiUsageContext:

@@ -218,6 +218,18 @@ def test_odds_snapshot_kind_and_skip_rules(db):
     assert kinds == ["pomeriggio", "sera"]
 
 
+def test_odds_snapshot_skips_started_fixtures(db):
+    _run(db, "fixtures", params={"days": 2})
+    started = _fixture(db, 1001)
+    started.kickoff_at = NOW - timedelta(minutes=30)  # gia' iniziata, in tabella ancora NS
+    db.commit()
+    job, fake = _run(db, "odds_snapshot")
+    assert job.status == "done", job.error_message
+    # I1 del 21 aveva solo la partita iniziata: nessuna chiamata; la partita non entra nel registro
+    assert {p["league"] for _, p in fake.calls} == {39}
+    assert db.scalars(select(CecchinoV4OddsSnapshot)).all() == []
+
+
 def test_odds_snapshot_morning_kind(db):
     _run(db, "fixtures", params={"days": 2})
     job, _ = _run(db, "odds_snapshot", now=NOW.replace(hour=7))  # 09:00 Roma

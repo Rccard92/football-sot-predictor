@@ -96,11 +96,34 @@ def test_first_published_quota_survives_closing_rebuild_and_drives_clv(v4_db, se
     assert settled.closing_quota == pytest.approx(2.1)
     assert settled.clv == pytest.approx(2.2 / 2.1 - 1, abs=1e-4)
     assert settled.clv > 0
+    # CLV stimato: prima istantanea del giorno (mattina, 2,20 su Bet365) contro la stessa chiusura
+    assert settled.first_snapshot_quota == pytest.approx(2.2)
+    assert settled.clv_estimated == pytest.approx(2.2 / 2.1 - 1, abs=1e-4)
     payload = serving.shortlist(v4_db, DAY)
     item = next(i for i in payload["items"] if i["fixture_id"] == f1.id)
     assert item["published_quota"] == pytest.approx(2.2) and item["clv"] == pytest.approx(2.2 / 2.1 - 1, abs=1e-4)
+    assert item["clv_estimated"] == pytest.approx(2.2 / 2.1 - 1, abs=1e-4)
     m = serving.measure_summary(v4_db)
     assert m["totals"]["plays"] >= 1
+    assert m["totals"]["clv_estimated_plays"] >= 1
+
+
+def test_estimated_clv_covers_legacy_items_with_zero_clv(v4_db, seeded):
+    """Voce vecchia: quota della voce = chiusura, quindi `clv` salvato 0. La stima usa la prima istantanea del giorno
+    e scrive solo le sue colonne."""
+    f1, _ = seeded
+    _build(v4_db, NOW)
+    item = _items_by_fixture(v4_db)[f1.id]
+    item.published_quota = None
+    item.published_bookmaker_id = None
+    item.quota = 2.1
+    v4_db.commit()
+    settle_item(v4_db, item.id, "vinta", closing_quota=2.1, now=NOW + timedelta(hours=12))
+    assert item.clv == pytest.approx(0.0)
+    assert day_mod.fill_estimated_clv(v4_db, now=NOW + timedelta(hours=12)) == 1
+    assert item.clv == pytest.approx(0.0), "il CLV salvato non si tocca"
+    assert item.clv_estimated == pytest.approx(2.2 / 2.1 - 1, abs=1e-4)
+    assert day_mod.fill_estimated_clv(v4_db, now=NOW + timedelta(hours=12)) == 0  # gia' stimata
 
 
 def _row(market_key: str, quota: float, p: float = 0.55) -> MarketRow:
@@ -202,7 +225,54 @@ def test_migration_is_the_single_head_and_widens_result():
     cfg = Config(str(backend / "alembic.ini"))
     cfg.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["20261020090000_v4_clv_published"]
+    assert script.get_heads() == ["20261021090000_v4_clv_estimated"]
+    rev = script.get_revision("20261021090000_v4_clv_estimated")
+    assert rev.down_revision == "20261020090000_v4_clv_published"
+    assert len(rev.revision) <= 32
     rev = script.get_revision("20261020090000_v4_clv_published")
     assert rev.down_revision == "20261013090000_xg_league_tags"
-    assert len(rev.revision) <= 32
+
+
+def test_rebuild_updates_items_in_place_and_skips_unchanged(v4_db):
+    """Riscrittura della lista provvisoria: stessa giocata = stessa riga; nulla cambia = nessuna scrittura."""
+    day = date(2026, 10, 25)
+    t0 = datetime(2026, 10, 25, 8, 0, tzinfo=timezone.utc)
+    save_provisional(v4_db, build_shortlist(day, [(_meta(1), _row("AWAY", 2.30)), (_meta(2), _row("HOME", 1.90))]), now=t0)
+    record = get_shortlist(v4_db, day)
+    ids = {i.fixture_id: i.id for i in list_items(v4_db, record.id)}
+    first_update = _naive(record.updated_at)
+
+    save_provisional(v4_db, build_shortlist(day, [(_meta(1), _row("AWAY", 2.30)), (_meta(2), _row("HOME", 1.90))]), now=t0 + timedelta(hours=1))
+    assert {i.fixture_id: i.id for i in list_items(v4_db, record.id)} == ids
+    assert _naive(get_shortlist(v4_db, day).updated_at) == first_update, "niente di nuovo: la lista non si riscrive"
+
+    # la quota cambia per la partita 1, la partita 2 esce: riga 1 aggiornata sul posto, riga 2 tolta
+    save_provisional(v4_db, build_shortlist(day, [(_meta(1), _row("AWAY", 2.10))]), now=t0 + timedelta(hours=2))
+    (item,) = list_items(v4_db, record.id)
+    assert item.id == ids[1] and item.quota == pytest.approx(2.10) and item.published_quota == pytest.approx(2.30)
+    assert _naive(get_shortlist(v4_db, day).updated_at) == _naive(t0 + timedelta(hours=2))
+
+
+def test_explanation_and_prediction_written_only_when_content_changes(v4_db, seeded):
+    from sqlalchemy import select
+
+    from app.models.cecchino_v4 import CecchinoV4Explanation, CecchinoV4Prediction
+
+    f1, _ = seeded
+    t1 = NOW + timedelta(hours=1)
+    day_mod._save_explanation(v4_db, f1, {"blocks": {"why": 1}, "computed_at": NOW.isoformat()}, NOW)
+    day_mod._replace_prediction(v4_db, f1, "goals", {"lambda": 1.4}, NOW)
+    v4_db.commit()
+    # stesso contenuto, solo l'orario diverso: nessuna riscrittura
+    day_mod._save_explanation(v4_db, f1, {"blocks": {"why": 1}, "computed_at": t1.isoformat()}, t1)
+    day_mod._replace_prediction(v4_db, f1, "goals", {"lambda": 1.4}, t1)
+    v4_db.commit()
+    expl = v4_db.scalars(select(CecchinoV4Explanation).where(CecchinoV4Explanation.fixture_id == f1.id)).one()
+    (pred,) = v4_db.scalars(select(CecchinoV4Prediction).where(CecchinoV4Prediction.fixture_id == f1.id, CecchinoV4Prediction.kind == "goals")).all()
+    assert _naive(expl.computed_at) == _naive(NOW) and _naive(pred.computed_at) == _naive(NOW)
+    pred_id = pred.id
+    # contenuto diverso: aggiornamento sul posto, stessa riga
+    day_mod._replace_prediction(v4_db, f1, "goals", {"lambda": 1.6}, t1)
+    v4_db.commit()
+    (pred,) = v4_db.scalars(select(CecchinoV4Prediction).where(CecchinoV4Prediction.fixture_id == f1.id, CecchinoV4Prediction.kind == "goals")).all()
+    assert pred.id == pred_id and pred.payload_json == {"lambda": 1.6} and _naive(pred.computed_at) == _naive(t1)

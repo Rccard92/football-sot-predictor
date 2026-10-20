@@ -105,6 +105,15 @@ def clv_summary(items: Iterable[Any]) -> dict[str, Any]:
     return {"plays": len(values), "clv": round(float(arr.mean()), 4), "clv_positive_share": round(float((arr > 0).mean()), 4)}
 
 
+def clv_estimated_summary(items: Iterable[Any]) -> dict[str, Any]:
+    """{"plays", "clv" (media)} sul CLV stimato dalle istantanee (`clv_estimated`): prima quota del giorno della
+    partita contro la chiusura. Copre anche le voci vecchie, il cui `clv` salvato e' 0 per costruzione."""
+    values = [float(v) for v in (_get(it, "clv_estimated") for it in items) if v is not None]
+    if not values:
+        return {"plays": 0, "clv": None}
+    return {"plays": len(values), "clv": round(float(np.mean(values)), 4)}
+
+
 def cusum(series: Sequence[float], k: float = CUSUM_K, h: float = CUSUM_H) -> list[int]:
     """CUSUM a un lato per il decadimento: S_t = max(0, S_{t-1} + (k - x_t)). Allarme quando S_t > h,
     poi ripartenza da zero. Ritorna gli indici (0-based) degli allarmi."""
@@ -196,6 +205,9 @@ def summary(
         "roi_hi": hi,
         "clv": clv_summary(rows)["clv"],
     }
+    estimated = clv_estimated_summary(rows)
+    totals["clv_estimated"] = estimated["clv"]
+    totals["clv_estimated_plays"] = estimated["plays"]
 
     out: dict[str, Any] = {"by_league": [], "by_market": [], "totals": totals, "alerts": []}
     for dim in by:

@@ -203,6 +203,7 @@ def _settled_items(db: Session, start: date | None, end: date | None) -> list[di
                 "published_quota": item.published_quota,
                 "closing_quota": item.closing_quota,
                 "clv": item.clv,
+                "clv_estimated": item.clv_estimated,
                 "profit_units": item.profit_units,
                 "result": item.result,
                 "status": item.status,
