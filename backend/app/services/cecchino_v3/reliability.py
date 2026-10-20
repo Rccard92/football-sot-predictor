@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from scipy.optimize import nnls
+
+# scipy viene importato dentro `fit_reliability_model`, l'unica funzione che lo usa: il modulo e'
+# caricato all'avvio del processo web (router V3 e pattern live) e scipy.optimize pesa ~45 MB di RAM
+# che il processo sempre acceso paga solo quando i pesi vengono davvero stimati.
 
 from app.services.cecchino_v3.constants import (
     RELIABILITY_COMPONENTS,
@@ -171,6 +174,8 @@ def fit_reliability_model(
 ) -> ReliabilityModel:
     """Minimi quadrati con pesi >= 0 sui segnali standardizzati, obiettivo
     l'errore in eccesso centrato (piu' rischio = piu' errore in eccesso)."""
+    from scipy.optimize import nnls  # import pigro (vedi in cima)
+
     x = np.array([[s[k] for k in RELIABILITY_COMPONENTS] for s in signals], dtype=float)
     y = np.asarray(excess, dtype=float)
     mean = x.mean(axis=0)

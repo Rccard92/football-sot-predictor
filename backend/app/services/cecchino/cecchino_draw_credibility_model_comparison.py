@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import time
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sqlalchemy.orm import Session
+
+# scikit-learn viene importato solo dentro le funzioni che lo usano: questo modulo e' caricato
+# dal router di ricerca all'avvio del processo web, e sklearn (con scipy) pesa ~45 MB di RAM
+# che il processo sempre acceso non deve pagare finche' nessuno lancia un confronto modelli.
+if TYPE_CHECKING:
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_all_rows,
@@ -373,6 +378,8 @@ class FeaturePreprocessor:
         if self.bin_gap and "gap_coherence_index_candidate" in self.feature_names:
             cats = cats + ["_gap_bin"]
 
+        from sklearn.preprocessing import OneHotEncoder, StandardScaler  # import pigro (vedi in cima)
+
         for f in cont:
             vals = []
             for r in train_rows:
@@ -457,6 +464,8 @@ class FeaturePreprocessor:
 
 
 def _make_logistic(C: float, seed: int) -> LogisticRegression:
+    from sklearn.linear_model import LogisticRegression  # import pigro (vedi in cima)
+
     return LogisticRegression(
         C=C,
         solver="lbfgs",

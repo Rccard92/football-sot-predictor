@@ -11,8 +11,10 @@ from datetime import date, datetime
 from typing import Any, Callable, Iterator
 
 import numpy as np
-from sklearn.linear_model import HuberRegressor, LogisticRegression, Ridge
-from sklearn.preprocessing import StandardScaler
+
+# scikit-learn viene importato solo dentro `_matrix` e `_fit_oof`: questo modulo e' caricato dal
+# router di ricerca all'avvio del processo web, e sklearn (con scipy) pesa ~45 MB di RAM che il
+# processo sempre acceso non deve pagare finche' nessuno lancia questa ricerca.
 
 from app.services.cecchino.cecchino_purchasability_audit import (
     DATASET_VERSION,
@@ -605,6 +607,8 @@ def _matrix(train: list[dict[str, Any]], test: list[dict[str, Any]], numeric: li
         )
         a = np.where(np.isfinite(a), a, means)
         b = np.where(np.isfinite(b), b, means)
+        from sklearn.preprocessing import StandardScaler  # import pigro (vedi in cima)
+
         scaler = StandardScaler()
         a, b = scaler.fit_transform(a), scaler.transform(b)
     else:
@@ -626,6 +630,8 @@ def _matrix(train: list[dict[str, Any]], test: list[dict[str, Any]], numeric: li
 
 
 def _fit_oof(rows: list[dict[str, Any]], folds: list[dict[str, Any]], spec: dict[str, Any], *, residual: bool = False, huber: bool = False) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    from sklearn.linear_model import HuberRegressor, LogisticRegression, Ridge  # import pigro (vedi in cima)
+
     pred, reports = np.full(len(rows), np.nan), []
     for fold in folds:
         train_ids, test_ids = set(fold["train_fixture_ids"]), set(fold["test_fixture_ids"])

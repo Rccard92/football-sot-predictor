@@ -62,7 +62,14 @@ _gi_lock = threading.Lock()
 
 
 def frozen_gi_training(db: Session) -> dict[str, Any]:
-    """Righe di profilo Intensita' Goal delle partite eleggibili dell'ultima RUN V2 completata."""
+    """Percentili Intensita' Goal stimati sulle partite eleggibili dell'ultima RUN V2 completata.
+
+    In cache restano solo `run_id`, il numero di righe (`rows_count`) e le ECDF gia' stimate: le
+    righe intere di una stagione non servono piu' dopo la stima. `build_historical_goal_intensity`
+    legge le righe solo per contarle (`ecdf_train_n`) e per stimare le ECDF quando non le riceve
+    gia' pronte; qui le riceve sempre pronte quando le righe bastano, e quando non bastano non stima
+    nulla. Tenerle in memoria per tutta la vita del processo web era solo RAM sprecata.
+    """
     global _gi_cache
     with _gi_lock:
         if _gi_cache is not None:
@@ -92,7 +99,11 @@ def frozen_gi_training(db: Session) -> dict[str, Any]:
             ):
                 if isinstance(row, dict) and isinstance(row.get("features"), dict):
                     rows.append(row)
-        _gi_cache = {"run_id": run_id, "rows": rows, "ecdfs": fit_progressive_ecdfs(rows) if rows else None}
+        _gi_cache = {
+            "run_id": run_id,
+            "rows_count": len(rows),
+            "ecdfs": fit_progressive_ecdfs(rows) if rows else None,
+        }
         return _gi_cache
 
 
@@ -166,13 +177,15 @@ def compute_v2_live(db: Session, target: Fixture, kpi_panel: dict[str, Any] | No
         },
     )
     training = frozen_gi_training(db)
+    rows_count = training["rows_count"]
     gi_payload = build_historical_goal_intensity(
         input_snapshot=build_input_snapshot(contexts),
         contexts=contexts,
         competition_ordered=ordered,
         target=target_proxy,
-        prior_feature_rows=training["rows"],
-        prefitted_ecdfs=training["ecdfs"] if len(training["rows"]) >= MIN_ECDF_TRAIN_N else None,
+        # segnaposto della stessa lunghezza: la funzione ne usa solo il numero (vedi frozen_gi_training)
+        prior_feature_rows=[None] * rows_count,
+        prefitted_ecdfs=training["ecdfs"] if rows_count >= MIN_ECDF_TRAIN_N else None,
     )
     signals = build_historical_signal_models(
         cecchino_output=cecchino_output,
@@ -197,7 +210,7 @@ def compute_v2_live(db: Session, target: Fixture, kpi_panel: dict[str, Any] | No
         "signal_index": signal_index,
         "eligibility": elig,
         "history_matches": len(history),
-        "gi_training": {"run_id": training["run_id"], "rows": len(training["rows"])},
+        "gi_training": {"run_id": training["run_id"], "rows": rows_count},
     }
 
 
