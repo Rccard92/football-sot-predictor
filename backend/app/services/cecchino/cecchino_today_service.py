@@ -2405,6 +2405,20 @@ def _row_list_item(row: CecchinoTodayFixture) -> dict[str, Any]:
     }
 
 
+# Ordine dei 16 campionati principali nella lista di Cecchino Today (id API-Football): Italia, Inghilterra,
+# Spagna, Germania, Francia, poi gli altri campionati della V4.
+MAJOR_LEAGUE_ORDER: tuple[int, ...] = (135, 136, 39, 40, 41, 42, 140, 141, 78, 79, 61, 62, 88, 94, 144, 203)
+MAJOR_RANK_NONE = len(MAJOR_LEAGUE_ORDER)
+
+
+def major_league_rank(provider_league_id: int | None) -> int:
+    """Posizione nella lista dei 16 campionati principali; MAJOR_RANK_NONE per tutti gli altri."""
+    try:
+        return MAJOR_LEAGUE_ORDER.index(int(provider_league_id))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return MAJOR_RANK_NONE
+
+
 def list_eligible_today(
     db: Session,
     *,
@@ -2430,33 +2444,59 @@ def list_eligible_today(
         l_low = league.strip().lower()
         rows = [r for r in rows if (r.league_name or "").lower().find(l_low) >= 0]
 
-    grouped: dict[str, dict[str, Any]] = {}
-    for r in rows:
-        cname = r.country_name or "Unknown"
-        lname = r.league_name or "Unknown"
-        if cname not in grouped:
-            grouped[cname] = {"country_name": cname, "country_flag_url": r.country_flag_url, "leagues": {}}
-        if not grouped[cname]["country_flag_url"] and r.country_flag_url:
-            grouped[cname]["country_flag_url"] = r.country_flag_url
-        leagues_map = grouped[cname]["leagues"]
-        if lname not in leagues_map:
-            leagues_map[lname] = {"league_name": lname, "league_logo_url": r.league_logo_url, "fixtures": []}
-        if not leagues_map[lname]["league_logo_url"] and r.league_logo_url:
-            leagues_map[lname]["league_logo_url"] = r.league_logo_url
-        leagues_map[lname]["fixtures"].append(_row_list_item(r))
+    # Prima i 16 campionati principali (paese per paese, serie maggiore prima), poi tutti gli altri in ordine
+    # alfabetico, come Diretta: un paese con campionati in entrambe le parti compare due volte (decisione 22/10/2026).
+    def _group(part: list[CecchinoTodayFixture]) -> dict[str, dict[str, Any]]:
+        grouped: dict[str, dict[str, Any]] = {}
+        for r in part:
+            cname = r.country_name or "Unknown"
+            lname = r.league_name or "Unknown"
+            if cname not in grouped:
+                grouped[cname] = {
+                    "country_name": cname,
+                    "country_flag_url": r.country_flag_url,
+                    "leagues": {},
+                    "_rank": MAJOR_RANK_NONE,
+                }
+            grouped[cname]["_rank"] = min(grouped[cname]["_rank"], major_league_rank(r.provider_league_id))
+            if not grouped[cname]["country_flag_url"] and r.country_flag_url:
+                grouped[cname]["country_flag_url"] = r.country_flag_url
+            leagues_map = grouped[cname]["leagues"]
+            if lname not in leagues_map:
+                leagues_map[lname] = {
+                    "league_name": lname,
+                    "league_logo_url": r.league_logo_url,
+                    "fixtures": [],
+                    "_rank": major_league_rank(r.provider_league_id),
+                }
+            if not leagues_map[lname]["league_logo_url"] and r.league_logo_url:
+                leagues_map[lname]["league_logo_url"] = r.league_logo_url
+            leagues_map[lname]["fixtures"].append(_row_list_item(r))
+        return grouped
 
-    countries = []
-    for cname in sorted(grouped.keys()):
-        leagues = []
-        for lname in sorted(grouped[cname]["leagues"].keys()):
-            leagues.append(grouped[cname]["leagues"][lname])
-        countries.append(
-            {
-                "country_name": grouped[cname]["country_name"],
-                "country_flag_url": grouped[cname]["country_flag_url"],
-                "leagues": leagues,
-            },
-        )
+    def _countries(grouped: dict[str, dict[str, Any]], *, is_major: bool) -> list[dict[str, Any]]:
+        out = []
+        for group in grouped.values():
+            leagues = sorted(group["leagues"].values(), key=lambda lg: (lg["_rank"], lg["league_name"]))
+            for lg in leagues:
+                lg.pop("_rank", None)
+            out.append(
+                {
+                    "country_name": group["country_name"],
+                    "country_flag_url": group["country_flag_url"],
+                    "is_major": is_major,
+                    "leagues": leagues,
+                    "_rank": group["_rank"] if is_major else MAJOR_RANK_NONE,
+                },
+            )
+        out.sort(key=lambda c: (c["_rank"], c["country_name"]))
+        for c in out:
+            c.pop("_rank", None)
+        return out
+
+    major_rows = [r for r in rows if major_league_rank(r.provider_league_id) < MAJOR_RANK_NONE]
+    other_rows = [r for r in rows if major_league_rank(r.provider_league_id) >= MAJOR_RANK_NONE]
+    countries = _countries(_group(major_rows), is_major=True) + _countries(_group(other_rows), is_major=False)
 
     summary = {
         "eligible_count": len(all_rows),
