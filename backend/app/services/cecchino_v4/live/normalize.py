@@ -365,6 +365,9 @@ _STAT_WORDS: tuple[tuple[str, str], ...] = (
 _STAT_EXCLUDE = (
     "1x2", "3 way", "3-way", "handicap", "odd/even", "odd even", "race", "exact", "first", "last", "1st", "2nd",
     "half", "team to score", "to score", "most", "asian", "player", "anytime", "yellow", "red", "booking", "points",
+    # 22/10/2026: "Multicorners" (prodotto degli angoli), "Corners. Total (Range)" e "... between 0 and 10 m"
+    # (primi minuti) finivano letti come totale angoli/cartellini: linee 15,5-24,5 mai superate.
+    "multi", "range", "between",
 )
 
 
