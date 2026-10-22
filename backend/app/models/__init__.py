@@ -131,6 +131,7 @@ from app.models.cecchino_v4 import (  # Cecchino V4: tabelle proprie, additive
     CecchinoV4ShortlistItem,
     CecchinoV4TeamMap,
 )
+from app.models.cecchino_v5 import CecchinoV5Play  # Cecchino V5: giocate degli specialisti, additiva
 
 __all__ = [
     "CecchinoXgLeagueTag",
@@ -242,4 +243,5 @@ __all__ = [
     "CecchinoV4Shortlist",
     "CecchinoV4ShortlistItem",
     "CecchinoV4TeamMap",
+    "CecchinoV5Play",
 ]

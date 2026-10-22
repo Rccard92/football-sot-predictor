@@ -12,7 +12,8 @@ Motori (fonti nella mappa dati dell'audit):
 - kpi_segnali: segnali KPI (rating >= 50), versione corrente;
 - segnali_si: segnali del modello F acquisiti dal consenso, versione corrente;
 - acquistabilita_v1: coorte prospettica dell'Acquistabilita' V1;
-- v4: shortlist Cecchino V4 (giocate chiuse o regolate).
+- v4: shortlist Cecchino V4 (giocate chiuse o regolate);
+- v5_<specialista>: liste sigillate della V5 dal vivo (tiri_porta, angoli, cartellini, valore; dal 22/10/2026).
 Quote: quelle registrate prima della partita (non di chiusura), tranne la V4 che misura anche il CLV.
 """
 
@@ -206,6 +207,25 @@ def _plays_v4(db: Session, d_from: date, d_to: date) -> list[Play]:
     ]
 
 
+def _plays_v5(db: Session, d_from: date, d_to: date) -> list[Play]:
+    rows = db.execute(
+        text(
+            """
+            SELECT p.day, f.competition, p.specialist, p.market_key, p.quota, p.result, p.probability, p.clv
+            FROM cecchino_v5_plays p
+            JOIN cecchino_v4_fixtures f ON f.id = p.fixture_id
+            WHERE p.day BETWEEN :a AND :b AND p.result IN ('vinta', 'persa')
+            """
+        ),
+        {"a": d_from, "b": d_to},
+    ).all()
+    return [
+        Play(f"v5_{specialist}", day, league, market, float(q), result == "vinta", _prob(p), _f(clv))
+        for day, league, specialist, market, q, result, p, clv in rows
+        if _f(q) is not None and float(q) > 1.0
+    ]
+
+
 ENGINES: dict[str, Callable[[Session, date, date], list[Play]]] = {
     "bet_builder": _plays_bet_builder,
     "live_index": _plays_live_index,  # v25/v3 indice + evidenza
@@ -214,6 +234,7 @@ ENGINES: dict[str, Callable[[Session, date, date], list[Play]]] = {
     "segnali_si": _plays_si,
     "acquistabilita_v1": _plays_purch_v1,
     "v4": _plays_v4,
+    "v5": _plays_v5,  # una riga per specialista
 }
 
 GROUPS: dict[str, Callable[[Play], tuple[str, ...]]] = {
@@ -222,6 +243,7 @@ GROUPS: dict[str, Callable[[Play], tuple[str, ...]]] = {
     "engine_band": lambda p: (p.engine, quota_band(p.quota)),
     "engine_month": lambda p: (p.engine, p.day.isoformat()[:7]),
     "engine_league": lambda p: (p.engine, p.league or "?"),
+    "engine_day": lambda p: (p.engine, p.day.isoformat()),
 }
 
 
@@ -241,9 +263,8 @@ def _calibration(plays: list[Play]) -> dict[str, Any] | None:
     }
 
 
-def compare_engines(db: Session, *, date_from: date, date_to: date, group_by: str = "engine", min_plays: int = 1) -> dict[str, Any]:
-    if group_by not in GROUPS:
-        raise ValueError(f"group_by non valido: {group_by}. Ammessi: {', '.join(GROUPS)}")
+def load_plays(db: Session, date_from: date, date_to: date) -> tuple[list[Play], dict[str, str]]:
+    """Giocate concluse di tutti i motori nel periodo; un motore che fallisce finisce in `errors`."""
     plays: list[Play] = []
     errors: dict[str, str] = {}
     for name, loader in ENGINES.items():
@@ -255,6 +276,12 @@ def compare_engines(db: Session, *, date_from: date, date_to: date, group_by: st
             db.rollback()
             db.execute(text("SET TRANSACTION READ ONLY"))
             db.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+    return plays, errors
+
+
+def summarize(plays: list[Play], group_by: str = "engine", min_plays: int = 1) -> list[dict[str, Any]]:
+    if group_by not in GROUPS:
+        raise ValueError(f"group_by non valido: {group_by}. Ammessi: {', '.join(GROUPS)}")
     key_fn = GROUPS[group_by]
     buckets: dict[tuple[str, ...], list[Play]] = defaultdict(list)
     for p in plays:
@@ -274,6 +301,14 @@ def compare_engines(db: Session, *, date_from: date, date_to: date, group_by: st
             }
         )
     rows.sort(key=lambda r: (r["group"][0], -(r["plays"] or 0)))
+    return rows
+
+
+def compare_engines(db: Session, *, date_from: date, date_to: date, group_by: str = "engine", min_plays: int = 1) -> dict[str, Any]:
+    if group_by not in GROUPS:
+        raise ValueError(f"group_by non valido: {group_by}. Ammessi: {', '.join(GROUPS)}")
+    plays, errors = load_plays(db, date_from, date_to)
+    rows = summarize(plays, group_by, min_plays)
     return {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),

@@ -4,7 +4,8 @@ Nomi ammessi:
 - pipeline live (API-Football): fixtures, post_match, lineups, injuries, standings, odds_snapshot, odds_closing,
   coverage_scan, backfill;
 - calcolo: predict (previsioni + ragionamenti + shortlist provvisoria), shortlist (alias di predict senza
-  ricalcolo motori), settle (regolamento voci con partita finita), daily (fixtures -> odds_snapshot -> predict -> settle);
+  ricalcolo motori), settle (regolamento voci con partita finita), daily (fixtures -> odds_snapshot -> predict -> settle),
+  v5 (liste sigillate degli specialisti V5 di oggi e loro regolamento, docs/v5/LIVE_REGOLE.md);
 - esami storici: exam_E1, exam_E2, exam_E4 (processo separato, scrivono docs/v4/esami/).
 """
 
@@ -29,7 +30,7 @@ from app.services.cecchino_v4.selection.shortlist import seal_shortlist, shortli
 logger = logging.getLogger(__name__)
 
 LIVE_JOBS = ("fixtures", "post_match", "lineups", "injuries", "standings", "odds_snapshot", "odds_closing", "coverage_scan", "backfill")
-COMPUTE_JOBS = ("predict", "shortlist", "settle", "daily")
+COMPUTE_JOBS = ("predict", "shortlist", "settle", "daily", "v5")
 EXAM_JOBS = ("exam_E1", "exam_E2", "exam_E4")
 EXAM_MODULES = {
     "exam_E1": "app.services.cecchino_v4.exams.e1",
@@ -105,6 +106,10 @@ def run_compute(db: Session, name: str, params: dict[str, Any]) -> dict[str, Any
     if name == "settle":
         recovered = recover_missing_shortlists(db)
         return {"recovered_days": recovered, "settled": settle_finished(db)}
+    if name == "v5":
+        from app.services.cecchino_v5.pipeline import run as run_v5
+
+        return run_v5(db)
     if name == "daily":
         out: dict[str, Any] = {}
         from app.services.cecchino_v4.live import jobs as live_jobs

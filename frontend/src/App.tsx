@@ -60,6 +60,9 @@ const MasterPatternPage = lazy(() =>
 const LiveObservationPage = lazy(() =>
   import('./pages/LiveObservationPage').then((m) => ({ default: m.LiveObservationPage })),
 )
+const EnginesComparePage = lazy(() =>
+  import('./pages/EnginesComparePage').then((m) => ({ default: m.EnginesComparePage })),
+)
 const CecchinoV4Page = lazy(() =>
   import('./pages/CecchinoV4Page').then((m) => ({ default: m.CecchinoV4Page })),
 )
@@ -104,6 +107,7 @@ export default function App() {
               </Suspense>
             }
           />
+          <Route path="/confronto-motori" element={<Page><EnginesComparePage /></Page>} />
           <Route path="/bet-builder" element={<Page><BetBuilderPage /></Page>} />
           <Route path="/bet-builder-v3" element={<Page><BetBuilderV3Page /></Page>} />
           <Route path="/cecchino-lab" element={<Page><CecchinoLabPage /></Page>} />
