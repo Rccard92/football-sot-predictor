@@ -490,6 +490,8 @@ export type CecchinoTodayListFixture = {
 export type CecchinoTodayListCountry = {
   country_name: string
   country_flag_url: string | null
+  /** true per i 16 campionati principali, mostrati in cima (dal 22/10/2026). */
+  is_major?: boolean
   leagues: Array<{
     league_name: string
     league_logo_url: string | null

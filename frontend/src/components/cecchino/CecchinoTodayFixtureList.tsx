@@ -108,8 +108,14 @@ export function CecchinoTodayFixtureList({
 
       {!loading && !error && fixtureCount > 0 && (
         <div className="space-y-6 pr-1">
-          {countries.map((country) => (
-            <div key={country.country_name} className="space-y-3">
+          {countries.map((country, idx) => (
+            <div key={`${country.country_name}-${country.is_major ? 'top' : 'altri'}`} className="space-y-3">
+              {idx === 0 && country.is_major && (
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Campionati principali</p>
+              )}
+              {!country.is_major && (idx === 0 || countries[idx - 1].is_major) && (
+                <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Altri campionati</p>
+              )}
               <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-2">
                 <SafeImg
                   src={country.country_flag_url}
@@ -119,7 +125,7 @@ export function CecchinoTodayFixtureList({
                 <h3 className="text-base font-semibold text-slate-900">{country.country_name}</h3>
               </div>
               {country.leagues.map((league) => (
-                <div key={`${country.country_name}-${league.league_name}`} className="space-y-2 pl-1">
+                <div key={`${country.country_name}-${country.is_major ? 'top' : 'altri'}-${league.league_name}`} className="space-y-2 pl-1">
                   <div className="flex items-center gap-2 py-1">
                     <SafeImg src={league.league_logo_url} alt="" className="h-5 w-5 object-contain" />
                     <h4 className="text-sm font-semibold text-slate-700">{league.league_name}</h4>

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES, LIVE_STATUSES, SCHEDULED_STATUSES
-from app.models import Fixture
+from app.models import Competition, Fixture
 from app.services.cecchino.cecchino_constants import (
     CONTEXT_SLICE_LABELS,
     KEY_AWAY_CONTEXT,
@@ -47,6 +47,89 @@ from app.services.fixture_shared import (
 )
 
 logger = logging.getLogger(__name__)
+
+# I 16 campionati principali (id API-Football, gli stessi della V4). A inizio stagione le squadre hanno poche
+# partite: lo storico si completa con la stagione precedente negli stessi campionati, cosi' entrano in
+# Cecchino Today dalle prime giornate (decisione utente 22/10/2026). Gli altri campionati non cambiano.
+MAJOR_LEAGUE_API_IDS: frozenset[int] = frozenset(
+    {39, 40, 41, 42, 135, 136, 140, 141, 78, 79, 61, 62, 88, 144, 94, 203}
+)
+# Sotto queste soglie nella stagione in corso si aggiungono le partite piu' recenti della stagione precedente.
+PREVIOUS_SEASON_FILL_MIN_TOTAL = 12
+PREVIOUS_SEASON_FILL_MIN_SPLIT = 5
+
+
+def _major_competition(db: Session, target_fixture: Fixture) -> Competition | None:
+    if target_fixture.competition_id is None:
+        return None
+    comp = db.get(Competition, int(target_fixture.competition_id))
+    if comp is None or comp.provider_league_id is None or comp.season is None:
+        return None
+    return comp if int(comp.provider_league_id) in MAJOR_LEAGUE_API_IDS else None
+
+
+def previous_season_competition_ids(db: Session, target_fixture: Fixture) -> set[int]:
+    """Competizioni della stagione precedente nei 16 campionati principali; vuoto per gli altri campionati."""
+    comp = _major_competition(db, target_fixture)
+    if comp is None:
+        return set()
+    ids = db.scalars(
+        select(Competition.id).where(
+            Competition.provider_league_id.in_(tuple(MAJOR_LEAGUE_API_IDS)),
+            Competition.season == int(comp.season) - 1,
+        )
+    ).all()
+    return {int(i) for i in ids}
+
+
+def _fill_with_previous_season(
+    db: Session,
+    target_fixture: Fixture,
+    team_id: int,
+    current: list[Fixture],
+) -> list[Fixture]:
+    def counts(xs: list[Fixture]) -> tuple[int, int, int]:
+        home = sum(1 for f in xs if int(f.home_team_id) == team_id)
+        return len(xs), home, len(xs) - home
+
+    total, home, away = counts(current)
+    if (
+        total >= PREVIOUS_SEASON_FILL_MIN_TOTAL
+        and home >= PREVIOUS_SEASON_FILL_MIN_SPLIT
+        and away >= PREVIOUS_SEASON_FILL_MIN_SPLIT
+    ):
+        return current
+    prev_ids = previous_season_competition_ids(db, target_fixture)
+    cutoff_ko = ensure_datetime_utc(target_fixture.kickoff_at, field_name="target.kickoff_at")
+    if not prev_ids or cutoff_ko is None:
+        return current
+    previous = db.scalars(
+        select(Fixture)
+        .where(
+            Fixture.competition_id.in_(tuple(prev_ids)),
+            Fixture.status.in_(FINISHED_STATUSES),
+            (Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id),
+            Fixture.kickoff_at < cutoff_ko,
+        )
+        .order_by(Fixture.kickoff_at.desc(), Fixture.id.desc())
+    ).all()
+    added: list[Fixture] = []
+    for f in previous:  # dalla piu' recente
+        if (
+            total >= PREVIOUS_SEASON_FILL_MIN_TOTAL
+            and home >= PREVIOUS_SEASON_FILL_MIN_SPLIT
+            and away >= PREVIOUS_SEASON_FILL_MIN_SPLIT
+        ):
+            break
+        added.append(f)
+        total += 1
+        if int(f.home_team_id) == team_id:
+            home += 1
+        else:
+            away += 1
+    if not added:
+        return current
+    return sorted([*added, *current], key=lambda f: (f.kickoff_at, int(f.id)))
 
 
 def _slice_status(sample_count: int, target_sample: int | None) -> str:
@@ -146,7 +229,7 @@ def load_finished_fixtures_for_team(
             target_fixture.id,
         )
         return []
-    return _prior_fixtures_for_team(
+    current = _prior_fixtures_for_team(
         db,
         season_id=season_id,
         cutoff_kickoff=cutoff_ko,
@@ -155,6 +238,7 @@ def load_finished_fixtures_for_team(
         competition_id=comp_id,
         competition_scoped_only=comp_id is not None,
     )
+    return _fill_with_previous_season(db, target_fixture, int(team_id), current)
 
 
 def split_home_away(
@@ -177,10 +261,15 @@ def _fixture_ids(fixtures: list[Fixture]) -> list[int]:
 def audit_leakage(
     fixtures: list[Fixture],
     target: Fixture,
+    allowed_competition_ids: set[int] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Verifica PIT/competition scope; restituisce oggetto leakage_check + motivi."""
+    """Verifica PIT/competition scope; restituisce oggetto leakage_check + motivi.
+
+    `allowed_competition_ids`: altre competizioni ammesse oltre a quella della partita (la stagione precedente
+    dei 16 campionati principali, vedi `previous_season_competition_ids`)."""
     reasons: list[str] = []
     target_comp = int(target.competition_id or 0)
+    allowed = {target_comp, *(allowed_competition_ids or set())}
     cutoff_ko = ensure_datetime_utc(target.kickoff_at, field_name="target.kickoff_at")
     cutoff_id = int(target.id)
     target_kickoff = safe_isoformat(cutoff_ko, field_name="target.kickoff_at")
@@ -214,7 +303,7 @@ def audit_leakage(
         st = (f.status or "").strip().upper()
         if st not in FINISHED_STATUSES:
             reasons.append(f"fixture_{fid}:status_not_finished:{st}")
-        if int(f.competition_id or 0) != target_comp:
+        if int(f.competition_id or 0) not in allowed:
             reasons.append(f"fixture_{fid}:competition_mismatch")
         if f.kickoff_at is None:
             reasons.append(f"fixture_{fid}:missing_kickoff")

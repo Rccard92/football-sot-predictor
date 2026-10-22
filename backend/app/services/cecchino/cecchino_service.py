@@ -22,6 +22,7 @@ from app.services.cecchino.cecchino_kpi_panel import build_cecchino_kpi_panel
 from app.services.cecchino.cecchino_statistical_kpi import build_statistical_kpi_odds
 from app.services.cecchino.cecchino_fixture_history import (
     audit_leakage,
+    previous_season_competition_ids,
     build_data_quality,
     build_fixture_contexts,
     contexts_to_calculation_input,
@@ -158,7 +159,11 @@ def build_calculation_input_for_fixture(
     """Costruisce input engine, data_quality e snapshot da fixture DB."""
     ctx = build_fixture_contexts(db, fixture)
     prior_pool = _all_prior_fixtures_for_audit(db, fixture)
-    leakage_check, leakage_reasons = audit_leakage(prior_pool, fixture)
+    leakage_check, leakage_reasons = audit_leakage(
+        prior_pool,
+        fixture,
+        allowed_competition_ids=previous_season_competition_ids(db, fixture),
+    )
 
     warnings: list[str] = []
     leakage_failed = leakage_check.get("status") == LEAKAGE_FAILED
