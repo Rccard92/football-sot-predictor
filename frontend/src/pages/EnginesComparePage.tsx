@@ -307,7 +307,12 @@ export function EnginesComparePage() {
           (Bet Builder, in evidenza, V4, V5).
         </p>
         {error ? <p className="text-sm text-rose-700">Errore: {error}</p> : null}
-        {!data && !error ? <div className={`${todaySkeleton} h-48`} /> : null}
+        {!data && !error ? (
+          <>
+            <p className="mb-2 text-[13px] text-slate-500">Calcolo in corso: la prima volta per un periodo può richiedere un minuto.</p>
+            <div className={`${todaySkeleton} h-48`} />
+          </>
+        ) : null}
         {data ? <TotalsTable totals={data.totals} /> : null}
         {errors.length ? (
           <p className="mt-2 text-[13px] text-amber-700">

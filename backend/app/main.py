@@ -65,6 +65,21 @@ def warm_bet_builder_results_cache() -> None:
     threading.Thread(target=_run, name="warm-bet-builder-results", daemon=True).start()
 
 
+@app.on_event("startup")
+def warm_engines_compare_cache() -> None:
+    """Confronto motori (pagina /confronto-motori) pre-calcolato 120 secondi dopo l'avvio: a freddo dura un minuto."""
+    import threading
+    import time
+
+    def _run() -> None:
+        time.sleep(120)
+        from app.services.cecchino_v5.serving import warm
+
+        warm(30)
+
+    threading.Thread(target=_run, name="warm-engines-compare", daemon=True).start()
+
+
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_unhandled_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Log degli errori SQLAlchemy non gestiti a livello di route (senza URL/credenziali)."""
