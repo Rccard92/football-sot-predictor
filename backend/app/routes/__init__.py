@@ -19,6 +19,7 @@ from app.routes import (
     cecchino_live,
     cecchino_v3,
     cecchino_v4,
+    cecchino_v5,
     master_pattern,
     cecchino_home_wins,
     admin,
@@ -65,6 +66,7 @@ api_router.include_router(cecchino_research.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(cecchino_v3.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(cecchino_v4.router)
 api_router.include_router(cecchino_v4.admin_router)
+api_router.include_router(cecchino_v5.router)
 api_router.include_router(master_pattern.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(cecchino_signals.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(cecchino_today.router)

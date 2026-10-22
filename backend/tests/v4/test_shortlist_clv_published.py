@@ -225,7 +225,8 @@ def test_migration_is_the_single_head_and_widens_result():
     cfg = Config(str(backend / "alembic.ini"))
     cfg.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["20261021090000_v4_clv_estimated"]
+    assert script.get_heads() == ["20261022120000_cecchino_v5_plays"]
+    assert script.get_revision("20261022120000_cecchino_v5_plays").down_revision == "20261021090000_v4_clv_estimated"
     rev = script.get_revision("20261021090000_v4_clv_estimated")
     assert rev.down_revision == "20261020090000_v4_clv_published"
     assert len(rev.revision) <= 32

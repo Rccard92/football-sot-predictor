@@ -6,6 +6,8 @@
     python -m app.jobs.cecchino_v4_daily predict   # solo previsioni e shortlist
     python -m app.jobs.cecchino_v4_daily settle    # solo regolamento
 
+Il passo "v5" (liste degli specialisti V5, docs/v5/LIVE_REGOLE.md) gira dopo le previsioni in daily, odds e prematch.
+
 Esce subito, senza chiamate, se CECCHINO_V4_ENABLED non e' vero. Ogni job live registra le chiamate
 API-Football e si ferma da solo al limite giornaliero.
 """
@@ -24,9 +26,9 @@ from app.services.cecchino_v4.settings import v4_enabled
 logger = logging.getLogger("cecchino_v4_daily")
 
 PLANS: dict[str, list[str]] = {
-    "daily": ["fixtures", "odds_snapshot", "post_match", "predict", "settle"],
-    "odds": ["odds_snapshot", "shortlist", "settle"],  # odds_snapshot con `force`: quote sempre fresche
-    "prematch": ["lineups", "odds_closing", "post_match", "shortlist", "settle"],
+    "daily": ["fixtures", "odds_snapshot", "post_match", "predict", "v5", "settle"],
+    "odds": ["odds_snapshot", "shortlist", "v5", "settle"],  # odds_snapshot con `force`: quote sempre fresche
+    "prematch": ["lineups", "odds_closing", "post_match", "shortlist", "v5", "settle"],
     "predict": ["predict"],
     "settle": ["settle"],
 }

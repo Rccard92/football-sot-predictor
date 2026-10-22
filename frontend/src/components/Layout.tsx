@@ -16,6 +16,7 @@ const MASTER_PATTERN_PATH = '/master-pattern'
 const ROADMAP_PATH = '/roadmap'
 const MODELS_GUIDE_PATH = '/guida-modelli'
 const LIVE_OBSERVATION_PATH = '/osservazione-live'
+const ENGINES_COMPARE_PATH = '/confronto-motori'
 
 export function Layout() {
   const location = useLocation()
@@ -32,6 +33,7 @@ export function Layout() {
     location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`) ||
     location.pathname === MASTER_PATTERN_PATH ||
     location.pathname === LIVE_OBSERVATION_PATH ||
+    location.pathname === ENGINES_COMPARE_PATH ||
     location.pathname === ROADMAP_PATH ||
     location.pathname === MODELS_GUIDE_PATH
 
