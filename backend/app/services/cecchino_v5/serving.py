@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import defaultdict
@@ -17,6 +18,8 @@ from app.services.cecchino_v5.constants import STAT_SPECIALISTS, STATUS_ADVISED,
 from app.services.cecchino_v5.pipeline import plays_for_day
 
 ROME = ZoneInfo("Europe/Rome")
+# Il calcolo a freddo dura circa un minuto (Bet Builder e acquistabilita'): la pagina riceve subito l'ultima
+# versione e, se ha piu' di 10 minuti, la si ricalcola in sottofondo.
 CACHE_SECONDS = 600
 
 # Nome italiano e famiglia di ogni motore del confronto (le chiavi sono quelle di app/services/audit/models_compare.py).
@@ -39,6 +42,7 @@ ADVISED_ENGINES = {f"v5_{s.key}" for s in STAT_SPECIALISTS if s.status == STATUS
 V5_ENGINES = {k for k in ENGINE_LABELS if k.startswith("v5_")}
 
 _cache: dict[int, tuple[float, dict[str, Any]]] = {}
+_refreshing: set[int] = set()
 _lock = threading.Lock()
 
 
@@ -58,14 +62,49 @@ def _order(engine: str) -> int:
     return ENGINE_ORDER.index(engine) if engine in ENGINE_ORDER else len(ENGINE_ORDER)
 
 
-def engines_compare(db: Session, *, days: int = 30, use_cache: bool = True) -> dict[str, Any]:
+def engines_compare(db: Session, *, days: int = 30) -> dict[str, Any]:
     """Totali del periodo, tabella per giorno e profitto cumulato di ogni motore (1 unita' a giocata)."""
+    with _lock:
+        hit = _cache.get(days)
+    if hit is None:
+        return _compute(db, days)
+    if time.time() - hit[0] >= CACHE_SECONDS:
+        _refresh_in_background(days)
+    return hit[1]
+
+
+def _refresh_in_background(days: int) -> None:
+    with _lock:
+        if days in _refreshing:
+            return
+        _refreshing.add(days)
+
+    def run() -> None:
+        try:
+            warm(days)
+        finally:
+            with _lock:
+                _refreshing.discard(days)
+
+    threading.Thread(target=run, name=f"engines-compare-{days}", daemon=True).start()
+
+
+def warm(days: int = 30) -> None:
+    """Calcolo in una sessione di sola lettura propria (avvio dell'app e aggiornamento in sottofondo)."""
+    from app.services.audit.readonly import readonly_session
+
+    gen = readonly_session()
+    db = next(gen)
+    try:
+        _compute(db, days)
+    except Exception:  # noqa: BLE001 - resta la versione precedente
+        logging.getLogger(__name__).exception("confronto motori non aggiornato (%s giorni)", days)
+    finally:
+        gen.close()
+
+
+def _compute(db: Session, days: int) -> dict[str, Any]:
     now = time.time()
-    if use_cache:
-        with _lock:
-            hit = _cache.get(days)
-        if hit and now - hit[0] < CACHE_SECONDS:
-            return hit[1]
     date_to = today_rome()
     date_from = date_to - timedelta(days=days - 1)
     plays, errors = load_plays(db, date_from, date_to)
