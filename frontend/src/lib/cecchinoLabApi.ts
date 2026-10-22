@@ -584,6 +584,7 @@ export type ImportMeta = {
 }
 
 export const LAB_SEASON_OPTIONS = [
+  '2026/2027',
   '2025/2026',
   '2024/2025',
   '2023/2024',
