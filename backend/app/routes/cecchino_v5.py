@@ -63,3 +63,11 @@ def get_combo_exam(start: bool = Query(default=False)) -> JSONResponse:
     from app.services.cecchino_v5.combo_exam import exam_state
 
     return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
+
+
+@router.get("/v5/pattern-search")
+def get_pattern_search(start: bool = Query(default=False)) -> JSONResponse:
+    """Ricerca ampia dei pattern (docs/campionati/PATTERN_V1_PREREGISTRAZIONE.md): `start=true` la avvia in sottofondo."""
+    from app.services.cecchino_v5.pattern_search import search_state
+
+    return JSONResponse(content=jsonable_encoder(search_state(start=start)))
