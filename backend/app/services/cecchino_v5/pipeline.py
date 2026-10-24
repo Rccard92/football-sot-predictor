@@ -24,7 +24,10 @@ from app.services.cecchino_v4.measure.metrics import clv as clv_value
 from app.services.cecchino_v4.selection.labels import market_label
 from app.services.cecchino_v4.selection.settlement import VOID, profit_units, settle
 from app.services.cecchino_v5.constants import (
+    BOOKMAKER_BET365_ID,
     BOOKMAKERS,
+    LEAGUE_LEADS,
+    LEAGUE_LEADS_FROM,
     MIN_EDGE,
     STAT_MAX_PER_DAY,
     STAT_MAX_QUOTA,
@@ -318,6 +321,23 @@ def build_plays(db: Session, *, now: datetime | None = None, history: History | 
         if cands:
             best_valore.append(max(cands, key=lambda c: c.score))
     place(VALORE_KEY, STATUS_OBSERVATION, best_valore, VALORE_MAX_PER_DAY)
+
+    # piste dei campionati (docs/campionati/PISTE_V1_PREREGISTRAZIONE.md): solo Bet365, nessun massimo giornaliero
+    for lead in LEAGUE_LEADS if today >= LEAGUE_LEADS_FROM else ():
+        lead_cands: list[Candidate] = []
+        for f in fixtures:
+            rate = lead.leagues.get(f.league_code)
+            hit = (odds.get(f.id) or {}).get(BOOKMAKER_BET365_ID)
+            if rate is None or hit is None:
+                continue
+            try:
+                q = float(hit[0].get(lead.market))
+            except (TypeError, ValueError):
+                continue
+            lo, hi = lead.quota_range(f.league_code)
+            if lo <= q <= hi:
+                lead_cands.append(Candidate(f, lead.market, None, rate, rate, q, BOOKMAKER_BET365_ID, hit[1]))
+        place(lead.key, STATUS_OBSERVATION, lead_cands, len(lead_cands) + 1000)
     db.commit()
     return report
 

@@ -22,6 +22,7 @@ from app.models.cecchino_v5 import CecchinoV5Play
 from app.services.cecchino_v4.selection.labels import market_label
 from app.services.cecchino_v5.constants import (
     MIN_EDGE,
+    SPECIALIST_LABELS,
     STAT_MAX_QUOTA,
     STAT_MIN_QUOTA,
     STAT_PRUDENCE,
@@ -210,6 +211,7 @@ def fixture_view(db: Session, today_fixture_id: int) -> dict[str, Any]:
             "valore_quota": [VALORE_MIN_QUOTA, VALORE_MAX_QUOTA],
         },
         "specialists": [_stat_block(s, hist, f, goals, odds) for s in STAT_SPECIALISTS] + [_valore_block(f, goals, odds)],
+        "specialist_labels": SPECIALIST_LABELS,
         "plays": [
             {
                 "specialist": p.specialist,

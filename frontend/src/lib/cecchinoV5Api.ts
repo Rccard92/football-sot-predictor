@@ -167,6 +167,7 @@ export type V5FixtureView = {
   odds_taken_at?: string | null
   rules?: { prudence: number; min_edge: number; stat_quota: [number, number]; valore_quota: [number, number] }
   specialists?: V5SpecialistView[]
+  specialist_labels?: Record<string, string>
   plays?: V5FixturePlay[]
 }
 
