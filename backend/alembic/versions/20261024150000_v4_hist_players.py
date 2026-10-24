@@ -1,6 +1,6 @@
 """Cecchino V4: storico giocatori e assenze; V5: giocate delle combo (solo additiva).
 
-Revision ID: 20261024150000_v4_history_players
+Revision ID: 20261024150000_v4_hist_players
 Revises: 20261022120000_cecchino_v5_plays
 Create Date: 2026-10-24 15:00:00.000000
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261024150000_v4_history_players"
+revision: str = "20261024150000_v4_hist_players"
 down_revision: Union[str, Sequence[str], None] = "20261022120000_cecchino_v5_plays"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
