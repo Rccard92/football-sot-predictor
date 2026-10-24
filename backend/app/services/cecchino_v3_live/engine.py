@@ -348,6 +348,10 @@ def compute_competition(db: Session, comp: Competition, target_ids: set[int], pa
         return {fid: {"status": STATUS_NOT_UPCOMING} for fid in target_ids}
 
     finals = predict_records(built.records, params)
+    # V3.2 (docs/v3/V32_ESAME_*.md): fattore del campionato dalle sole partite gia' finite, prima di togliere "match"
+    from app.services.cecchino_v3_live.v32 import ADOPTED_K, ADOPTED_RHO_ZERO, V32_ENGINE_VERSION, corrected, league_factors
+
+    v32_factors = league_factors(built.records, finals, ADOPTED_K, targets=built.targets)
     elapsed = round(time.monotonic() - t0, 2)
 
     out: dict[int, dict[str, Any]] = {}
@@ -365,6 +369,7 @@ def compute_competition(db: Session, comp: Competition, target_ids: set[int], pa
                 "history": {**base_info, "statistics_share": round(share, 3), "team_matches_with_statistics": [stats_home, stats_away]},
             }
             continue
+        v32 = corrected(fin, v32_factors.get(fid, 1.0), ADOPTED_RHO_ZERO)
         idx = fin.get("indices") or {}
         idx.pop("affidabilita", None)
         idx.pop("disciplina", None)
@@ -391,6 +396,15 @@ def compute_competition(db: Session, comp: Competition, target_ids: set[int], pa
                 "elapsed_seconds": elapsed,
             },
             "params": params.as_dict(),
+            "v32": {
+                "engine_version": V32_ENGINE_VERSION,
+                "adopted": {"k": ADOPTED_K, "rho_zero": ADOPTED_RHO_ZERO},
+                "league_factor": _round(v32["league_factor"], 4),
+                "lambda_home": _round(v32["lambda_home"], 4),
+                "lambda_away": _round(v32["lambda_away"], 4),
+                "rho": _round(v32["rho"], 4),
+                "probabilities": {k: round(float(v), 6) for k, v in v32["probabilities"].items()},
+            },
         }
     return out
 
