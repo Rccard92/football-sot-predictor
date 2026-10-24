@@ -14,7 +14,11 @@ BET_BUILDER_PURCHASABILITY_POLICY_VERSION = (
 
 # BET-RESULTS-01 — Outcome Monitor (read-only, no freeze / no backfill)
 BET_BUILDER_RESULTS_START_DATE = date(2026, 8, 8)
-BET_BUILDER_PRIMARY_SELECTION_VERSION = "bet_builder_evidence_sort_v2"
+# v3 (dal 25/10/2026): senza acquistabilita' nell'ordinamento (esame docs/bet_builder/ESAME_ORDINAMENTO_V1_RISULTATO.md:
+# con la V3.1 la giocata principale sceglieva peggio del caso). Le giornate precedenti restano con la v2.
+BET_BUILDER_PRIMARY_SELECTION_VERSION = "bet_builder_evidence_sort_v3"
+BET_BUILDER_PRIMARY_SELECTION_VERSION_V2 = "bet_builder_evidence_sort_v2"
+BET_BUILDER_EVIDENCE_SORT_V3_FROM = date(2026, 10, 25)
 BET_BUILDER_RESULTS_CONTRACT_VERSION = "cecchino_bet_builder_results_contract_v1"
 # BET-RESULTS-02 — lazy analysis context per drawer Risultati
 BET_BUILDER_RESULT_ANALYSIS_CONTEXT_CONTRACT_VERSION = (

@@ -11,7 +11,6 @@ import {
   bbOppTabSelected,
 } from './betBuilderStyles'
 import {
-  formatPurchasabilityTab,
   getPrimaryOpportunity,
   originMicroLabel,
 } from './betBuilderUtils'
@@ -94,7 +93,6 @@ export function BetBuilderOpportunitySelector({
           const isPrimary = op.opportunity_key === primaryKey
           const selected = op.opportunity_key === selectedKey
           const inCart = inCartSet?.has(op.opportunity_key) ?? false
-          const scoreLabel = formatPurchasabilityTab(op.purchasability_v36?.score)
           let className = bbOppTabIdle
           if (isPrimary && selected) className = bbOppTabPrimarySelected
           else if (isPrimary) className = bbOppTabPrimary
@@ -108,16 +106,6 @@ export function BetBuilderOpportunitySelector({
               : selected
                 ? 'text-sm font-semibold leading-tight text-slate-950'
                 : 'text-sm font-semibold leading-tight text-slate-800'
-          const scoreClass = onDark
-            ? 'tabular-nums text-base font-semibold text-white'
-            : isPrimary
-              ? 'tabular-nums text-base font-semibold text-emerald-950'
-              : 'tabular-nums text-sm font-semibold text-slate-900'
-          const mutedClass = onDark
-            ? 'text-white/70'
-            : isPrimary
-              ? 'text-emerald-700/70'
-              : 'text-slate-400'
           const originClass = onDark
             ? 'text-[10px] font-medium text-white/75'
             : isPrimary
@@ -170,12 +158,6 @@ export function BetBuilderOpportunitySelector({
                     </span>
                   ) : null}
                 </span>
-              </span>
-              <span className={scoreClass}>
-                {scoreLabel}
-                {scoreLabel !== 'N/D' ? (
-                  <span className={mutedClass}> / 100</span>
-                ) : null}
               </span>
               <span className={originClass}>{originMicroLabel(op.origin)}</span>
             </button>

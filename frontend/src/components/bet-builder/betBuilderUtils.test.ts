@@ -101,7 +101,7 @@ describe('betBuilderUtils', () => {
     expect(DEFAULT_BET_BUILDER_FILTERS.origin).toBe('all')
     expect(DEFAULT_BET_BUILDER_FILTERS.market).toBe('all')
     expect(DEFAULT_BET_BUILDER_FILTERS.minPurchasability).toBeNull()
-    expect(EVIDENCE_SORT_VERSION).toBe('bet_builder_evidence_sort_v2')
+    expect(EVIDENCE_SORT_VERSION).toBe('bet_builder_evidence_sort_v3')
   })
 
   it('validates iso dates and shifts days', () => {
@@ -166,7 +166,7 @@ describe('betBuilderUtils', () => {
   })
 
   describe('compareOpportunityEvidenceStrength', () => {
-    it('A: same origin — higher V3.1 before more signals', () => {
+    it('A: same origin — more signals win, V3.1 ignored (v3)', () => {
       const highV31 = baseOp({
         opportunity_key: 'qs-85',
         origin: 'price_and_signals',
@@ -179,10 +179,10 @@ describe('betBuilderUtils', () => {
         signals: { ...baseOp().signals, yes_count: 4, passed: true },
         purchasability_v31: { available: true, score: 25 },
       })
-      expect(compareOpportunityEvidenceStrength(highV31, lowV31)).toBeLessThan(0)
+      expect(compareOpportunityEvidenceStrength(lowV31, highV31)).toBeLessThan(0)
       expect(
-        sortOpportunitiesByEvidenceStrength([lowV31, highV31]).map((o) => o.opportunity_key),
-      ).toEqual(['qs-85', 'qs-25'])
+        sortOpportunitiesByEvidenceStrength([highV31, lowV31]).map((o) => o.opportunity_key),
+      ).toEqual(['qs-25', 'qs-85'])
     })
 
     it('B: Q+S before signals-only even with lower V3.1', () => {

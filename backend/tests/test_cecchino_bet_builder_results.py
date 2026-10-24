@@ -148,11 +148,16 @@ def _row(
 
 
 class TestEvidenceSortV2Primary:
-    def test_a_higher_v31_before_more_signals(self):
+    def test_a_higher_v31_before_more_signals_only_before_cutover(self):
         high = _opp(key="qs-85", origin=ORIGIN_PRICE_AND_SIGNALS, v31=85, yes_count=2)
         low = _opp(key="qs-25", origin=ORIGIN_PRICE_AND_SIGNALS, v31=25, yes_count=4)
-        assert compare_opportunity_evidence_strength(high, low) < 0
-        assert select_primary_opportunity([low, high])["opportunity_key"] == "qs-85"
+        # v2 (giornate prima del 25/10/2026): la V3.1 viene subito dopo l'origine
+        assert compare_opportunity_evidence_strength(high, low, use_v31=True) < 0
+        assert select_primary_opportunity([low, high], date(2026, 10, 24))["opportunity_key"] == "qs-85"
+        # v3 (dal 25/10/2026): nessuna acquistabilita', vincono i segnali
+        assert compare_opportunity_evidence_strength(low, high) < 0
+        assert select_primary_opportunity([low, high], date(2026, 10, 25))["opportunity_key"] == "qs-25"
+        assert select_primary_opportunity([low, high])["opportunity_key"] == "qs-25"
 
     def test_b_qs_before_signals_only(self):
         qs = _opp(key="qs", origin=ORIGIN_PRICE_AND_SIGNALS, v31=40)
@@ -421,7 +426,7 @@ def _opp_built(
 class TestAggregateResults:
     def test_start_date_constant(self):
         assert BET_BUILDER_RESULTS_START_DATE == date(2026, 8, 8)
-        assert BET_BUILDER_PRIMARY_SELECTION_VERSION == "bet_builder_evidence_sort_v2"
+        assert BET_BUILDER_PRIMARY_SELECTION_VERSION == "bet_builder_evidence_sort_v3"
 
     def test_clamp_before_start(self):
         assert clamp_results_date(date(2026, 8, 7), today=date(2026, 8, 10)) == date(2026, 8, 8)
