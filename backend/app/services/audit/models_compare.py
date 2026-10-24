@@ -11,7 +11,9 @@ Motori (fonti nella mappa dati dell'audit):
 - combo: stesso mercato predetto da V2.5 e V3 senza pattern in contrasto;
 - kpi_segnali: segnali KPI (rating >= 50), versione corrente;
 - segnali_si: segnali del modello F acquisiti dal consenso, versione corrente;
-- acquistabilita_v1: coorte prospettica dell'Acquistabilita' V1;
+- acquistabilita_v1: coorte prospettica dell'Acquistabilita' V1, solo mercati con punteggio >= 70 (dal 24/10/2026;
+  prima contava tutti i mercati di ogni partita, cioe' il margine del book e non una scelta);
+- tutti_i_mercati: riferimento, ogni mercato valutato di ogni partita Today (quanto costa giocare tutto);
 - v4: shortlist Cecchino V4 (giocate chiuse o regolate);
 - v5_<specialista>: liste sigillate della V5 dal vivo (tiri_porta, angoli, cartellini, valore; dal 22/10/2026).
 Quote: quelle registrate prima della partita (non di chiusura), tranne la V4 che misura anche il CLV.
@@ -176,15 +178,29 @@ _plays_si = _plays_sql(
     """,
 )
 
-_plays_purch_v1 = _plays_sql(
-    "acquistabilita_v1",
-    """
-    SELECT scan_date, league_name, market_key, quota_book, evaluation_status, prob_cecchino
-    FROM cecchino_purchasability_evaluations
-    WHERE is_current AND source_cohort = 'prospective_persisted'
-      AND scan_date BETWEEN :a AND :b AND evaluation_status IN ('won', 'lost')
-    """,
-)
+def _plays_purchasability(db: Session, d_from: date, d_to: date) -> list[Play]:
+    """Una lettura per due motori: V1 con punteggio >= 70 e il riferimento "tutti i mercati"."""
+    rows = db.execute(
+        text(
+            """
+            SELECT scan_date, league_name, market_key, quota_book, evaluation_status, prob_cecchino, purchasability_score
+            FROM cecchino_purchasability_evaluations
+            WHERE is_current AND source_cohort = 'prospective_persisted'
+              AND scan_date BETWEEN :a AND :b AND evaluation_status IN ('won', 'lost')
+            """
+        ),
+        {"a": d_from, "b": d_to},
+    ).all()
+    out: list[Play] = []
+    for day, league, market, quota, status, prob, score in rows:
+        q = _f(quota)
+        if q is None or q <= 1.0:
+            continue
+        won = status == "won"
+        out.append(Play("tutti_i_mercati", day, league, str(market or "?"), q, won, _prob(prob)))
+        if score is not None and float(score) >= INDEX_MIN_SCORE:
+            out.append(Play("acquistabilita_v1", day, league, str(market or "?"), q, won, _prob(prob)))
+    return out
 
 
 def _plays_v4(db: Session, d_from: date, d_to: date) -> list[Play]:
@@ -232,7 +248,7 @@ ENGINES: dict[str, Callable[[Session, date, date], list[Play]]] = {
     "combo": _plays_combo,
     "kpi_segnali": _plays_kpi,
     "segnali_si": _plays_si,
-    "acquistabilita_v1": _plays_purch_v1,
+    "acquistabilita": _plays_purchasability,  # acquistabilita_v1 (>= 70) e tutti_i_mercati
     "v4": _plays_v4,
     "v5": _plays_v5,  # una riga per specialista
 }

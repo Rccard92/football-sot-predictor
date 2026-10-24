@@ -32,10 +32,11 @@ ENGINE_LABELS: dict[str, tuple[str, str]] = {
     "combo": ("Combo V2.5 + V3", "Today"),
     "kpi_segnali": ("Segnali KPI", "Segnali"),
     "segnali_si": ("Segnali SI", "Segnali"),
-    "acquistabilita_v1": ("Acquistabilità V1", "Segnali"),
+    "acquistabilita_v1": ("Acquistabilità V1 ≥ 70", "Segnali"),
     "v4": ("V4 shortlist", "V4"),
     **{f"v5_{s.key}": (f"V5 {s.label}", "V5") for s in STAT_SPECIALISTS},
     f"v5_{VALORE_KEY}": (f"V5 {VALORE_LABEL}", "V5"),
+    "tutti_i_mercati": ("Tutti i mercati (riferimento)", "Riferimento"),
 }
 ENGINE_ORDER = list(ENGINE_LABELS)
 ADVISED_ENGINES = {f"v5_{s.key}" for s in STAT_SPECIALISTS if s.status == STATUS_ADVISED}
