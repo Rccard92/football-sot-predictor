@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 MODEL_V2 = "V2"
 MODEL_V25 = "V2.5"
 MODEL_V3 = "V3"
+MODEL_V32 = "V3.2"  # V3 con le correzioni dei gol (docs/v3/V32_ESAME_*.md) e la giocata in evidenza C
 V2_ENGINE_VERSION = "cecchino_today_v2"
 ELIGIBLE = "eligible"
 
@@ -182,6 +183,25 @@ def v3_payload(result: dict[str, Any], kpi_panel: dict[str, Any] | None) -> tupl
         "eligibility": "ok" if result.get("eligible") else "early_season",
     }
     modules["purchasability_index"] = v3_index_from_payload(markets, modules, kpi_rows=panel["rows"])
+    return markets, modules
+
+
+def v32_payload(result: dict[str, Any], kpi_panel: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """V3.2: stessi mercati e moduli della V3 con gol attesi e probabilita' corretti, piu' la giocata in evidenza C."""
+    from app.services.cecchino_v3_live.v32 import evidenza_pick
+
+    v32 = result["v32"]
+    corrected_result = {
+        **result,
+        "lambda_home": v32["lambda_home"],
+        "lambda_away": v32["lambda_away"],
+        "rho": v32["rho"],
+        "probabilities": v32["probabilities"],
+    }
+    markets, modules = v3_payload(corrected_result, kpi_panel)
+    modules["engine_label"] = "V3.2"
+    modules["v32"] = {"engine_version": v32["engine_version"], "adopted": v32["adopted"], "league_factor": v32["league_factor"]}
+    modules["evidenza_v32"] = evidenza_pick(markets)
     return markets, modules
 
 
@@ -375,6 +395,18 @@ def _record_v3(
         except Exception as exc:  # noqa: BLE001
             logger.exception("live registry V3 fallita today_fixture_id=%s", row.id)
             errors.append(f"{row.id} V3: {exc!s}"[:200])
+        if res.get("v32"):
+            try:
+                with db.begin_nested():
+                    markets, modules = v32_payload(res, row.kpi_panel_json)
+                    state = _upsert(
+                        db, row, model=MODEL_V32, engine_version=res["v32"]["engine_version"],
+                        markets=markets, modules=modules, eligible=bool(res.get("eligible")), now=now,
+                    )
+                counts[f"v32_{state}"] = counts.get(f"v32_{state}", 0) + 1
+            except Exception as exc:  # noqa: BLE001 - la V3.2 non blocca la V3
+                logger.exception("live registry V3.2 fallita today_fixture_id=%s", row.id)
+                errors.append(f"{row.id} V3.2: {exc!s}"[:200])
 
 
 def _final_score(row: CecchinoTodayFixture) -> SimpleNamespace | None:

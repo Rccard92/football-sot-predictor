@@ -27,6 +27,8 @@ ENGINE_LABELS: dict[str, tuple[str, str]] = {
     "bet_builder": ("Bet Builder", "Bet Builder"),
     "v25_evidenza": ("V2.5 in evidenza", "Today"),
     "v3_evidenza": ("V3 in evidenza", "Today"),
+    "v32_evidenza": ("V3.2 in evidenza (osservazione)", "Today"),
+    "v25_evidenza_senza_v3": ("V2.5 in evidenza senza V3 (osservazione)", "Today"),
     "v25_indice": ("V2.5 indice ≥ 70", "Today"),
     "v3_indice": ("V3 indice ≥ 70", "Today"),
     "combo": ("Combo V2.5 + V3", "Today"),

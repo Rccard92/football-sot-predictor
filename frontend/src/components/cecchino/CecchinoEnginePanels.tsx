@@ -1,13 +1,14 @@
 export { CecchinoV25Panel } from './CecchinoV25Panel'
-export { CecchinoV3Panel } from './CecchinoV3Panel'
+export { CecchinoV3Panel, CecchinoV32Panel } from './CecchinoV3Panel'
 export { CecchinoV5Panel } from './CecchinoV5Panel'
 
-export type EngineTab = 'V2' | 'V2.5' | 'V3' | 'V5'
+export type EngineTab = 'V2' | 'V2.5' | 'V3' | 'V3.2' | 'V5'
 
 const TABS: { key: EngineTab; label: string; hint: string }[] = [
   { key: 'V2', label: 'V2', hint: 'Cecchino attuale' },
   { key: 'V2.5', label: 'V2.5', hint: 'Moduli corretti' },
   { key: 'V3', label: 'V3', hint: 'Estesa · campionati con statistiche' },
+  { key: 'V3.2', label: 'V3.2', hint: 'V3 corretta · osservazione' },
   { key: 'V5', label: 'V5', hint: 'Specialisti · 16 campionati' },
 ]
 

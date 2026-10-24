@@ -15,6 +15,7 @@ Motori (fonti nella mappa dati dell'audit):
   prima contava tutti i mercati di ogni partita, cioe' il margine del book e non una scelta);
 - tutti_i_mercati: riferimento, ogni mercato valutato di ogni partita Today (quanto costa giocare tutto);
 - v4: shortlist Cecchino V4 (giocate chiuse o regolate);
+- v32_evidenza / v25_evidenza_senza_v3: osservazione V3.2 dal 26/10/2026 (giocata in evidenza C; V2.5 solo senza V3);
 - v5_<specialista>: liste sigillate della V5 dal vivo (tiri_porta, angoli, cartellini, valore; dal 22/10/2026).
 Quote: quelle registrate prima della partita (non di chiusura), tranne la V4 che misura anche il CLV.
 """
@@ -64,21 +65,33 @@ def _prob(v: Any) -> float | None:
 
 
 def _plays_live_index(db: Session, d_from: date, d_to: date) -> list[Play]:
+    from app.services.cecchino_v3_live.v32 import evidenza_pick
+
     rows = db.execute(
         text(
             """
-            SELECT model, scan_date, league_name,
+            SELECT model, scan_date, league_name, today_fixture_id,
                    modules_json -> 'purchasability_index' AS idx,
                    result_json -> 'markets' AS res
             FROM cecchino_live_predictions
-            WHERE scan_date BETWEEN :a AND :b AND model IN ('V2.5', 'V3') AND result_json IS NOT NULL
+            WHERE scan_date BETWEEN :a AND :b AND model IN ('V2.5', 'V3', 'V3.2') AND result_json IS NOT NULL
             """
         ),
         {"a": d_from, "b": d_to},
     ).all()
     out: list[Play] = []
-    for model, day, league, idx, res in rows:
+    with_v3 = {fid for model, _, _, fid, _, _ in rows if model == "V3"}
+    for model, day, league, fid, idx, res in rows:
         if not isinstance(idx, dict) or idx.get("status") != "ok" or not isinstance(res, dict):
+            continue
+        if model == "V3.2":
+            # osservazione dal 26/10/2026 (docs/v3/V32_ESAME_PREREGISTRAZIONE.md): giocata in evidenza C
+            pick = evidenza_pick(
+                {k: {"probability": (m or {}).get("probability"), "quota_book": (m or {}).get("quota")} for k, m in (idx.get("markets") or {}).items()}
+            )
+            won = (res.get(pick["market_key"]) or {}).get("won") if pick else None
+            if pick and won is not None:
+                out.append(Play("v32_evidenza", day, league, pick["market_key"], float(pick["quota"]), bool(won), _prob(pick["probability"])))
             continue
         prefix = "v25" if model == "V2.5" else "v3"
         preds = []
@@ -98,6 +111,9 @@ def _plays_live_index(db: Session, d_from: date, d_to: date) -> list[Play]:
         if ok:
             key, q, won, p, _ = max(ok, key=lambda x: x[3])
             out.append(Play(f"{prefix}_evidenza", day, league, key, q, won, p))
+            if model == "V2.5" and fid not in with_v3:
+                # correzione D in osservazione: la V2.5 gioca solo dove non c'e' la V3
+                out.append(Play("v25_evidenza_senza_v3", day, league, key, q, won, p))
     return out
 
 

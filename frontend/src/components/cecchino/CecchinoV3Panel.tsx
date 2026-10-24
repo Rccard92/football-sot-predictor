@@ -342,3 +342,63 @@ export function CecchinoV3Panel({ todayFixtureId }: { todayFixtureId: number }) 
     </div>
   )
 }
+
+type V32Modules = {
+  v32?: { adopted?: { k: number | null; rho_zero: boolean }; league_factor?: number | null }
+  evidenza_v32?: { market_key: string; probability: number; quota: number } | null
+}
+
+/** V3.2 in osservazione (docs/v3/V32_ESAME_*.md): V3 con le correzioni dei gol e la giocata in evidenza C. */
+export function CecchinoV32Panel({ todayFixtureId }: { todayFixtureId: number }) {
+  const { data, error, loading } = useLiveFixture(todayFixtureId)
+  if (loading) return <div className={`${todayCard} ${todayCardPadding} h-48 animate-pulse`} aria-busy="true" />
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>
+  const p = data?.models['V3.2']
+  if (!p || p.status === 'error' || p.status === 'unavailable' || !p.markets) {
+    return (
+      <section className={`${todayCard} ${todayCardPadding}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className={todaySectionTitle}>Cecchino V3.2</h3>
+          <Badge>Non disponibile</Badge>
+        </div>
+        <p className="mt-2 text-sm text-slate-600">
+          La V3.2 si calcola dove si calcola la V3 (campionati con tiri e tiri in porta), dalle partite registrate dal 25/10/2026.
+        </p>
+      </section>
+    )
+  }
+  const extra = (p.modules ?? {}) as unknown as V32Modules
+  const adopted = extra.v32?.adopted
+  const pick = extra.evidenza_v32
+  const corrections = [
+    adopted?.k != null ? `livello gol del campionato (fattore ${extra.v32?.league_factor?.toFixed(2) ?? '—'})` : null,
+    adopted?.rho_zero ? 'distribuzione dei gol senza correzione dei pareggi bassi' : null,
+  ].filter(Boolean)
+  return (
+    <div className="space-y-5">
+      <section className={`${todayCard} ${todayCardPadding}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className={todaySectionTitle}>Cecchino V3.2</h3>
+          <Badge>Osservazione</Badge>
+        </div>
+        <p className={`${todaySectionSubtitle} mt-1`}>
+          V3 con le correzioni della diagnosi del 24/10:{' '}
+          {corrections.length ? corrections.join(' · ') : "correzioni dei gol spente (l'esame non le ha promosse): probabilità uguali alla V3"}.
+          Giocata in evidenza solo tra 1X2 finale e Over/Under 1,5-3,5, quota tra 1,41 e 2,20.
+        </p>
+        <p className="mt-3 text-sm text-slate-800">
+          In evidenza V3.2:{' '}
+          {pick ? (
+            <b>
+              {pick.market_key} · quota {pick.quota.toFixed(2)} · prob. {Math.round(100 * pick.probability)}%
+            </b>
+          ) : (
+            <span className="text-slate-500">nessuna giocata passa la regola</span>
+          )}
+        </p>
+      </section>
+      <KpiPanel p={p} title="PANNELLO KPI V3.2" showPurchasability={false} />
+      <SpecialistsPanel p={p} />
+    </div>
+  )
+}
