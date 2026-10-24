@@ -39,3 +39,11 @@ def get_v5_today_fixture(today_fixture_id: int, db: Session = Depends(readonly_s
     from app.services.cecchino_v5.fixture_view import fixture_view
 
     return JSONResponse(content=jsonable_encoder(fixture_view(db, today_fixture_id)))
+
+
+@router.get("/v3/v32-exam")
+def get_v32_exam(start: bool = Query(default=False)) -> JSONResponse:
+    """Esame V3.2 (docs/v3/V32_ESAME_PREREGISTRAZIONE.md): `start=true` lo avvia in sottofondo, poi si legge lo stato."""
+    from app.services.cecchino_v3_live.v32_exam import exam_state
+
+    return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
