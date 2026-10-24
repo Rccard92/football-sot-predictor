@@ -141,8 +141,14 @@ LEAGUE_LEADS: tuple[LeagueLead, ...] = (
     LeagueLead("camp_over15", "Over 1,5 campionati", "OVER_1_5", {"D1": 0.836, "E0": 0.799, "I2": 0.724}),
 )
 
+# Combo sulla stessa partita (docs/combo/COMBO_V1_*.md): osservazione dal 25/10/2026, una per partita.
+COMBO_KEY = "combo"
+COMBO_LABEL = "Combo"
+COMBO_FROM = date(2026, 10, 25)
+
 SPECIALIST_LABELS: dict[str, str] = {
     **{s.key: s.label for s in STAT_SPECIALISTS},
     VALORE_KEY: VALORE_LABEL,
     **{lead.key: lead.label for lead in LEAGUE_LEADS},
+    COMBO_KEY: COMBO_LABEL,
 }

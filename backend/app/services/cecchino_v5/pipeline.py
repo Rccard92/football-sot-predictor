@@ -22,10 +22,12 @@ from app.models.cecchino_v4 import CecchinoV4Fixture, CecchinoV4OddsSnapshot, Ce
 from app.models.cecchino_v5 import CecchinoV5Play
 from app.services.cecchino_v4.measure.metrics import clv as clv_value
 from app.services.cecchino_v4.selection.labels import market_label
-from app.services.cecchino_v4.selection.settlement import VOID, profit_units, settle
+from app.services.cecchino_v4.selection.settlement import LOST, VOID, WON, profit_units, settle
 from app.services.cecchino_v5.constants import (
     BOOKMAKER_BET365_ID,
     BOOKMAKERS,
+    COMBO_FROM,
+    COMBO_KEY,
     LEAGUE_LEADS,
     LEAGUE_LEADS_FROM,
     MIN_EDGE,
@@ -51,7 +53,7 @@ from app.services.cecchino_v5.model import History, expected_counts, load_histor
 logger = logging.getLogger(__name__)
 
 ROME = ZoneInfo("Europe/Rome")
-BOOKMAKER_NAMES = {8: "Bet365", 3: "Betfair"}
+BOOKMAKER_NAMES = {8: "Bet365", 3: "Betfair", 0: "prodotto delle singole", -1: "senza quote"}
 CANCELLED_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO"}
 # una partita rinviata o annullata diventa void dopo questi giorni (il recupero e' un'altra partita)
 CANCELLED_VOID_AFTER_DAYS = 2
@@ -338,8 +340,79 @@ def build_plays(db: Session, *, now: datetime | None = None, history: History | 
             if lo <= q <= hi:
                 lead_cands.append(Candidate(f, lead.market, None, rate, rate, q, BOOKMAKER_BET365_ID, hit[1]))
         place(lead.key, STATUS_OBSERVATION, lead_cands, len(lead_cands) + 1000)
+
+    # combo sulla stessa partita (docs/combo/COMBO_V1_*.md): una per partita, in osservazione
+    if hist is not None and today >= COMBO_FROM:
+        report.created[COMBO_KEY] = _place_combos(db, fixtures, goals, odds, hist, taken, now)
     db.commit()
     return report
+
+
+def _place_combos(db: Session, fixtures, goals, odds, hist, taken, now: datetime) -> int:
+    from app.services.cecchino_v5.combo import COMBO_VERSION, combo_dict, fixture_combos, pick
+
+    n = 0
+    for f in fixtures:
+        if (COMBO_KEY, f.id) in taken:
+            continue
+        c = pick(fixture_combos(hist, f, goals.get(f.id)))
+        if c is None:
+            continue
+        info = combo_dict(c, f.home_team, f.away_team)
+        books = odds.get(f.id, {})
+        quotes, times = [], []
+        for leg in info["legs"]:
+            best = _best_quota(books, leg["key"], 1.01, 100.0)
+            if best is None:
+                break
+            quotes.append(best[0])
+            times.append(best[2])
+        if len(quotes) == len(info["legs"]):
+            quota, bookmaker, taken_at = round(math.prod(quotes), 3), 0, max(times)
+        else:
+            quota, bookmaker, taken_at = info["fair_quota"], -1, None
+        db.add(
+            CecchinoV5Play(
+                day=f.match_date,
+                specialist=COMBO_KEY,
+                status=STATUS_OBSERVATION,
+                version=COMBO_VERSION,
+                fixture_id=f.id,
+                league_code=f.league_code,
+                market_key=f"COMBO:{c.scenario}"[:64],
+                label=info["label"][:160],
+                expected=None,
+                probability=info["probability"],
+                prob_prudent=info["probability"],
+                quota=quota,
+                bookmaker_id=bookmaker,
+                taken_at=taken_at,
+                legs_json={**info, "leg_quotes": quotes if bookmaker == 0 else None},
+                created_at=now,
+            )
+        )
+        n += 1
+    return n
+
+
+def _settle_combo(play: CecchinoV5Play, f: CecchinoV4Fixture, closing: dict[tuple[int, int], dict[str, float]]) -> str | None:
+    """Combo vinta se tutte le giocate sono vinte, persa se una e' persa; None se manca un dato."""
+    legs = (play.legs_json or {}).get("legs") or []
+    result = {"ft_home": f.ft_home, "ft_away": f.ft_away, "ht_home": f.ht_home, "ht_away": f.ht_away}
+    outcomes = [settle(leg["key"], result, f.stats_json) for leg in legs]
+    if play.bookmaker_id == 0 and play.closing_quota is None:
+        closes = []
+        for leg in legs:
+            q = max(((closing.get((f.id, bk)) or {}).get(leg["key"]) or 0.0) for bk in BOOKMAKERS)
+            closes.append(q)
+        if closes and all(q > 1.0 for q in closes):
+            play.closing_quota = round(math.prod(closes), 3)
+            play.clv = clv_value(play.quota, play.closing_quota)
+    if LOST in outcomes:
+        return LOST
+    if outcomes and all(o == WON for o in outcomes):
+        return WON
+    return None
 
 
 def settle_plays(db: Session, *, now: datetime | None = None) -> int:
@@ -361,6 +434,16 @@ def settle_plays(db: Session, *, now: datetime | None = None) -> int:
         closing[(snap.fixture_id, snap.bookmaker_id)] = snap.markets_json or {}
     done = 0
     for play, f in rows:
+        if play.specialist == COMBO_KEY:
+            outcome = _settle_combo(play, f, closing) if f.ft_home is not None and f.ft_away is not None else None
+            if outcome is None and (f.status or "") in CANCELLED_STATUSES and play.day <= (now.astimezone(ROME).date() - timedelta(days=CANCELLED_VOID_AFTER_DAYS)):
+                outcome = VOID
+            if outcome is not None:
+                play.result = outcome
+                play.profit_units = profit_units(outcome, play.quota) if play.bookmaker_id >= 0 else None
+                play.settled_at = now
+                done += 1
+            continue
         if play.closing_quota is None:
             cq = (closing.get((f.id, play.bookmaker_id)) or {}).get(play.market_key)
             if cq is not None:
@@ -422,6 +505,7 @@ def plays_for_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "result": p.result,
                 "profit_units": p.profit_units,
                 "score": f"{f.ft_home}-{f.ft_away}" if f.ft_home is not None else None,
+                "combo": p.legs_json,
             }
         )
     return out

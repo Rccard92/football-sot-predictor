@@ -168,6 +168,15 @@ def _valore_block(f: CecchinoV4Fixture, goals: dict[str, Any] | None, books: dic
     }
 
 
+def _combos_block(hist: History, f: CecchinoV4Fixture, goals: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Le 3 combo coerenti piu' probabili con quota equa tra 1,90 e 2,60 (docs/combo/COMBO_V1_RISULTATO.md)."""
+    from app.services.cecchino_v5.combo import MAX_P, MIN_P, combo_dict, fixture_combos
+
+    cands = [c for c in fixture_combos(hist, f, goals) if MIN_P <= c.p <= MAX_P]
+    cands.sort(key=lambda c: c.p, reverse=True)
+    return [combo_dict(c, f.home_team, f.away_team) for c in cands[:3]]
+
+
 def fixture_view(db: Session, today_fixture_id: int) -> dict[str, Any]:
     today = db.get(CecchinoTodayFixture, today_fixture_id)
     if today is None:
@@ -212,6 +221,7 @@ def fixture_view(db: Session, today_fixture_id: int) -> dict[str, Any]:
         },
         "specialists": [_stat_block(s, hist, f, goals, odds) for s in STAT_SPECIALISTS] + [_valore_block(f, goals, odds)],
         "specialist_labels": SPECIALIST_LABELS,
+        "combos": _combos_block(hist, f, goals),
         "plays": [
             {
                 "specialist": p.specialist,
@@ -227,6 +237,7 @@ def fixture_view(db: Session, today_fixture_id: int) -> dict[str, Any]:
                 "clv": p.clv,
                 "result": p.result,
                 "profit_units": p.profit_units,
+                "combo": p.legs_json,
             }
             for p in plays
         ],

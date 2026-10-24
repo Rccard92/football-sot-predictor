@@ -23,6 +23,7 @@ from app.services.api_football_client import ApiFootballError, ApiFootballQuotaE
 from app.services.api_usage_context import BudgetGuardStop
 from app.models.cecchino_v4 import (
     CecchinoV4Fixture,
+    CecchinoV4Injury,
     CecchinoV4Job,
     CecchinoV4LeagueDay,
     CecchinoV4OddsSnapshot,
@@ -450,13 +451,23 @@ def _refresh_unfinished(ctx: JobContext) -> int:
     return len(dates)
 
 
+# Le partite storiche caricate da history_players (senza statistiche per scelta) non devono finire nel post partita.
+POST_MATCH_MAX_AGE_DAYS = 14
+
+
 def job_post_match(ctx: JobContext) -> dict[str, Any]:
     refreshed = _refresh_unfinished(ctx)
     cutoff = ctx.now - POST_MATCH_DELAY
+    floor = ctx.now - timedelta(days=POST_MATCH_MAX_AGE_DAYS)
     rows = list(
         ctx.db.scalars(
             select(CecchinoV4Fixture)
-            .where(CecchinoV4Fixture.status.in_(tuple(FINAL_STATUSES)), _json_missing(CecchinoV4Fixture.stats_json), CecchinoV4Fixture.kickoff_at < cutoff)
+            .where(
+                CecchinoV4Fixture.status.in_(tuple(FINAL_STATUSES)),
+                _json_missing(CecchinoV4Fixture.stats_json),
+                CecchinoV4Fixture.kickoff_at < cutoff,
+                CecchinoV4Fixture.kickoff_at >= floor,
+            )
             .order_by(CecchinoV4Fixture.kickoff_at)
         ).all()
     )
@@ -750,6 +761,101 @@ def job_backfill(ctx: JobContext) -> dict[str, Any]:
     return {"league_code": code, "season": int(season), "fixtures_final": counts["seen"], "fixtures_created": counts["created"], "processed": processed, "remaining_without_stats": remaining, "with_lineups": with_lineups}
 
 
+# --- job: history_players -----------------------------------------------------------------------------------------------------------
+# Storico per lo strato squadre (dal 24/10/2026): per ogni campionato e stagione passata le partite (1 chiamata), le assenze
+# (1 chiamata) e, partita per partita, i giocatori con minuti, titolare e voto (1 chiamata). Riprende da dove si e' fermato.
+HISTORY_SEASONS = (2025, 2024, 2023, 2022, 2021)
+HISTORY_MAX_CALLS_PER_RUN = 2500
+HISTORY_STOP_CALLS_TODAY = 4500  # lascia il resto del budget giornaliero (7.500) a Cecchino Today e alla V4
+
+
+class _HistoryBudget(Exception):
+    pass
+
+
+def job_history_players(ctx: JobContext) -> dict[str, Any]:
+    max_calls = int(ctx.params.get("max_calls") or HISTORY_MAX_CALLS_PER_RUN)
+    stop_today = int(ctx.params.get("stop_today") or HISTORY_STOP_CALLS_TODAY)
+    start_calls = ctx.client.calls
+    counts = {"fixtures_lists": 0, "injury_lists": 0, "injuries": 0, "players_fixtures": 0, "player_rows": 0}
+
+    def spend() -> None:
+        if ctx.client.calls - start_calls >= max_calls or api_calls_today(ctx.db) >= stop_today:
+            raise _HistoryBudget()
+
+    try:
+        for season in HISTORY_SEASONS:
+            label = f"{season}/{season + 1}"
+            for lg in LEAGUES:
+                finals = ctx.db.scalar(
+                    select(func.count()).select_from(CecchinoV4Fixture).where(
+                        CecchinoV4Fixture.league_code == lg.code,
+                        CecchinoV4Fixture.season_label == label,
+                        CecchinoV4Fixture.status.in_(tuple(FINAL_STATUSES)),
+                    )
+                )
+                if not finals:
+                    spend()
+                    items = ctx.client.fixtures_by_league_season(lg.api_football_league_id, season)
+                    done = [it for it in items if str(((it.get("fixture") or {}).get("status") or {}).get("short") or "") in FINAL_STATUSES]
+                    _upsert_fixture_items(ctx, done)
+                    ctx.db.commit()
+                    counts["fixtures_lists"] += 1
+                has_injuries = ctx.db.scalar(
+                    select(func.count()).select_from(CecchinoV4Injury).where(CecchinoV4Injury.league_code == lg.code, CecchinoV4Injury.season == season)
+                )
+                if not has_injuries:
+                    spend()
+                    seen: set[tuple[int, int]] = set()
+                    now = ctx.clock()
+                    for it in normalize_injuries(ctx.client.injuries(lg.api_football_league_id, season)):
+                        key = (it.get("fixture_id"), it.get("player_id"))
+                        if None in key or key in seen:
+                            continue
+                        seen.add(key)
+                        ctx.db.add(
+                            CecchinoV4Injury(
+                                league_code=lg.code, season=season, fixture_api_id=key[0], team_api_id=it.get("team_id"),
+                                player_api_id=key[1], player_name=(it.get("player") or "")[:128] or None,
+                                kind=(it.get("type") or "")[:32] or None, reason=(it.get("reason") or "")[:128] or None, created_at=now,
+                            )
+                        )
+                    ctx.db.commit()
+                    counts["injury_lists"] += 1
+                    counts["injuries"] += len(seen)
+                todo = list(
+                    ctx.db.scalars(
+                        select(CecchinoV4Fixture)
+                        .where(
+                            CecchinoV4Fixture.league_code == lg.code,
+                            CecchinoV4Fixture.season_label == label,
+                            CecchinoV4Fixture.status.in_(tuple(FINAL_STATUSES)),
+                            CecchinoV4Fixture.players_fetched_at.is_(None),
+                        )
+                        .order_by(CecchinoV4Fixture.kickoff_at)
+                    ).all()
+                )
+                for fx in todo:
+                    spend()
+                    players = normalize_players(ctx.client.fixture_players(int(fx.api_fixture_id)))
+                    if players:
+                        for old in ctx.db.scalars(select(CecchinoV4PlayerMinutes).where(CecchinoV4PlayerMinutes.fixture_id == fx.id)).all():
+                            ctx.db.delete(old)
+                        ctx.db.flush()
+                        for p in players:
+                            ctx.db.add(CecchinoV4PlayerMinutes(fixture_id=fx.id, **p))
+                    fx.players_fetched_at = ctx.clock()
+                    ctx.db.commit()
+                    counts["players_fixtures"] += 1
+                    counts["player_rows"] += len(players)
+                ctx.heartbeat(f"storico giocatori {lg.code} {label}", None)
+        finished = True
+    except _HistoryBudget:
+        ctx.db.rollback()
+        finished = False
+    return {**counts, "api_calls": ctx.client.calls - start_calls, "finished": finished}
+
+
 JOBS: dict[str, Callable[[JobContext], dict[str, Any]]] = {
     "fixtures": job_fixtures,
     "post_match": job_post_match,
@@ -760,6 +866,7 @@ JOBS: dict[str, Callable[[JobContext], dict[str, Any]]] = {
     "odds_closing": job_odds_closing,
     "coverage_scan": job_coverage_scan,
     "backfill": job_backfill,
+    "history_players": job_history_players,
 }
 
 

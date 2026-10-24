@@ -50,6 +50,18 @@ export type EnginesCompare = {
   computed_at: string
 }
 
+export type V5Combo = {
+  scenario: string
+  scenario_label: string
+  label: string
+  legs: { key: string; label: string }[]
+  probability: number
+  probability_independent: number
+  fair_quota: number
+  min_quota: number
+  leg_quotes?: number[] | null
+}
+
 export type V5Play = {
   id: number
   specialist: string
@@ -73,6 +85,7 @@ export type V5Play = {
   result: string | null
   profit_units: number | null
   score: string | null
+  combo?: V5Combo | null
 }
 
 export type V5Day = {
@@ -148,6 +161,7 @@ export type V5FixturePlay = {
   clv: number | null
   result: string | null
   profit_units: number | null
+  combo?: V5Combo | null
 }
 
 export type V5FixtureView = {
@@ -168,6 +182,7 @@ export type V5FixtureView = {
   rules?: { prudence: number; min_edge: number; stat_quota: [number, number]; valore_quota: [number, number] }
   specialists?: V5SpecialistView[]
   specialist_labels?: Record<string, string>
+  combos?: V5Combo[]
   plays?: V5FixturePlay[]
 }
 

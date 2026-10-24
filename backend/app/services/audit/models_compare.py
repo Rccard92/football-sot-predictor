@@ -246,7 +246,7 @@ def _plays_v5(db: Session, d_from: date, d_to: date) -> list[Play]:
             SELECT p.day, f.competition, p.specialist, p.market_key, p.quota, p.result, p.probability, p.clv
             FROM cecchino_v5_plays p
             JOIN cecchino_v4_fixtures f ON f.id = p.fixture_id
-            WHERE p.day BETWEEN :a AND :b AND p.result IN ('vinta', 'persa')
+            WHERE p.day BETWEEN :a AND :b AND p.result IN ('vinta', 'persa') AND p.bookmaker_id >= 0
             """
         ),
         {"a": d_from, "b": d_to},

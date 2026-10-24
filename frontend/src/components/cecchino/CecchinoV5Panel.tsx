@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   fetchV5TodayFixture,
   type V5Candidate,
+  type V5Combo,
   type V5FixturePlay,
   type V5FixtureView,
   type V5SpecialistView,
@@ -176,6 +177,39 @@ function ValoreSpecialist({ s, minEdge, band }: { s: V5SpecialistView; minEdge: 
   )
 }
 
+function CombosBlock({ combos }: { combos: V5Combo[] }) {
+  return (
+    <section className={`${todayCard} ${todayCardPadding}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className={todaySectionTitle}>Combo della partita</h3>
+        <span className={todayBadgeMuted}>osservazione · non consigliato</span>
+      </div>
+      <p className={`${todaySectionSubtitle} mb-3 mt-1`}>
+        Giocate coerenti della stessa partita (stesso scenario di gara), probabilità congiunta stimata con i legami tra gol, tiri in
+        porta e angoli. Conviene solo se la quota della combo (es. MyCombo) è almeno la quota minima.
+      </p>
+      {!combos.length ? (
+        <p className="text-sm text-slate-500">Nessuna combo coerente con quota equa tra 1,90 e 2,60 per questa partita.</p>
+      ) : (
+        <ul className="space-y-2">
+          {combos.map((c) => (
+            <li key={c.label} className="text-sm">
+              <div className="flex flex-wrap items-center gap-x-2">
+                <span className={todayBadgeActive}>{c.scenario_label}</span>
+                <span className="font-medium text-slate-900">{c.label}</span>
+              </div>
+              <div className={LABEL}>
+                probabilità {pct(c.probability)} (giocate prese da sole: {pct(c.probability_independent)}) · quota equa {num(c.fair_quota)} ·{' '}
+                <b className="text-slate-800">quota minima {num(c.min_quota)}</b>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function SealedPlays({ plays, labels }: { plays: V5FixturePlay[]; labels: Record<string, string> }) {
   return (
     <section className={`${todayCard} ${todayCardPadding}`}>
@@ -207,6 +241,7 @@ function SealedPlays({ plays, labels }: { plays: V5FixturePlay[]; labels: Record
                 quota {num(p.quota)} {p.bookmaker} (letta {time(p.taken_at)}) · prob. {pct(p.probability)}
                 {p.expected != null ? ` · attesi ${num(p.expected, 1)}` : ''}
                 {p.closing_quota != null ? ` · chiusura ${num(p.closing_quota)}` : ''}
+                {p.combo ? ` · quota minima ${num(p.combo.min_quota)}` : ''}
               </div>
             </li>
           ))}
@@ -253,6 +288,8 @@ export function CecchinoV5Panel({ todayFixtureId }: { todayFixtureId: number }) 
       </section>
 
       <SealedPlays plays={data.plays ?? []} labels={labels} />
+
+      <CombosBlock combos={data.combos ?? []} />
 
       {data.specialists.map((s) =>
         s.key === 'valore' ? (

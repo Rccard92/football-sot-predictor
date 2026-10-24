@@ -67,6 +67,8 @@ class CecchinoV4Fixture(Base, TimestampMixin):
     #   "shots_inside":..,"shots_outside":..,"blocked":..,"saves":..,"possession":..,"xg":..}, "away": {...}}
     stats_json: Mapped[dict[str, Any] | None] = mapped_column(PortableJSON, nullable=True)
     stats_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # storico giocatori (job history_players, dal 24/10/2026): chiamata /fixtures/players gia' fatta
+    players_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # eventi normalizzati: [{"minute": 23, "type": "goal|card|subst", "team": "home|away", "player": "...", "detail": "..."}]
     events_json: Mapped[list[dict[str, Any]] | None] = mapped_column(PortableJSON, nullable=True)
     lineups_status: Mapped[str] = mapped_column(String(16), nullable=False, default="non_note")
@@ -132,6 +134,27 @@ class CecchinoV4PlayerMinutes(Base):
     minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class CecchinoV4Injury(Base):
+    """Assenze per partita (infortuni, squalifiche) da /injuries per campionato e stagione (storico, dal 24/10/2026)."""
+
+    __tablename__ = "cecchino_v4_injuries"
+    __table_args__ = (
+        UniqueConstraint("fixture_api_id", "player_api_id", name="uq_cecchino_v4_injuries_fixture_player"),
+        Index("ix_cecchino_v4_injuries_league_season", "league_code", "season"),
+    )
+
+    id: Mapped[int] = mapped_column(PkInteger, primary_key=True, autoincrement=True)
+    league_code: Mapped[str] = mapped_column(String(8), nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    fixture_api_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    team_api_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    player_api_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    player_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)  # Missing Fixture | Questionable
+    reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class CecchinoV4Run(Base):
