@@ -32,3 +32,10 @@ def get_v5_plays(date_: str | None = Query(default=None, alias="date"), db: Sess
 @router.get("/engines/compare")
 def get_engines_compare(days: int = Query(default=30, ge=1, le=120), db: Session = Depends(readonly_session)) -> JSONResponse:
     return JSONResponse(content=jsonable_encoder(serving.engines_compare(db, days=days)))
+
+
+@router.get("/v5/today-fixture/{today_fixture_id}")
+def get_v5_today_fixture(today_fixture_id: int, db: Session = Depends(readonly_session)) -> JSONResponse:
+    from app.services.cecchino_v5.fixture_view import fixture_view
+
+    return JSONResponse(content=jsonable_encoder(fixture_view(db, today_fixture_id)))

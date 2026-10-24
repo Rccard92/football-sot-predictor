@@ -88,3 +88,88 @@ export function fetchEnginesCompare(days: number): Promise<EnginesCompare> {
 export function fetchV5Day(day?: string): Promise<V5Day> {
   return requestJson<V5Day>(`/api/cecchino/v5/plays${day ? `?date=${day}` : ''}`)
 }
+
+// --- Scheda V5 nel dettaglio partita di Cecchino Today -------------------------------
+
+export type V5Candidate = {
+  market_key: string
+  label: string
+  probability: number
+  prob_prudent: number
+  quota: number
+  bookmaker: string | null
+  score: number
+}
+
+export type V5StatLine = {
+  side: 'total' | 'home' | 'away'
+  line: number
+  p_over: number
+  p_under: number
+  quota_over: number | null
+  book_over: string | null
+  quota_under: number | null
+  book_under: string | null
+}
+
+export type V5ValoreMarket = {
+  market_key: string
+  label: string
+  p_model: number
+  p_calibrated: number | null
+  p_prudent: number | null
+  quota: number | null
+  bookmaker: string | null
+  in_band: boolean
+}
+
+export type V5SpecialistView = {
+  key: string
+  label: string
+  status: V5Status
+  expected: { home: number; away: number; total: number } | null
+  reason: string | null
+  lines?: V5StatLine[]
+  markets?: V5ValoreMarket[]
+  playable: V5Candidate[]
+}
+
+export type V5FixturePlay = {
+  specialist: string
+  status: V5Status
+  label: string
+  quota: number
+  bookmaker: string | null
+  probability: number
+  prob_prudent: number
+  expected: number | null
+  taken_at: string | null
+  closing_quota: number | null
+  clv: number | null
+  result: string | null
+  profit_units: number | null
+}
+
+export type V5FixtureView = {
+  status: 'ok' | 'fuori_perimetro' | 'not_found'
+  message?: string
+  version?: string
+  fixture?: {
+    v4_fixture_id: number
+    competition: string
+    home_team: string
+    away_team: string
+    kickoff_at: string | null
+    referee: string | null
+    lambda_home: number | null
+    lambda_away: number | null
+  }
+  odds_taken_at?: string | null
+  rules?: { prudence: number; min_edge: number; stat_quota: [number, number]; valore_quota: [number, number] }
+  specialists?: V5SpecialistView[]
+  plays?: V5FixturePlay[]
+}
+
+export function fetchV5TodayFixture(todayFixtureId: number): Promise<V5FixtureView> {
+  return requestJson<V5FixtureView>(`/api/cecchino/v5/today-fixture/${todayFixtureId}`)
+}

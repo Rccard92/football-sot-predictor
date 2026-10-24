@@ -11,7 +11,7 @@ import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
-import { CecchinoV25Panel, CecchinoV3Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
+import { CecchinoV25Panel, CecchinoV3Panel, CecchinoV5Panel, EngineTabBar, type EngineTab } from './CecchinoEnginePanels'
 import { CecchinoV2GoalIntensity, CecchinoV2PatternHero, CecchinoV2Patterns, useV2PatternMarkets } from './CecchinoV2Patterns'
 
 type Props = {
@@ -76,6 +76,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       {engine === 'V2.5' && todayFixtureId != null && <CecchinoV25Panel todayFixtureId={todayFixtureId} />}
       {engine === 'V3' && todayFixtureId != null && <CecchinoV3Panel todayFixtureId={todayFixtureId} />}
+      {engine === 'V5' && todayFixtureId != null && <CecchinoV5Panel todayFixtureId={todayFixtureId} />}
 
       {engine === 'V2' && (
       <>
