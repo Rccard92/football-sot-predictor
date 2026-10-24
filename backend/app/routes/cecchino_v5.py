@@ -71,3 +71,11 @@ def get_pattern_search(start: bool = Query(default=False)) -> JSONResponse:
     from app.services.cecchino_v5.pattern_search import search_state
 
     return JSONResponse(content=jsonable_encoder(search_state(start=start)))
+
+
+@router.get("/v5/squad-exam")
+def get_squad_exam(start: bool = Query(default=False)) -> JSONResponse:
+    """Esame strato squadre v1 (docs/squadre/SQUADRE_V1_PREREGISTRAZIONE.md): `start=true` lo (ri)avvia in sottofondo."""
+    from app.services.cecchino_v5.squad_exam import exam_state
+
+    return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
