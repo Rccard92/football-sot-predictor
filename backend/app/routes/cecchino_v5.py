@@ -47,3 +47,11 @@ def get_v32_exam(start: bool = Query(default=False)) -> JSONResponse:
     from app.services.cecchino_v3_live.v32_exam import exam_state
 
     return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
+
+
+@router.get("/v5/league-map")
+def get_league_map(start: bool = Query(default=False)) -> JSONResponse:
+    """Mappa dei 16 campionati (docs/campionati/MAPPA_V1_PREREGISTRAZIONE.md): `start=true` la calcola in sottofondo."""
+    from app.services.cecchino_v5.league_map import map_state
+
+    return JSONResponse(content=jsonable_encoder(map_state(start=start)))
