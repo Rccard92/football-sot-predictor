@@ -120,3 +120,23 @@ def get_bet_builder_result_analysis_context_route(
     if payload is None:
         raise HTTPException(status_code=404, detail="Fixture non trovata o non eleggibile")
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/sort-exam")
+def get_bet_builder_sort_exam(
+    date_from: date_type = Query(date_type(2026, 8, 8)),
+    date_to: date_type = Query(date_type(2026, 10, 23)),
+) -> JSONResponse:
+    """Esame sull'ordinamento della giocata principale (docs/bet_builder/ESAME_ORDINAMENTO_V1_PREREGISTRAZIONE.md).
+    Sola lettura in transazione READ ONLY, risultato in memoria per 24 ore."""
+    from app.services.audit.readonly import readonly_session
+    from app.services.cecchino.cecchino_bet_builder_sort_exam import cached_exam
+
+    if date_to < date_from:
+        raise HTTPException(status_code=422, detail="date_to precedente a date_from")
+    gen = readonly_session()
+    db = next(gen)
+    try:
+        return JSONResponse(content=jsonable_encoder(cached_exam(db, date_from=date_from, date_to=date_to)))
+    finally:
+        gen.close()
