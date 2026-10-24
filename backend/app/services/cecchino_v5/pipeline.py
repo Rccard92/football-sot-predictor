@@ -52,6 +52,8 @@ BOOKMAKER_NAMES = {8: "Bet365", 3: "Betfair"}
 CANCELLED_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO"}
 # una partita rinviata o annullata diventa void dopo questi giorni (il recupero e' un'altra partita)
 CANCELLED_VOID_AFTER_DAYS = 2
+# prima ora (Roma) in cui si creano giocate: dopo il job delle 08:00 che legge le quote del mattino
+FIRST_LIST_HOUR = 8
 
 
 def _now() -> datetime:
@@ -80,8 +82,11 @@ class Candidate:
         return self.prob_prudent * self.quota
 
 
-def latest_pre_odds(db: Session, fixture_ids: list[int]) -> dict[int, dict[int, tuple[dict[str, float], datetime]]]:
-    """Per partita e book: l'ultima istantanea non di chiusura (mercati, orario)."""
+def latest_pre_odds(
+    db: Session, fixture_ids: list[int], day: date | None = None
+) -> dict[int, dict[int, tuple[dict[str, float], datetime]]]:
+    """Per partita e book: l'ultima istantanea non di chiusura (mercati, orario); con `day`, solo quelle lette
+    in quel giorno (ora di Roma), cosi' una lista non usa le quote della sera prima."""
     if not fixture_ids:
         return {}
     out: dict[int, dict[int, tuple[dict[str, float], datetime]]] = {}
@@ -94,6 +99,9 @@ def latest_pre_odds(db: Session, fixture_ids: list[int]) -> dict[int, dict[int, 
         )
         .order_by(CecchinoV4OddsSnapshot.taken_at)
     ).scalars():
+        taken = snap.taken_at if snap.taken_at.tzinfo else snap.taken_at.replace(tzinfo=timezone.utc)
+        if day is not None and taken.astimezone(ROME).date() != day:
+            continue
         out.setdefault(snap.fixture_id, {})[snap.bookmaker_id] = (dict(snap.markets_json or {}), snap.taken_at)
     return out
 
@@ -262,7 +270,8 @@ def build_plays(db: Session, *, now: datetime | None = None, history: History | 
     used: dict[str, int] = {}
     for p in existing:
         used[p.specialist] = used.get(p.specialist, 0) + 1
-    if not fixtures:
+    # la prima lista esce con le quote del mattino: prima delle 08:00 (il job di mezzanotte) non si crea nulla
+    if not fixtures or now.astimezone(ROME).hour < FIRST_LIST_HOUR:
         return report
 
     ids = [f.id for f in fixtures]
@@ -272,7 +281,7 @@ def build_plays(db: Session, *, now: datetime | None = None, history: History | 
             select(CecchinoV4Prediction).where(CecchinoV4Prediction.fixture_id.in_(ids), CecchinoV4Prediction.kind == "goals")
         ).scalars()
     }
-    odds = latest_pre_odds(db, ids)
+    odds = latest_pre_odds(db, ids, day=today)
 
     def place(specialist: str, status: str, per_fixture: list[Candidate], cap: int) -> None:
         free = cap - used.get(specialist, 0)
