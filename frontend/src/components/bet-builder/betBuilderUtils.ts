@@ -20,7 +20,7 @@ export type BetBuilderSortKey =
   | 'kickoff_asc'
 
 /** Versione policy comparator frontend — non persistita, nessun score aggregato. */
-export const EVIDENCE_SORT_VERSION = 'bet_builder_evidence_sort_v2'
+export const EVIDENCE_SORT_VERSION = 'bet_builder_evidence_sort_v3'
 
 /** Vista densità UI — solo frontend, nessun score. */
 export type BetBuilderViewMode = 'compact' | 'analysis'
@@ -259,9 +259,10 @@ function cmpKickoffAsc(a: string | null | undefined, b: string | null | undefine
 }
 
 /**
- * Comparator lessicografico BET-02.4 (v2) — forza evidenze.
- * Policy: origin → V3.1 → signals passed → yes_count → context available → rating → edge.
- * Nessuna somma, media, weighted score o KPI numerico aggregato.
+ * Comparator lessicografico — forza evidenze (v3, dal 25/10/2026).
+ * Policy: origin → signals passed → yes_count → context available → rating → edge.
+ * Niente acquistabilita': con la V3.1 la giocata principale sceglieva peggio del caso
+ * (docs/bet_builder/ESAME_ORDINAMENTO_V1_RISULTATO.md). Allineato al backend.
  */
 export function compareOpportunityEvidenceStrength(
   a: BetBuilderOpportunity,
@@ -269,10 +270,6 @@ export function compareOpportunityEvidenceStrength(
 ): number {
   const byOrigin = ORIGIN_RANK[a.origin] - ORIGIN_RANK[b.origin]
   if (byOrigin !== 0) return byOrigin
-
-  // Dentro la stessa origin family, Acquistabilità V3.1 precede i Signals.
-  const byV31 = cmpNullableNumberDesc(a.purchasability_v31.score, b.purchasability_v31.score)
-  if (byV31 !== 0) return byV31
 
   const aPassed = a.signals.passed === true
   const bPassed = b.signals.passed === true

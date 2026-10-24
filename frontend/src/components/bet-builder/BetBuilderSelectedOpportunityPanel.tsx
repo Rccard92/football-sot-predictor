@@ -2,7 +2,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useId, useState } from 'react'
 import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import { BetBuilderContextBlock } from './BetBuilderContextBlock'
-import { BetBuilderPurchasabilityRing } from './BetBuilderPurchasabilityRing'
 import { BetBuilderSignalsBlock } from './BetBuilderSignalsBlock'
 import { BetBuilderCartAddButton } from './cart/BetBuilderCartAddButton'
 import type { BetBuilderCartCtaState } from './cart/betBuilderCartUtils'
@@ -138,13 +137,6 @@ export function BetBuilderSelectedOpportunityPanel({
           className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2"
           data-testid="bet-builder-core-metrics"
         >
-          <div className={bbMetricCell}>
-            <BetBuilderPurchasabilityRing
-              purchasability={opportunity.purchasability_v36}
-              size="md"
-            />
-          </div>
-
           <div className={bbMetricCell} aria-label="Quota Book e Cecchino">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               Quota

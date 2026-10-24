@@ -936,13 +936,7 @@ def _extract_v31_generated_at(snapshot: dict[str, Any] | None) -> str | None:
 
 
 def _sort_key(opp: dict[str, Any]) -> tuple:
-    purch = opp.get("purchasability_v31") or {}
-    score = purch.get("score")
-    score_sort = (
-        (0, -float(score))
-        if score is not None and _finite_number(score) is not None
-        else (1, 0.0)
-    )
+    """Ordine della lista dell'API: origine, segnali, edge (dal 25/10/2026 senza acquistabilita')."""
     origin = opp.get("origin")
     origin_rank = {
         ORIGIN_PRICE_AND_SIGNALS: 0,
@@ -954,7 +948,7 @@ def _sort_key(opp: dict[str, Any]) -> tuple:
     edge_sort = -edge if edge is not None else 0.0
     kickoff = (opp.get("fixture") or {}).get("kickoff") or ""
     key = opp.get("opportunity_key") or ""
-    return (score_sort[0], score_sort[1], origin_rank, -yes_count, edge_sort, kickoff, key)
+    return (origin_rank, -yes_count, edge_sort, kickoff, key)
 
 
 def _load_gi_payloads_batch(

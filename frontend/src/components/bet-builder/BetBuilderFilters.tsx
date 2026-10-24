@@ -44,7 +44,6 @@ const CONTEXT_OPTIONS: Array<{ key: BetBuilderContextFilter; label: string }> = 
 
 const SORT_OPTIONS: Array<{ key: BetBuilderSortKey; label: string }> = [
   { key: 'evidence_strength_desc', label: 'Forza evidenze ↓' },
-  { key: 'purchasability_desc', label: 'Acquistabilità ↓' },
   { key: 'signals_desc', label: 'Segnali ↓' },
   { key: 'edge_desc', label: 'Edge ↓' },
   { key: 'kickoff_asc', label: 'Kickoff ↑' },
@@ -253,27 +252,6 @@ export function BetBuilderFilters({
               </select>
             </label>
 
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold text-slate-500">
-                Acquistabilità minima
-              </span>
-              <select
-                className={bbSelect}
-                value={filters.minPurchasability == null ? '' : String(filters.minPurchasability)}
-                onChange={(e) =>
-                  onChange({
-                    minPurchasability: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                aria-label="Acquistabilità minima"
-              >
-                <option value="">Nessun filtro</option>
-                <option value="40">≥ 40</option>
-                <option value="55">≥ 55</option>
-                <option value="70">≥ 70</option>
-                <option value="85">≥ 85</option>
-              </select>
-            </label>
           </div>
         </div>
       ) : null}

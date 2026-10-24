@@ -1,15 +1,21 @@
-"""BET-RESULTS-01 — Evidence Sort V2 primary selection (parità frontend).
+"""BET-RESULTS-01 — Evidence Sort primary selection (parità frontend).
+
+v3 dal 25/10/2026: origine → segnali, senza acquistabilita'. Le giornate prima del 25/10 restano con la v2
+(origine → V3.1 → segnali), cosi' i risultati passati mostrano la giocata che era stata davvero proposta.
 
 Comparator dedicato: NON modifica lo sort globale pre-match dell'aggregator.
 """
 
 from __future__ import annotations
 
+from datetime import date
 from functools import cmp_to_key
 from typing import Any
 
 from app.services.cecchino.cecchino_bet_builder_constants import (
+    BET_BUILDER_EVIDENCE_SORT_V3_FROM,
     BET_BUILDER_PRIMARY_SELECTION_VERSION,
+    BET_BUILDER_PRIMARY_SELECTION_VERSION_V2,
     ORIGIN_PRICE,
     ORIGIN_PRICE_AND_SIGNALS,
     ORIGIN_SIGNALS,
@@ -55,11 +61,13 @@ def _cmp_nullable_number_desc(a: Any, b: Any) -> int:
 def compare_opportunity_evidence_strength(
     a: dict[str, Any],
     b: dict[str, Any],
+    *,
+    use_v31: bool = False,
 ) -> int:
-    """Comparator lessicografico Evidence Sort V2 — allineato a betBuilderUtils.ts.
+    """Comparator lessicografico Evidence Sort — allineato a betBuilderUtils.ts.
 
-    Policy: origin → V3.1 → signals.passed → yes_count → context.available
-    → rating → edge → opportunity_key.
+    v3 (default): origin → signals.passed → yes_count → context.available → rating → edge → opportunity_key.
+    v2 (`use_v31`, giornate prima del 25/10/2026): V3.1 subito dopo l'origine.
     Nessuno score aggregato.
     """
     origin_a = ORIGIN_RANK.get(str(a.get("origin") or ""), 99)
@@ -68,11 +76,12 @@ def compare_opportunity_evidence_strength(
     if by_origin != 0:
         return by_origin
 
-    purch_a = a.get("purchasability_v31") or {}
-    purch_b = b.get("purchasability_v31") or {}
-    by_v31 = _cmp_nullable_number_desc(purch_a.get("score"), purch_b.get("score"))
-    if by_v31 != 0:
-        return by_v31
+    if use_v31:
+        purch_a = a.get("purchasability_v31") or {}
+        purch_b = b.get("purchasability_v31") or {}
+        by_v31 = _cmp_nullable_number_desc(purch_a.get("score"), purch_b.get("score"))
+        if by_v31 != 0:
+            return by_v31
 
     signals_a = a.get("signals") or {}
     signals_b = b.get("signals") or {}
@@ -112,23 +121,31 @@ def compare_opportunity_evidence_strength(
     return 0
 
 
+def uses_v31(scan_date: date | None) -> bool:
+    """Giornate prima del 25/10/2026: ordinamento v2 con la V3.1 (quello mostrato allora)."""
+    return scan_date is not None and scan_date < BET_BUILDER_EVIDENCE_SORT_V3_FROM
+
+
 def sort_opportunities_by_evidence_strength(
     opportunities: list[dict[str, Any]],
+    scan_date: date | None = None,
 ) -> list[dict[str, Any]]:
+    v31 = uses_v31(scan_date)
     copy = list(opportunities)
-    copy.sort(key=cmp_to_key(compare_opportunity_evidence_strength))
+    copy.sort(key=cmp_to_key(lambda a, b: compare_opportunity_evidence_strength(a, b, use_v31=v31)))
     return copy
 
 
 def select_primary_opportunity(
     opportunities: list[dict[str, Any]],
+    scan_date: date | None = None,
 ) -> dict[str, Any] | None:
-    """Predizione madre = prima dopo Evidence Sort V2."""
+    """Predizione madre = prima dopo l'Evidence Sort della giornata."""
     if not opportunities:
         return None
-    sorted_ops = sort_opportunities_by_evidence_strength(opportunities)
+    sorted_ops = sort_opportunities_by_evidence_strength(opportunities, scan_date)
     return sorted_ops[0]
 
 
-def primary_selection_version() -> str:
-    return BET_BUILDER_PRIMARY_SELECTION_VERSION
+def primary_selection_version(scan_date: date | None = None) -> str:
+    return BET_BUILDER_PRIMARY_SELECTION_VERSION_V2 if uses_v31(scan_date) else BET_BUILDER_PRIMARY_SELECTION_VERSION

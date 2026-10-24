@@ -4,7 +4,6 @@ import { originBadgeLabel } from '../betBuilderUtils'
 import { bbBadge, bbSecondaryBtn } from '../betBuilderStyles'
 import {
   formatOddsDisplay,
-  purchasabilitySummaryLabel,
   signalsSummaryLabel,
   type BetBuilderCartResolvedItem,
 } from './betBuilderCartUtils'
@@ -107,14 +106,6 @@ export function BetBuilderCartItem({ item, scanDate, onRemove }: Props) {
           {!stale && current_book_odds == null ? (
             <p className="mt-0.5 text-[10px] text-amber-800">Quota Book non disponibile</p>
           ) : null}
-        </div>
-        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            V3.6
-          </dt>
-          <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
-            {purchasabilitySummaryLabel(current)}
-          </dd>
         </div>
         <div className="rounded-lg bg-slate-50 px-2 py-1.5">
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">

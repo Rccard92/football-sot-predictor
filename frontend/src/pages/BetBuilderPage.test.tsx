@@ -417,52 +417,12 @@ describe('BetBuilderPage', () => {
     })
   })
 
-  it('ordina fixture per max Acquistabilità V3.6; null in fondo', async () => {
-    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(
-      baseResponse({
-        opportunities: [
-          baseOpportunity({
-            opportunity_key: 'null-score',
-            fixture: {
-              ...baseOpportunity().fixture,
-              today_fixture_id: 1,
-              home: { name: 'NullScore FC' },
-            },
-            purchasability_v31: { available: false, score: null },
-          }),
-          baseOpportunity({
-            opportunity_key: 'mid',
-            fixture: {
-              ...baseOpportunity().fixture,
-              today_fixture_id: 2,
-              home: { name: 'Mid FC' },
-            },
-            purchasability_v31: { available: true, score: 55, class: 'Media' },
-          }),
-          baseOpportunity({
-            opportunity_key: 'top',
-            fixture: {
-              ...baseOpportunity().fixture,
-              today_fixture_id: 3,
-              home: { name: 'Top FC' },
-            },
-            purchasability_v31: { available: true, score: 95, class: 'Molto Alta' },
-          }),
-        ],
-      }),
-    )
+  it("dal 25/10/2026 niente ordinamento per Acquistabilita' tra le opzioni", async () => {
+    apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
-    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card')).toHaveLength(3))
-    fireEvent.change(screen.getByTestId('bet-builder-sort'), {
-      target: { value: 'purchasability_desc' },
-    })
-    await waitFor(() => {
-      const cards = screen.getAllByTestId('bet-builder-fixture-card')
-      expect(within(cards[0]).getByText('Top FC')).toBeTruthy()
-      expect(within(cards[1]).getByText('Mid FC')).toBeTruthy()
-      expect(within(cards[2]).getByText('NullScore FC')).toBeTruthy()
-    })
-    expect(within(screen.getAllByTestId('bet-builder-fixture-card')[2]).getByText('N/D')).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByTestId('bet-builder-fixture-card').length).toBeGreaterThan(0))
+    const sort = screen.getByTestId('bet-builder-sort') as HTMLSelectElement
+    expect(Array.from(sort.options).map((o) => o.value)).not.toContain('purchasability_desc')
   })
 
   it('default sort Forza evidenze: Q+S precede price-only anche con V3.1 inferiore', async () => {
@@ -635,13 +595,8 @@ describe('BetBuilderPage', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(screen.getByTestId('purchasability-ring')).toBeTruthy())
-
-    const ring = screen.getByTestId('purchasability-ring')
-    expect(ring.className).toMatch(/flex-col/)
-    expect(ring.className).toMatch(/sm:flex-row/)
-    expect(screen.getByText('Acquistabilità V3.6')).toBeTruthy()
-    expect(screen.getByTestId('purchasability-ring-class').textContent).toMatch(/Molto Alta/)
+    await waitFor(() => expect(screen.getByTestId('bet-builder-opportunity-tablist')).toBeTruthy())
+    expect(screen.queryByTestId('purchasability-ring')).toBeNull()
 
     const metaRow = screen.getByTestId('bet-builder-fixture-meta')
     expect(metaRow.className).toMatch(/grid-cols-\[minmax\(0,1fr\)_auto\]/)
@@ -720,7 +675,7 @@ describe('BetBuilderPage', () => {
     expect(within(signals).getByText('3 / 4 SI')).toBeTruthy()
     expect(within(signals).getByText('E · F · G')).toBeTruthy()
     expect(within(signals).queryByText(/3 \/ 4 SI · E/)).toBeNull()
-    expect(screen.getByTestId('purchasability-ring-class').textContent).toMatch(/Alta/)
+    expect(screen.queryByTestId('purchasability-ring-class')).toBeNull()
 
     fireEvent.click(
       screen.getAllByTestId('bet-builder-opportunity-tab').find((t) =>
@@ -1609,12 +1564,12 @@ describe('BetBuilderPage', () => {
     expect(screen.queryByText(/Kelly/i)).toBeNull()
   })
 
-  it('Acquistabilità come score /100 non probabilità; nessun nuovo score; V3.6 reale', async () => {
+  it("nessuna Acquistabilita' mostrata (dal 25/10/2026); nessun nuovo score", async () => {
     apiMock.fetchBetBuilderOpportunities.mockResolvedValue(baseResponse())
     renderPage()
-    await waitFor(() => expect(screen.getByTestId('purchasability-ring')).toBeTruthy())
-    expect(screen.getByText('86')).toBeTruthy()
-    expect(screen.getByText('/100')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('bet-builder-opportunity-tablist')).toBeTruthy())
+    expect(screen.queryByTestId('purchasability-ring')).toBeNull()
+    expect(screen.queryByText('/100')).toBeNull()
     expect(screen.queryByText(/fixture score/i)).toBeNull()
     expect(screen.queryByText(/bet builder score/i)).toBeNull()
     expect(screen.queryByText(/sicura/i)).toBeNull()

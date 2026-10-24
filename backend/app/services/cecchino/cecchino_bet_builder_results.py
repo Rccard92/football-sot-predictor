@@ -49,6 +49,7 @@ from app.services.cecchino.cecchino_bet_builder_opportunity_aggregator import (
     build_opportunities_for_rows,
 )
 from app.services.cecchino.cecchino_bet_builder_primary_selection import (
+    primary_selection_version,
     sort_opportunities_by_evidence_strength,
 )
 from app.services.cecchino.cecchino_signal_evaluation import (
@@ -648,7 +649,7 @@ def _build_entries(db: Session, ids: list[int]) -> dict[int, dict[str, Any]]:
             out[int(row.id)] = {
                 "match_status": normalize_match_status(row),
                 "fixture": _fixture_results_block(row),
-                "ranked": sort_opportunities_by_evidence_strength(enriched),
+                "ranked": sort_opportunities_by_evidence_strength(enriched, row.scan_date),
             }
         # le righe complete non servono piu': si libera la sessione blocco per blocco
         for row in rows:
@@ -782,7 +783,9 @@ def aggregate_bet_builder_results(
                 "fixture": entry["fixture"],
                 "primary": primary,
                 "other_opportunities": others,
-                "primary_selection_version": BET_BUILDER_PRIMARY_SELECTION_VERSION,
+                "primary_selection_version": primary_selection_version(
+                    date.fromisoformat(entry["fixture"]["scan_date"]) if (entry.get("fixture") or {}).get("scan_date") else None
+                ),
             }
         )
 
