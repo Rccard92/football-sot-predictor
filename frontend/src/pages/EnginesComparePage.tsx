@@ -20,6 +20,8 @@ import {
 } from '../lib/cecchinoV5Api'
 
 const PERIODS = [7, 30, 90] as const
+// sotto questo numero di giocate la forbice al 90% non e' affidabile (con poche giocate tutte vinte risulta stretta)
+const MIN_PLAYS_FOR_RANGE = 30
 const LABEL = 'text-[13px] text-slate-500'
 const CELL = 'px-2 py-1.5 text-right tabular-nums'
 
@@ -104,7 +106,11 @@ function TotalsTable({ totals }: { totals: EngineTotal[] }) {
               <td className={`${CELL} font-semibold ${tone(t.profit)}`}>{signed(t.profit, 2)}</td>
               <td className={`${CELL} ${tone(t.roi_pct)}`}>{signed(t.roi_pct, 1, '%')}</td>
               <td className={`${CELL} text-slate-500`}>
-                {t.roi_low_pct == null ? '–' : `${signed(t.roi_low_pct, 1)} / ${signed(t.roi_high_pct, 1)}%`}
+                {t.plays < MIN_PLAYS_FOR_RANGE
+                  ? 'campione piccolo'
+                  : t.roi_low_pct == null
+                    ? '–'
+                    : `${signed(t.roi_low_pct, 1)} / ${signed(t.roi_high_pct, 1)}%`}
               </td>
               <td className={`${CELL} ${tone(t.avg_clv_pct)}`}>{signed(t.avg_clv_pct, 2, '%')}</td>
             </tr>
