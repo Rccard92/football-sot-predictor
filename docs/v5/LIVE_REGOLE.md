@@ -23,6 +23,10 @@ Fissate il 22/10/2026, prima della prima lista. Cambiarle vuol dire una nuova ve
 
 Pareggio Serie B a quota 2,50-3,49; Under 3,5 in Serie A, Championship, Liga, Turchia, Belgio, Bundesliga 2; Over 1,5 in Bundesliga, Premier, Serie B. Solo quota Bet365, sopra la quota minima della pista, nessun massimo giornaliero. Regole complete: `docs/campionati/PISTE_V1_PREREGISTRAZIONE.md`.
 
+## Combo (dal 25/10/2026, osservazione)
+
+Una combo coerente per partita dei 16 campionati (scenari partita aperta, chiusa, dominio casa, dominio ospite), probabilità congiunta con i legami misurati nell'esame (`docs/combo/COMBO_V1_RISULTATO.md`), quota equa tra 1,90 e 2,60. Quota registrata: prodotto delle quote singole Bet365/Betfair se tutte le giocate sono quotate (riferimento), altrimenti nessuna quota e niente profitto calcolato. Quota minima per giocarla = 1,05 / probabilità.
+
 ## Regola di decisione
 
 - Specialisti statistici: probabilità prudente = 0,5 + 0,8 × (probabilità − 0,5); quota tra 1,50 e 3,00; si gioca se probabilità prudente × quota ≥ 1,03. Una giocata per partita (la più alta per probabilità prudente × quota), massimo 5 al giorno per specialista.

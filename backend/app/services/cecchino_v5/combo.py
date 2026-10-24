@@ -210,3 +210,39 @@ def combo_dict(c: ComboCandidate, home: str, away: str) -> dict[str, Any]:
         "fair_quota": round(1 / c.p, 2),
         "min_quota": round(1.05 / c.p, 2),
     }
+
+
+# Legami stimati sullo sviluppo 2022/23-2024/25 (esame del 24/10/2026, docs/combo/COMBO_V1_RISULTATO.md): ordine VARS.
+COMBO_CORRELATION = np.array(
+    [
+        [1.0, 0.03, 0.464, 0.022, -0.093, 0.035],
+        [0.03, 1.0, 0.028, 0.473, 0.056, -0.062],
+        [0.464, 0.028, 1.0, -0.025, 0.193, -0.086],
+        [0.022, 0.473, -0.025, 1.0, -0.067, 0.198],
+        [-0.093, 0.056, 0.193, -0.067, 1.0, -0.193],
+        [0.035, -0.062, -0.086, 0.198, -0.193, 1.0],
+    ]
+)
+COMBO_CHOL = np.linalg.cholesky(nearest_psd_corr(COMBO_CORRELATION))
+
+
+def fixture_combos(history, fixture, goals: dict[str, Any] | None) -> list[ComboCandidate]:
+    """Combo coerenti di una partita V4 (attese V4/V5, legami dell'esame). Vuoto se mancano i dati."""
+    from app.services.cecchino_v5.model import expected_counts
+
+    if not fixture.home_team_history or not fixture.away_team_history:
+        return []
+    lh, la = (goals or {}).get("lambda_home"), (goals or {}).get("lambda_away")
+    means: dict[str, float] = {}
+    for key, prefix in (("tiri_porta", "s"), ("angoli", "c")):
+        e = expected_counts(
+            history, STAT_SPECIALIST_BY_KEY[key], division=fixture.league_code, day=fixture.match_date,
+            home=fixture.home_team_history, away=fixture.away_team_history, lambda_home=lh, lambda_away=la, referee=fixture.referee,
+        )
+        if e is None:
+            return []
+        means[prefix + "h"], means[prefix + "a"] = e.home, e.away
+    has_goals = bool(lh and la)
+    means["gh"], means["ga"] = (float(lh), float(la)) if has_goals else (1.35, 1.10)
+    sims = simulate(means, COMBO_CHOL, seed=int(fixture.id))
+    return match_combos(sims, allow_goals=has_goals)

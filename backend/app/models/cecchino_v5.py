@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, Index, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -40,3 +40,5 @@ class CecchinoV5Play(Base):
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # combo (dal 24/10/2026): giocate della combo [{key, label}] e dettagli; bookmaker_id 0 = prodotto delle singole, -1 = senza quote
+    legs_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

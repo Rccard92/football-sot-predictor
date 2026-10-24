@@ -29,7 +29,7 @@ from app.services.cecchino_v4.selection.shortlist import seal_shortlist, shortli
 
 logger = logging.getLogger(__name__)
 
-LIVE_JOBS = ("fixtures", "post_match", "lineups", "injuries", "standings", "odds_snapshot", "odds_closing", "coverage_scan", "backfill")
+LIVE_JOBS = ("fixtures", "post_match", "lineups", "injuries", "standings", "odds_snapshot", "odds_closing", "coverage_scan", "backfill", "history_players")
 COMPUTE_JOBS = ("predict", "shortlist", "settle", "daily", "v5")
 EXAM_JOBS = ("exam_E1", "exam_E2", "exam_E4")
 EXAM_MODULES = {
