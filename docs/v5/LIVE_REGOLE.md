@@ -30,3 +30,7 @@ Fissate il 22/10/2026, prima della prima lista. Cambiarle vuol dire una nuova ve
 - Esito con il regolamento della V4 sulle statistiche post-partita di API-Football.
 - CLV = quota presa / quota di chiusura dello stesso book − 1, quando la chiusura esiste.
 - Le giocate in osservazione si misurano come quelle consigliate, ma nella pagina sono marcate "non consigliata".
+
+## Registro delle deviazioni
+
+- 23/10 e 24/10/2026: le liste sono uscite alle 00:01 (job delle 22:00 UTC, già "oggi" in ora italiana) con le quote lette la sera prima, invece che alle 08:00 con le quote del mattino. Le giocate restano nella misura (nulla si cancella). Corretto il 24/10: nessuna giocata prima delle 08:00 e solo quote lette nel giorno della partita.
