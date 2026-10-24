@@ -232,7 +232,7 @@ export function CecchinoV5Panel({ todayFixtureId }: { todayFixtureId: number }) 
     )
   }
   const rules = data.rules
-  const labels = Object.fromEntries(data.specialists.map((s) => [s.key, s.label]))
+  const labels = { ...(data.specialist_labels ?? {}), ...Object.fromEntries(data.specialists.map((s) => [s.key, s.label])) }
   const lh = data.fixture?.lambda_home
   const la = data.fixture?.lambda_away
   return (

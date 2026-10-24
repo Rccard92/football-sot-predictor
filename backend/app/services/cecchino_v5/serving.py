@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.services.audit.models_compare import load_plays, summarize
 from app.services.cecchino.cecchino_bet_builder_results import roi_stats
-from app.services.cecchino_v5.constants import STAT_SPECIALISTS, STATUS_ADVISED, VALORE_KEY, VALORE_LABEL, VERSION
+from app.services.cecchino_v5.constants import LEAGUE_LEADS, STAT_SPECIALISTS, STATUS_ADVISED, VALORE_KEY, VALORE_LABEL, VERSION
 from app.services.cecchino_v5.pipeline import plays_for_day
 
 ROME = ZoneInfo("Europe/Rome")
@@ -38,6 +38,7 @@ ENGINE_LABELS: dict[str, tuple[str, str]] = {
     "v4": ("V4 shortlist", "V4"),
     **{f"v5_{s.key}": (f"V5 {s.label}", "V5") for s in STAT_SPECIALISTS},
     f"v5_{VALORE_KEY}": (f"V5 {VALORE_LABEL}", "V5"),
+    **{f"v5_{lead.key}": (f"V5 {lead.label} (osservazione)", "V5") for lead in LEAGUE_LEADS},
     "tutti_i_mercati": ("Tutti i mercati (riferimento)", "Riferimento"),
 }
 ENGINE_ORDER = list(ENGINE_LABELS)
@@ -161,7 +162,9 @@ def v5_day(db: Session, day: date) -> dict[str, Any]:
         groups[p["specialist"]].append(p)
     specialists = [
         {"key": s.key, "label": s.label, "status": s.status} for s in STAT_SPECIALISTS
-    ] + [{"key": VALORE_KEY, "label": VALORE_LABEL, "status": "osservazione"}]
+    ] + [{"key": VALORE_KEY, "label": VALORE_LABEL, "status": "osservazione"}] + [
+        {"key": lead.key, "label": lead.label, "status": "osservazione"} for lead in LEAGUE_LEADS
+    ]
     out = []
     for s in specialists:
         items = groups.get(s["key"], [])

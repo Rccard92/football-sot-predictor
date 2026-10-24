@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from datetime import date
 
 VERSION = "v5_live_v1_20261022"
 
@@ -107,3 +109,40 @@ def _parse_calibration(raw: dict[str, str]) -> dict[str, dict[int, tuple[int, in
 
 
 VALORE_CALIBRATION = _parse_calibration(_VALORE_RAW)
+
+
+# Piste dei campionati in osservazione (docs/campionati/PISTE_V1_PREREGISTRAZIONE.md): solo quota Bet365, nessun massimo.
+LEAGUE_LEADS_FROM = date(2026, 10, 25)
+
+@dataclass(frozen=True)
+class LeagueLead:
+    key: str
+    label: str
+    market: str  # chiave classica V4 (DRAW, UNDER_3_5, OVER_1_5)
+    leagues: dict[str, float]  # campionato -> frequenza reale 2021/22-2025/26
+    min_quota: float | None = None  # fascia fissa; senza, la quota minima e' 1 / frequenza
+    max_quota: float | None = None
+
+    def quota_range(self, league: str) -> tuple[float, float]:
+        if self.min_quota is not None:
+            return self.min_quota, self.max_quota or 100.0
+        rate = self.leagues[league]
+        return math.ceil(100.0 / rate - 1e-9) / 100.0, 100.0
+
+
+LEAGUE_LEADS: tuple[LeagueLead, ...] = (
+    LeagueLead("camp_pareggio_i2", "Pareggio Serie B", "DRAW", {"I2": 0.321}, 2.50, 3.49),
+    LeagueLead(
+        "camp_under35",
+        "Under 3,5 campionati",
+        "UNDER_3_5",
+        {"I1": 0.737, "E1": 0.759, "SP1": 0.752, "T1": 0.693, "B1": 0.681, "D2": 0.663},
+    ),
+    LeagueLead("camp_over15", "Over 1,5 campionati", "OVER_1_5", {"D1": 0.836, "E0": 0.799, "I2": 0.724}),
+)
+
+SPECIALIST_LABELS: dict[str, str] = {
+    **{s.key: s.label for s in STAT_SPECIALISTS},
+    VALORE_KEY: VALORE_LABEL,
+    **{lead.key: lead.label for lead in LEAGUE_LEADS},
+}

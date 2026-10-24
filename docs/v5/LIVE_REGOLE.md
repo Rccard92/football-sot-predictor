@@ -19,6 +19,10 @@ Fissate il 22/10/2026, prima della prima lista. Cambiarle vuol dire una nuova ve
 | Cartellini v1 | osservazione | k = 20, δ = 0,5 (arbitro), dispersione 22,76 / 16,13; cartellini = gialli + 2 × rossi | cartellini totale e per squadra |
 | Valore v1 | osservazione (esame fallito) | taratura per fasce della V3 (sviluppo 2021/22-2024/25), probabilità prudente = tarata − 1 errore standard | 1X2, doppia chance, over/under 1,5-3,5, primo tempo, quota 1,80-2,20 |
 
+## Piste dei campionati (dal 25/10/2026, osservazione)
+
+Pareggio Serie B a quota 2,50-3,49; Under 3,5 in Serie A, Championship, Liga, Turchia, Belgio, Bundesliga 2; Over 1,5 in Bundesliga, Premier, Serie B. Solo quota Bet365, sopra la quota minima della pista, nessun massimo giornaliero. Regole complete: `docs/campionati/PISTE_V1_PREREGISTRAZIONE.md`.
+
 ## Regola di decisione
 
 - Specialisti statistici: probabilità prudente = 0,5 + 0,8 × (probabilità − 0,5); quota tra 1,50 e 3,00; si gioca se probabilità prudente × quota ≥ 1,03. Una giocata per partita (la più alta per probabilità prudente × quota), massimo 5 al giorno per specialista.
