@@ -8,6 +8,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/tes
 
 from fastapi.routing import APIRoute
 
+from app.core.access_control import require_admin_principal
 from app.core.admin_session import require_admin_session, require_admin_session_for_writes
 from app.main import app
 
@@ -34,7 +35,8 @@ def test_every_admin_write_route_requires_the_session():
         if route.path.startswith(OPEN) or not (set(route.methods) & WRITE):
             continue
         deps = _deps(route)
-        if require_admin_session not in deps and require_admin_session_for_writes not in deps:
+        # gestione utenti (29/10/2026): solo amministratori anche in lettura
+        if not deps & {require_admin_session, require_admin_session_for_writes, require_admin_principal}:
             missing.append(f"{sorted(route.methods)} {route.path}")
     assert missing == []
 

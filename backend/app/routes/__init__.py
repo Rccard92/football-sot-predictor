@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.core.access_control import enforce_api_access
 from app.core.admin_session import require_admin_session_for_writes
 
 from app.routes import (
@@ -33,11 +34,14 @@ from app.routes import (
     admin_ingest,
     admin_session_auth,
     admin_sportapi,
+    admin_users,
+    auth,
     competitions,
     health,
 )
 
-api_router = APIRouter(prefix="/api")
+# accesso per scheda su tutto /api (29/10/2026): con AUTH_ENFORCED spento riconosce chi chiama ma non blocca
+api_router = APIRouter(prefix="/api", dependencies=[Depends(enforce_api_access)])
 # router /admin: sessione admin obbligatoria per POST/PUT/PATCH/DELETE (20/10/2026); le letture restano libere
 _ADMIN_WRITES = [Depends(require_admin_session_for_writes)]
 api_router.include_router(health.router, tags=["health"])
@@ -49,6 +53,8 @@ api_router.include_router(admin_debug_team_shot_stats.router, dependencies=_ADMI
 api_router.include_router(admin_ingest.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_data_health.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_session_auth.router)
+api_router.include_router(auth.router)
+api_router.include_router(admin_users.router)
 api_router.include_router(admin_sportapi.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_bookmakers.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_competition_bookmakers.router, dependencies=_ADMIN_WRITES)

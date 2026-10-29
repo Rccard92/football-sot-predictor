@@ -1,6 +1,8 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { AuthShell } from './components/auth/AuthShell'
+import { AuthProvider } from './contexts/AuthContext'
 import { LegacyLabRedirect } from './components/module-monitoring/LegacyLabRedirect'
 import { todaySkeleton } from './components/cecchino/cecchinoTodayStyles'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
@@ -93,7 +95,9 @@ function RedirectHistoricalRunToPatternLab() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <AuthProvider>
+      <AuthShell>
+        <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<CecchinoTodayPage />} />
@@ -160,6 +164,8 @@ export default function App() {
           <Route path="/admin" element={<Page><Admin /></Page>} />
         </Route>
       </Routes>
-    </BrowserRouter>
+        </BrowserRouter>
+      </AuthShell>
+    </AuthProvider>
   )
 }

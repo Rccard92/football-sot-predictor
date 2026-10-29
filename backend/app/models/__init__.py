@@ -64,6 +64,7 @@ from app.models.cecchino_master_pattern import CecchinoMasterPattern, CecchinoMa
 from app.models.cecchino_live_prediction import CecchinoLivePrediction
 from app.models.api_football_data import ApiFootballFixtureFetch, ApiFootballLeagueCoverage, CecchinoBet365MarketLine
 from app.models.cecchino_xg_league_tag import CecchinoXgLeagueTag
+from app.models.app_user import AppLoginEvent, AppUser, AppUserSession
 from app.models.cecchino_v3 import (
     CecchinoV3EvaluatorPlay,
     CecchinoV3EvaluatorRun,
@@ -136,6 +137,9 @@ from app.models.cecchino_v5 import CecchinoV5Play  # Cecchino V5: giocate degli 
 
 __all__ = [
     "CecchinoXgLeagueTag",
+    "AppUser",
+    "AppUserSession",
+    "AppLoginEvent",
     "ApiUsageEvent",
     "Base",
     "CecchinoGoalIntensityV5PreviewBundle",

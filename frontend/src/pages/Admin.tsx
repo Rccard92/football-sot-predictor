@@ -18,6 +18,7 @@ import {
 } from '../lib/api'
 
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
+import { UsersAdminPanel } from '../components/admin/UsersAdminPanel'
 import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
@@ -321,6 +322,8 @@ export function Admin() {
           </p>
           <ContextBanner showModelSelector={false} />
         </header>
+
+        <UsersAdminPanel />
 
         <CompetitionsAdminPanel />
 

@@ -7,6 +7,14 @@
 
 export const ADMIN_AUTH_REQUIRED_EVENT = 'cecchino:admin-auth-required'
 export const ADMIN_AUTH_CHANGED_EVENT = 'cecchino:admin-auth-changed'
+/** Dal 29/10/2026: una richiesta e' tornata "serve l'accesso" (401) o "cambia la password" (403): lo stato
+ *  dell'accesso va riletto, cosi' compaiono la pagina di login o il cambio password. */
+export const AUTH_REQUIRED_EVENT = 'cecchino:auth-required'
+
+function requestAuthRefresh(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT))
+}
 
 export function requestAdminLogin(reason?: string): void {
   if (typeof window === 'undefined') return
@@ -39,8 +47,17 @@ export function installAdminFetchInterceptor(apiBase: string | undefined): void 
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (!url.startsWith(base)) return original(input, init)
     const res = await original(input, { ...init, credentials: init?.credentials ?? 'include' })
-    if (res.status === 401 && isAdminAuthFailure(401, url) && !url.includes('/api/admin/auth/')) {
-      requestAdminLogin()
+    const isAuthCall = url.includes('/api/auth/') || url.includes('/api/admin/auth/')
+    if (res.status === 401 && !isAuthCall) {
+      requestAuthRefresh()
+      if (isAdminAuthFailure(401, url)) requestAdminLogin()
+    } else if (res.status === 403 && !isAuthCall) {
+      const body = await res
+        .clone()
+        .json()
+        .catch(() => null)
+      const code = body && typeof body === 'object' ? (body as { detail?: unknown }).detail : null
+      if (code === 'password_change_required' || code === 'login_required') requestAuthRefresh()
     }
     return res
   }

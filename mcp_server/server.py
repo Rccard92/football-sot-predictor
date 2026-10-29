@@ -147,7 +147,8 @@ def cecchino_get(path: str, query: dict[str, Any] | None = None) -> str:
     if not p.startswith("/api/") or p.startswith("/api/admin/auth"):
         return _shape({"errore": "percorso non ammesso: serve /api/... (escluso /api/admin/auth)"})
     with _client() as c:
-        r = c.get(p, params=query or None)
+        # la chiave di audit vale come accesso in sola lettura anche con il login del tool attivo (29/10/2026)
+        r = c.get(p, params=query or None, headers={"Authorization": f"Bearer {AUDIT_API_TOKEN}"})
     if r.status_code >= 400:
         return _shape({"errore": r.status_code, "dettaglio": _safe_json(r)})
     if "application/json" not in r.headers.get("content-type", ""):
