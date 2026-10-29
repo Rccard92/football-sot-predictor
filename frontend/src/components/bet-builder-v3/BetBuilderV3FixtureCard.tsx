@@ -17,6 +17,7 @@ import {
   bbSecondaryBtn,
 } from '../bet-builder/betBuilderStyles'
 import { formatKickoffShort } from '../bet-builder/betBuilderUtils'
+import { AddToJournalButton } from '../analyst/AddToJournalButton'
 import { indexClassLabel } from '../cecchino/CecchinoPurchasabilityIndexV25'
 import { PurchasabilityScoreRing } from '../cecchino/PurchasabilityScoreRing'
 import {
@@ -445,7 +446,23 @@ export function BetBuilderV3FixtureCard({ group, tab, showOutcome, onOpenAnalysi
         />
       ) : null}
 
-      <div className="mt-auto flex justify-stretch pt-1 sm:justify-end">
+      <div className="mt-auto flex flex-wrap justify-stretch gap-2 pt-1 sm:justify-end">
+        {selected && !showOutcome ? (
+          <AddToJournalButton
+            compact
+            todayFixtureId={selected.todayFixtureId}
+            source="bet_builder_v3"
+            marketKey={selected.marketKey}
+            quota={selected.quota}
+            tool={{
+              engine: tab === 'combo' ? 'Combo' : tab,
+              origin: selected.source,
+              probability: selected.winProb ?? selected.probability,
+              index_score: selected.score,
+              label: selected.label,
+            }}
+          />
+        ) : null}
         <button
           type="button"
           className={`${bbSecondaryBtn} w-full sm:w-auto`}

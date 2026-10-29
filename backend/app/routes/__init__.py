@@ -35,6 +35,7 @@ from app.routes import (
     admin_session_auth,
     admin_sportapi,
     admin_users,
+    analyst_journal,
     auth,
     competitions,
     health,
@@ -55,6 +56,7 @@ api_router.include_router(admin_data_health.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_session_auth.router)
 api_router.include_router(auth.router)
 api_router.include_router(admin_users.router)
+api_router.include_router(analyst_journal.router)
 api_router.include_router(admin_sportapi.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_bookmakers.router, dependencies=_ADMIN_WRITES)
 api_router.include_router(admin_competition_bookmakers.router, dependencies=_ADMIN_WRITES)

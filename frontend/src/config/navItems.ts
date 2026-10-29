@@ -37,6 +37,7 @@ export const NAV_CECCHINO: NavItem[] = [
   { to: '/monitoraggio-segno-1', label: 'Monitoraggio Segno 1', icon: 'target', section: 'cecchino' },
   { to: '/monitoraggio-segnali', label: 'Monitoraggio Segnali', icon: 'target', section: 'cecchino' },
   { to: '/segnali-kpi', label: 'Segnali KPI', icon: 'bar-chart', section: 'cecchino' },
+  { to: '/diario-analisi', label: 'Diario analisi', icon: 'file-text', section: 'cecchino' },
 ]
 
 export const NAV_MAIN: NavItem[] = [

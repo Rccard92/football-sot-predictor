@@ -148,4 +148,19 @@ def refresh_recent_results(
             pass
     finally:
         db.close()
+
+    # e le giocate del Diario analisi (30/10/2026); il diario le chiude anche quando lo si apre
+    db = session_factory()
+    try:
+        from app.services.analyst.journal import settle_entries
+
+        summary["analyst_journal_settled"] = settle_entries(db)
+    except Exception:  # noqa: BLE001
+        logger.exception("auto results: diario analisi non chiuso")
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        db.close()
     return summary
