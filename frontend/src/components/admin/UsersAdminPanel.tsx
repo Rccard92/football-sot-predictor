@@ -376,7 +376,7 @@ export function UsersAdminPanel() {
       ) : null}
 
       {users === null ? (
-        <p className="text-sm text-slate-500">Carico gli utenti…</p>
+        error ? null : <p className="text-sm text-slate-500">Carico gli utenti…</p>
       ) : users.length === 0 ? (
         <p className="text-sm text-slate-500">Nessun utente ancora. Crea il primo (te stesso come amministratore).</p>
       ) : (
