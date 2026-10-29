@@ -11,6 +11,7 @@ Persistenza qui, calcolo puro in `normalize.py`. Le quote finiscono solo nel reg
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -767,6 +768,21 @@ def job_backfill(ctx: JobContext) -> dict[str, Any]:
 HISTORY_SEASONS = (2025, 2024, 2023, 2022, 2021)
 HISTORY_MAX_CALLS_PER_RUN = 2500
 HISTORY_STOP_CALLS_TODAY = 4500  # lascia il resto del budget giornaliero (7.500) a Cecchino Today e alla V4
+HISTORY_PAUSE_SECONDS = 0.3  # il piano ha anche un limite al minuto: il 26/10 il job si e' fermato per troppe richieste
+HISTORY_RATE_LIMIT_WAIT = 65
+
+
+def _history_call(fn, *args):
+    """Chiamata con una pausa breve; se API-Football risponde 'troppe richieste al minuto' aspetta e riprova una volta."""
+    time.sleep(HISTORY_PAUSE_SECONDS)
+    try:
+        return fn(*args)
+    except ApiFootballError as exc:
+        if "ratelimit" not in str(exc).lower() and "too many requests" not in str(exc).lower():
+            raise
+        logger.warning("history_players: limite al minuto, attendo %ss", HISTORY_RATE_LIMIT_WAIT)
+        time.sleep(HISTORY_RATE_LIMIT_WAIT)
+        return fn(*args)
 
 
 class _HistoryBudget(Exception):
@@ -796,7 +812,7 @@ def job_history_players(ctx: JobContext) -> dict[str, Any]:
                 )
                 if not finals:
                     spend()
-                    items = ctx.client.fixtures_by_league_season(lg.api_football_league_id, season)
+                    items = _history_call(ctx.client.fixtures_by_league_season, lg.api_football_league_id, season)
                     done = [it for it in items if str(((it.get("fixture") or {}).get("status") or {}).get("short") or "") in FINAL_STATUSES]
                     _upsert_fixture_items(ctx, done)
                     ctx.db.commit()
@@ -808,7 +824,7 @@ def job_history_players(ctx: JobContext) -> dict[str, Any]:
                     spend()
                     seen: set[tuple[int, int]] = set()
                     now = ctx.clock()
-                    for it in normalize_injuries(ctx.client.injuries(lg.api_football_league_id, season)):
+                    for it in normalize_injuries(_history_call(ctx.client.injuries, lg.api_football_league_id, season)):
                         key = (it.get("fixture_id"), it.get("player_id"))
                         if None in key or key in seen:
                             continue
@@ -837,7 +853,7 @@ def job_history_players(ctx: JobContext) -> dict[str, Any]:
                 )
                 for fx in todo:
                     spend()
-                    players = normalize_players(ctx.client.fixture_players(int(fx.api_fixture_id)))
+                    players = normalize_players(_history_call(ctx.client.fixture_players, int(fx.api_fixture_id)))
                     if players:
                         for old in ctx.db.scalars(select(CecchinoV4PlayerMinutes).where(CecchinoV4PlayerMinutes.fixture_id == fx.id)).all():
                             ctx.db.delete(old)
