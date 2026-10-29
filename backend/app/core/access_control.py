@@ -38,6 +38,7 @@ TAB_CATALOG: list[dict[str, str]] = [
     {"key": "monitoraggio-segno-1", "label": "Monitoraggio Segno 1", "path": "/monitoraggio-segno-1", "group": "Cecchino"},
     {"key": "monitoraggio-segnali", "label": "Monitoraggio Segnali", "path": "/monitoraggio-segnali", "group": "Cecchino"},
     {"key": "segnali-kpi", "label": "Segnali KPI", "path": "/segnali-kpi", "group": "Cecchino"},
+    {"key": "diario-analisi", "label": "Diario analisi", "path": "/diario-analisi", "group": "Cecchino"},
     {"key": "bookmakers", "label": "Bookmakers", "path": "/bookmakers", "group": "Generale"},
     {"key": "changelog", "label": "Changelog", "path": "/changelog", "group": "Generale"},
     {"key": "roadmap", "label": "Roadmap", "path": "/roadmap", "group": "Generale"},
@@ -48,6 +49,7 @@ TAB_KEYS: frozenset[str] = frozenset(t["key"] for t in TAB_CATALOG)
 
 _READ = frozenset({"GET", "HEAD"})
 _POST = frozenset({"POST"})
+_READ_WRITE = frozenset({"GET", "HEAD", "POST", "PATCH", "DELETE"})
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,8 @@ TAB_RULES: dict[str, list[Rule]] = {
     "monitoraggio-segno-1": _get("/api/cecchino/home-wins") + _get_re(_EXPLANATIONS),
     "monitoraggio-segnali": _get("/api/admin/cecchino/signals", "/api/admin/cecchino/signal-min-book-odds"),
     "segnali-kpi": _get("/api/cecchino/kpi-signals"),
+    # il diario e' l'unica scheda in cui un utente scrive: solo le sue giocate (controllato nelle rotte)
+    "diario-analisi": [Rule(_READ_WRITE, prefix="/api/analyst-journal")],
     "bookmakers": _get("/api/admin/bookmakers") + _get_re(r"/api/admin/competitions/\d+/bookmakers(/.*)?"),
     "changelog": [],
     "roadmap": [],
@@ -179,6 +183,20 @@ def enforce_api_access(
         return  # la chiave di audit vale solo per GET (controllato in resolve_principal)
     if not is_path_allowed(principal.tabs, method, path):
         raise HTTPException(status_code=403, detail="tab_not_allowed")
+
+
+def require_principal(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Principal:
+    """Chiunque abbia fatto l'accesso (anche con la protezione generale spenta): serve sapere chi scrive."""
+    principal = _principal(request, db, settings)
+    if principal is None or principal.kind == KIND_AUDIT and request.method.upper() not in ("GET", "HEAD"):
+        raise HTTPException(status_code=401, detail="login_required")
+    if principal.must_change_password:
+        raise HTTPException(status_code=403, detail="password_change_required")
+    return principal
 
 
 def require_admin_principal(

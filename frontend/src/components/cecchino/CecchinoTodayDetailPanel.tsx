@@ -6,6 +6,7 @@ import type {
 import { indexPurchasabilityV36ByMarketKey, partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
+import { AddToJournalButton } from '../analyst/AddToJournalButton'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoPurchasabilityV36Panel } from './CecchinoPurchasabilityV36Panel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
@@ -71,6 +72,12 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   return (
     <div className="space-y-5">
       <CecchinoTodayDetailHeader detail={detail} />
+
+      {todayFixtureId != null ? (
+        <div className="flex justify-end">
+          <AddToJournalButton todayFixtureId={todayFixtureId} source="today" tool={{ engine: engine }} />
+        </div>
+      ) : null}
 
       <EngineTabBar value={engine} onChange={setEngine} />
 

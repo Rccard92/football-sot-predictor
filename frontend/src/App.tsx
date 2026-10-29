@@ -65,6 +65,9 @@ const LiveObservationPage = lazy(() =>
 const EnginesComparePage = lazy(() =>
   import('./pages/EnginesComparePage').then((m) => ({ default: m.EnginesComparePage })),
 )
+const DiarioAnalisiPage = lazy(() =>
+  import('./pages/DiarioAnalisiPage').then((m) => ({ default: m.DiarioAnalisiPage })),
+)
 const CecchinoV4Page = lazy(() =>
   import('./pages/CecchinoV4Page').then((m) => ({ default: m.CecchinoV4Page })),
 )
@@ -150,6 +153,7 @@ export default function App() {
             element={<LegacyLabRedirect module="signals" view="lab" />}
           />
           <Route path="/segnali-kpi" element={<Page><SegnaliKpiPage /></Page>} />
+          <Route path="/diario-analisi" element={<Page><DiarioAnalisiPage /></Page>} />
           <Route
             path="/cecchino/ricerca-credibilita-x"
             element={<LegacyLabRedirect module="balance-v5" view="draw-credibility" />}

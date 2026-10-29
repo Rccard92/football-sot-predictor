@@ -4,6 +4,7 @@ import type { BetBuilderOpportunity } from '../../lib/cecchinoBetBuilderApi'
 import { BetBuilderContextBlock } from './BetBuilderContextBlock'
 import { BetBuilderSignalsBlock } from './BetBuilderSignalsBlock'
 import { BetBuilderCartAddButton } from './cart/BetBuilderCartAddButton'
+import { AddToJournalButton } from '../analyst/AddToJournalButton'
 import type { BetBuilderCartCtaState } from './cart/betBuilderCartUtils'
 import {
   bbBadge,
@@ -115,6 +116,22 @@ export function BetBuilderSelectedOpportunityPanel({
               )}
             </div>
           </div>
+          {opportunity.fixture?.today_fixture_id ? (
+            <AddToJournalButton
+              compact
+              todayFixtureId={opportunity.fixture.today_fixture_id}
+              source="bet_builder"
+              marketKey={opportunity.market?.market_key}
+              quota={opportunity.price_value?.quota_book ?? null}
+              tool={{
+                engine: 'Bet Builder',
+                origin: opportunity.origin,
+                probability: opportunity.price_value?.prob_cecchino ?? null,
+                index_score: opportunity.purchasability_v36?.score ?? null,
+                label: opportunity.market?.label ?? null,
+              }}
+            />
+          ) : null}
           {showCart && cartCta ? (
             <BetBuilderCartAddButton
               opportunity={opportunity}
