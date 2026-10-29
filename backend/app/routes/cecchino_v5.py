@@ -79,3 +79,11 @@ def get_squad_exam(start: bool = Query(default=False)) -> JSONResponse:
     from app.services.cecchino_v5.squad_exam import exam_state
 
     return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
+
+
+@router.get("/v5/squad-data")
+def get_squad_data(db: Session = Depends(readonly_session)) -> JSONResponse:
+    """Avanzamento dello storico giocatori e assenze per stagione (senza lanciare l'esame squadre)."""
+    from app.services.cecchino_v5.squad_exam import data_status
+
+    return JSONResponse(content=jsonable_encoder({"seasons": data_status(db)}))
