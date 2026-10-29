@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     admin_session_ttl_minutes: int = 720
     # Audit in sola lettura per il server MCP (dal 20/10/2026): vuota = audit spento.
     audit_api_token: str = ""
+    # Account utenti (dal 29/10/2026). Con auth_enforced=false il login funziona ma nulla e' bloccato:
+    # si accende dopo aver creato gli account, cosi' nessuno resta chiuso fuori.
+    auth_enforced: bool = False
+    user_session_days: int = 30
+    user_max_devices: int = 2
 
     prematch_refresh_minutes_before: int = 30
     prematch_refresh_window_minutes: int = 10

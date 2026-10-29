@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { AdminSessionGate } from './AdminSessionGate'
+import { TabGuard } from './auth/TabGuard'
 import { CompetitionProvider } from '../contexts/CompetitionContext'
 import { ModelSelectionProvider } from '../contexts/ModelSelectionContext'
 import { SidebarLayoutProvider } from '../contexts/SidebarLayoutContext'
@@ -52,7 +53,9 @@ export function Layout() {
               <MobileNavDrawer />
               <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
                 <div className={contentClass}>
-                  <Outlet />
+                  <TabGuard>
+                    <Outlet />
+                  </TabGuard>
                 </div>
               </main>
             </div>

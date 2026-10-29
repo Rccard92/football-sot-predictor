@@ -1,11 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { NAV_CECCHINO, NAV_MAIN, NAV_TECH } from '../config/navItems'
+import { visibleNavItems } from '../config/tabAccess'
+import { useAuth } from '../contexts/AuthContext'
+import { UserMenu } from './auth/UserMenu'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
 import { NavLinks } from './nav/NavLinks'
 
 export function MobileNavDrawer() {
   const { mobileOpen, closeMobile } = useSidebarLayout()
   const panelRef = useRef<HTMLElement>(null)
+  const { isAdmin, allowedTabs } = useAuth()
+  const cecchino = visibleNavItems(NAV_CECCHINO, isAdmin, allowedTabs)
+  const main = visibleNavItems(NAV_MAIN, isAdmin, allowedTabs)
+  const tech = visibleNavItems(NAV_TECH, isAdmin, allowedTabs)
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -60,27 +67,36 @@ export function MobileNavDrawer() {
         </div>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-          <div>
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Cecchino
-            </p>
-            <nav className="mt-0.5 flex flex-col gap-0.5">
-              <NavLinks items={NAV_CECCHINO} collapsed={false} onNavigate={closeMobile} />
-            </nav>
-          </div>
-          <div className="border-t border-slate-200/80 pt-3">
-            <nav className="flex flex-col gap-0.5">
-              <NavLinks items={NAV_MAIN} collapsed={false} onNavigate={closeMobile} />
-            </nav>
-          </div>
-          <div className="border-t border-slate-200/80 pt-3">
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Strumenti tecnici
-            </p>
-            <nav className="mt-0.5 flex flex-col gap-0.5">
-              <NavLinks items={NAV_TECH} collapsed={false} onNavigate={closeMobile} />
-            </nav>
-          </div>
+          {cecchino.length ? (
+            <div>
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Cecchino
+              </p>
+              <nav className="mt-0.5 flex flex-col gap-0.5">
+                <NavLinks items={cecchino} collapsed={false} onNavigate={closeMobile} />
+              </nav>
+            </div>
+          ) : null}
+          {main.length ? (
+            <div className="border-t border-slate-200/80 pt-3">
+              <nav className="flex flex-col gap-0.5">
+                <NavLinks items={main} collapsed={false} onNavigate={closeMobile} />
+              </nav>
+            </div>
+          ) : null}
+          {tech.length ? (
+            <div className="border-t border-slate-200/80 pt-3">
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Strumenti tecnici
+              </p>
+              <nav className="mt-0.5 flex flex-col gap-0.5">
+                <NavLinks items={tech} collapsed={false} onNavigate={closeMobile} />
+              </nav>
+            </div>
+          ) : null}
+        </div>
+        <div className="border-t border-slate-200/80 p-2">
+          <UserMenu collapsed={false} />
         </div>
       </aside>
     </div>

@@ -175,11 +175,36 @@ def current_session(request: Request, settings: Settings | None = None) -> Admin
         return None
 
 
+def _admin_user_session(request: Request, settings: Settings) -> AdminSession | None:
+    """Sessione di un account amministratore (cookie `cecchino_session`), se c'e'."""
+    from app.core.user_auth import USER_SESSION_COOKIE, resolve_principal
+
+    principal = getattr(request.state, "principal", None)
+    if principal is None and request.cookies.get(USER_SESSION_COOKIE):
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            principal = resolve_principal(request, db, settings)
+        finally:
+            db.close()
+    if principal is None or not principal.is_admin or principal.must_change_password:
+        return None
+    if principal.user is None:
+        return None  # accesso di emergenza: lo verifica gia' il cookie admin storico qui sotto
+    return AdminSession(expires_at=int(time.time()) + settings.admin_session_ttl_minutes * 60)
+
+
 def require_admin_session(
     request: Request,
     settings: Settings = Depends(get_settings),
 ) -> AdminSession:
-    """Dipendenza dei router admin RUN V2: 503 se non configurata, 401 se assente."""
+    """Dipendenza dei router admin RUN V2: 503 se non configurata, 401 se assente.
+
+    Dal 29/10/2026 vale anche la sessione di un account con ruolo amministratore."""
+    admin_user = _admin_user_session(request, settings)
+    if admin_user is not None:
+        return admin_user
     try:
         session = verify_session_token(request.cookies.get(SESSION_COOKIE_NAME) or "", settings)
     except AdminAuthNotConfigured:

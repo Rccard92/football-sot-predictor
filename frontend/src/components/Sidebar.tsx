@@ -1,5 +1,7 @@
-import { AdminSessionButton } from './AdminSessionGate'
 import { NAV_CECCHINO, NAV_MAIN, NAV_TECH } from '../config/navItems'
+import { visibleNavItems } from '../config/tabAccess'
+import { useAuth } from '../contexts/AuthContext'
+import { UserMenu } from './auth/UserMenu'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
 import { CompetitionSelector } from './CompetitionSelector'
 import { NavLinks } from './nav/NavLinks'
@@ -24,6 +26,11 @@ function ChevronIcon({ collapsed }: { collapsed: boolean }) {
 
 export function Sidebar() {
   const { collapsed, toggleCollapsed } = useSidebarLayout()
+  const { isAdmin, allowedTabs } = useAuth()
+  // solo le schede assegnate all'account (29/10/2026); le altre non compaiono
+  const cecchino = visibleNavItems(NAV_CECCHINO, isAdmin, allowedTabs)
+  const main = visibleNavItems(NAV_MAIN, isAdmin, allowedTabs)
+  const tech = visibleNavItems(NAV_TECH, isAdmin, allowedTabs)
 
   return (
     <aside
@@ -49,37 +56,43 @@ export function Sidebar() {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-        <div>
-          {!collapsed ? (
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Cecchino
-            </p>
-          ) : null}
-          <nav className="mt-0.5 flex flex-col gap-0.5">
-            <NavLinks items={NAV_CECCHINO} collapsed={collapsed} />
-          </nav>
-        </div>
+        {cecchino.length ? (
+          <div>
+            {!collapsed ? (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Cecchino
+              </p>
+            ) : null}
+            <nav className="mt-0.5 flex flex-col gap-0.5">
+              <NavLinks items={cecchino} collapsed={collapsed} />
+            </nav>
+          </div>
+        ) : null}
 
-        <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
-          <nav className="flex flex-col gap-0.5">
-            <NavLinks items={NAV_MAIN} collapsed={collapsed} />
-          </nav>
-        </div>
+        {main.length ? (
+          <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
+            <nav className="flex flex-col gap-0.5">
+              <NavLinks items={main} collapsed={collapsed} />
+            </nav>
+          </div>
+        ) : null}
 
-        <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
-          {!collapsed ? (
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Strumenti tecnici
-            </p>
-          ) : null}
-          <nav className="mt-0.5 flex flex-col gap-0.5">
-            <NavLinks items={NAV_TECH} collapsed={collapsed} />
-          </nav>
-        </div>
+        {tech.length ? (
+          <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
+            {!collapsed ? (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Strumenti tecnici
+              </p>
+            ) : null}
+            <nav className="mt-0.5 flex flex-col gap-0.5">
+              <NavLinks items={tech} collapsed={collapsed} />
+            </nav>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-t border-slate-200/80 p-2">
-        <AdminSessionButton collapsed={collapsed} />
+        <UserMenu collapsed={collapsed} />
         <button
           type="button"
           onClick={toggleCollapsed}
