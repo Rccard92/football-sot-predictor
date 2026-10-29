@@ -57,7 +57,7 @@ def _clean_fields(body: dict[str, Any], *, partial: bool) -> dict[str, Any]:
             out[key] = (value[:limit] or None) if key == "phone" else value[:limit]
     if "email" in body or not partial:
         email = normalize_email(body.get("email"))
-        if "@" not in email or "." not in email.split("@")[-1] or email == "admin":
+        if "@" not in email or "." not in email.split("@")[-1]:
             raise HTTPException(status_code=400, detail="Email non valida")
         out["email"] = email
     if "role" in body or not partial:

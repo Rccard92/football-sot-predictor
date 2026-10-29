@@ -2,7 +2,8 @@
 
 Punto d'ingresso: questi indirizzi non richiedono la sessione (il controllo d'accesso li salta).
 La password viaggia solo nel body e non viene mai scritta nei log.
-Accesso di emergenza: email `admin` + password admin storica (ADMIN_PASSWORD) = amministratore.
+Accesso di emergenza: l'email del proprietario (EMERGENCY_ADMIN_EMAIL) + password admin storica
+(ADMIN_PASSWORD) = amministratore. Se esiste anche un account con quella email, vale prima la sua password.
 """
 
 from __future__ import annotations
@@ -43,7 +44,18 @@ from app.models.app_user import AppLoginEvent, AppUser
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-EMERGENCY_LOGIN = "admin"
+EMERGENCY_LOGIN_FALLBACK = "admin"  # solo finche' EMERGENCY_ADMIN_EMAIL non e' impostata
+
+
+def _emergency_login(settings: Settings) -> str:
+    return normalize_email(settings.emergency_admin_email) or EMERGENCY_LOGIN_FALLBACK
+
+
+def _emergency_ok(password: str, settings: Settings) -> bool:
+    try:
+        return admin_session.verify_password(password, settings)
+    except admin_session.AdminAuthNotConfigured:
+        return False
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -98,26 +110,18 @@ def login(
     if not email or not password:
         return _error(400, "missing_credentials", "Inserisci email e password.")
 
-    if email == EMERGENCY_LOGIN:
-        try:
-            ok = admin_session.verify_password(password, settings)
-        except admin_session.AdminAuthNotConfigured:
-            ok = False
-        if not ok:
-            register_failed_login(*keys)
-            _log_event(db, request, email=email, success=False, reason="password_errata", user=None)
-            db.commit()
-            return _error(401, "invalid_credentials", "Email o password non corrette.")
+    user = db.execute(select(AppUser).where(AppUser.email == email)).scalar_one_or_none()
+    account_ok = user is not None and verify_password_hash(password, user.password_hash)
+    if not account_ok and email == _emergency_login(settings) and _emergency_ok(password, settings):
         reset_failed_logins(*keys)
-        _log_event(db, request, email=email, success=True, reason="emergenza", user=None)
+        _log_event(db, request, email=email, success=True, reason="emergenza", user=user)
         db.commit()
         token, _ = admin_session.create_session_token(settings)
         response = JSONResponse(content={"authenticated": True, "kind": "emergency_admin"})
         admin_session.set_session_cookie(response, token, settings)
         return response
 
-    user = db.execute(select(AppUser).where(AppUser.email == email)).scalar_one_or_none()
-    if user is None or not verify_password_hash(password, user.password_hash):
+    if not account_ok:
         register_failed_login(*keys)
         reason = "utente_sconosciuto" if user is None else "password_errata"
         _log_event(db, request, email=email, success=False, reason=reason, user=user)

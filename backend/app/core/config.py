@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     # Account utenti (dal 29/10/2026). Con auth_enforced=false il login funziona ma nulla e' bloccato:
     # si accende dopo aver creato gli account, cosi' nessuno resta chiuso fuori.
     auth_enforced: bool = False
+    # email dell'accesso di emergenza (con ADMIN_PASSWORD); vuota = si usa la parola "admin"
+    emergency_admin_email: str = ""
     user_session_days: int = 30
     user_max_devices: int = 2
 
