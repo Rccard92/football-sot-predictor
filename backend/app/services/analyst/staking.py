@@ -107,6 +107,11 @@ def normalize_settings(method: str, settings: dict[str, Any] | None) -> dict[str
     return out
 
 
+def _ceil(x: float) -> float:
+    """Arrotondamento per eccesso come CEILING di Excel, senza i residui della virgola mobile (33/0,2 = 165)."""
+    return float(math.ceil(round(x, 9)))
+
+
 def _profit(bet: SettledBet) -> float:
     if bet.outcome == WON:
         return bet.stake * bet.quota - bet.stake
@@ -135,7 +140,7 @@ def _cecchino_next(state: CycleState, quota: float) -> float | None:
         plan = _cecchino_plan(state.settings)
         if quota >= plan["ref_quota"]:
             return float(plan["avg_stake"])
-        return float(math.ceil(plan["avg_win"] / (quota - 1)))
+        return _ceil(plan["avg_win"] / (quota - 1))
     need, can_lose = info["wins_needed"], info["losses_allowed"]
     if need <= 0 or need + can_lose <= 0:
         return None
@@ -146,7 +151,7 @@ def _cecchino_next(state: CycleState, quota: float) -> float | None:
         return float(round(ab))
     if quota > ref:
         return float(round(ac / (quota - 1)))
-    return float(math.ceil(ac / (quota - 1)))
+    return _ceil(ac / (quota - 1))
 
 
 def _cecchino_state(state: CycleState) -> None:
@@ -189,7 +194,7 @@ def _ceccxino_next(state: CycleState, quota: float) -> float | None:
         else:
             stake = last.stake + base / 2
     stake = max(stake, base)
-    return round(stake, 2) if s["decimals"] else float(math.ceil(stake - 1e-9))
+    return round(stake, 2) if s["decimals"] else _ceil(stake)
 
 
 def _ceccxino_state(state: CycleState) -> None:
