@@ -6,7 +6,13 @@
   copia del database non basta per entrare. Scade dopo `user_session_days` giorni; al massimo
   `user_max_devices` sessioni attive per account (la piu' vecchia viene scollegata).
 - Chi chiama (`Principal`): utente con sessione, accesso di emergenza con la password admin storica
-  (cookie `cecchino_admin_session`, vale come amministratore), oppure la chiave di audit dell'MCP (solo GET).
+  (cookie `cecchino_admin_session`, vale come amministratore), la chiave API personale di un account
+  (solo letture) oppure la chiave di audit dell'MCP (solo GET).
+- Chiave API (dal 30/10/2026, per Giovanni e il suo assistente): `Authorization: Bearer cck_...`,
+  `X-Api-Key: cck_...` o `?api_key=cck_...` nell'indirizzo. Decisione dell'utente (30/10/2026): SOLO LETTURA,
+  cosi' nessun programma puo' modificare o lanciare qualcosa. Vale solo per GET sulle schede dell'account;
+  non apre le letture protette dalla sessione admin (quelle che chiamano API esterne a pagamento) ne' la
+  gestione utenti.
 """
 
 from __future__ import annotations
@@ -209,6 +215,8 @@ def clear_user_session_cookie(response: Response, settings: Settings | None = No
 KIND_USER = "user"
 KIND_EMERGENCY_ADMIN = "emergency_admin"
 KIND_AUDIT = "audit"
+KIND_API_KEY = "api_key"
+API_KEY_PREFIX = "cck_"
 
 
 @dataclass
@@ -237,6 +245,42 @@ def _bearer(request: Request) -> str:
     return header[7:].strip() if header.lower().startswith("bearer ") else ""
 
 
+def generate_api_key() -> str:
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
+def api_key_hash(key: str) -> str:
+    return _token_hash(key)
+
+
+def api_key_from_request(request: Request) -> str:
+    """La chiave API passata nella richiesta (intestazione o indirizzo), se c'e'."""
+    for given in (
+        _bearer(request),
+        (request.headers.get("x-api-key") or "").strip(),
+        (request.query_params.get("api_key") or "").strip(),
+    ):
+        if given.startswith(API_KEY_PREFIX):
+            return given
+    return ""
+
+
+def resolve_api_key(db: Session, key: str) -> AppUser | None:
+    if not key:
+        return None
+    user = db.execute(select(AppUser).where(AppUser.api_key_hash == _token_hash(key))).scalar_one_or_none()
+    if user is None or not user.is_active:
+        return None
+    now = _now()
+    if user.api_key_last_used_at is None or now - _aware(user.api_key_last_used_at) > _TOUCH_EVERY:
+        user.api_key_last_used_at = now
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001 - l'ultimo utilizzo e' solo informativo
+            db.rollback()
+    return user
+
+
 def resolve_principal(request: Request, db: Session | None, settings: Settings | None = None) -> Principal | None:
     """Chi sta chiamando, oppure None. Il database si apre solo se c'e' un cookie di sessione utente."""
     settings = settings or get_settings()
@@ -259,6 +303,30 @@ def resolve_principal(request: Request, db: Session | None, settings: Settings |
 
     if current_session(request, settings) is not None:
         return Principal(kind=KIND_EMERGENCY_ADMIN, is_admin=True)
+
+    key = api_key_from_request(request)
+    if key:
+        if request.method.upper() not in ("GET", "HEAD"):
+            return None  # chiave API = solo lettura: qualunque scrittura risponde 401
+        user = None
+        if db is not None:
+            user = resolve_api_key(db, key)
+        else:
+            from app.core.database import SessionLocal
+
+            own = SessionLocal()
+            try:
+                user = resolve_api_key(own, key)
+                if user is not None:
+                    own.expunge(user)
+            finally:
+                own.close()
+        if user is None:
+            return None
+        # niente obbligo di cambio password: la chiave la genera l'amministratore e vale da sola
+        return Principal(
+            kind=KIND_API_KEY, is_admin=user.role == ROLE_ADMIN, tabs=frozenset(user.tabs_json or []), user=user
+        )
 
     audit = (settings.audit_api_token or "").strip()
     given = _bearer(request)

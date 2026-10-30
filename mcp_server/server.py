@@ -4,16 +4,22 @@ Gira come servizio Railway separato. Espone strumenti MCP su HTTP (streamable HT
 chiama il backend:
 - /api/audit/*  con la chiave AUDIT_API_TOKEN (letture in transazione READ ONLY, vedi backend);
 - /api/...      solo GET, per leggere tutto quello che vede la dashboard.
-Accesso al server protetto da MCP_ACCESS_TOKEN (header `Authorization: Bearer <token>`).
+Accesso al server protetto da MCP_ACCESS_TOKEN (header `Authorization: Bearer <token>`) oppure, dal
+30/10/2026, dalla chiave API personale di un account del tool (`cck_...`, generata dal pannello utenti e
+controllata sul backend). Con la chiave personale: niente SQL libero (vedrebbe anche la tabella degli
+account) e le letture della dashboard passano con la chiave stessa, quindi con i permessi di quell'account.
 Nessuno strumento puo' scrivere: niente POST/PUT/DELETE verso il backend, a parte la lettura SQL di
 audit che il backend esegue in sola lettura.
 """
 
 from __future__ import annotations
 
+import contextvars
+import hashlib
 import hmac
 import json
 import os
+import time
 from typing import Any
 
 import httpx
@@ -27,6 +33,11 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "").rstrip("/")
 AUDIT_API_TOKEN = os.environ.get("AUDIT_API_TOKEN", "")
 MCP_ACCESS_TOKEN = os.environ.get("MCP_ACCESS_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8080"))
+API_KEY_PREFIX = "cck_"
+_KEY_CHECK_TTL = 60.0  # una chiave revocata smette di funzionare entro un minuto
+_key_cache: dict[str, tuple[bool, float]] = {}
+# chiave personale di chi sta chiamando ("" = proprietario con MCP_ACCESS_TOKEN)
+_caller_key: contextvars.ContextVar[str | None] = contextvars.ContextVar("caller_key", default=None)
 MAX_CHARS = 150_000  # oltre, la risposta viene tagliata (con avviso) per non saturare il contesto
 
 _INSTRUCTIONS = (
@@ -93,6 +104,8 @@ def cecchino_sql(sql: str, limit: int = 500) -> str:
     """Esegue UNA query SQL di sola lettura (SELECT/WITH/EXPLAIN) sul database Postgres del Cecchino.
     Gira in una transazione READ ONLY con timeout di 20 s; massimo 2000 righe. Usa cecchino_tables e
     cecchino_table_columns per conoscere lo schema."""
+    if _caller_key.get() != "":
+        return _shape({"errore": "SQL libero non disponibile con la chiave personale: usa cecchino_get e gli altri strumenti"})
     with _client() as c:
         r = c.post("/api/audit/sql", json={"sql": sql, "limit": limit},
                    headers={"Authorization": f"Bearer {AUDIT_API_TOKEN}"})
@@ -147,8 +160,10 @@ def cecchino_get(path: str, query: dict[str, Any] | None = None) -> str:
     if not p.startswith("/api/") or p.startswith("/api/admin/auth"):
         return _shape({"errore": "percorso non ammesso: serve /api/... (escluso /api/admin/auth)"})
     with _client() as c:
-        # la chiave di audit vale come accesso in sola lettura anche con il login del tool attivo (29/10/2026)
-        r = c.get(p, params=query or None, headers={"Authorization": f"Bearer {AUDIT_API_TOKEN}"})
+        # la chiave di audit vale come accesso in sola lettura anche con il login del tool attivo (29/10/2026);
+        # chi entra con la chiave personale legge con quella (stessi permessi del suo account, solo GET)
+        token = _caller_key.get() or AUDIT_API_TOKEN
+        r = c.get(p, params=query or None, headers={"Authorization": f"Bearer {token}"})
     if r.status_code >= 400:
         return _shape({"errore": r.status_code, "dettaglio": _safe_json(r)})
     if "application/json" not in r.headers.get("content-type", ""):
@@ -156,17 +171,43 @@ def cecchino_get(path: str, query: dict[str, Any] | None = None) -> str:
     return _shape(r.json())
 
 
+async def _api_key_valid(key: str) -> bool:
+    """Chiave personale ancora valida? La chiede al backend (/api/auth/me), con un minuto di memoria."""
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    cached = _key_cache.get(digest)
+    if cached and time.monotonic() - cached[1] < _KEY_CHECK_TTL:
+        return cached[0]
+    try:
+        async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=15.0) as c:
+            r = await c.get("/api/auth/me", headers={"Authorization": f"Bearer {key}"})
+        body = r.json() if r.status_code == 200 else {}
+        ok = bool(body.get("authenticated")) and body.get("kind") == "api_key"
+    except (httpx.HTTPError, ValueError):
+        return False  # backend non raggiungibile: non si entra, ma non si memorizza il rifiuto
+    _key_cache[digest] = (ok, time.monotonic())
+    return ok
+
+
 class BearerAuth(BaseHTTPMiddleware):
-    """Accesso al server MCP solo con MCP_ACCESS_TOKEN; /health resta libero per il controllo di Railway."""
+    """Accesso al server MCP con MCP_ACCESS_TOKEN o con una chiave API personale valida; /health resta
+    libero per il controllo di Railway."""
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         if request.url.path == "/health":
             return JSONResponse({"status": "ok", "backend": bool(BACKEND_URL), "audit": bool(AUDIT_API_TOKEN)})
         expected = MCP_ACCESS_TOKEN.strip()
         given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-        if not expected or not given or not hmac.compare_digest(given.encode(), expected.encode()):
+        if expected and given and hmac.compare_digest(given.encode(), expected.encode()):
+            caller = ""
+        elif given.startswith(API_KEY_PREFIX) and await _api_key_valid(given):
+            caller = given
+        else:
             return JSONResponse({"error": "non autorizzato"}, status_code=401)
-        return await call_next(request)
+        reset = _caller_key.set(caller)
+        try:
+            return await call_next(request)
+        finally:
+            _caller_key.reset(reset)
 
 
 def build_app():

@@ -9,7 +9,9 @@ import {
   listTabs,
   listUserSessions,
   listUsers,
+  createUserApiKey,
   resetUserPassword,
+  revokeUserApiKey,
   revokeUserSessions,
   updateUser,
   type AppUser,
@@ -256,6 +258,58 @@ function UserActivity({ user }: { user: AppUser }) {
 }
 
 /** Utenti e accessi (dal 29/10/2026): creazione con password generata, schede visibili, revoca, storico. */
+// server MCP in sola lettura (servizio Railway cecchino-mcp): accetta anche le chiavi personali
+const MCP_URL = 'https://cecchino-mcp-staging.up.railway.app/mcp'
+
+/** Chiave API: si vede solo qui, una volta. Le istruzioni sono per chi la usera' da un programma o da Claude. */
+function ApiKeyBox({ user, apiKey, onClose }: { user: AppUser; apiKey: string; onClose: () => void }) {
+  const base = window.location.origin
+  const message = [
+    `Chiave API del Cecchino per ${user.first_name} ${user.last_name} (SOLO LETTURA: non può modificare né lanciare nulla):`,
+    apiKey,
+    '',
+    "Da programma, nell'intestazione della richiesta:",
+    `curl -H "Authorization: Bearer ${apiKey}" "${base}/api/cecchino/today/days?timezone=Europe/Rome"`,
+    '',
+    "Oppure in fondo all'indirizzo:",
+    `${base}/api/cecchino/today/days?timezone=Europe/Rome&api_key=${apiKey}`,
+    '',
+    `Server MCP per Claude: ${MCP_URL}`,
+    `con l'intestazione Authorization: Bearer ${apiKey}`,
+    '',
+    "Non condividerla. Se finisce in giro, l'amministratore la revoca o ne genera una nuova.",
+  ].join('\n')
+  const copy = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.success('Copiato'),
+      () => toast.error('Copia non riuscita: seleziona il testo a mano'),
+    )
+  }
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+      <p className="text-sm font-semibold text-indigo-900">
+        Chiave API per {user.first_name} {user.last_name}
+      </p>
+      <p className="mt-1 text-[13px] text-indigo-800">
+        La vedi solo adesso: copiala e mandala. Vale solo in lettura (dati, pagine e MCP) finché non la revochi o ne generi una nuova.
+      </p>
+      <p className="mt-2 break-all font-mono text-[13px] text-slate-900">{apiKey}</p>
+      <pre className="mt-2 whitespace-pre-wrap break-all rounded-lg bg-white p-3 text-[13px] text-slate-700">{message}</pre>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" className={btn} onClick={() => copy(message)}>
+          Copia istruzioni
+        </button>
+        <button type="button" className={btn} onClick={() => copy(apiKey)}>
+          Copia solo chiave
+        </button>
+        <button type="button" className={btn} onClick={onClose}>
+          Fatto
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function UsersAdminPanel() {
   const { me } = useAuth()
   const [users, setUsers] = useState<AppUser[] | null>(null)
@@ -265,6 +319,7 @@ export function UsersAdminPanel() {
   const [editing, setEditing] = useState<AppUser | 'new' | null>(null)
   const [busy, setBusy] = useState(false)
   const [issued, setIssued] = useState<{ user: AppUser; password: string } | null>(null)
+  const [issuedKey, setIssuedKey] = useState<{ user: AppUser; apiKey: string } | null>(null)
   const [openActivity, setOpenActivity] = useState<number | null>(null)
 
   const fetchAll = useCallback(
@@ -335,6 +390,21 @@ export function UsersAdminPanel() {
     }
   }
 
+  const newApiKey = async (user: AppUser) => {
+    const what = user.has_api_key ? 'una nuova chiave API (quella attuale smette subito di funzionare)' : 'una chiave API'
+    if (!window.confirm(`Generare ${what} per ${user.first_name} ${user.last_name}? Vale solo in lettura.`)) return
+    setBusy(true)
+    try {
+      const res = await createUserApiKey(user.id)
+      setIssuedKey({ user: res.user, apiKey: res.api_key })
+      await load()
+    } catch (e) {
+      toast.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`} data-testid="users-admin-panel">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -352,6 +422,7 @@ export function UsersAdminPanel() {
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
       {issued ? <PasswordBox user={issued.user} password={issued.password} onClose={() => setIssued(null)} /> : null}
+      {issuedKey ? <ApiKeyBox user={issuedKey.user} apiKey={issuedKey.apiKey} onClose={() => setIssuedKey(null)} /> : null}
       {editing ? (
         <UserForm
           key={editing === 'new' ? 'new' : editing.id}
@@ -408,6 +479,11 @@ export function UsersAdminPanel() {
                       Ultimo accesso {fmt(u.last_login_at)} · dispositivi collegati {u.active_devices ?? 0}/2
                     </p>
                     <p className="text-[13px] text-slate-500">{tabsText}</p>
+                    {u.has_api_key ? (
+                      <p className="text-[13px] text-indigo-700">
+                        Chiave API attiva dal {fmt(u.api_key_created_at)} · ultimo uso {fmt(u.api_key_last_used_at)}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className={btn} onClick={() => setEditing(u)} disabled={busy || editing !== null}>
@@ -416,6 +492,25 @@ export function UsersAdminPanel() {
                     <button type="button" className={btn} onClick={() => setOpenActivity(openActivity === u.id ? null : u.id)}>
                       {openActivity === u.id ? 'Chiudi accessi' : 'Accessi'}
                     </button>
+                    {u.is_active ? (
+                      <button type="button" className={btn} onClick={() => void newApiKey(u)} disabled={busy}>
+                        {u.has_api_key ? 'Nuova chiave API' : 'Chiave API'}
+                      </button>
+                    ) : null}
+                    {u.has_api_key ? (
+                      <button
+                        type="button"
+                        className={`${btn} text-rose-700`}
+                        onClick={() => {
+                          if (window.confirm(`Revocare la chiave API di ${u.first_name} ${u.last_name}? Smette subito di funzionare.`)) {
+                            void run(() => revokeUserApiKey(u.id), 'Chiave API revocata')
+                          }
+                        }}
+                        disabled={busy}
+                      >
+                        Revoca chiave
+                      </button>
+                    ) : null}
                     {u.id !== selfId ? (
                       <>
                         <button type="button" className={btn} onClick={() => void resetPassword(u)} disabled={busy}>
