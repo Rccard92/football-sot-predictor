@@ -60,6 +60,8 @@ export type JournalMeta = {
   methods: { key: MethodKey; label: string; defaults: Record<string, number | boolean>; max_bets: number }[]
   can_write: boolean
   is_admin: boolean
+  /** Account a cui vanno le giocate di chi e' collegato (null finche' l'accesso di emergenza non ha scritto). */
+  user_id: number | null
 }
 
 /** Cosa diceva il tool quando la giocata e' stata scelta (dalla pagina di origine). */
