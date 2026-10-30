@@ -2,11 +2,14 @@
 
 Chi vede cosa (decisione dell'utente, 30/10/2026): un analista vede e modifica solo le sue giocate e
 progressioni; gli amministratori vedono tutto (in sola lettura per i diari degli altri).
-Per scrivere serve un account: l'accesso di emergenza puo' solo leggere.
+Anche gli amministratori possono scrivere nel proprio diario (richiesta dell'utente, 30/10/2026): chi entra
+con l'accesso di emergenza scrive a nome di un account amministratore con l'email di emergenza, creato al
+primo salvataggio se non esiste ancora.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import io
 from datetime import date, datetime, timezone
 from typing import Any
@@ -17,10 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.access_control import require_principal
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.user_auth import Principal
+from app.core.user_auth import KIND_EMERGENCY_ADMIN, Principal, generate_password, hash_password, normalize_email
 from app.models.analyst_journal import CYCLE_CLOSED, CYCLE_OPEN, ENTRY_PENDING, AnalystCycle, AnalystEntry
-from app.models.app_user import AppUser
+from app.models.app_user import ROLE_ADMIN, AppUser
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.analyst.journal import (
     CHECKLIST,
@@ -57,10 +61,44 @@ def _scope(principal: Principal, user_id: int | None) -> int | None:
     return principal.user.id
 
 
-def _writer(principal: Principal) -> AppUser:
-    if principal.user is None:
-        raise HTTPException(status_code=403, detail="Per scrivere nel diario serve un account (non l'accesso di emergenza)")
-    return principal.user
+def _emergency_account(db: Session) -> AppUser | None:
+    email = normalize_email(get_settings().emergency_admin_email)
+    if "@" not in email:
+        return None
+    user = db.execute(select(AppUser).where(AppUser.email == email)).scalar_one_or_none()
+    return user if user is None or user.is_active else None
+
+
+def journal_principal(principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> Principal:
+    """L'accesso di emergenza usa l'account con l'email di emergenza, se esiste (per vedere e modificare il suo diario)."""
+    if principal.kind == KIND_EMERGENCY_ADMIN and principal.user is None:
+        user = _emergency_account(db)
+        if user is not None:
+            return dataclasses.replace(principal, user=user)
+    return principal
+
+
+def _writer(principal: Principal, db: Session) -> AppUser:
+    if principal.user is not None:
+        return principal.user
+    if principal.kind == KIND_EMERGENCY_ADMIN:
+        email = normalize_email(get_settings().emergency_admin_email)
+        if "@" in email and db.execute(select(AppUser.id).where(AppUser.email == email)).first() is None:
+            # Password a caso mai mostrata: si entra sempre con la password di emergenza
+            # (o la si reimposta dal pannello utenti per farne un account normale).
+            user = AppUser(
+                email=email,
+                first_name="Amministratore",
+                last_name="(emergenza)",
+                role=ROLE_ADMIN,
+                password_hash=hash_password(generate_password()),
+                must_change_password=True,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
+            return user
+    raise HTTPException(status_code=403, detail="Per scrivere nel diario serve un account attivo")
 
 
 def _own_entry(db: Session, principal: Principal, entry_id: int) -> AnalystEntry:
@@ -129,7 +167,7 @@ def _entries_query(principal: Principal, *, user_id, date_from, date_to, cycle_i
 
 
 @router.get("/meta")
-def meta(principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+def meta(principal: Principal = Depends(journal_principal)) -> dict[str, Any]:
     return {
         "markets": MARKETS,
         "checklist": CHECKLIST,
@@ -137,13 +175,14 @@ def meta(principal: Principal = Depends(require_principal)) -> dict[str, Any]:
         "methods": [
             {"key": m, "label": METHOD_LABELS[m], "defaults": DEFAULTS[m], "max_bets": MAX_BETS[m]} for m in METHODS
         ],
-        "can_write": principal.user is not None,
+        "can_write": principal.user is not None or principal.kind == KIND_EMERGENCY_ADMIN,
         "is_admin": principal.is_admin,
+        "user_id": principal.user.id if principal.user else None,
     }
 
 
 @router.get("/analysts")
-def analysts(principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+def analysts(principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Per l'amministratore: chi ha un diario (per il filtro)."""
     if not principal.is_admin:
         me = principal.user
@@ -161,7 +200,7 @@ def analysts(principal: Principal = Depends(require_principal), db: Session = De
 def fixture_info(
     today_fixture_id: int,
     market_key: str | None = None,
-    principal: Principal = Depends(require_principal),
+    principal: Principal = Depends(journal_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fx = db.get(CecchinoTodayFixture, today_fixture_id)
@@ -206,7 +245,7 @@ def list_entries(
     user_id: int | None = None,
     cycle_id: int | None = None,
     outcome: str | None = None,
-    principal: Principal = Depends(require_principal),
+    principal: Principal = Depends(journal_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     settle_entries(db, user_id=_scope(principal, user_id))
@@ -219,8 +258,8 @@ def list_entries(
 
 
 @router.post("/entries")
-def create_entry(body: dict[str, Any], principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = _writer(principal)
+def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = _writer(principal, db)
     body = body or {}
     try:
         fixture_id = int(body.get("today_fixture_id"))
@@ -280,7 +319,7 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(require_pr
 
 
 @router.patch("/entries/{entry_id}")
-def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     entry = _own_entry(db, principal, entry_id)
     body = body or {}
     locked = is_locked(entry)
@@ -322,7 +361,7 @@ def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Dep
 
 
 @router.delete("/entries/{entry_id}")
-def delete_entry(entry_id: int, principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+def delete_entry(entry_id: int, principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Solo prima del calcio d'inizio (per correggere un errore): dopo, la giocata resta nello storico."""
     entry = _own_entry(db, principal, entry_id)
     if is_locked(entry):
@@ -339,7 +378,7 @@ def delete_entry(entry_id: int, principal: Principal = Depends(require_principal
 def list_cycles(
     user_id: int | None = None,
     status: str | None = None,
-    principal: Principal = Depends(require_principal),
+    principal: Principal = Depends(journal_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope = _scope(principal, user_id)
@@ -355,15 +394,15 @@ def list_cycles(
 
 
 @router.get("/cycles/{cycle_id}")
-def get_cycle(cycle_id: int, quota: float | None = None, principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_cycle(cycle_id: int, quota: float | None = None, principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     cycle = _visible_cycle(db, principal, cycle_id)
     settle_entries(db, user_id=cycle.user_id)
     return {"cycle": cycle_payload(db, cycle, quota=quota), "entries": [entry_payload(e) for e in cycle_entries(db, cycle)]}
 
 
 @router.post("/cycles")
-def create_cycle(body: dict[str, Any], principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = _writer(principal)
+def create_cycle(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = _writer(principal, db)
     body = body or {}
     method = str(body.get("method") or "")
     if method not in METHODS:
@@ -381,7 +420,7 @@ def create_cycle(body: dict[str, Any], principal: Principal = Depends(require_pr
 
 
 @router.patch("/cycles/{cycle_id}")
-def update_cycle(cycle_id: int, body: dict[str, Any], principal: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_cycle(cycle_id: int, body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     cycle = _own_cycle(db, principal, cycle_id)
     body = body or {}
     if "name" in body:
@@ -413,7 +452,7 @@ def reports(
     date_from: date | None = None,
     date_to: date | None = None,
     user_id: int | None = None,
-    principal: Principal = Depends(require_principal),
+    principal: Principal = Depends(journal_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     settle_entries(db, user_id=_scope(principal, user_id))
@@ -431,7 +470,7 @@ def export_xlsx(
     date_from: date | None = None,
     date_to: date | None = None,
     user_id: int | None = None,
-    principal: Principal = Depends(require_principal),
+    principal: Principal = Depends(journal_principal),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Le giocate nello schema del foglio "GARE ATTUALE KW", piu' puntata, profitto e scheda."""

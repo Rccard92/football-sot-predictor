@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ChecklistEditor } from '../components/analyst/ChecklistEditor'
-import { useAuth } from '../contexts/AuthContext'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
 import { AdminHttpError } from '../lib/api'
 import {
@@ -95,10 +94,14 @@ export function DiarioAnalisiPage() {
   const [analysts, setAnalysts] = useState<{ id: number; name: string }[]>([])
   const [userId, setUserId] = useState<number | null>(null)
 
-  useEffect(() => {
+  // ricaricata dopo un salvataggio: con l'accesso di emergenza l'account nasce alla prima scrittura
+  const reloadMeta = useCallback(() => {
     getJournalMeta().then(setMeta, () => undefined)
-    listAnalysts().then((r) => setAnalysts(r.analysts), () => undefined)
   }, [])
+  useEffect(() => {
+    reloadMeta()
+    listAnalysts().then((r) => setAnalysts(r.analysts), () => undefined)
+  }, [reloadMeta])
 
   const filters = useMemo<Filters>(() => ({ ...periodFilters(period), user_id: userId }), [period, userId])
 
@@ -163,7 +166,7 @@ export function DiarioAnalisiPage() {
       </div>
 
       {tab === 'giocate' && meta ? <EntriesTab meta={meta} filters={filters} /> : null}
-      {tab === 'progressioni' && meta ? <CyclesTab meta={meta} userId={userId} /> : null}
+      {tab === 'progressioni' && meta ? <CyclesTab meta={meta} userId={userId} onSaved={reloadMeta} /> : null}
       {tab === 'report' ? <ReportTab filters={filters} /> : null}
     </div>
   )
@@ -263,9 +266,8 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
 }
 
 function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry; meta: JournalMeta; onClose: () => void; onChanged: () => void }) {
-  const { me } = useAuth()
   // solo il proprietario modifica; l'amministratore legge i diari degli altri
-  const mine = Boolean(meta.can_write && me?.user && me.user.id === entry.user_id)
+  const mine = meta.can_write && meta.user_id === entry.user_id
   const [checklist, setChecklist] = useState<Checklist>(entry.checklist)
   const [analysisNote, setAnalysisNote] = useState(entry.analysis_note ?? '')
   const [notes, setNotes] = useState(entry.notes ?? '')
@@ -427,7 +429,7 @@ const SETTING_FIELDS: Record<MethodKey, { key: string; label: string; kind: 'eur
   ],
 }
 
-function CyclesTab({ meta, userId }: { meta: JournalMeta; userId: number | null }) {
+function CyclesTab({ meta, userId, onSaved }: { meta: JournalMeta; userId: number | null; onSaved: () => void }) {
   const [cycles, setCycles] = useState<Cycle[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -466,6 +468,7 @@ function CyclesTab({ meta, userId }: { meta: JournalMeta; userId: number | null 
           onCancel={() => setCreating(false)}
           onCreated={() => {
             setCreating(false)
+            if (meta.user_id === null) onSaved()
             void fetchCycles()
           }}
         />
@@ -478,7 +481,7 @@ function CyclesTab({ meta, userId }: { meta: JournalMeta; userId: number | null 
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {cycles.map((c) => (
-            <CycleCard key={c.id} cycle={c} canWrite={meta.can_write} onChanged={() => void fetchCycles()} />
+            <CycleCard key={c.id} cycle={c} canWrite={meta.can_write && c.user_id === meta.user_id} onChanged={() => void fetchCycles()} />
           ))}
         </div>
       )}

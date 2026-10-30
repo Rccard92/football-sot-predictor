@@ -32,11 +32,11 @@ type Props = {
   compact?: boolean
 }
 
-/** "Aggiungi al diario": visibile solo a chi ha la scheda Diario analisi e un account. */
+/** "Aggiungi al diario": visibile a chi ha la scheda Diario analisi (analisti e amministratori, anche con l'accesso di emergenza). */
 export function AddToJournalButton({ todayFixtureId, source, marketKey, quota, tool, className, compact }: Props) {
   const auth = useOptionalAuth()
   const [open, setOpen] = useState(false)
-  if (!auth?.me?.user || !auth.canSee(JOURNAL_TAB)) return null
+  if (!auth?.me || !auth.canSee(JOURNAL_TAB)) return null
   return (
     <>
       <button
