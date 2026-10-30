@@ -2,6 +2,8 @@
 
 Gli account non si cancellano mai: si disattivano (la persona esce subito da tutti i dispositivi) e si
 possono riattivare; lo storico degli accessi resta.
+La gestione utenti si fa solo dal browser: con una chiave API non si creano account ne' chiavi, cosi'
+una chiave finita in mani sbagliate si spegne davvero rigenerandola o revocandola.
 """
 
 from __future__ import annotations
@@ -16,9 +18,12 @@ from sqlalchemy.orm import Session
 from app.core.access_control import TAB_CATALOG, require_admin_principal
 from app.core.database import get_db
 from app.core.user_auth import (
+    KIND_API_KEY,
     Principal,
     _aware,
     active_sessions,
+    api_key_hash,
+    generate_api_key,
     generate_password,
     hash_password,
     normalize_email,
@@ -26,7 +31,14 @@ from app.core.user_auth import (
 )
 from app.models.app_user import ROLE_ADMIN, ROLE_USER, AppLoginEvent, AppUser, AppUserSession, user_payload
 
-router = APIRouter(prefix="/admin/users", tags=["admin-users"], dependencies=[Depends(require_admin_principal)])
+
+def _no_api_key(principal: Principal = Depends(require_admin_principal)) -> Principal:
+    if principal.kind == KIND_API_KEY:
+        raise HTTPException(status_code=403, detail="La gestione utenti si fa dal pannello Admin, non con la chiave API")
+    return principal
+
+
+router = APIRouter(prefix="/admin/users", tags=["admin-users"], dependencies=[Depends(_no_api_key)])
 
 _TAB_KEYS = {t["key"] for t in TAB_CATALOG}
 
@@ -137,6 +149,28 @@ def reset_password(user_id: int, request: Request, db: Session = Depends(get_db)
     revoke_user_sessions(db, user.id, "password")
     db.commit()
     return {"user": _with_activity(db, user), "password": password}
+
+
+@router.post("/{user_id}/api-key")
+def create_api_key(user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Nuova chiave API (quella vecchia smette subito di funzionare). Mostrata una volta sola."""
+    user = _get_user(db, user_id)
+    key = generate_api_key()
+    user.api_key_hash = api_key_hash(key)
+    user.api_key_created_at = _now()
+    user.api_key_last_used_at = None
+    db.commit()
+    return {"user": _with_activity(db, user), "api_key": key}
+
+
+@router.delete("/{user_id}/api-key")
+def revoke_api_key(user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = _get_user(db, user_id)
+    user.api_key_hash = None
+    user.api_key_created_at = None
+    user.api_key_last_used_at = None
+    db.commit()
+    return {"user": _with_activity(db, user)}
 
 
 @router.post("/{user_id}/deactivate")

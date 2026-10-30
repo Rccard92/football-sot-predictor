@@ -190,6 +190,8 @@ def _admin_user_session(request: Request, settings: Settings) -> AdminSession | 
             db.close()
     if principal is None or not principal.is_admin or principal.must_change_password:
         return None
+    if principal.kind == "api_key":
+        return None  # la chiave API e' solo lettura: non apre le operazioni da amministratore (30/10/2026)
     if principal.user is None:
         return None  # accesso di emergenza: lo verifica gia' il cookie admin storico qui sotto
     return AdminSession(expires_at=int(time.time()) + settings.admin_session_ttl_minutes * 60)

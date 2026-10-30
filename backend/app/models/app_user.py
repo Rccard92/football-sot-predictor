@@ -41,6 +41,11 @@ class AppUser(Base, TimestampMixin):
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # chiave API personale (dal 30/10/2026): stessi permessi dell'account, per programmi e assistenti;
+    # nel database solo lo SHA-256, mostrata una volta sola quando l'amministratore la genera
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    api_key_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AppUserSession(Base):
@@ -85,4 +90,7 @@ def user_payload(user: AppUser) -> dict[str, Any]:
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        "has_api_key": bool(user.api_key_hash),
+        "api_key_created_at": user.api_key_created_at.isoformat() if user.api_key_created_at else None,
+        "api_key_last_used_at": user.api_key_last_used_at.isoformat() if user.api_key_last_used_at else None,
     }

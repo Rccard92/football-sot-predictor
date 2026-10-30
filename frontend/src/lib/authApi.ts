@@ -58,6 +58,10 @@ export type AppUser = {
   created_at: string | null
   active_devices?: number
   last_seen_at?: string | null
+  /** Chiave API personale (dal 30/10/2026): solo lettura, per programmi e assistenti (anche via MCP). */
+  has_api_key?: boolean
+  api_key_created_at?: string | null
+  api_key_last_used_at?: string | null
 }
 
 export type AuthMe = {
@@ -144,6 +148,14 @@ export function updateUser(id: number, input: Partial<UserInput>): Promise<{ use
 
 export function resetUserPassword(id: number): Promise<{ user: AppUser; password: string }> {
   return request(`/api/admin/users/${id}/reset-password`, { method: 'POST' })
+}
+
+export function createUserApiKey(id: number): Promise<{ user: AppUser; api_key: string }> {
+  return request(`/api/admin/users/${id}/api-key`, { method: 'POST' })
+}
+
+export function revokeUserApiKey(id: number): Promise<{ user: AppUser }> {
+  return request(`/api/admin/users/${id}/api-key`, { method: 'DELETE' })
 }
 
 export function deactivateUser(id: number): Promise<{ user: AppUser }> {
