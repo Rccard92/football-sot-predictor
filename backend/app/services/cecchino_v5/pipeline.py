@@ -55,6 +55,9 @@ logger = logging.getLogger(__name__)
 ROME = ZoneInfo("Europe/Rome")
 BOOKMAKER_NAMES = {8: "Bet365", 3: "Betfair", 0: "prodotto delle singole", -1: "senza quote"}
 CANCELLED_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO"}
+# Si regola solo a partita finita (31/10/2026): durante la partita ft_home/ft_away contengono i gol del
+# momento (normalize_fixture), e fino ad allora le giocate venivano chiuse con il punteggio parziale.
+FINISHED_STATUSES = {"FT", "AET", "PEN"}
 # una partita rinviata o annullata diventa void dopo questi giorni (il recupero e' un'altra partita)
 CANCELLED_VOID_AFTER_DAYS = 2
 # prima ora (Roma) in cui si creano giocate: dopo il job delle 08:00 che legge le quote del mattino
@@ -415,6 +418,10 @@ def _settle_combo(play: CecchinoV5Play, f: CecchinoV4Fixture, closing: dict[tupl
     return None
 
 
+def _finished(f: CecchinoV4Fixture) -> bool:
+    return (f.status or "") in FINISHED_STATUSES and f.ft_home is not None and f.ft_away is not None
+
+
 def settle_plays(db: Session, *, now: datetime | None = None) -> int:
     """Esito, chiusura e CLV delle giocate aperte. Ritorna quante giocate ha chiuso."""
     now = now or _now()
@@ -435,7 +442,7 @@ def settle_plays(db: Session, *, now: datetime | None = None) -> int:
     done = 0
     for play, f in rows:
         if play.specialist == COMBO_KEY:
-            outcome = _settle_combo(play, f, closing) if f.ft_home is not None and f.ft_away is not None else None
+            outcome = _settle_combo(play, f, closing) if _finished(f) else None
             if outcome is None and (f.status or "") in CANCELLED_STATUSES and play.day <= (now.astimezone(ROME).date() - timedelta(days=CANCELLED_VOID_AFTER_DAYS)):
                 outcome = VOID
             if outcome is not None:
@@ -450,7 +457,7 @@ def settle_plays(db: Session, *, now: datetime | None = None) -> int:
                 play.closing_quota = float(cq)
                 play.clv = clv_value(play.quota, play.closing_quota)
         outcome = None
-        if f.ft_home is not None and f.ft_away is not None:
+        if _finished(f):
             result = {"ft_home": f.ft_home, "ft_away": f.ft_away, "ht_home": f.ht_home, "ht_away": f.ht_away}
             outcome = settle(play.market_key, result, f.stats_json)
         elif (f.status or "") in CANCELLED_STATUSES and play.day <= (now.astimezone(ROME).date() - timedelta(days=CANCELLED_VOID_AFTER_DAYS)):
