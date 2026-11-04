@@ -85,7 +85,10 @@ def _load(db) -> dict[str, Any]:
             """
         )
     ).mappings():
-        lab[(r["division_code"], r["match_date"], r["home_team"], r["away_team"])] = dict(r)
+        row = dict(r)
+        for key in ("lambda_home", "lambda_away", "rho", "ht_share"):  # numeric del database: Decimal
+            row[key] = float(row[key]) if row[key] is not None else None
+        lab[(r["division_code"], r["match_date"], r["home_team"], r["away_team"])] = row
     return {"fixtures": fixtures, "minutes": minutes, "injuries": injuries, "lab": lab}
 
 
