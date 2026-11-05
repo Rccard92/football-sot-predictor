@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MatchTableResponse, TableGame } from '../../lib/analystJournalApi'
 import { MatchTable } from './MatchTable'
 
@@ -77,22 +77,34 @@ vi.mock('../../lib/analystJournalApi', async (orig) => ({
 }))
 
 describe('MatchTable', () => {
-  it('mostra forma, colori, grassetto, gialli e quote della bozza', async () => {
+  afterEach(cleanup)
+
+  it('lista compatta e scheda partita con forma, bordo, gialli e quote', async () => {
     render(<MatchTable />)
-    expect(await screen.findByText('Casa FC')).toBeTruthy()
-    const row = screen.getByText('Casa FC').closest('tr')!
-    expect(within(row).getByText('4 pt')).toBeTruthy()
-    expect(within(row).getAllByText('2-0')[0].className).toContain('text-emerald-700')
-    const lost = within(row).getAllByText('1-3')[0]
-    expect(lost.className).toContain('text-rose-700')
-    expect(lost.className).toContain('font-bold')
-    expect(within(row).getAllByText('1-1')[0].className).toContain('text-slate-400')
-    expect(within(row).getAllByText('2-0')).toHaveLength(2) // ripetuti anche sotto Goal
-    expect(within(row).getByText('n.d.')).toBeTruthy()
-    expect(within(row).getByText('9')).toBeTruthy()
-    expect(within(row).getByText('2,10')).toBeTruthy()
-    expect(within(row).getByText('Equilibrio')).toBeTruthy()
-    await userEvent.click(within(row).getByText('Altre 1 quote'))
-    expect(screen.getByText('1,85')).toBeTruthy()
+    expect(await screen.findAllByText('Casa FC')).toBeTruthy()
+    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
+    expect(within(detail).getByText('4 pt')).toBeTruthy()
+    // sconfitta contro una squadra piu' in alto: quadratino rosso con il bordo
+    const lost = within(detail).getAllByTitle(/1-3 FT, persa/)[0]
+    expect(lost.className).toContain('bg-rose-100')
+    expect(lost.className).toContain('ring-2')
+    const won = within(detail).getAllByTitle(/2-0 FT, vinta/)[0]
+    expect(won.className).toContain('bg-emerald-100')
+    expect(won.className).not.toContain('ring-2')
+    expect(within(detail).getByText('n.d.')).toBeTruthy()
+    expect(within(detail).getByText('9')).toBeTruthy()
+    expect(within(detail).getByText('1,85')).toBeTruthy()
+    expect(within(detail).getAllByText('Meno di 3 gare (2)').length).toBe(2)
+    expect(screen.getAllByText(/73 · Equilibrio/).length).toBeGreaterThan(0)
+  })
+
+  it('il pulsante Domani chiede il giorno dopo', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    await userEvent.click(screen.getByRole('button', { name: 'Domani' }))
+    const days = vi.mocked(api.getMatchTable).mock.calls.map((c) => c[0]?.day)
+    const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' })
+    expect(days).toContain(tomorrow)
   })
 })
