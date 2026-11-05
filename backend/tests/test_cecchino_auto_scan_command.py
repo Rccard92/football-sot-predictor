@@ -349,3 +349,54 @@ def test_force_run_skips_idempotency():
     # force_run True → idempotency skipped inside run_auto_scan
     assert run.call_args.kwargs["force_run"] is True
     _ = completed  # documento intent
+
+
+def _morning_settings(include_tomorrow=True):
+    settings = MagicMock()
+    settings.cecchino_auto_scan_enabled = True
+    settings.cecchino_auto_scan_timezone = ROME
+    settings.cecchino_auto_scan_primary_hour = 23
+    settings.cecchino_auto_scan_primary_minute = 0
+    settings.cecchino_auto_scan_recovery_hour = 23
+    settings.cecchino_auto_scan_recovery_minute = 50
+    settings.cecchino_auto_scan_window_minutes = 10
+    settings.cecchino_auto_scan_evening_enabled = False
+    settings.cecchino_auto_scan_morning_enabled = True
+    settings.cecchino_auto_scan_morning_hour = 6
+    settings.cecchino_auto_scan_morning_minute = 0
+    settings.cecchino_auto_scan_morning_recovery_hour = 6
+    settings.cecchino_auto_scan_morning_recovery_minute = 45
+    settings.cecchino_auto_scan_morning_include_tomorrow = include_tomorrow
+    return settings
+
+
+def _run_main(settings, now, argv):
+    with patch("app.jobs.cecchino_auto_scan.get_settings", return_value=settings):
+        with patch("app.jobs.cecchino_auto_scan.run_auto_results"):
+            with patch("app.jobs.cecchino_auto_scan.run_auto_scan", return_value=EXIT_OK) as run:
+                with patch("app.jobs.cecchino_auto_scan.datetime") as mock_dt:
+                    mock_dt.now.return_value = now
+                    mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+                    code = main(argv)
+    return code, [c.kwargs["target_date"] for c in run.call_args_list]
+
+
+def test_morning_scans_today_then_tomorrow():
+    code, targets = _run_main(_morning_settings(), _dt(2026, 11, 6, 6, 0), ["--scheduled"])
+    assert code == EXIT_OK
+    assert targets == [date(2026, 11, 6), date(2026, 11, 7)]
+
+
+def test_morning_recovery_also_covers_tomorrow():
+    _code, targets = _run_main(_morning_settings(), _dt(2026, 11, 6, 6, 45), ["--scheduled"])
+    assert targets == [date(2026, 11, 6), date(2026, 11, 7)]
+
+
+def test_morning_tomorrow_can_be_switched_off():
+    _code, targets = _run_main(_morning_settings(include_tomorrow=False), _dt(2026, 11, 6, 6, 0), ["--scheduled"])
+    assert targets == [date(2026, 11, 6)]
+
+
+def test_force_run_with_target_date_scans_only_that_day():
+    _code, targets = _run_main(_morning_settings(), _dt(2026, 11, 6, 6, 0), ["--force-run", "--target-date", "2026-11-06"])
+    assert targets == [date(2026, 11, 6)]

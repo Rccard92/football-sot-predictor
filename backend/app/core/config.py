@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     cecchino_auto_scan_morning_minute: int = 0
     cecchino_auto_scan_morning_recovery_hour: int = 6
     cecchino_auto_scan_morning_recovery_minute: int = 45
+    # Dal 05/11/2026 (richiesta dell'utente): il giro del mattino scansiona anche il giorno dopo, cosi' gli
+    # analisti preparano oggi le partite di domani; il mattino seguente la stessa giornata si riscansiona
+    # (righe aggiornate, non duplicate) con le quote del mattino. Spegnibile senza toccare il codice.
+    cecchino_auto_scan_morning_include_tomorrow: bool = True
     # Al giro del mattino, prima della scansione: risultati dei giorni precedenti (stessa funzione del
     # pulsante "Aggiorna risultati giornata"). Spegnibile senza toccare il codice.
     cecchino_auto_results_enabled: bool = True
