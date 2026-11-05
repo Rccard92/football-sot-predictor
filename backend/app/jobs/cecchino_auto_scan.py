@@ -5,6 +5,9 @@ Uso:
   python -m app.jobs.cecchino_auto_scan --force-run
   python -m app.jobs.cecchino_auto_scan --force-run --target-date YYYY-MM-DD
   python -m app.jobs.cecchino_auto_scan --scheduled --dry-run
+
+Giro del mattino (dal 05/11/2026): prima la giornata in corso, poi anche quella successiva
+(CECCHINO_AUTO_SCAN_MORNING_INCLUDE_TOMORROW, attivo di default).
 """
 
 from __future__ import annotations
@@ -690,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        return run_auto_scan(
+        code = run_auto_scan(
             settings=settings,
             now=now,
             target_date=target_date,
@@ -700,7 +703,28 @@ def main(argv: list[str] | None = None) -> int:
         )
     except Exception:
         logger.exception("cecchino_auto_scan fatal error")
-        return EXIT_ERROR
+        code = EXIT_ERROR
+
+    include_tomorrow = getattr(settings, "cecchino_auto_scan_morning_include_tomorrow", True) is not False
+    if args.scheduled and slot in MORNING_SLOTS and not args.target_date and include_tomorrow and not should_abort():
+        # Anche se oggi e' andata male si prova domani: sono due giornate indipendenti.
+        tomorrow = local_date + timedelta(days=1)
+        logger.info("cecchino_auto_scan morning also_tomorrow target=%s slot=%s", tomorrow.isoformat(), slot)
+        try:
+            code_tomorrow = run_auto_scan(
+                settings=settings,
+                now=datetime.now(ZoneInfo(timezone_name)),
+                target_date=tomorrow,
+                slot=slot,
+                local_date=local_date,
+                force_run=False,
+            )
+        except Exception:
+            logger.exception("cecchino_auto_scan fatal error (tomorrow)")
+            code_tomorrow = EXIT_ERROR
+        if code == EXIT_OK:
+            code = code_tomorrow
+    return code
 
 
 if __name__ == "__main__":
