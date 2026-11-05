@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AdminHttpError } from '../../lib/api'
 import {
   getMatchTable,
@@ -6,7 +6,6 @@ import {
   type MatchTableResponse,
   type MatchTableRow,
   type TableBlock,
-  type TableBlockKey,
   type TableCards,
   type TableGame,
   type TableOutcome,
@@ -16,29 +15,48 @@ import { CecchinoTodayKpiPanel } from '../cecchino/CecchinoTodayKpiPanel'
 import { todayCard, todayCardPadding } from '../cecchino/cecchinoTodayStyles'
 import { AddToJournalButton } from './AddToJournalButton'
 
-/** Tabella analisi (bozza di Giovanni, 05/11/2026): una riga per partita con forma, gol, gialli, equilibrio e
- *  quote; da qui Cristian apre il pannello KPI, aggiunge la partita al diario e scrive le sue note. */
+/** Tabella analisi (bozza di Giovanni, 05/11/2026; grafica rifatta il 05/11): lista compatta delle partite con
+ *  la forma a quadratini, e scheda della partita scelta con il dettaglio, il pannello KPI, il diario e le note.
+ *  Il giro del mattino scansiona anche domani, quindi qui si preparano oggi le partite di domani. */
 
-const btn = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'
-const selectClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm'
-const TH = 'border-b border-slate-200 px-2 py-2 text-left align-bottom text-[12px] font-semibold uppercase tracking-wide text-slate-500'
-const TD = 'border-b border-slate-100 px-2 py-2 align-top text-[13px]'
-const OUTCOME_CLASS: Record<TableOutcome, string> = {
-  V: 'text-emerald-700',
-  P: 'text-rose-700',
-  N: 'text-slate-400',
+const btn = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'
+const selectClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm'
+const LABEL = 'text-[12px] text-slate-500'
+const SQUARE: Record<TableOutcome, string> = {
+  V: 'bg-emerald-100 text-emerald-800',
+  N: 'bg-slate-100 text-slate-500',
+  P: 'bg-rose-100 text-rose-800',
 }
 const OUTCOME_WORD: Record<TableOutcome, string> = { V: 'vinta', N: 'pareggiata', P: 'persa' }
-const FORM_COLUMNS: { key: TableBlockKey; label: string }[] = [
-  { key: 'forma_casa', label: 'Forma casa' },
-  { key: 'forma_fuori', label: 'Forma fuori' },
-  { key: 'forma_totale_casa', label: 'Forma totale casa' },
-  { key: 'forma_totale_fuori', label: 'Forma totale fuori' },
-]
+const BALANCE_CLASS: Record<string, string> = {
+  Squilibrio: 'bg-amber-50 text-amber-800 ring-amber-200',
+  Transizione: 'bg-slate-50 text-slate-700 ring-slate-200',
+  Equilibrio: 'bg-teal-50 text-teal-800 ring-teal-200',
+  'Equilibrio forte': 'bg-teal-100 text-teal-900 ring-teal-300',
+}
 const MAIN_QUOTES = ['HOME', 'DRAW', 'AWAY']
+type Order = 'time' | 'league'
+const WIDE_QUERY = '(min-width: 1280px)'
 
-function romeToday(): string {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' })
+/** Schermo largo: scheda accanto alla lista; altrimenti la scheda si apre in un riquadro. */
+function useIsWide(): boolean {
+  const query = useMemo(
+    () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(WIDE_QUERY) : null),
+    [],
+  )
+  const [wide, setWide] = useState(query ? query.matches : true)
+  useEffect(() => {
+    if (!query) return
+    const onChange = (e: MediaQueryListEvent) => setWide(e.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [query])
+  return wide
+}
+
+function romeDate(offsetDays = 0): string {
+  const d = new Date(Date.now() + offsetDays * 86400000)
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' })
 }
 
 function kickoffTime(iso: string | null): string {
@@ -46,143 +64,230 @@ function kickoffTime(iso: string | null): string {
   return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })
 }
 
+function dayLabel(day: string): string {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 function errorText(e: unknown): string {
   return e instanceof AdminHttpError ? e.message : e instanceof Error ? e.message : 'Errore'
-}
-
-function gameTitle(g: TableGame, half: 'PT' | 'FT'): string {
-  const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
-  const score = half === 'PT' ? g.ht : g.ft
-  const rank = g.opponent_rank ? ` (${g.opponent_rank}ª in classifica)` : ''
-  const date = g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : ''
-  return `${date} ${g.home ? 'in casa contro' : 'fuori contro'} ${g.opponent ?? '?'}${rank}: ${score ?? '—'} ${half}${outcome ? `, ${OUTCOME_WORD[outcome]}` : ''}`
-}
-
-/** Una riga di risultati: verde vinta, rossa persa, grigia pareggiata; grassetto contro chi sta piu' in alto. */
-function ResultsLine({ label, games, half }: { label: string; games: TableGame[]; half: 'PT' | 'FT' }) {
-  return (
-    <div className="flex items-baseline gap-1.5 whitespace-nowrap">
-      <span className="w-5 text-[11px] font-semibold text-slate-400">{label}</span>
-      {games.map((g, i) => {
-        const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
-        const score = half === 'PT' ? g.ht : g.ft
-        const bold = half === 'PT' ? g.bold_ht : g.bold_ft
-        return (
-          <span
-            key={i}
-            title={gameTitle(g, half)}
-            className={`tabular-nums ${outcome ? OUTCOME_CLASS[outcome] : 'text-slate-300'} ${bold ? 'font-bold' : ''}`}
-          >
-            {score ?? '—'}
-          </span>
-        )
-      })}
-    </div>
-  )
-}
-
-function Insufficient({ games }: { games: number }) {
-  return (
-    <span className="text-slate-400" title={`Solo ${games} gare: ne servono almeno 3`}>
-      —
-    </span>
-  )
-}
-
-function FormCell({ block }: { block: TableBlock }) {
-  if (!block.enough) return <Insufficient games={block.games} />
-  return (
-    <div className="space-y-0.5">
-      <p className="font-semibold text-slate-900">
-        {block.points} pt <span className="text-[12px] font-normal text-slate-400">· {block.games} gare</span>
-      </p>
-      <ResultsLine label="PT" games={block.results} half="PT" />
-      <ResultsLine label="FT" games={block.results} half="FT" />
-    </div>
-  )
-}
-
-function GoalsCell({ block }: { block: TableBlock }) {
-  if (!block.enough) return <Insufficient games={block.games} />
-  return (
-    <div className="space-y-0.5">
-      <p className="font-semibold tabular-nums text-slate-900" title="Gol fatti contro subiti">
-        {block.scored} <span className="font-normal text-slate-400">vs</span> {block.conceded}
-      </p>
-      <ResultsLine label="PT" games={block.results} half="PT" />
-      <ResultsLine label="FT" games={block.results} half="FT" />
-    </div>
-  )
-}
-
-function CardsCell({ cards }: { cards: TableCards }) {
-  if (!cards.available) {
-    return (
-      <span className="text-slate-400" title="Statistiche dei cartellini non disponibili per queste gare">
-        n.d.
-      </span>
-    )
-  }
-  return (
-    <div className="space-y-0.5 tabular-nums">
-      <p>
-        <span className="text-[12px] text-slate-400">Fatti</span> <span className="font-semibold text-slate-900">{cards.own}</span>
-      </p>
-      <p>
-        <span className="text-[12px] text-slate-400">Subiti</span> <span className="font-semibold text-slate-900">{cards.opponents}</span>
-      </p>
-      {cards.games < 5 ? <p className="text-[11px] text-slate-400">su {cards.games} gare</p> : null}
-    </div>
-  )
-}
-
-function BalanceCell({ row }: { row: MatchTableRow }) {
-  if (!row.balance) return <span className="text-slate-400">—</span>
-  return (
-    <div>
-      <p className="font-semibold tabular-nums text-slate-900">{row.balance.index ?? '—'}</p>
-      <p className="text-[12px] text-slate-600">{row.balance.class ?? ''}</p>
-    </div>
-  )
 }
 
 function quoteText(q: number | null | undefined): string {
   return q == null ? '—' : q.toFixed(2).replace('.', ',')
 }
 
-/** Nota dell'analista: si salva da sola poco dopo aver smesso di scrivere. */
-function NoteCell({ row, canWrite }: { row: MatchTableRow; canWrite: boolean }) {
+function gameTitle(g: TableGame, half: 'PT' | 'FT'): string {
+  const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
+  const score = half === 'PT' ? g.ht : g.ft
+  const rank = g.opponent_rank ? ` (${g.opponent_rank}ª)` : ''
+  const date = g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : ''
+  return `${date} ${g.home ? 'in casa con' : 'fuori con'} ${g.opponent ?? '?'}${rank}: ${score ?? '—'} ${half}${outcome ? `, ${OUTCOME_WORD[outcome]}` : ''}`
+}
+
+/** Quadratini V/N/P dalla gara piu' vecchia (sinistra) all'ultima (destra); bordo = avversaria piu' in alto. */
+function FormSquares({ games, half, size = 'sm' }: { games: TableGame[]; half: 'PT' | 'FT'; size?: 'sm' | 'md' }) {
+  const box = size === 'md' ? 'h-6 w-6 text-[12px]' : 'h-5 w-5 text-[11px]'
+  return (
+    <span className="inline-flex gap-0.5 align-middle">
+      {games.map((g, i) => {
+        const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
+        const strong = half === 'PT' ? g.bold_ht : g.bold_ft
+        return (
+          <span
+            key={i}
+            title={gameTitle(g, half)}
+            className={`inline-flex ${box} items-center justify-center rounded font-semibold ${outcome ? SQUARE[outcome] : 'bg-slate-50 text-slate-300'} ${
+              strong ? 'ring-2 ring-inset ring-current' : ''
+            }`}
+          >
+            {outcome ?? '·'}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
+function BalancePill({ row }: { row: MatchTableRow }) {
+  if (!row.balance?.class) return <span className="text-[12px] text-slate-400">—</span>
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[12px] font-medium ring-1 ring-inset ${
+        BALANCE_CLASS[row.balance.class] ?? 'bg-slate-50 text-slate-700 ring-slate-200'
+      }`}
+      title={`Indice equilibrio ${row.balance.index ?? '—'}: ${row.balance.class}`}
+    >
+      {row.balance.index != null ? Math.round(row.balance.index) : '—'} · {row.balance.class}
+    </span>
+  )
+}
+
+function ListForm({ block }: { block: TableBlock }) {
+  if (!block.enough) return <span className="text-[12px] text-slate-400" title={`Solo ${block.games} gare`}>—</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <FormSquares games={block.results} half="FT" />
+      <span className="w-6 text-[13px] font-semibold tabular-nums text-slate-900">{block.points}</span>
+    </span>
+  )
+}
+
+function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; selected: boolean; onSelect: () => void; showLeague: boolean }) {
+  const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k)?.quota)
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`grid w-full grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-b border-slate-100 px-3 py-2.5 text-left text-[13px] transition sm:grid-cols-[44px_minmax(0,1.4fr)_minmax(0,1.1fr)_96px] ${
+        selected ? 'bg-indigo-50/70' : 'hover:bg-slate-50'
+      } ${row.started ? 'opacity-70' : ''}`}
+      aria-pressed={selected}
+    >
+      <span className="pt-0.5 font-semibold tabular-nums text-slate-900">{kickoffTime(row.kickoff)}</span>
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-slate-900">
+          {row.home_team}
+          {row.home_rank ? <span className="ml-1 text-[12px] font-normal text-slate-400">{row.home_rank}ª</span> : null}
+          <span className="mx-1 text-slate-300">–</span>
+          {row.away_team}
+          {row.away_rank ? <span className="ml-1 text-[12px] font-normal text-slate-400">{row.away_rank}ª</span> : null}
+        </span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          {showLeague ? <span className="truncate text-[12px] text-slate-500">{row.league}</span> : null}
+          <BalancePill row={row} />
+          {row.my_note.trim() ? <span className="text-[12px] text-indigo-700" title="Hai scritto una nota">● nota</span> : null}
+          {row.started ? <span className="text-[12px] text-slate-400">iniziata</span> : null}
+        </span>
+      </span>
+      <span className="col-start-2 flex flex-col gap-1 sm:col-start-auto">
+        <span className="flex items-center gap-1.5">
+          <span className="w-8 text-[11px] text-slate-400">casa</span>
+          <ListForm block={row.blocks.forma_casa} />
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-8 text-[11px] text-slate-400">fuori</span>
+          <ListForm block={row.blocks.forma_fuori} />
+        </span>
+      </span>
+      <span className="col-start-2 grid grid-cols-3 gap-x-1 text-center tabular-nums sm:col-start-auto">
+        {['1', 'X', '2'].map((l) => (
+          <span key={l} className="text-[11px] text-slate-400">
+            {l}
+          </span>
+        ))}
+        {main.map((q, i) => (
+          <span key={i} className="font-semibold text-slate-900">
+            {quoteText(q)}
+          </span>
+        ))}
+      </span>
+    </button>
+  )
+}
+
+function BlockCard({ title, block, withGoals }: { title: string; block: TableBlock; withGoals?: boolean }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className={LABEL}>{title}</p>
+      {!block.enough ? (
+        <p className="mt-1 text-[13px] text-slate-400">Meno di 3 gare ({block.games})</p>
+      ) : (
+        <>
+          <p className="mt-0.5 text-[15px] font-semibold text-slate-900">
+            {block.points} pt <span className="text-[12px] font-normal text-slate-500">su {block.max_points} · {block.games} gare</span>
+          </p>
+          <div className="mt-1.5 space-y-1">
+            <p className="flex items-center gap-2">
+              <span className="w-5 text-[11px] font-semibold text-slate-400">PT</span>
+              <FormSquares games={block.results} half="PT" size="md" />
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="w-5 text-[11px] font-semibold text-slate-400">FT</span>
+              <FormSquares games={block.results} half="FT" size="md" />
+            </p>
+          </div>
+          {withGoals ? (
+            <p className="mt-1.5 text-[13px] text-slate-700">
+              Gol <b className="tabular-nums">{block.scored}</b> fatti · <b className="tabular-nums">{block.conceded}</b> subiti
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+function CardsLine({ label, cards }: { label: string; cards: TableCards }) {
+  return (
+    <p className="flex items-baseline justify-between gap-2 text-[13px]">
+      <span className="text-slate-600">{label}</span>
+      {cards.available ? (
+        <span className="tabular-nums">
+          <b className="text-slate-900">{cards.own}</b> fatti · <b className="text-slate-900">{cards.opponents}</b> subiti
+          {cards.games < 5 ? <span className="text-[12px] text-slate-400"> (su {cards.games})</span> : null}
+        </span>
+      ) : (
+        <span className="text-slate-400" title="Statistiche dei cartellini non disponibili per queste gare">
+          n.d.
+        </span>
+      )}
+    </p>
+  )
+}
+
+/** Note dell'analista: si salvano da sole poco dopo aver smesso di scrivere e quando si cambia partita. */
+function NoteEditor({ row, canWrite, onSaved }: { row: MatchTableRow; canWrite: boolean; onSaved: (id: number, note: string) => void }) {
   const [text, setText] = useState(row.my_note)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const last = useRef(row.my_note)
+  const pending = useRef(row.my_note)
 
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current)
-  }, [])
+  const save = useCallback(
+    (value: string) => {
+      if (value === last.current) return
+      setState('saving')
+      saveMatchNote(row.today_fixture_id, value).then(
+        () => {
+          last.current = value
+          onSaved(row.today_fixture_id, value)
+          setState('saved')
+        },
+        () => setState('error'),
+      )
+    },
+    [row.today_fixture_id, onSaved],
+  )
 
-  const save = (value: string) => {
-    if (value === last.current) return
-    setState('saving')
-    saveMatchNote(row.today_fixture_id, value).then(
-      () => {
-        last.current = value
-        setState('saved')
-      },
-      () => setState('error'),
-    )
-  }
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+      if (pending.current !== last.current) {
+        const id = row.today_fixture_id
+        const value = pending.current
+        void saveMatchNote(id, value).then(() => onSaved(id, value), () => undefined)
+      }
+    },
+    [row.today_fixture_id, onSaved],
+  )
 
   return (
-    <div className="space-y-1">
+    <div>
+      <div className="flex items-baseline justify-between">
+        <p className={LABEL}>Note analista</p>
+        <p className="text-[12px] text-slate-400">
+          {state === 'saving' ? 'Salvo…' : state === 'saved' ? 'Salvata' : state === 'error' ? <span className="text-rose-600">Non salvata, riprova</span> : ''}
+        </p>
+      </div>
       <textarea
-        className="h-20 w-full min-w-[260px] resize-y rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] focus:border-slate-400 focus:outline-none disabled:bg-slate-50"
-        placeholder={canWrite ? 'Note analista' : 'Serve un account per scrivere'}
+        className="mt-1 h-32 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none disabled:bg-slate-50"
+        placeholder={canWrite ? 'Cosa ti dice questa partita?' : 'Serve un account per scrivere'}
         value={text}
         disabled={!canWrite}
         onChange={(e) => {
           const value = e.target.value
           setText(value)
+          pending.current = value
           setState('idle')
           if (timer.current) clearTimeout(timer.current)
           timer.current = setTimeout(() => save(value), 800)
@@ -192,11 +297,8 @@ function NoteCell({ row, canWrite }: { row: MatchTableRow; canWrite: boolean }) 
           save(text)
         }}
       />
-      <p className="h-4 text-[11px] text-slate-400">
-        {state === 'saving' ? 'Salvo…' : state === 'saved' ? 'Salvata' : state === 'error' ? <span className="text-rose-600">Non salvata, riprova</span> : ''}
-      </p>
       {row.other_notes.map((n, i) => (
-        <p key={i} className="rounded-md bg-slate-50 px-2 py-1 text-[12px] text-slate-600">
+        <p key={i} className="mt-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[13px] text-slate-600">
           <span className="font-medium">{n.user_name ?? 'Analista'}:</span> {n.note}
         </p>
       ))}
@@ -224,7 +326,7 @@ function KpiDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => void }
   }, [row.today_fixture_id])
   const panel = detail ? (detail.kpi_panel_v2 ?? detail.kpi_panel) : null
   return (
-    <div className="fixed inset-0 z-[65] flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" onClick={onClose}>
       <aside className="h-full w-full max-w-3xl space-y-4 overflow-y-auto bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -256,123 +358,119 @@ function KpiDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => void }
   )
 }
 
-function TableRow({ row, canWrite, onKpi }: { row: MatchTableRow; canWrite: boolean; onKpi: (row: MatchTableRow) => void }) {
-  const [showQuotes, setShowQuotes] = useState(false)
-  const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k))
+function MatchDetail({
+  row,
+  canWrite,
+  onKpi,
+  onClose,
+  onNoteSaved,
+}: {
+  row: MatchTableRow
+  canWrite: boolean
+  onKpi: () => void
+  onClose?: () => void
+  onNoteSaved: (id: number, note: string) => void
+}) {
   const others = row.quotes.filter((q) => !MAIN_QUOTES.includes(q.key))
-  const groups = [...new Set(others.map((q) => q.group))]
+  const groups = [...new Set(row.quotes.map((q) => q.group))]
   return (
-    <Fragment>
-      <tr className={row.started ? 'bg-slate-50/70 text-slate-500' : ''}>
-        <td className={`${TD} sticky left-0 z-[1] whitespace-nowrap bg-white`}>
-          <p className="font-semibold tabular-nums text-slate-900">{kickoffTime(row.kickoff)}</p>
-          {row.started ? <p className="text-[11px] text-slate-400">iniziata</p> : null}
-        </td>
-        <td className={`${TD} min-w-[210px]`}>
-          <p className="text-[12px] text-slate-500">
-            {row.country} · {row.league}
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] text-slate-500">
+            {kickoffTime(row.kickoff)} · {row.country} · {row.league}
           </p>
-          <p className="font-semibold text-slate-900">
+          <h2 className="text-base font-semibold text-slate-900">
             {row.home_team}
-            {row.home_rank ? <span className="ml-1 text-[12px] font-normal text-slate-400">{row.home_rank}ª</span> : null}
-          </p>
-          <p className="font-semibold text-slate-900">
+            {row.home_rank ? <span className="ml-1 text-[13px] font-normal text-slate-400">{row.home_rank}ª</span> : null}
+            <span className="mx-1.5 text-slate-300">–</span>
             {row.away_team}
-            {row.away_rank ? <span className="ml-1 text-[12px] font-normal text-slate-400">{row.away_rank}ª</span> : null}
-          </p>
-          {!row.standings_complete ? (
-            <p className="text-[11px] text-amber-700" title="Nel campionato mancano alcuni risultati: posizioni e grassetti possono non essere esatti">
-              classifica parziale
-            </p>
-          ) : null}
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <button type="button" className={btn} onClick={() => onKpi(row)}>
-              Pannello KPI
-            </button>
-            {!row.started ? <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact /> : null}
-          </div>
-        </td>
-        <td className={TD}>
-          <BalanceCell row={row} />
-        </td>
-        {FORM_COLUMNS.map((c) => (
-          <td key={c.key} className={TD}>
-            <FormCell block={row.blocks[c.key]} />
-          </td>
-        ))}
-        <td className={TD}>
-          <GoalsCell block={row.blocks.forma_casa} />
-        </td>
-        <td className={TD}>
-          <GoalsCell block={row.blocks.forma_fuori} />
-        </td>
-        <td className={TD}>
-          <CardsCell cards={row.yellows.home} />
-        </td>
-        <td className={TD}>
-          <CardsCell cards={row.yellows.away} />
-        </td>
-        <td className={`${TD} whitespace-nowrap`}>
-          <div className="grid grid-cols-3 gap-x-2 tabular-nums">
-            {['1', 'X', '2'].map((l) => (
-              <span key={l} className="text-center text-[11px] font-semibold text-slate-400">
-                {l}
+            {row.away_rank ? <span className="ml-1 text-[13px] font-normal text-slate-400">{row.away_rank}ª</span> : null}
+          </h2>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <BalancePill row={row} />
+            {!row.standings_complete ? (
+              <span className="text-[12px] text-amber-700" title="Nel campionato mancano alcuni risultati: posizioni e bordi possono non essere esatti">
+                classifica parziale
               </span>
-            ))}
-            {main.map((q, i) => (
-              <span key={i} className="text-center font-semibold text-slate-900">
-                {quoteText(q?.quota)}
-              </span>
+            ) : null}
+          </div>
+        </div>
+        {onClose ? (
+          <button type="button" className={btn} onClick={onClose}>
+            Chiudi
+          </button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={btn} onClick={onKpi}>
+          Pannello KPI
+        </button>
+        {!row.started ? <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact /> : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <BlockCard title={`Forma casa · ${row.home_team} in casa`} block={row.blocks.forma_casa} withGoals />
+        <BlockCard title={`Forma fuori · ${row.away_team} fuori`} block={row.blocks.forma_fuori} withGoals />
+        <BlockCard title={`Forma totale · ${row.home_team}`} block={row.blocks.forma_totale_casa} />
+        <BlockCard title={`Forma totale · ${row.away_team}`} block={row.blocks.forma_totale_fuori} />
+      </div>
+      <p className="text-[12px] text-slate-500">
+        Dalla gara più vecchia a sinistra all&apos;ultima a destra. Bordo = contro una squadra più in alto in classifica. Passa sopra un quadratino per
+        risultato, avversaria e data.
+      </p>
+
+      <div className="space-y-1 rounded-xl bg-slate-50 p-3">
+        <p className={LABEL}>Gialli ultime 5 gare</p>
+        <CardsLine label={row.home_team} cards={row.yellows.home} />
+        <CardsLine label={row.away_team} cards={row.yellows.away} />
+      </div>
+
+      {row.quotes.length ? (
+        <div className="rounded-xl bg-slate-50 p-3">
+          <p className={LABEL}>Quote ({row.quotes.length})</p>
+          <div className="mt-1 space-y-1.5">
+            {groups.map((g) => (
+              <div key={g} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[13px]">
+                <span className="w-36 shrink-0 text-[12px] text-slate-400">{g}</span>
+                {row.quotes
+                  .filter((q) => q.group === g)
+                  .map((q) => (
+                    <span key={q.key} className="whitespace-nowrap">
+                      <span className="text-slate-500">{q.label}</span> <b className="tabular-nums text-slate-900">{quoteText(q.quota)}</b>
+                    </span>
+                  ))}
+              </div>
             ))}
           </div>
-          {others.length ? (
-            <button type="button" className="mt-1 text-[12px] font-medium text-indigo-700 hover:underline" onClick={() => setShowQuotes((v) => !v)}>
-              {showQuotes ? 'Nascondi quote' : `Altre ${others.length} quote`}
-            </button>
-          ) : null}
-        </td>
-        <td className={TD}>
-          <NoteCell row={row} canWrite={canWrite} />
-        </td>
-      </tr>
-      {showQuotes ? (
-        <tr>
-          <td className="border-b border-slate-100 bg-slate-50/60 px-2 py-2" colSpan={14}>
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
-              {groups.map((g) => (
-                <div key={g}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3">
-                    {others
-                      .filter((q) => q.group === g)
-                      .map((q) => (
-                        <span key={q.key} className="whitespace-nowrap">
-                          <span className="text-slate-500">{q.label}</span> <b className="tabular-nums text-slate-900">{quoteText(q.quota)}</b>
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </td>
-        </tr>
+          {others.length === 0 ? <p className="mt-1 text-[12px] text-slate-400">Solo 1, X e 2 disponibili.</p> : null}
+        </div>
       ) : null}
-    </Fragment>
+
+      <NoteEditor key={row.today_fixture_id} row={row} canWrite={canWrite} onSaved={onNoteSaved} />
+    </div>
   )
 }
 
 export function MatchTable() {
-  const [day, setDay] = useState(romeToday)
+  const today = romeDate(0)
+  const tomorrow = romeDate(1)
+  const [day, setDay] = useState(today)
   const [upcoming, setUpcoming] = useState(true)
   const [country, setCountry] = useState('')
   const [league, setLeague] = useState('')
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
+  const [order, setOrder] = useState<Order>('time')
   const [page, setPage] = useState(1)
   const [data, setData] = useState<MatchTableResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [kpiRow, setKpiRow] = useState<MatchTableRow | null>(null)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const wide = useIsWide()
 
   const load = useCallback(
     () =>
@@ -402,34 +500,56 @@ export function MatchTable() {
     return () => clearTimeout(t)
   }, [query])
 
+  const rows = useMemo(() => data?.rows ?? [], [data])
+  const selected = rows.find((r) => r.today_fixture_id === selectedId) ?? rows[0] ?? null
+  const groups = useMemo(() => {
+    if (order === 'time') return [{ key: '', label: '', rows }]
+    const map = new Map<string, MatchTableRow[]>()
+    for (const r of rows) {
+      const key = `${r.country ?? ''} · ${r.league ?? ''}`
+      map.set(key, [...(map.get(key) ?? []), r])
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, rs]) => ({ key, label: key, rows: rs }))
+  }, [rows, order])
+
+  const onNoteSaved = useCallback((id: number, note: string) => {
+    setData((d) => (d ? { ...d, rows: d.rows.map((r) => (r.today_fixture_id === id ? { ...r, my_note: note } : r)) } : d))
+  }, [])
+
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
+  const resetTo = (next: () => void) => {
+    next()
+    setPage(1)
+    setSelectedId(null)
+  }
 
   return (
     <div className="space-y-4">
       <div className={`${todayCard} ${todayCardPadding} space-y-3`}>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-[13px] text-slate-600">
-            Giorno
-            <input
-              type="date"
-              className={`${selectClass} mt-1 block`}
-              value={day}
-              onChange={(e) => {
-                setDay(e.target.value || romeToday())
-                setPage(1)
-              }}
-            />
-          </label>
-          <select
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200" role="group" aria-label="Giorno">
+            {[
+              [today, 'Oggi'],
+              [tomorrow, 'Domani'],
+            ].map(([d, label]) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => resetTo(() => setDay(d))}
+                className={`px-3 py-2 text-sm font-medium ${day === d ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <input
+            type="date"
             className={selectClass}
-            value={country}
-            onChange={(e) => {
-              setCountry(e.target.value)
-              setLeague('')
-              setPage(1)
-            }}
-            aria-label="Nazione"
-          >
+            value={day}
+            onChange={(e) => resetTo(() => setDay(e.target.value || today))}
+            aria-label="Giorno"
+          />
+          <select className={selectClass} value={country} onChange={(e) => resetTo(() => { setCountry(e.target.value); setLeague('') })} aria-label="Nazione">
             <option value="">Tutte le nazioni</option>
             {(data?.countries ?? []).map((c) => (
               <option key={c} value={c}>
@@ -437,15 +557,7 @@ export function MatchTable() {
               </option>
             ))}
           </select>
-          <select
-            className={selectClass}
-            value={league}
-            onChange={(e) => {
-              setLeague(e.target.value)
-              setPage(1)
-            }}
-            aria-label="Campionato"
-          >
+          <select className={selectClass} value={league} onChange={(e) => resetTo(() => setLeague(e.target.value))} aria-label="Campionato">
             <option value="">Tutti i campionati</option>
             {(data?.leagues ?? []).map((l) => (
               <option key={l} value={l}>
@@ -453,84 +565,113 @@ export function MatchTable() {
               </option>
             ))}
           </select>
-          <input className={`${selectClass} min-w-[200px]`} placeholder="Cerca squadra" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Cerca squadra" />
-          <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={upcoming}
-              onChange={(e) => {
-                setUpcoming(e.target.checked)
-                setPage(1)
-              }}
-            />
+          <input className={`${selectClass} min-w-[180px] flex-1`} placeholder="Cerca squadra" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Cerca squadra" />
+          <select className={selectClass} value={order} onChange={(e) => setOrder(e.target.value as Order)} aria-label="Ordine">
+            <option value="time">Per orario</option>
+            <option value="league">Per campionato</option>
+          </select>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={upcoming} onChange={(e) => resetTo(() => setUpcoming(e.target.checked))} />
             Solo da giocare
           </label>
         </div>
         <p className="text-[13px] text-slate-500">
-          Risultati dal punto di vista di ogni squadra (fatti-subiti), dalla gara più vecchia a sinistra all&apos;ultima a destra:{' '}
-          <span className="font-semibold text-emerald-700">vinta</span>, <span className="font-semibold text-rose-700">persa</span>,{' '}
-          <span className="text-slate-400">pareggiata</span>; in <b>grassetto</b> contro una squadra più in alto in classifica. Punti 3/1/0 sul risultato
-          finale, da 3 a 5 gare dello stesso campionato. Gialli solo dove ci sono le statistiche (n.d. altrove). Passa sopra un risultato per vedere
-          avversaria e data.
+          <span className="capitalize">{dayLabel(day)}</span>
+          {data ? ` · ${data.total} partite${upcoming ? ' da giocare' : ''} su ${data.total_day}` : ''}
+          {pages > 1 ? ` · pagina ${page} di ${pages}` : ''}. Quadratini:{' '}
+          <span className="font-semibold text-emerald-700">V</span> vinta, <span className="font-semibold text-slate-500">N</span> pareggiata,{' '}
+          <span className="font-semibold text-rose-700">P</span> persa (risultato finale), con i punti accanto.
         </p>
       </div>
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
       {loading && !data ? <p className="text-sm text-slate-500">Preparo la tabella…</p> : null}
 
-      {data ? (
-        <>
-          <p className="text-[13px] text-slate-500">
-            {data.total} partite{upcoming ? ' da giocare' : ''} su {data.total_day} del giorno
-            {pages > 1 ? ` · pagina ${data.page} di ${pages}` : ''}
-          </p>
-          {data.rows.length === 0 ? (
-            <div className={`${todayCard} ${todayCardPadding} text-sm text-slate-600`}>
-              Nessuna partita con almeno 3 gare recenti {upcoming ? 'ancora da giocare ' : ''}per questi filtri.
+      {data && rows.length === 0 ? (
+        <div className={`${todayCard} ${todayCardPadding} text-sm text-slate-600`}>
+          {data.total_day === 0 && day > today
+            ? 'Le partite di domani arrivano con la scansione delle 6 di ogni mattina.'
+            : `Nessuna partita con almeno 3 gare recenti ${upcoming ? 'ancora da giocare ' : ''}per questi filtri.`}
+        </div>
+      ) : null}
+
+      {data && rows.length > 0 ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div className="space-y-3">
+            <div className={`${todayCard} overflow-hidden`}>
+              <div className="hidden grid-cols-[44px_minmax(0,1.4fr)_minmax(0,1.1fr)_96px] gap-x-3 border-b border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:grid">
+                <span>Ora</span>
+                <span>Partita</span>
+                <span>Forma casa · fuori</span>
+                <span className="text-center">1 · X · 2</span>
+              </div>
+              {groups.map((g) => (
+                <div key={g.key || 'all'}>
+                  {g.label ? (
+                    <button
+                      type="button"
+                      onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
+                      className="flex w-full items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-left text-[12px] font-semibold text-slate-600"
+                    >
+                      <span>{g.label}</span>
+                      <span className="text-slate-400">
+                        {g.rows.length} {collapsed[g.key] ? '▸' : '▾'}
+                      </span>
+                    </button>
+                  ) : null}
+                  {collapsed[g.key]
+                    ? null
+                    : g.rows.map((r) => (
+                        <ListRow
+                          key={`${r.today_fixture_id}-${data.day}`}
+                          row={r}
+                          showLeague={order === 'time'}
+                          selected={selected?.today_fixture_id === r.today_fixture_id}
+                          onSelect={() => {
+                            setSelectedId(r.today_fixture_id)
+                            setDrawerOpen(true)
+                          }}
+                        />
+                      ))}
+                </div>
+              ))}
             </div>
-          ) : (
-            <div className={`${todayCard} overflow-x-auto`}>
-              <table className="min-w-full border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    <th className={`${TH} sticky left-0 z-[1] bg-white`}>Ora</th>
-                    <th className={TH}>Incontro</th>
-                    <th className={TH}>Equilibrio vs squilibrio</th>
-                    {FORM_COLUMNS.map((c) => (
-                      <th key={c.key} className={TH}>
-                        {c.label}
-                      </th>
-                    ))}
-                    <th className={TH}>Goal casa solo in casa</th>
-                    <th className={TH}>Goal fuori solo fuori</th>
-                    <th className={TH}>Gialli casa ultime 5</th>
-                    <th className={TH}>Gialli fuori ultime 5</th>
-                    <th className={TH}>Quote</th>
-                    <th className={`${TH} min-w-[280px]`}>Note analista</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.rows.map((r) => (
-                    <TableRow key={`${r.today_fixture_id}-${data.day}`} row={r} canWrite={data.can_write} onKpi={setKpiRow} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {pages > 1 ? (
-            <div className="flex items-center gap-2">
-              <button type="button" className={btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                ‹ Precedenti
-              </button>
-              <span className="text-[13px] text-slate-600">
-                {page} / {pages}
-              </span>
-              <button type="button" className={btn} disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>
-                Successive ›
-              </button>
-            </div>
+            {pages > 1 ? (
+              <div className="flex items-center gap-2">
+                <button type="button" className={btn} disabled={page <= 1} onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelectedId(null) }}>
+                  ‹ Precedenti
+                </button>
+                <span className="text-[13px] text-slate-600">
+                  {page} / {pages}
+                </span>
+                <button type="button" className={btn} disabled={page >= pages} onClick={() => { setPage((p) => Math.min(pages, p + 1)); setSelectedId(null) }}>
+                  Successive ›
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {selected && wide ? (
+            <aside className={`${todayCard} ${todayCardPadding} self-start xl:sticky xl:top-4`}>
+              <MatchDetail key={selected.today_fixture_id} row={selected} canWrite={data.can_write} onKpi={() => setKpiRow(selected)} onNoteSaved={onNoteSaved} />
+            </aside>
           ) : null}
-        </>
+        </div>
+      ) : null}
+
+      {selected && drawerOpen && !wide && data ? (
+        <div className="fixed inset-0 z-[65] flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" onClick={() => setDrawerOpen(false)}>
+          <aside className="h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <MatchDetail
+              key={`m-${selected.today_fixture_id}`}
+              row={selected}
+              canWrite={data.can_write}
+              onKpi={() => setKpiRow(selected)}
+              onClose={() => setDrawerOpen(false)}
+              onNoteSaved={onNoteSaved}
+            />
+          </aside>
+        </div>
       ) : null}
 
       {kpiRow ? <KpiDrawer row={kpiRow} onClose={() => setKpiRow(null)} /> : null}
