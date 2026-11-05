@@ -54,7 +54,7 @@ MARKETS: list[dict[str, str]] = [
 MARKET_BY_KEY = {m["key"]: m for m in MARKETS}
 MARKET_GROUPS = list(dict.fromkeys(m["group"] for m in MARKETS))
 
-SOURCES = {"today": "Cecchino Today", "bet_builder": "Bet Builder", "bet_builder_v3": "Bet Builder V3"}
+SOURCES = {"today": "Cecchino Today", "bet_builder": "Bet Builder", "bet_builder_v3": "Bet Builder V3", "tabella": "Tabella analisi"}
 
 # --- scheda pronostico (foglio "SCHEDA PRONOSTICO") ------------------------------------------------
 

@@ -23,7 +23,7 @@ from app.core.access_control import require_principal
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.user_auth import KIND_EMERGENCY_ADMIN, Principal, generate_password, hash_password, normalize_email
-from app.models.analyst_journal import CYCLE_CLOSED, CYCLE_OPEN, ENTRY_PENDING, AnalystCycle, AnalystEntry
+from app.models.analyst_journal import CYCLE_CLOSED, CYCLE_OPEN, ENTRY_PENDING, AnalystCycle, AnalystEntry, AnalystMatchNote
 from app.models.app_user import ROLE_ADMIN, AppUser
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.analyst.journal import (
@@ -44,6 +44,7 @@ from app.services.analyst.journal import (
     tool_snapshot,
 )
 from app.services.analyst.staking import DEFAULTS, MAX_BETS, METHOD_LABELS, METHODS, normalize_settings
+from app.services.analyst.table import day_rows, filter_rows
 
 router = APIRouter(prefix="/analyst-journal", tags=["analyst-journal"])
 
@@ -191,6 +192,89 @@ def analysts(principal: Principal = Depends(journal_principal), db: Session = De
     ids |= {uid for (uid,) in db.execute(select(AnalystCycle.user_id).distinct()).all()}
     names = _names(db, ids)
     return {"analysts": sorted(({"id": i, "name": n} for i, n in names.items()), key=lambda x: x["name"])}
+
+
+# --- tabella analisi (bozza di Giovanni, 05/11/2026) ----------------------------------------------
+
+TABLE_PAGE_SIZE = 50
+
+
+def _rome_today() -> date:
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("Europe/Rome")).date()
+
+
+@router.get("/table")
+def match_table(
+    day: date | None = None,
+    upcoming: bool = True,
+    country: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    principal: Principal = Depends(journal_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Una riga per partita del giorno: forma, gol, gialli, equilibrio, quote e note. 50 righe per pagina."""
+    day = day or _rome_today()
+    now = _now()
+    rows = day_rows(db, day)
+    base = filter_rows(rows, now=now, upcoming_only=upcoming, country=None, league=None, query=None)
+    countries = sorted({r["country"] for r in base if r["country"]})
+    leagues = sorted({r["league"] for r in base if r["league"] and (not country or r["country"] == country)})
+    picked = filter_rows(rows, now=now, upcoming_only=upcoming, country=country, league=league, query=q)
+    page = max(1, int(page))
+    chunk = [dict(r) for r in picked[(page - 1) * TABLE_PAGE_SIZE : page * TABLE_PAGE_SIZE]]
+    ids = [r["today_fixture_id"] for r in chunk]
+    notes = db.execute(select(AnalystMatchNote).where(AnalystMatchNote.today_fixture_id.in_(ids))).scalars().all() if ids else []
+    names = _names(db, {n.user_id for n in notes})
+    me = principal.user.id if principal.user else None
+    for r in chunk:
+        mine = [n for n in notes if n.today_fixture_id == r["today_fixture_id"] and n.user_id == me]
+        r["my_note"] = mine[0].note if mine else ""
+        # gli amministratori leggono anche le note degli altri (in sola lettura)
+        r["other_notes"] = (
+            [
+                {"user_name": names.get(n.user_id), "note": n.note}
+                for n in notes
+                if n.today_fixture_id == r["today_fixture_id"] and n.user_id != me and n.note.strip()
+            ]
+            if principal.is_admin
+            else []
+        )
+        r["started"] = bool(r["kickoff"] and datetime.fromisoformat(r["kickoff"]) <= now)
+    return {
+        "day": day.isoformat(),
+        "total": len(picked),
+        "total_day": len(rows),
+        "page": page,
+        "page_size": TABLE_PAGE_SIZE,
+        "countries": countries,
+        "leagues": leagues,
+        "rows": chunk,
+        "can_write": principal.user is not None or principal.kind == KIND_EMERGENCY_ADMIN,
+    }
+
+
+@router.post("/table/notes/{today_fixture_id}")
+def save_match_note(today_fixture_id: int, body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Nota dell'analista sulla partita: si salva da sola mentre scrive, anche dopo il calcio d'inizio."""
+    user = _writer(principal, db)
+    if db.get(CecchinoTodayFixture, today_fixture_id) is None:
+        raise HTTPException(status_code=404, detail="Partita non trovata")
+    text = str((body or {}).get("note") or "")[:5000]
+    note = db.execute(
+        select(AnalystMatchNote).where(AnalystMatchNote.user_id == user.id, AnalystMatchNote.today_fixture_id == today_fixture_id)
+    ).scalar_one_or_none()
+    if note is None:
+        note = AnalystMatchNote(user_id=user.id, today_fixture_id=today_fixture_id, note=text)
+        db.add(note)
+    else:
+        note.note = text  # svuotata resta come riga vuota: niente si cancella
+        note.updated_at = _now()
+    db.commit()
+    return {"today_fixture_id": today_fixture_id, "note": note.note}
 
 
 # --- partita (per il dialogo "Aggiungi al diario") ------------------------------------------------

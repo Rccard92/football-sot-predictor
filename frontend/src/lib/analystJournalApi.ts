@@ -45,7 +45,7 @@ function qs(params: Record<string, string | number | null | undefined>): string 
   return s ? `?${s}` : ''
 }
 
-export type JournalSource = 'today' | 'bet_builder' | 'bet_builder_v3'
+export type JournalSource = 'today' | 'bet_builder' | 'bet_builder_v3' | 'tabella'
 export type ChecklistValue = 'favorevole' | 'neutro' | 'contrario'
 export type ChecklistItem = { value: ChecklistValue | null; note: string | null }
 export type Checklist = Record<string, ChecklistItem>
@@ -223,6 +223,76 @@ export const createCycle = (input: { name: string; method: MethodKey; settings: 
   send<{ cycle: Cycle }>('POST', '/cycles', input)
 export const updateCycle = (id: number, input: Partial<{ name: string; notes: string; status: 'aperta' | 'chiusa'; settings: Record<string, number | boolean> }>) =>
   send<{ cycle: Cycle }>('PATCH', `/cycles/${id}`, input)
+// --- Tabella analisi (bozza di Giovanni, dal 05/11/2026) ---
+
+export type TableOutcome = 'V' | 'N' | 'P'
+export type TableGame = {
+  date: string | null
+  opponent: string | null
+  opponent_rank: number | null
+  home: boolean
+  ft: string | null
+  ht: string | null
+  ft_outcome: TableOutcome | null
+  ht_outcome: TableOutcome | null
+  bold_ft: boolean
+  bold_ht: boolean
+}
+export type TableBlock =
+  | { games: number; enough: false }
+  | {
+      games: number
+      enough: true
+      points: number
+      max_points: number
+      scored: number
+      conceded: number
+      results: TableGame[]
+      team_rank: number | null
+    }
+export type TableCards = { games: number; available: false } | { games: number; available: true; own: number; opponents: number }
+export type TableQuote = { key: string; label: string; group: string; quota: number | null }
+export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
+export type MatchTableRow = {
+  today_fixture_id: number
+  scan_date: string
+  kickoff: string | null
+  country: string | null
+  league: string | null
+  home_team: string
+  away_team: string
+  eligible: boolean
+  balance: { index: number | null; class: string | null } | null
+  blocks: Record<TableBlockKey, TableBlock>
+  yellows: { home: TableCards; away: TableCards }
+  standings_complete: boolean
+  home_rank: number | null
+  away_rank: number | null
+  quotes: TableQuote[]
+  my_note: string
+  other_notes: { user_name: string | null; note: string }[]
+  started: boolean
+}
+export type MatchTableResponse = {
+  day: string
+  total: number
+  total_day: number
+  page: number
+  page_size: number
+  countries: string[]
+  leagues: string[]
+  rows: MatchTableRow[]
+  can_write: boolean
+}
+export type MatchTableParams = { day?: string; upcoming?: boolean; country?: string; league?: string; q?: string; page?: number }
+
+export const getMatchTable = (p: MatchTableParams = {}) =>
+  request<MatchTableResponse>(
+    `/table${qs({ day: p.day, upcoming: p.upcoming === undefined ? undefined : String(p.upcoming), country: p.country, league: p.league, q: p.q, page: p.page })}`,
+  )
+export const saveMatchNote = (todayFixtureId: number, note: string) =>
+  send<{ today_fixture_id: number; note: string }>('POST', `/table/notes/${todayFixtureId}`, { note })
+
 export const getJournalReport = (f: Filters = {}) => request<JournalReport>(`/reports${qs(f)}`)
 export const journalExportUrl = (f: Filters = {}) => `${getApiBase()}${BASE}/export.xlsx${qs(f)}`
 

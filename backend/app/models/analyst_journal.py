@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -80,3 +80,17 @@ class AnalystEntry(Base, TimestampMixin):
     profit: Mapped[float | None] = mapped_column(Float, nullable=True)  # euro
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)  # a 1 unita'
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnalystMatchNote(Base, TimestampMixin):
+    """Nota dell'analista su una partita della Tabella analisi (dal 05/11/2026): una per analista e partita.
+
+    Non e' una giocata: resta modificabile anche dopo il calcio d'inizio."""
+
+    __tablename__ = "analyst_match_notes"
+    __table_args__ = (UniqueConstraint("user_id", "today_fixture_id", name="uq_analyst_match_notes_user_fixture"),)
+
+    id: Mapped[int] = mapped_column(_PK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(_PK, ForeignKey("app_users.id"), nullable=False, index=True)
+    today_fixture_id: Mapped[int] = mapped_column(_PK, nullable=False, index=True)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
