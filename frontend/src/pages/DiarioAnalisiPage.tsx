@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ChecklistEditor } from '../components/analyst/ChecklistEditor'
+import { MatchTable } from '../components/analyst/MatchTable'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
 import { AdminHttpError } from '../lib/api'
 import {
@@ -28,7 +29,7 @@ import {
   type ReportRow,
 } from '../lib/analystJournalApi'
 
-type Tab = 'giocate' | 'progressioni' | 'report'
+type Tab = 'tabella' | 'giocate' | 'progressioni' | 'report'
 type Period = 'week' | 'month' | '30d' | '90d' | 'all'
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -88,7 +89,7 @@ function money(v: number | null | undefined): string {
 
 /** Diario analisi (dal 30/10/2026): sostituisce il file "IL CECCHINO (Report)". */
 export function DiarioAnalisiPage() {
-  const [tab, setTab] = useState<Tab>('giocate')
+  const [tab, setTab] = useState<Tab>('tabella')
   const [period, setPeriod] = useState<Period>('month')
   const [meta, setMeta] = useState<JournalMeta | null>(null)
   const [analysts, setAnalysts] = useState<{ id: number; name: string }[]>([])
@@ -111,11 +112,11 @@ export function DiarioAnalisiPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Diario analisi</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Le giocate scelte da Cecchino Today, Bet Builder e Bet Builder V3: scheda pronostico, esiti automatici,
-            progressioni di cassa e report.
+            La tabella delle partite del giorno e le giocate scelte da Tabella, Cecchino Today, Bet Builder e Bet Builder V3:
+            scheda pronostico, esiti automatici, progressioni di cassa e report.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={`flex flex-wrap items-center gap-2 ${tab === 'tabella' ? 'hidden' : ''}`}>
           {meta?.is_admin && analysts.length ? (
             <select
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -147,6 +148,7 @@ export function DiarioAnalisiPage() {
       <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-slate-100/80 p-1" role="tablist">
         {(
           [
+            ['tabella', 'Tabella'],
             ['giocate', 'Giocate'],
             ['progressioni', 'Progressioni'],
             ['report', 'Report'],
@@ -165,6 +167,7 @@ export function DiarioAnalisiPage() {
         ))}
       </div>
 
+      {tab === 'tabella' ? <MatchTable /> : null}
       {tab === 'giocate' && meta ? <EntriesTab meta={meta} filters={filters} /> : null}
       {tab === 'progressioni' && meta ? <CyclesTab meta={meta} userId={userId} onSaved={reloadMeta} /> : null}
       {tab === 'report' ? <ReportTab filters={filters} /> : null}
