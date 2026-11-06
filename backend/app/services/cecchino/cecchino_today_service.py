@@ -150,7 +150,7 @@ from app.services.cecchino.cecchino_service import (
     calculate_and_persist_for_fixture,
 )
 from app.services.cecchino.cecchino_today_bookmaker_gate import verify_complete_1x2_odds
-from app.services.cecchino.cecchino_today_bootstrap import ensure_competition_and_history
+from app.services.cecchino.cecchino_today_bootstrap import ensure_competition_and_history, history_needs_refresh
 from app.services.cecchino.cecchino_today_reschedule import (
     apply_old_today_rescheduled_postponed,
     assert_post_upsert_invariant,
@@ -1308,6 +1308,44 @@ def run_scan(
                 af_client.set_usage_context(
                     usage_ctx.with_fixture(api_fid).with_league(provider_league_id or None),
                 )
+
+                # Partita gia' nel nostro archivio (calendario importato prima, o scansione del giorno
+                # prima): dal 06/11/2026 si aggiornano comunque i risultati del campionato se sono
+                # arrivate partite finite dopo l'ultimo import. Un errore qui non esclude la partita.
+                history_key = (provider_league_id, int(league_meta.get("season") or 0))
+                if local_fx is not None and comp is not None and history_key not in bootstrapped_leagues:
+                    try:
+                        refresh_history = history_needs_refresh(
+                            db,
+                            provider_league_id=history_key[0],
+                            season=history_key[1],
+                            league_id=int(local_fx.league_id),
+                            season_id=int(local_fx.season_id),
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("history refresh check failed fixture=%s", api_fid)
+                        recover_session_if_inactive(db)
+                        refresh_history = False
+                    if refresh_history:
+                        _emit_progress(progress, current_step="importing_stats")
+                        try:
+                            with db.begin_nested():
+                                _comp, _fx, boot_warnings = ensure_competition_and_history(
+                                    db,
+                                    api_item=item,
+                                    client=af_client,
+                                    bootstrapped_leagues=bootstrapped_leagues,
+                                    metrics=run_metrics,
+                                )
+                            row_warnings.extend(boot_warnings)
+                        except ApiFootballQuotaExhausted:
+                            raise
+                        except Exception:  # noqa: BLE001
+                            logger.exception("history refresh failed fixture=%s", api_fid)
+                            recover_session_if_inactive(db)
+                            row_warnings.append("history_refresh_failed")
+                    else:
+                        bootstrapped_leagues.add(history_key)
 
                 if local_fx is None or comp is None:
                     _emit_progress(progress, current_step="importing_stats")

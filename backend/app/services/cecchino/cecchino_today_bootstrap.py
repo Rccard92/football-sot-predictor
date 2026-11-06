@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -24,6 +25,52 @@ from app.services.cecchino.league_ingest_helpers import (
 from app.services.cecchino.fixture_ingest import FixtureIngest
 
 logger = logging.getLogger(__name__)
+
+# Una partita e' "finita da registrare" 3 ore dopo il calcio d'inizio.
+RESULT_PENDING_AFTER_KICKOFF = timedelta(hours=3)
+_NOT_FINISHED = ("NS", "TBD", "1H", "HT", "2H", "ET", "BT", "P", "LIVE", "SUSP", "INT")
+
+
+def results_pending(
+    db: Session,
+    *,
+    league_id: int,
+    season_id: int,
+    since: datetime | None,
+    now: datetime | None = None,
+) -> bool:
+    """Il campionato ha partite ancora "da giocare" nel nostro archivio ma gia' finite dopo l'ultimo import.
+
+    Dal 06/11/2026: prima lo storico si reimportava solo alla scadenza della cache (24 ore) e solo per le
+    partite nuove nel DB. Cosi' il Brasileirao, importato a maggio con tutto il calendario, e' rimasto
+    fermo per mesi; e con la scansione su due giorni le partite create il giorno prima avrebbero perso i
+    risultati della sera. Le partite rinviate non contano: valgono solo quelle iniziate dopo l'ultimo import."""
+    now = now or datetime.now(dt_timezone.utc)
+    q = select(Fixture.id).where(
+        Fixture.league_id == int(league_id),
+        Fixture.season_id == int(season_id),
+        Fixture.status.in_(_NOT_FINISHED),
+        Fixture.kickoff_at < now - RESULT_PENDING_AFTER_KICKOFF,
+    )
+    if since is not None:
+        since = since if since.tzinfo else since.replace(tzinfo=dt_timezone.utc)
+        q = q.where(Fixture.kickoff_at > since - RESULT_PENDING_AFTER_KICKOFF)
+    return db.scalar(q.limit(1)) is not None
+
+
+def history_needs_refresh(
+    db: Session,
+    *,
+    provider_league_id: int,
+    season: int,
+    league_id: int,
+    season_id: int,
+) -> bool:
+    """Va reimportato lo storico FT del campionato? Cache scaduta o risultati arrivati dopo l'ultimo import."""
+    cache_row = get_league_stats_cache(db, provider_league_id=provider_league_id, season=season)
+    if not is_league_stats_cache_valid(cache_row):
+        return True
+    return results_pending(db, league_id=league_id, season_id=season_id, since=cache_row.last_stats_import_at)
 
 
 def ensure_competition_and_history(
@@ -89,7 +136,12 @@ def ensure_competition_and_history(
     cache_valid = is_league_stats_cache_valid(cache_row)
     in_memory_hit = bootstrapped_leagues is not None and league_key in bootstrapped_leagues
 
-    should_import = not skip_api_import and not cache_valid and not in_memory_hit
+    stale_results = (
+        cache_valid
+        and not in_memory_hit
+        and results_pending(db, league_id=int(league.id), season_id=int(season_row.id), since=cache_row.last_stats_import_at)
+    )
+    should_import = not skip_api_import and not in_memory_hit and (not cache_valid or stale_results)
 
     fixtures_imported = int(cache_row.fixtures_ft_imported) if cache_row else 0
     if should_import:
