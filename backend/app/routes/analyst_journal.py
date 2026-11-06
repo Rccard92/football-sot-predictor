@@ -44,7 +44,7 @@ from app.services.analyst.journal import (
     tool_snapshot,
 )
 from app.services.analyst.staking import DEFAULTS, MAX_BETS, METHOD_LABELS, METHODS, normalize_settings
-from app.services.analyst.table import day_rows, filter_rows
+from app.services.analyst.table import day_rows, filter_rows, league_tables
 
 router = APIRouter(prefix="/analyst-journal", tags=["analyst-journal"])
 
@@ -277,6 +277,15 @@ def save_match_note(today_fixture_id: int, body: dict[str, Any], principal: Prin
     return {"today_fixture_id": today_fixture_id, "note": note.note}
 
 
+@router.get("/table/standings/{today_fixture_id}")
+def match_standings(today_fixture_id: int, principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Classifica completa del campionato della partita: totale, casa e trasferta (06/11/2026)."""
+    out = league_tables(db, today_fixture_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Classifica non disponibile per questa partita")
+    return out
+
+
 # --- partita (per il dialogo "Aggiungi al diario") ------------------------------------------------
 
 
@@ -338,7 +347,23 @@ def list_entries(
     ).scalars().all()
     names = _names(db, {e.user_id for e in rows})
     now = _now()
-    return {"entries": [entry_payload(e, user_name=names.get(e.user_id), now=now) for e in rows]}
+    # note scritte dall'analista nella Tabella sulla stessa partita (06/11/2026): si vedono nell'elenco
+    fixture_ids = {e.today_fixture_id for e in rows if e.today_fixture_id}
+    table_notes = (
+        {
+            (n.user_id, n.today_fixture_id): n.note
+            for n in db.execute(select(AnalystMatchNote).where(AnalystMatchNote.today_fixture_id.in_(fixture_ids))).scalars()
+            if n.note.strip()
+        }
+        if fixture_ids
+        else {}
+    )
+    return {
+        "entries": [
+            {**entry_payload(e, user_name=names.get(e.user_id), now=now), "table_note": table_notes.get((e.user_id, e.today_fixture_id))}
+            for e in rows
+        ]
+    }
 
 
 @router.post("/entries")

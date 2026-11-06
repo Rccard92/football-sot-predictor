@@ -46,14 +46,17 @@ const response: MatchTableResponse = {
           max_points: 9,
           scored: 4,
           conceded: 4,
+          ht_games: 3,
+          ht_scored: 1,
+          ht_conceded: 1,
           team_rank: 5,
-          results: [g('2-0', '1-0', 'V', 'V'), g('1-1', '0-0', 'N', 'N'), g('1-3', '0-1', 'P', 'P', true)],
+          results: [g('2-0', '1-0', 'V', 'V'), g('1-1', '0-0', 'N', 'N', true), g('1-3', '0-1', 'P', 'P', true)],
         },
         forma_fuori: { games: 2, enough: false },
         forma_totale_casa: { games: 2, enough: false },
         forma_totale_fuori: { games: 1, enough: false },
       },
-      yellows: { home: { games: 5, available: true, own: 9, opponents: 7 }, away: { games: 1, available: false } },
+      yellows: { home: { games: 5, available: true, own: 9, opponents: 7, own_avg: 1.8, opponents_avg: 1.4 }, away: { games: 1, available: false } },
       standings_complete: true,
       home_rank: 5,
       away_rank: 3,
@@ -73,29 +76,70 @@ const response: MatchTableResponse = {
 vi.mock('../../lib/analystJournalApi', async (orig) => ({
   ...(await orig<typeof import('../../lib/analystJournalApi')>()),
   getMatchTable: vi.fn(() => Promise.resolve(response)),
+  getMatchStandings: vi.fn(() =>
+    Promise.resolve({
+      today_fixture_id: 7,
+      league: 'Serie Z',
+      country: 'Italia',
+      home_team_id: 1,
+      away_team_id: 2,
+      games: 3,
+      complete: true,
+      tables: {
+        total: [
+          { rank: 1, team_id: 2, team: 'Ospite FC', played: 2, won: 2, drawn: 0, lost: 0, gf: 4, ga: 1, gd: 3, points: 6 },
+          { rank: 2, team_id: 1, team: 'Casa FC', played: 2, won: 1, drawn: 0, lost: 1, gf: 3, ga: 3, gd: 0, points: 3 },
+        ],
+        home: [{ rank: 1, team_id: 1, team: 'Casa FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
+        away: [{ rank: 1, team_id: 2, team: 'Ospite FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
+      },
+    }),
+  ),
   saveMatchNote: vi.fn(() => Promise.resolve({ today_fixture_id: 7, note: 'x' })),
 }))
 
 describe('MatchTable', () => {
   afterEach(cleanup)
 
-  it('lista compatta e scheda partita con forma, bordo, gialli e quote', async () => {
+  it('lista compatta e scheda partita con risultati, cornice, gol, gialli e quote', async () => {
     render(<MatchTable />)
     expect(await screen.findAllByText('Casa FC')).toBeTruthy()
     const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
     expect(within(detail).getByText('4 pt')).toBeTruthy()
     // sconfitta contro una squadra piu' in alto: quadratino rosso con il bordo
+    // il quadratino mostra il risultato; sconfitta contro una squadra piu' in alto: rosso con la cornice
     const lost = within(detail).getAllByTitle(/1-3 FT, persa/)[0]
+    expect(lost.textContent).toBe('1-3')
     expect(lost.className).toContain('bg-rose-100')
     expect(lost.className).toContain('ring-2')
+    const drawn = within(detail).getAllByTitle(/1-1 FT, pareggiata/)[0]
+    expect(drawn.className).toContain('bg-slate-100')
+    expect(drawn.className).toContain('ring-2')
     const won = within(detail).getAllByTitle(/2-0 FT, vinta/)[0]
+    expect(won.textContent).toBe('2-0')
     expect(won.className).toContain('bg-emerald-100')
     expect(won.className).not.toContain('ring-2')
+    expect(within(detail).getAllByTitle(/0-1 PT, persa/)[0].textContent).toBe('0-1')
+    expect(within(detail).getByText('Gol PT')).toBeTruthy()
     expect(within(detail).getByText('n.d.')).toBeTruthy()
-    expect(within(detail).getByText('9')).toBeTruthy()
+    expect(within(detail).getByText('1,8')).toBeTruthy()
+    expect(within(detail).getByText(/totale 9 · 7 in 5 gare/)).toBeTruthy()
     expect(within(detail).getByText('1,85')).toBeTruthy()
     expect(within(detail).getAllByText('Meno di 3 gare (2)').length).toBe(2)
-    expect(screen.getAllByText(/73 · Equilibrio/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Equilibrio/)).toBeNull()
+  })
+
+  it('classifica completa: totale, casa e trasferta', async () => {
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    await userEvent.click(screen.getByRole('button', { name: 'Classifica' }))
+    const dialog = await screen.findByText('Ricostruita dai 3 risultati del campionato nel nostro archivio.')
+    const aside = dialog.closest('aside')!
+    expect(within(aside).getByText('6')).toBeTruthy()
+    await userEvent.click(within(aside).getByRole('button', { name: 'Casa' }))
+    expect(within(aside).queryByText('Ospite FC')).toBeNull()
+    await userEvent.click(within(aside).getByRole('button', { name: 'Trasferta' }))
+    expect(within(aside).getByText('Ospite FC')).toBeTruthy()
   })
 
   it('il pulsante Domani chiede il giorno dopo', async () => {

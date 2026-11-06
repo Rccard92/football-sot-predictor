@@ -4,10 +4,12 @@ Bozza di Giovanni (04/11/2026) e decisioni del 05/11/2026:
 - forma = punti 3/1/0 sul risultato finale; sotto, i risultati di primo tempo e finali, l'ultima gara a destra;
   "Forma casa" = gare in casa della squadra di casa, "Forma fuori" = gare fuori dell'ospite, "Forma totale" = tutte;
 - da 3 a 5 gare: sotto le 3 la cella resta vuota; la partita entra se almeno un blocco ha 3 gare;
-- vittoria verde, sconfitta rossa, pareggio grigio; in grassetto vittorie e sconfitte contro squadre piu' in alto
-  nella classifica di oggi, ricostruita dai risultati (non ne abbiamo una salvata);
-- gol fatti contro subiti sulle stesse gare di "Forma casa/fuori"; gialli fatti e subiti sulle ultime 5 gare
-  totali, solo dove ci sono le statistiche (nessuna chiamata API in piu');
+- vittoria verde, sconfitta rossa, pareggio grigio; con la cornice i risultati contro squadre piu' in alto
+  nella classifica di oggi, ricostruita dai risultati (non ne abbiamo una salvata); dal 06/11 anche i pareggi;
+- gol fatti contro subiti sulle stesse gare, del primo tempo e finali, per tutti e quattro i blocchi (06/11);
+  gialli fatti e subiti sulle ultime 5 gare totali, con la media a partita, solo dove ci sono le statistiche
+  (nessuna chiamata API in piu');
+- classifica completa del campionato: totale, casa e trasferta (06/11);
 - equilibrio = indice e classe gia' salvati da Today (cecchino_balance_v5_evaluations);
 - quote = tutte quelle del pannello KPI.
 Le gare recenti sono quelle della fotografia della scansione del mattino (stesso campionato, coppe escluse).
@@ -99,9 +101,9 @@ def _game(g: dict[str, Any], team: int, ranks: dict[int, int], names: dict[int, 
         "ht": f"{hf}-{ha}" if ht else None,
         "ft_outcome": ft,
         "ht_outcome": ht,
-        # grassetto solo per vittorie e sconfitte, e per ciascuna riga solo se c'e' quel risultato
-        "bold_ft": bool(stronger and ft in ("V", "P")),
-        "bold_ht": bool(stronger and ht in ("V", "P")),
+        # cornice contro le squadre piu' in alto: vittorie, pareggi e sconfitte (pareggi dal 06/11/2026)
+        "bold_ft": bool(stronger and ft),
+        "bold_ht": bool(stronger and ht),
     }
 
 
@@ -113,6 +115,7 @@ def _block(games: list[dict[str, Any]], team: int, ranks: dict[int, int], names:
     points = sum(3 if r["ft_outcome"] == "V" else 1 if r["ft_outcome"] == "N" else 0 for r in rows)
     scored = sum(int(r["ft"].split("-")[0]) for r in rows if r["ft"])
     conceded = sum(int(r["ft"].split("-")[1]) for r in rows if r["ft"])
+    halves = [r["ht"] for r in rows if r["ht"]]
     return {
         "games": len(rows),
         "enough": True,
@@ -120,6 +123,10 @@ def _block(games: list[dict[str, Any]], team: int, ranks: dict[int, int], names:
         "max_points": 3 * len(rows),
         "scored": scored,
         "conceded": conceded,
+        # primo tempo: solo le gare con il parziale noto
+        "ht_games": len(halves),
+        "ht_scored": sum(int(h.split("-")[0]) for h in halves),
+        "ht_conceded": sum(int(h.split("-")[1]) for h in halves),
         "results": rows,
         "team_rank": ranks.get(team),
     }
@@ -138,7 +145,14 @@ def _cards(games: list[dict[str, Any]], team: int, yellows: dict[int, dict[str, 
         with_data += 1
     if with_data < MIN_GAMES:
         return {"games": with_data, "available": False}
-    return {"games": with_data, "available": True, "own": own, "opponents": conceded}
+    return {
+        "games": with_data,
+        "available": True,
+        "own": own,
+        "opponents": conceded,
+        "own_avg": round(own / with_data, 1),
+        "opponents_avg": round(conceded / with_data, 1),
+    }
 
 
 def _history(db: Session, ids: set[int]) -> dict[int, dict[str, Any]]:
@@ -205,6 +219,68 @@ def _league_standings(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[in
         if (lg, season) in pairs:
             games[(lg, season)].append((int(h), int(a), int(gh), int(ga)))
     return {p: standings(games.get(p, [])) for p in pairs}
+
+
+def _table(rows: list[tuple[int, int, int, int]], names: dict[int, str], side: str) -> list[dict[str, Any]]:
+    """Una classifica: "total", "home" (solo gare in casa) o "away" (solo gare fuori). Ordine come standings()."""
+    acc: dict[int, dict[str, int]] = defaultdict(lambda: {"played": 0, "won": 0, "drawn": 0, "lost": 0, "gf": 0, "ga": 0, "points": 0})
+    for h, a, gh, ga in rows:
+        for team, gf, gs, is_home in ((h, gh, ga, True), (a, ga, gh, False)):
+            if (side == "home" and not is_home) or (side == "away" and is_home):
+                continue
+            r = acc[team]
+            r["played"] += 1
+            r["gf"] += gf
+            r["ga"] += gs
+            if gf > gs:
+                r["won"] += 1
+                r["points"] += 3
+            elif gf == gs:
+                r["drawn"] += 1
+                r["points"] += 1
+            else:
+                r["lost"] += 1
+    order = sorted(acc, key=lambda t: (-acc[t]["points"], -(acc[t]["gf"] - acc[t]["ga"]), -acc[t]["gf"], names.get(t) or ""))
+    return [
+        {"rank": i + 1, "team_id": t, "team": names.get(t), **acc[t], "gd": acc[t]["gf"] - acc[t]["ga"]}
+        for i, t in enumerate(order)
+    ]
+
+
+def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
+    """Classifica completa del campionato della partita: totale, casa e trasferta, dai risultati nel DB."""
+    fx = db.get(CecchinoTodayFixture, today_fixture_id)
+    if fx is None or fx.local_fixture_id is None:
+        return None
+    loc = db.get(Fixture, int(fx.local_fixture_id))
+    if loc is None:
+        return None
+    rows = [
+        (int(h), int(a), int(gh), int(ga))
+        for h, a, gh, ga in db.execute(
+            select(Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away).where(
+                Fixture.league_id == loc.league_id,
+                Fixture.season_id == loc.season_id,
+                Fixture.status.in_(FINISHED_STATUSES),
+                Fixture.goals_home.is_not(None),
+                Fixture.goals_away.is_not(None),
+            )
+        ).all()
+    ]
+    team_ids = {r[0] for r in rows} | {r[1] for r in rows} | {int(loc.home_team_id), int(loc.away_team_id)}
+    names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()}
+    total = _table(rows, names, "total")
+    played = [r["played"] for r in total]
+    return {
+        "today_fixture_id": int(fx.id),
+        "league": fx.league_name,
+        "country": fx.country_name,
+        "home_team_id": int(loc.home_team_id),
+        "away_team_id": int(loc.away_team_id),
+        "games": len(rows),
+        "complete": bool(played) and max(played) - min(played) <= 2,
+        "tables": {"total": total, "home": _table(rows, names, "home"), "away": _table(rows, names, "away")},
+    }
 
 
 def _quotes(fx: CecchinoTodayFixture) -> list[dict[str, Any]]:
