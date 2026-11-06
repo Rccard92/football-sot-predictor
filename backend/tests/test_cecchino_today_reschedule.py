@@ -326,6 +326,11 @@ def _run_scan_with_existing_local(
         patch(
             "app.services.cecchino.cecchino_today_service.ensure_competition_and_history",
         ) as bootstrap,
+        # storico del campionato gia' aggiornato (06/11/2026: altrimenti si reimporta anche a partita nota)
+        patch(
+            "app.services.cecchino.cecchino_today_service.history_needs_refresh",
+            return_value=False,
+        ),
         patch(
             "app.services.cecchino.cecchino_today_service.build_calculation_input_for_fixture",
             side_effect=_capture_build,
