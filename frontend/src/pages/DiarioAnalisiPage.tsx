@@ -177,6 +177,27 @@ export function DiarioAnalisiPage() {
 
 // --- giocate --------------------------------------------------------------------------------------
 
+/** Note dell'analista sotto la giocata, direttamente nell'elenco (06/11/2026): Tabella, analisi e note. */
+function EntryNotesLine({ entry }: { entry: JournalEntry }) {
+  const parts = (
+    [
+      ['Tabella', entry.table_note],
+      ['Analisi', entry.analysis_note],
+      ['Note', entry.notes],
+    ] as [string, string | null | undefined][]
+  ).filter(([, text]) => text && text.trim())
+  if (!parts.length) return null
+  return (
+    <span className="col-span-full block space-y-0.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[13px] text-slate-700 sm:ml-[122px]">
+      {parts.map(([label, text]) => (
+        <span key={label} className="block whitespace-pre-line">
+          <span className="font-medium text-slate-500">{label}:</span> {text}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) {
   const [entries, setEntries] = useState<JournalEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -250,6 +271,7 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
                   <span className={`text-sm font-semibold tabular-nums ${(e.profit ?? 0) > 0 ? 'text-emerald-700' : (e.profit ?? 0) < 0 ? 'text-rose-700' : 'text-slate-500'}`}>
                     {e.profit !== null ? money(e.profit) : e.profit_units !== null ? `${e.profit_units > 0 ? '+' : ''}${e.profit_units} u` : ''}
                   </span>
+                  <EntryNotesLine entry={e} />
                 </button>
               ))}
             </div>

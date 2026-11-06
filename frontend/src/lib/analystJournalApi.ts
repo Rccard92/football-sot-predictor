@@ -102,6 +102,8 @@ export type JournalEntry = {
   checklist: Checklist
   analysis_note: string | null
   notes: string | null
+  /** nota scritta nella Tabella analisi sulla stessa partita (solo nell'elenco giocate) */
+  table_note?: string | null
   minutes_spent: number | null
   outcome: Outcome
   result_ht: string | null
@@ -247,10 +249,15 @@ export type TableBlock =
       max_points: number
       scored: number
       conceded: number
+      ht_games: number
+      ht_scored: number
+      ht_conceded: number
       results: TableGame[]
       team_rank: number | null
     }
-export type TableCards = { games: number; available: false } | { games: number; available: true; own: number; opponents: number }
+export type TableCards =
+  | { games: number; available: false }
+  | { games: number; available: true; own: number; opponents: number; own_avg: number; opponents_avg: number }
 export type TableQuote = { key: string; label: string; group: string; quota: number | null }
 export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
 export type MatchTableRow = {
@@ -290,6 +297,31 @@ export const getMatchTable = (p: MatchTableParams = {}) =>
   request<MatchTableResponse>(
     `/table${qs({ day: p.day, upcoming: p.upcoming === undefined ? undefined : String(p.upcoming), country: p.country, league: p.league, q: p.q, page: p.page })}`,
   )
+export type StandingRow = {
+  rank: number
+  team_id: number
+  team: string | null
+  played: number
+  won: number
+  drawn: number
+  lost: number
+  gf: number
+  ga: number
+  gd: number
+  points: number
+}
+export type StandingsKind = 'total' | 'home' | 'away'
+export type MatchStandings = {
+  today_fixture_id: number
+  league: string | null
+  country: string | null
+  home_team_id: number
+  away_team_id: number
+  games: number
+  complete: boolean
+  tables: Record<StandingsKind, StandingRow[]>
+}
+export const getMatchStandings = (todayFixtureId: number) => request<MatchStandings>(`/table/standings/${todayFixtureId}`)
 export const saveMatchNote = (todayFixtureId: number, note: string) =>
   send<{ today_fixture_id: number; note: string }>('POST', `/table/notes/${todayFixtureId}`, { note })
 
