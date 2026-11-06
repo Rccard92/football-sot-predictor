@@ -87,3 +87,11 @@ def get_squad_data(db: Session = Depends(readonly_session)) -> JSONResponse:
     from app.services.cecchino_v5.squad_exam import data_status
 
     return JSONResponse(content=jsonable_encoder({"seasons": data_status(db)}))
+
+
+@router.get("/v5/squad-exam-v2")
+def get_squad_exam_v2(start: bool = Query(default=False)) -> JSONResponse:
+    """Esame strato squadre v2 (docs/squadre/SQUADRE_V2_PREREGISTRAZIONE.md): `start=true` lo avvia in sottofondo."""
+    from app.services.cecchino_v5.squad_exam_v2 import exam_state
+
+    return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
