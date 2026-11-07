@@ -52,6 +52,21 @@ from app.services.analyst.journal import (
     tool_snapshot,
 )
 from app.services.analyst.staking import DEFAULTS, MAX_BETS, METHOD_LABELS, METHODS, normalize_settings
+from app.services.analyst.rules import (
+    CODE_LABELS,
+    MANUAL_TAGS,
+    MATCH_TYPES,
+    QUOTA_CODES,
+    checklist_warning,
+    clean_rules,
+    entry_check,
+    entry_codes,
+    fixture_context,
+    load_rules,
+    quota_status,
+    quota_warnings,
+    save_rules,
+)
 from app.services.analyst.table import day_rows, filter_rows, league_tables
 
 router = APIRouter(prefix="/analyst-journal", tags=["analyst-journal"])
@@ -196,6 +211,9 @@ def meta(principal: Principal = Depends(journal_principal)) -> dict[str, Any]:
         "can_write": principal.user is not None or principal.kind == KIND_EMERGENCY_ADMIN,
         "is_admin": principal.is_admin,
         "user_id": principal.user.id if principal.user else None,
+        "error_codes": CODE_LABELS,
+        "review_tags": MANUAL_TAGS,
+        "match_types": list(MATCH_TYPES),
     }
 
 
@@ -247,7 +265,17 @@ def match_table(
     notes = db.execute(select(AnalystMatchNote).where(AnalystMatchNote.today_fixture_id.in_(ids))).scalars().all() if ids else []
     names = _names(db, {n.user_id for n in notes})
     me = principal.user.id if principal.user else None
+    rules = load_rules(db)
     for r in chunk:
+        # colori delle quote con le regole di acquisto di oggi (07/11/2026)
+        r["quotes"] = [
+            {
+                **q,
+                "status": quota_status(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type")),
+                "warnings": [w["text"] for w in quota_warnings(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type"))],
+            }
+            for q in r["quotes"]
+        ]
         mine = [n for n in notes if n.today_fixture_id == r["today_fixture_id"] and n.user_id == me]
         r["my_note"] = mine[0].note if mine else ""
         # gli amministratori leggono anche le note degli altri (in sola lettura)
@@ -345,6 +373,58 @@ def fixture_info(
     }
 
 
+# --- regole di acquisto (07/11/2026) --------------------------------------------------------------
+
+
+@router.get("/rules")
+def get_rules(principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    return {"rules": load_rules(db), "markets": MARKETS, "can_edit": principal.is_admin}
+
+
+@router.post("/rules")
+def update_rules(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Solo gli amministratori cambiano le soglie; le giocate gia' salvate tengono il controllo di quel momento."""
+    if not principal.is_admin:
+        raise HTTPException(status_code=403, detail="Solo gli amministratori cambiano le regole")
+    try:
+        rules = clean_rules((body or {}).get("rules"), set(MARKET_BY_KEY))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    user = _writer(principal, db)
+    save_rules(db, rules, user.id)
+    db.commit()
+    return {"rules": load_rules(db)}
+
+
+@router.post("/check")
+def check_play(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Avvisi per "Aggiungi al diario" mentre si sceglie segno e quota: non blocca niente."""
+    body = body or {}
+    try:
+        fx = db.get(CecchinoTodayFixture, int(body.get("today_fixture_id")))
+    except (TypeError, ValueError):
+        fx = None
+    if fx is None:
+        raise HTTPException(status_code=404, detail="Partita non trovata")
+    market_key = str(body.get("market_key") or "")
+    rules = load_rules(db)
+    ctx = fixture_context(fx, market_key)
+    quota = body.get("quota")
+    try:
+        quota = float(str(quota).replace(",", ".")) if quota not in (None, "") else None
+    except ValueError:
+        quota = None
+    warnings = quota_warnings(rules, market_key, quota, ctx["quota_cecchino"], ctx["match_type"]) if market_key else []
+    cl = checklist_warning(rules, body.get("checklist")) if "checklist" in body else None
+    return {
+        "match_type": ctx["match_type"],
+        "quota_cecchino": ctx["quota_cecchino"],
+        "warnings": warnings,
+        "checklist_warning": cl,
+        "rule": (rules.get("markets") or {}).get(market_key),
+    }
+
+
 # --- giocate --------------------------------------------------------------------------------------
 
 
@@ -386,15 +466,50 @@ def list_entries(
             reviews.setdefault(rv.entry_id, []).append(rv)
     names.update(_names(db, {rv.user_id for rs in reviews.values() for rv in rs} - set(names)))
     me = principal.user.id if principal.user else None
+    rules = load_rules(db)
+    _fill_rule_checks(db, rows, rules)
     return {
         "entries": [
             {
                 **entry_payload(e, user_name=names.get(e.user_id), now=now),
                 "table_note": table_notes.get((e.user_id, e.today_fixture_id)),
                 "reviews": [_review_payload(rv, names, me) for rv in reviews.get(e.id, []) if rv.text.strip() or rv.user_id == me],
+                **_rule_fields(e, rules, reviews.get(e.id, [])),
             }
             for e in rows
         ]
+    }
+
+
+def _fill_rule_checks(db: Session, rows: list[AnalystEntry], rules: dict[str, Any]) -> None:
+    """Giocate salvate prima delle regole (07/11/2026): il controllo si fa una volta, con la quota salvata."""
+    missing = [e for e in rows if e.rule_check_json is None]
+    for e in missing:
+        fx = db.get(CecchinoTodayFixture, e.today_fixture_id) if e.today_fixture_id else None
+        check = entry_check(rules, fx, e.market_key, e.quota)
+        qc = (e.tool_json or {}).get("quota_cecchino")
+        if qc:  # la quota Cecchino del momento della scelta, se salvata
+            check["quota_cecchino"] = qc
+            check["warnings"] = quota_warnings(rules, e.market_key, e.quota, qc, check["match_type"])
+        check["late"] = True
+        e.rule_check_json = check
+    if missing:
+        db.commit()
+
+
+def _rule_fields(e: AnalystEntry, rules: dict[str, Any], reviews: list[AnalystEntryReview]) -> dict[str, Any]:
+    check = e.rule_check_json or {}
+    tags = {t for rv in reviews for t in (rv.tags or [])}
+    codes = entry_codes(e, rules, tags)
+    warnings = [w for w in (check.get("warnings") or []) if isinstance(w, dict)]
+    cl = checklist_warning(rules, e.checklist_json)
+    return {
+        "match_type": check.get("match_type"),
+        "quota_cecchino": check.get("quota_cecchino"),
+        "rule_warnings": warnings + ([cl] if cl else []),
+        "out_of_rules": any(w.get("code") in QUOTA_CODES for w in warnings),
+        "error_codes": sorted(codes),
+        "to_review": e.outcome == "lost" and not any(rv.text.strip() for rv in reviews),
     }
 
 
@@ -406,6 +521,7 @@ def _review_payload(rv: AnalystEntryReview, names: dict[int, str], me: int | Non
         "user_id": rv.user_id,
         "user_name": names.get(rv.user_id),
         "text": rv.text,
+        "tags": rv.tags or [],
         "updated_at": updated.isoformat() if updated else None,
         "mine": rv.user_id == me,
     }
@@ -417,14 +533,18 @@ def save_entry_review(entry_id: int, body: dict[str, Any], principal: Principal 
     entry = _visible_entry(db, principal, entry_id)
     user = _writer(principal, db)
     text = str((body or {}).get("text") or "")[:5000]
+    raw_tags = (body or {}).get("tags")
+    tags = sorted({str(t) for t in raw_tags if str(t) in MANUAL_TAGS or str(t) in CODE_LABELS}) if isinstance(raw_tags, list) else None
     rv = db.execute(
         select(AnalystEntryReview).where(AnalystEntryReview.entry_id == entry.id, AnalystEntryReview.user_id == user.id)
     ).scalar_one_or_none()
     if rv is None:
-        rv = AnalystEntryReview(entry_id=entry.id, user_id=user.id, text=text)
+        rv = AnalystEntryReview(entry_id=entry.id, user_id=user.id, text=text, tags=tags or None)
         db.add(rv)
     else:
         rv.text = text  # svuotata resta come riga vuota: niente si cancella
+        if tags is not None:
+            rv.tags = tags or None
         rv.updated_at = _now()
     db.commit()
     db.refresh(rv)
@@ -485,6 +605,8 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_pr
         notes=(str(body.get("notes") or "").strip() or None),
         minutes_spent=int(body["minutes_spent"]) if str(body.get("minutes_spent") or "").isdigit() else None,
         outcome=ENTRY_PENDING,
+        # regole di acquisto (07/11/2026): avvisa e non blocca, ma la giocata fuori regola resta segnata
+        rule_check_json=entry_check(load_rules(db), fx, market_key, quota),
     )
     db.add(entry)
     db.commit()
@@ -530,6 +652,9 @@ def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Dep
         entry.checklist_json = clean_checklist(body.get("checklist"))
     if "analysis_note" in body:
         entry.analysis_note = str(body.get("analysis_note") or "").strip() or None
+    if {"market_key", "quota"} & set(body):
+        fx = db.get(CecchinoTodayFixture, entry.today_fixture_id) if entry.today_fixture_id else None
+        entry.rule_check_json = entry_check(load_rules(db), fx, entry.market_key, entry.quota)
     db.commit()
     return {"entry": entry_payload(entry)}
 
@@ -630,10 +755,19 @@ def reports(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     settle_entries(db, user_id=_scope(principal, user_id))
-    rows = db.execute(
-        _entries_query(principal, user_id=user_id, date_from=date_from, date_to=date_to, cycle_id=None, outcome=None)
-    ).scalars().all()
-    return build_report(list(rows))
+    rows = list(
+        db.execute(
+            _entries_query(principal, user_id=user_id, date_from=date_from, date_to=date_to, cycle_id=None, outcome=None)
+        ).scalars().all()
+    )
+    rules = load_rules(db)
+    _fill_rule_checks(db, rows, rules)
+    tags: dict[int, set[str]] = {}
+    if rows:
+        for rv in db.execute(select(AnalystEntryReview).where(AnalystEntryReview.entry_id.in_([e.id for e in rows]))).scalars():
+            tags.setdefault(rv.entry_id, set()).update(rv.tags or [])
+    codes = {e.id: entry_codes(e, rules, tags.get(e.id)) for e in rows}
+    return build_report(rows, codes=codes, code_labels={**CODE_LABELS, **MANUAL_TAGS}, quota_codes=set(QUOTA_CODES))
 
 
 _OUTCOME_XLS = {"won": "VINTA", "lost": "PERSA", "void": "NULLA", "pending": ""}

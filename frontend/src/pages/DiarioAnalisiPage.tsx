@@ -11,26 +11,31 @@ import {
   deleteEntry,
   formatEuro,
   getCycle,
+  getBuyRules,
   getJournalMeta,
   getJournalReport,
   journalExportUrl,
   listAnalysts,
   listCycles,
   listEntries,
+  saveBuyRules,
   saveEntryReview,
   updateCycle,
   updateEntry,
+  type BuyRules,
   type Checklist,
   type Cycle,
   type Filters,
   type JournalEntry,
   type JournalMeta,
   type JournalReport,
+  type MarketInfo,
+  type MarketRule,
   type MethodKey,
   type ReportRow,
 } from '../lib/analystJournalApi'
 
-type Tab = 'tabella' | 'giocate' | 'progressioni' | 'report'
+type Tab = 'tabella' | 'giocate' | 'progressioni' | 'report' | 'regole'
 type Period = 'week' | 'month' | '30d' | '90d' | 'all'
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -153,6 +158,7 @@ export function DiarioAnalisiPage() {
             ['giocate', 'Giocate'],
             ['progressioni', 'Progressioni'],
             ['report', 'Report'],
+            ['regole', 'Regole'],
           ] as [Tab, string][]
         ).map(([key, label]) => (
           <button
@@ -172,6 +178,7 @@ export function DiarioAnalisiPage() {
       {tab === 'giocate' && meta ? <EntriesTab meta={meta} filters={filters} /> : null}
       {tab === 'progressioni' && meta ? <CyclesTab meta={meta} userId={userId} onSaved={reloadMeta} /> : null}
       {tab === 'report' ? <ReportTab filters={filters} /> : null}
+      {tab === 'regole' ? <RulesTab /> : null}
     </div>
   )
 }
@@ -215,15 +222,18 @@ function reviewDate(iso: string): string {
 
 /** Revisione dopo la partita (07/11/2026): la scrivono l'analista e gli amministratori, anche a partita chiusa,
  *  per rianalizzare soprattutto le gare sbagliate. Ognuno ha la sua, con nome e data. */
-function ReviewBox({ entry, canWrite, onChanged }: { entry: JournalEntry; canWrite: boolean; onChanged: () => void }) {
+function ReviewBox({ entry, meta, canWrite, onChanged }: { entry: JournalEntry; meta: JournalMeta; canWrite: boolean; onChanged: () => void }) {
   const mineReview = (entry.reviews ?? []).find((r) => r.mine)
   const others = (entry.reviews ?? []).filter((r) => !r.mine && r.text.trim())
   const [text, setText] = useState(mineReview?.text ?? '')
+  const [tags, setTags] = useState<string[]>(mineReview?.tags ?? [])
   const [busy, setBusy] = useState(false)
+  const autoCodes = (entry.error_codes ?? []).filter((c) => meta.error_codes?.[c])
+  const changed = text !== (mineReview?.text ?? '') || [...tags].sort().join() !== [...(mineReview?.tags ?? [])].sort().join()
   const save = async () => {
     setBusy(true)
     try {
-      await saveEntryReview(entry.id, text)
+      await saveEntryReview(entry.id, text, tags)
       toast.success('Revisione salvata')
       onChanged()
     } catch (e) {
@@ -235,6 +245,11 @@ function ReviewBox({ entry, canWrite, onChanged }: { entry: JournalEntry; canWri
   return (
     <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
       <p className="text-sm font-semibold text-slate-800">Revisione dopo la partita</p>
+      {autoCodes.length ? (
+        <p className="text-[13px] text-slate-600">
+          Il tool ha visto: <span className="font-medium text-rose-700">{autoCodes.map((c) => meta.error_codes?.[c] ?? c).join(' · ')}</span>
+        </p>
+      ) : null}
       {others.map((r) => (
         <p key={r.user_id} className="whitespace-pre-line rounded-lg bg-white px-2.5 py-1.5 text-[13px] text-slate-700">
           <span className="font-medium text-slate-500">
@@ -242,10 +257,23 @@ function ReviewBox({ entry, canWrite, onChanged }: { entry: JournalEntry; canWri
             {r.updated_at ? `, ${reviewDate(r.updated_at)}` : ''}:
           </span>{' '}
           {r.text}
+          {r.tags?.length ? <span className="block text-[12px] text-slate-500">Motivi: {r.tags.map((t) => meta.review_tags?.[t] ?? t).join(' · ')}</span> : null}
         </p>
       ))}
       {canWrite ? (
         <>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {Object.entries(meta.review_tags ?? {}).map(([key, label]) => (
+              <label key={key} className="flex items-center gap-1.5 text-[13px] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={tags.includes(key)}
+                  onChange={(e) => setTags((t) => (e.target.checked ? [...t, key] : t.filter((x) => x !== key)))}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
           <textarea
             className={`${inputClass} min-h-[72px] bg-white`}
             placeholder="Cosa è andato storto (o bene) e cosa rifare diversamente?"
@@ -253,7 +281,7 @@ function ReviewBox({ entry, canWrite, onChanged }: { entry: JournalEntry; canWri
             onChange={(e) => setText(e.target.value)}
           />
           <div className="flex justify-end">
-            <button type="button" className={btn} onClick={() => void save()} disabled={busy || text === (mineReview?.text ?? '')}>
+            <button type="button" className={btn} onClick={() => void save()} disabled={busy || !changed}>
               {busy ? 'Salvo…' : 'Salva revisione'}
             </button>
           </div>
@@ -332,6 +360,19 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
                   <span>
                     <span className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${OUTCOME_BADGE[e.outcome]}`}>{OUTCOME_LABELS[e.outcome]}</span>
                     {e.result_ft ? <span className="ml-1.5 text-[13px] tabular-nums text-slate-500">{e.result_ft}{e.result_ht ? ` (${e.result_ht})` : ''}</span> : null}
+                    {e.out_of_rules ? (
+                      <span
+                        className="mt-1 block w-fit rounded-full bg-rose-50 px-2 py-0.5 text-[12px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200"
+                        title={(e.rule_warnings ?? []).map((w) => w.text).join(' · ')}
+                      >
+                        fuori regola
+                      </span>
+                    ) : null}
+                    {e.to_review ? (
+                      <span className="mt-1 block w-fit rounded-full bg-amber-50 px-2 py-0.5 text-[12px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+                        da rivedere
+                      </span>
+                    ) : null}
                   </span>
                   <span className={`text-sm font-semibold tabular-nums ${(e.profit ?? 0) > 0 ? 'text-emerald-700' : (e.profit ?? 0) < 0 ? 'text-rose-700' : 'text-slate-500'}`}>
                     {e.profit !== null ? money(e.profit) : e.profit_units !== null ? `${e.profit_units > 0 ? '+' : ''}${e.profit_units} u` : ''}
@@ -439,6 +480,20 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
           </p>
           {toolBits.length ? <p className="mt-1 text-[13px] text-slate-500">Il tool, quando l&apos;hai scelta: {toolBits.join(' · ')}</p> : null}
           {entry.locked ? <p className="mt-1 text-[13px] text-slate-500">Partita iniziata: si possono cambiare solo note e minuti.</p> : null}
+          {entry.match_type || entry.quota_cecchino ? (
+            <p className="mt-1 text-[13px] text-slate-500">
+              {[entry.match_type ? `Partita: ${entry.match_type}` : null, entry.quota_cecchino ? `quota Cecchino ${entry.quota_cecchino}` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          ) : null}
+          {(entry.rule_warnings ?? []).length ? (
+            <div className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-[13px] text-rose-800">
+              {(entry.rule_warnings ?? []).map((w) => (
+                <p key={w.code}>{w.text}</p>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {!entry.locked && mine ? (
@@ -474,7 +529,7 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
             <input className={inputClass} value={minutes} disabled={!mine} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ''))} />
           </label>
         </div>
-        <ReviewBox entry={entry} canWrite={meta.can_write} onChanged={onChanged} />
+        <ReviewBox entry={entry} meta={meta} canWrite={meta.can_write} onChanged={onChanged} />
         {mine ? (
           <div className="flex flex-wrap justify-between gap-2">
             {!entry.locked ? (
@@ -856,6 +911,20 @@ function ReportTab({ filters }: { filters: Filters }) {
         firstLabel="Voce"
         secondLabel="Valutazione"
       />
+      <ReportTable
+        title="Dentro e fuori dalle regole"
+        subtitle="Le giocate dentro le quote minime e massime di acquisto contro quelle salvate fuori regola: i numeri dicono se le fasce sono giuste."
+        rows={(report.rules ?? []).map((r) => ({ key: r.key, first: r.label, row: r }))}
+        firstLabel="Giocate"
+        showMoney
+      />
+      <ReportTable
+        title="Errori ricorrenti"
+        subtitle="Motivi visti dal tool (quota, squilibrio, checklist) e scelti nelle revisioni: quante giocate, quante perse e quanto sono costate."
+        rows={(report.errors ?? []).map((r) => ({ key: r.code, first: r.label, row: r }))}
+        firstLabel="Motivo"
+        showMoney
+      />
     </div>
   )
 }
@@ -936,6 +1005,143 @@ function ReportTable({
             ))}
           </tbody>
         </table>
+      </div>
+    </section>
+  )
+}
+
+// --- regole di acquisto (07/11/2026) --------------------------------------------------------------
+
+function numText(v: number | undefined): string {
+  return v === undefined ? '' : String(v).replace('.', ',')
+}
+
+function parseNum(text: string): number | undefined {
+  const v = Number(text.replace(',', '.'))
+  return text.trim() && Number.isFinite(v) && v > 0 ? v : undefined
+}
+
+/** Quote minime e massime per segno (PDF di Giovanni): tutti le leggono, gli amministratori le cambiano. */
+function RulesTab() {
+  const [rules, setRules] = useState<BuyRules | null>(null)
+  const [markets, setMarkets] = useState<MarketInfo[]>([])
+  const [canEdit, setCanEdit] = useState(false)
+  const [draft, setDraft] = useState<Record<string, Record<string, string>>>({})
+  const [avoid, setAvoid] = useState<Record<string, boolean>>({})
+  const [checklistMin, setChecklistMin] = useState('5')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const apply = useCallback((r: BuyRules) => {
+    setRules(r)
+    setChecklistMin(String(r.checklist_min))
+    const d: Record<string, Record<string, string>> = {}
+    const a: Record<string, boolean> = {}
+    for (const [key, rule] of Object.entries(r.markets)) {
+      d[key] = { min: numText(rule.min), max: numText(rule.max), cecchino_mult: numText(rule.cecchino_mult) }
+      a[key] = Boolean(rule.avoid)
+    }
+    setDraft(d)
+    setAvoid(a)
+  }, [])
+
+  useEffect(() => {
+    getBuyRules().then(
+      (r) => {
+        apply(r.rules)
+        setMarkets(r.markets)
+        setCanEdit(r.can_edit)
+      },
+      (e: unknown) => setError(errorText(e)),
+    )
+  }, [apply])
+
+  const save = async () => {
+    if (!rules) return
+    const out: Record<string, MarketRule> = {}
+    for (const m of markets) {
+      const d = draft[m.key] ?? {}
+      const rule: MarketRule = {}
+      if (avoid[m.key]) rule.avoid = true
+      const min = parseNum(d.min ?? '')
+      const max = parseNum(d.max ?? '')
+      const mult = parseNum(d.cecchino_mult ?? '')
+      if (min !== undefined) rule.min = min
+      if (max !== undefined) rule.max = max
+      if (mult !== undefined) rule.cecchino_mult = mult
+      if (Object.keys(rule).length) out[m.key] = rule
+    }
+    setBusy(true)
+    try {
+      const r = await saveBuyRules({ ...rules, checklist_min: Number(checklistMin) || 0, markets: out })
+      apply(r.rules)
+      toast.success('Regole salvate')
+    } catch (e) {
+      toast.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (error) return <p className="text-sm text-rose-700">{error}</p>
+  if (!rules) return <p className="text-sm text-slate-500">Carico le regole…</p>
+  const cell = 'w-20 rounded-md border border-slate-300 px-2 py-1 text-right text-sm tabular-nums disabled:border-transparent disabled:bg-transparent'
+  return (
+    <section className={`${todayCard} overflow-hidden`}>
+      <div className="px-4 pt-4">
+        <h2 className={todaySectionTitle}>Regole di acquisto</h2>
+        <p className={todaySectionSubtitle}>
+          Quote minime e massime per segno: fuori fascia il tool avvisa «non è da comprare», ma l&apos;ultima parola resta all&apos;analista. Per gli
+          Under la quota del book deve valere almeno la quota Cecchino × moltiplicatore. In una partita di squilibrio niente Under. Le giocate già
+          salvate tengono il controllo del momento in cui sono state salvate.
+        </p>
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead className="bg-slate-50 text-[12px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-2 text-left font-medium">Segno</th>
+              <th className="px-3 py-2 text-right font-medium">Minima</th>
+              <th className="px-3 py-2 text-right font-medium">Massima</th>
+              <th className="px-3 py-2 text-right font-medium">× quota Cecchino</th>
+              <th className="px-3 py-2 text-center font-medium">Da evitare</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {markets.map((m) => {
+              const d = draft[m.key] ?? {}
+              const set = (field: string, value: string) => setDraft((x) => ({ ...x, [m.key]: { ...(x[m.key] ?? {}), [field]: value } }))
+              return (
+                <tr key={m.key} className={avoid[m.key] ? 'text-slate-400' : 'text-slate-800'}>
+                  <td className="px-4 py-1.5">
+                    {m.label} <span className="text-[12px] text-slate-400">{m.group}</span>
+                  </td>
+                  {(['min', 'max', 'cecchino_mult'] as const).map((field) => (
+                    <td key={field} className="px-3 py-1.5 text-right">
+                      <input className={cell} value={d[field] ?? ''} disabled={!canEdit} onChange={(e) => set(field, e.target.value)} aria-label={`${m.label} ${field}`} />
+                    </td>
+                  ))}
+                  <td className="px-3 py-1.5 text-center">
+                    <input type="checkbox" checked={Boolean(avoid[m.key])} disabled={!canEdit} onChange={(e) => setAvoid((x) => ({ ...x, [m.key]: e.target.checked }))} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          Punti minimi della checklist
+          <input className={cell} value={checklistMin} disabled={!canEdit} onChange={(e) => setChecklistMin(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        {canEdit ? (
+          <button type="button" className={btnPrimary} onClick={() => void save()} disabled={busy}>
+            {busy ? 'Salvo…' : 'Salva regole'}
+          </button>
+        ) : (
+          <span className="text-[13px] text-slate-500">Solo gli amministratori cambiano le regole.</span>
+        )}
       </div>
     </section>
   )

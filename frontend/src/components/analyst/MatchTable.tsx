@@ -7,7 +7,9 @@ import {
   type MatchStandings,
   type MatchTableResponse,
   type MatchTableRow,
+  type QuotaStatus,
   type StandingsKind,
+  type TableQuote,
   type TableBlock,
   type TableCards,
   type TableGame,
@@ -22,7 +24,9 @@ import { AddToJournalButton } from './AddToJournalButton'
  *  la forma a quadratini, e scheda della partita scelta con il dettaglio, il pannello KPI, il diario e le note.
  *  Il giro del mattino scansiona anche domani, quindi qui si preparano oggi le partite di domani.
  *  06/11 (richieste di Giovanni): risultato dentro il quadratino, cornice anche sui pareggi, gol PT e FT in ogni
- *  blocco, media dei gialli, classifica completa (totale, casa, trasferta), indicatore di equilibrio tolto. */
+ *  blocco, media dei gialli, classifica completa (totale, casa, trasferta), indicatore di equilibrio tolto.
+ *  07/11: solo partite calcolate da Cecchino; quote colorate con le regole di acquisto (verde si compra, rosso fuori
+ *  fascia, barrata da evitare); tipo di partita Equilibrio / Squilibrio / Scala dalle quote 1-X-2 (solo qui). */
 
 const btn = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'
 const selectClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm'
@@ -34,6 +38,37 @@ const SQUARE: Record<TableOutcome, string> = {
 }
 const OUTCOME_WORD: Record<TableOutcome, string> = { V: 'vinta', N: 'pareggiata', P: 'persa' }
 const MAIN_QUOTES = ['HOME', 'DRAW', 'AWAY']
+const QUOTE_CLASS: Record<QuotaStatus, string> = {
+  ok: 'text-emerald-700',
+  out: 'text-rose-700',
+  avoid: 'text-slate-400 line-through',
+  none: 'text-slate-900',
+}
+const MATCH_TYPE_CLASS: Record<string, string> = {
+  Equilibrio: 'bg-teal-50 text-teal-800 ring-teal-200',
+  Squilibrio: 'bg-amber-50 text-amber-800 ring-amber-200',
+  'Scala 1X': 'bg-slate-50 text-slate-700 ring-slate-200',
+  'Scala X2': 'bg-slate-50 text-slate-700 ring-slate-200',
+}
+
+function quoteTitle(q: TableQuote | undefined): string | undefined {
+  if (!q) return undefined
+  const cecchino = q.quota_cecchino ? `Quota Cecchino ${quoteText(q.quota_cecchino)}` : ''
+  const why = q.warnings?.length ? q.warnings.join(' · ') : q.status === 'ok' ? 'Dentro le regole di acquisto' : ''
+  return [why, cecchino].filter(Boolean).join(' — ') || undefined
+}
+
+function MatchTypePill({ kind }: { kind?: string | null }) {
+  if (!kind) return null
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-[12px] font-medium ring-1 ring-inset ${MATCH_TYPE_CLASS[kind] ?? 'bg-slate-50 text-slate-700 ring-slate-200'}`}
+      title="Dalle quote 1-X-2 con la regola dell'analisi manuale"
+    >
+      {kind}
+    </span>
+  )
+}
 type Order = 'time' | 'league'
 const WIDE_QUERY = '(min-width: 1280px)'
 
@@ -124,7 +159,7 @@ function ListForm({ block }: { block: TableBlock }) {
 }
 
 function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; selected: boolean; onSelect: () => void; showLeague: boolean }) {
-  const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k)?.quota)
+  const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k))
   return (
     <button
       type="button"
@@ -145,6 +180,7 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
           {showLeague ? <span className="truncate text-[12px] text-slate-500">{row.league}</span> : null}
+          <MatchTypePill kind={row.match_type} />
           {row.my_note.trim() ? <span className="text-[12px] text-indigo-700" title="Hai scritto una nota">● nota</span> : null}
           {row.started ? <span className="text-[12px] text-slate-400">iniziata</span> : null}
         </span>
@@ -166,8 +202,8 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
           </span>
         ))}
         {main.map((q, i) => (
-          <span key={i} className="font-semibold text-slate-900">
-            {quoteText(q)}
+          <span key={i} className={`font-semibold ${QUOTE_CLASS[q?.status ?? 'none']}`} title={quoteTitle(q)}>
+            {quoteText(q?.quota)}
           </span>
         ))}
       </span>
@@ -490,6 +526,9 @@ function MatchDetail({
             {row.away_team}
             {row.away_rank ? <span className="ml-1 text-[13px] font-normal text-slate-400">{row.away_rank}ª</span> : null}
           </h2>
+          <div className="mt-1">
+            <MatchTypePill kind={row.match_type} />
+          </div>
           {!row.standings_complete ? (
             <p className="mt-1 text-[12px] text-amber-700" title="Nel campionato mancano alcuni risultati: posizioni e cornici possono non essere esatte">
               classifica parziale
@@ -539,14 +578,20 @@ function MatchDetail({
                 {row.quotes
                   .filter((q) => q.group === g)
                   .map((q) => (
-                    <span key={q.key} className="whitespace-nowrap">
-                      <span className="text-slate-500">{q.label}</span> <b className="tabular-nums text-slate-900">{quoteText(q.quota)}</b>
+                    <span key={q.key} className="whitespace-nowrap" title={quoteTitle(q)}>
+                      <span className="text-slate-500">{q.label}</span>{' '}
+                      <b className={`tabular-nums ${QUOTE_CLASS[q.status ?? 'none']}`}>{quoteText(q.quota)}</b>
                     </span>
                   ))}
               </div>
             ))}
           </div>
           {others.length === 0 ? <p className="mt-1 text-[12px] text-slate-400">Solo 1, X e 2 disponibili.</p> : null}
+          <p className="mt-1.5 text-[12px] text-slate-500">
+            <span className="font-semibold text-emerald-700">Verde</span> si compra, <span className="font-semibold text-rose-700">rosso</span> fuori
+            dalla quota minima o massima, <span className="text-slate-400 line-through">barrata</span> segno da evitare, nera senza regola. Passa sopra
+            una quota per il motivo.
+          </p>
         </div>
       ) : null}
 
@@ -684,7 +729,8 @@ export function MatchTable() {
           {data ? ` · ${data.total} partite${upcoming ? ' da giocare' : ''} su ${data.total_day}` : ''}
           {pages > 1 ? ` · pagina ${page} di ${pages}` : ''}. Quadratini con il risultato finale:{' '}
           <span className="font-semibold text-emerald-700">verde</span> vinta, <span className="font-semibold text-slate-500">grigio</span> pari,{' '}
-          <span className="font-semibold text-rose-700">rosso</span> persa, con i punti accanto.
+          <span className="font-semibold text-rose-700">rosso</span> persa, con i punti accanto. Quote 1-X-2 in verde se si comprano, in rosso se
+          fuori regola. Solo le partite calcolate da Cecchino.
         </p>
       </div>
 

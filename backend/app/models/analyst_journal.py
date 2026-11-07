@@ -80,6 +80,8 @@ class AnalystEntry(Base, TimestampMixin):
     profit: Mapped[float | None] = mapped_column(Float, nullable=True)  # euro
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)  # a 1 unita'
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # controllo delle regole di acquisto al salvataggio (07/11/2026): tipo di partita, quota Cecchino, avvisi
+    rule_check_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class AnalystMatchNote(Base, TimestampMixin):
@@ -109,3 +111,14 @@ class AnalystEntryReview(Base, TimestampMixin):
     entry_id: Mapped[int] = mapped_column(_PK, ForeignKey("analyst_entries.id"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(_PK, ForeignKey("app_users.id"), nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # motivi d'errore scelti da chi rivede
+
+
+class AnalystSetting(Base, TimestampMixin):
+    """Impostazioni del Diario modificabili dagli amministratori (dal 07/11/2026), es. le regole di acquisto."""
+
+    __tablename__ = "analyst_settings"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(_PK, ForeignKey("app_users.id"), nullable=True)
