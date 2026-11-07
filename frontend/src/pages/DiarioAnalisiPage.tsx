@@ -17,6 +17,7 @@ import {
   listAnalysts,
   listCycles,
   listEntries,
+  saveEntryReview,
   updateCycle,
   updateEntry,
   type Checklist,
@@ -186,7 +187,8 @@ function EntryNotesLine({ entry }: { entry: JournalEntry }) {
       ['Note', entry.notes],
     ] as [string, string | null | undefined][]
   ).filter(([, text]) => text && text.trim())
-  if (!parts.length) return null
+  const reviews = (entry.reviews ?? []).filter((r) => r.text.trim())
+  if (!parts.length && !reviews.length) return null
   return (
     <span className="col-span-full block space-y-0.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[13px] text-slate-700 sm:ml-[122px]">
       {parts.map(([label, text]) => (
@@ -194,7 +196,70 @@ function EntryNotesLine({ entry }: { entry: JournalEntry }) {
           <span className="font-medium text-slate-500">{label}:</span> {text}
         </span>
       ))}
+      {reviews.map((r) => (
+        <span key={r.user_id} className="block whitespace-pre-line">
+          <span className="font-medium text-amber-700">
+            Revisione · {r.user_name ?? 'Analista'}
+            {r.updated_at ? `, ${reviewDate(r.updated_at)}` : ''}:
+          </span>{' '}
+          {r.text}
+        </span>
+      ))}
     </span>
+  )
+}
+
+function reviewDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Rome' })
+}
+
+/** Revisione dopo la partita (07/11/2026): la scrivono l'analista e gli amministratori, anche a partita chiusa,
+ *  per rianalizzare soprattutto le gare sbagliate. Ognuno ha la sua, con nome e data. */
+function ReviewBox({ entry, canWrite, onChanged }: { entry: JournalEntry; canWrite: boolean; onChanged: () => void }) {
+  const mineReview = (entry.reviews ?? []).find((r) => r.mine)
+  const others = (entry.reviews ?? []).filter((r) => !r.mine && r.text.trim())
+  const [text, setText] = useState(mineReview?.text ?? '')
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      await saveEntryReview(entry.id, text)
+      toast.success('Revisione salvata')
+      onChanged()
+    } catch (e) {
+      toast.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+      <p className="text-sm font-semibold text-slate-800">Revisione dopo la partita</p>
+      {others.map((r) => (
+        <p key={r.user_id} className="whitespace-pre-line rounded-lg bg-white px-2.5 py-1.5 text-[13px] text-slate-700">
+          <span className="font-medium text-slate-500">
+            {r.user_name ?? 'Analista'}
+            {r.updated_at ? `, ${reviewDate(r.updated_at)}` : ''}:
+          </span>{' '}
+          {r.text}
+        </p>
+      ))}
+      {canWrite ? (
+        <>
+          <textarea
+            className={`${inputClass} min-h-[72px] bg-white`}
+            placeholder="Cosa è andato storto (o bene) e cosa rifare diversamente?"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <div className="flex justify-end">
+            <button type="button" className={btn} onClick={() => void save()} disabled={busy || text === (mineReview?.text ?? '')}>
+              {busy ? 'Salvo…' : 'Salva revisione'}
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
   )
 }
 
@@ -409,6 +474,7 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
             <input className={inputClass} value={minutes} disabled={!mine} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ''))} />
           </label>
         </div>
+        <ReviewBox entry={entry} canWrite={meta.can_write} onChanged={onChanged} />
         {mine ? (
           <div className="flex flex-wrap justify-between gap-2">
             {!entry.locked ? (

@@ -94,3 +94,18 @@ class AnalystMatchNote(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(_PK, ForeignKey("app_users.id"), nullable=False, index=True)
     today_fixture_id: Mapped[int] = mapped_column(_PK, nullable=False, index=True)
     note: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AnalystEntryReview(Base, TimestampMixin):
+    """Revisione di una giocata dopo la partita (dal 07/11/2026): una per persona e giocata.
+
+    La scrivono l'analista della giocata e gli amministratori, per rianalizzare soprattutto le gare sbagliate;
+    resta modificabile e svuotarla non cancella la riga."""
+
+    __tablename__ = "analyst_entry_reviews"
+    __table_args__ = (UniqueConstraint("entry_id", "user_id", name="uq_analyst_entry_reviews_entry_user"),)
+
+    id: Mapped[int] = mapped_column(_PK, primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(_PK, ForeignKey("analyst_entries.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(_PK, ForeignKey("app_users.id"), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
