@@ -23,7 +23,15 @@ from app.core.access_control import require_principal
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.user_auth import KIND_EMERGENCY_ADMIN, Principal, generate_password, hash_password, normalize_email
-from app.models.analyst_journal import CYCLE_CLOSED, CYCLE_OPEN, ENTRY_PENDING, AnalystCycle, AnalystEntry, AnalystMatchNote
+from app.models.analyst_journal import (
+    CYCLE_CLOSED,
+    CYCLE_OPEN,
+    ENTRY_PENDING,
+    AnalystCycle,
+    AnalystEntry,
+    AnalystEntryReview,
+    AnalystMatchNote,
+)
 from app.models.app_user import ROLE_ADMIN, AppUser
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.analyst.journal import (
@@ -108,6 +116,15 @@ def _own_entry(db: Session, principal: Principal, entry_id: int) -> AnalystEntry
         raise HTTPException(status_code=404, detail="Giocata non trovata")
     if principal.user is None or entry.user_id != principal.user.id:
         raise HTTPException(status_code=403, detail="Puoi modificare solo le tue giocate")
+    return entry
+
+
+def _visible_entry(db: Session, principal: Principal, entry_id: int) -> AnalystEntry:
+    entry = db.get(AnalystEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Giocata non trovata")
+    if not principal.is_admin and (principal.user is None or entry.user_id != principal.user.id):
+        raise HTTPException(status_code=403, detail="Giocata di un altro utente")
     return entry
 
 
@@ -358,12 +375,60 @@ def list_entries(
         if fixture_ids
         else {}
     )
+    # revisioni dopo la partita (07/11/2026): dell'analista e degli amministratori, con nome e data
+    reviews: dict[int, list[AnalystEntryReview]] = {}
+    if rows:
+        for rv in db.execute(
+            select(AnalystEntryReview)
+            .where(AnalystEntryReview.entry_id.in_([e.id for e in rows]))
+            .order_by(AnalystEntryReview.created_at.asc(), AnalystEntryReview.id.asc())
+        ).scalars():
+            reviews.setdefault(rv.entry_id, []).append(rv)
+    names.update(_names(db, {rv.user_id for rs in reviews.values() for rv in rs} - set(names)))
+    me = principal.user.id if principal.user else None
     return {
         "entries": [
-            {**entry_payload(e, user_name=names.get(e.user_id), now=now), "table_note": table_notes.get((e.user_id, e.today_fixture_id))}
+            {
+                **entry_payload(e, user_name=names.get(e.user_id), now=now),
+                "table_note": table_notes.get((e.user_id, e.today_fixture_id)),
+                "reviews": [_review_payload(rv, names, me) for rv in reviews.get(e.id, []) if rv.text.strip() or rv.user_id == me],
+            }
             for e in rows
         ]
     }
+
+
+def _review_payload(rv: AnalystEntryReview, names: dict[int, str], me: int | None) -> dict[str, Any]:
+    updated = rv.updated_at or rv.created_at
+    if updated is not None and updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    return {
+        "user_id": rv.user_id,
+        "user_name": names.get(rv.user_id),
+        "text": rv.text,
+        "updated_at": updated.isoformat() if updated else None,
+        "mine": rv.user_id == me,
+    }
+
+
+@router.post("/entries/{entry_id}/review")
+def save_entry_review(entry_id: int, body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Revisione della giocata dopo la partita: la scrivono l'analista e gli amministratori, anche a partita chiusa."""
+    entry = _visible_entry(db, principal, entry_id)
+    user = _writer(principal, db)
+    text = str((body or {}).get("text") or "")[:5000]
+    rv = db.execute(
+        select(AnalystEntryReview).where(AnalystEntryReview.entry_id == entry.id, AnalystEntryReview.user_id == user.id)
+    ).scalar_one_or_none()
+    if rv is None:
+        rv = AnalystEntryReview(entry_id=entry.id, user_id=user.id, text=text)
+        db.add(rv)
+    else:
+        rv.text = text  # svuotata resta come riga vuota: niente si cancella
+        rv.updated_at = _now()
+    db.commit()
+    db.refresh(rv)
+    return {"entry_id": entry.id, "review": _review_payload(rv, _names(db, {user.id}), user.id)}
 
 
 @router.post("/entries")

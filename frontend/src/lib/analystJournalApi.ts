@@ -104,6 +104,8 @@ export type JournalEntry = {
   notes: string | null
   /** nota scritta nella Tabella analisi sulla stessa partita (solo nell'elenco giocate) */
   table_note?: string | null
+  /** revisioni dopo la partita, dell'analista e degli amministratori (solo nell'elenco giocate) */
+  reviews?: EntryReview[]
   minutes_spent: number | null
   outcome: Outcome
   result_ht: string | null
@@ -322,6 +324,9 @@ export type MatchStandings = {
   tables: Record<StandingsKind, StandingRow[]>
 }
 export const getMatchStandings = (todayFixtureId: number) => request<MatchStandings>(`/table/standings/${todayFixtureId}`)
+export type EntryReview = { user_id: number; user_name: string | null; text: string; updated_at: string | null; mine: boolean }
+export const saveEntryReview = (entryId: number, text: string) =>
+  send<{ entry_id: number; review: EntryReview }>('POST', `/entries/${entryId}/review`, { text })
 export const saveMatchNote = (todayFixtureId: number, note: string) =>
   send<{ today_fixture_id: number; note: string }>('POST', `/table/notes/${todayFixtureId}`, { note })
 

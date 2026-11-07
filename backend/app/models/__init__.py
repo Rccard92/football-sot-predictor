@@ -65,7 +65,7 @@ from app.models.cecchino_live_prediction import CecchinoLivePrediction
 from app.models.api_football_data import ApiFootballFixtureFetch, ApiFootballLeagueCoverage, CecchinoBet365MarketLine
 from app.models.cecchino_xg_league_tag import CecchinoXgLeagueTag
 from app.models.app_user import AppLoginEvent, AppUser, AppUserSession
-from app.models.analyst_journal import AnalystCycle, AnalystEntry, AnalystMatchNote
+from app.models.analyst_journal import AnalystCycle, AnalystEntry, AnalystEntryReview, AnalystMatchNote
 from app.models.cecchino_v3 import (
     CecchinoV3EvaluatorPlay,
     CecchinoV3EvaluatorRun,
@@ -143,6 +143,8 @@ __all__ = [
     "AppLoginEvent",
     "AnalystCycle",
     "AnalystEntry",
+    "AnalystEntryReview",
+    "AnalystMatchNote",
     "ApiUsageEvent",
     "Base",
     "CecchinoGoalIntensityV5PreviewBundle",
