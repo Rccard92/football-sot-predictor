@@ -10,6 +10,8 @@ Bozza di Giovanni (04/11/2026) e decisioni del 05/11/2026:
   gialli fatti e subiti sulle ultime 5 gare totali, con la media a partita, solo dove ci sono le statistiche
   (nessuna chiamata API in piu');
 - classifica completa del campionato: totale, casa e trasferta (06/11);
+- solo le partite calcolate da Cecchino (07/11): senza quota Cecchino e pannello KPI non c'e' analisi da fare;
+- tipo di partita dalle quote 1-X-2 con la regola di Giovanni (vedi rules.py), solo in questa pagina;
 - equilibrio = indice e classe gia' salvati da Today (cecchino_balance_v5_evaluations);
 - quote = tutte quelle del pannello KPI.
 Le gare recenti sono quelle della fotografia della scansione del mattino (stesso campionato, coppe escluse).
@@ -32,6 +34,7 @@ from app.models.fixture import Fixture
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.team import Team
 from app.services.analyst.journal import MARKETS
+from app.services.analyst.rules import match_type
 
 MIN_GAMES = 3
 MAX_GAMES = 5
@@ -285,14 +288,25 @@ def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
 
 def _quotes(fx: CecchinoTodayFixture) -> list[dict[str, Any]]:
     by_key: dict[str, Any] = {}
+    by_cecchino: dict[str, Any] = {}
     for row in ((fx.kpi_panel_json or {}).get("rows") or []):
         if isinstance(row, dict) and row.get("market_key"):
             by_key[str(row["market_key"])] = row.get("quota_book")
+            by_cecchino[str(row["market_key"])] = row.get("quota_cecchino")
     out = []
     for m in MARKETS:
         if m["key"] in by_key:
             q = by_key[m["key"]]
-            out.append({"key": m["key"], "label": m["label"], "group": m["group"], "quota": float(q) if q else None})
+            qc = by_cecchino.get(m["key"])
+            out.append(
+                {
+                    "key": m["key"],
+                    "label": m["label"],
+                    "group": m["group"],
+                    "quota": float(q) if q else None,
+                    "quota_cecchino": float(qc) if qc else None,
+                }
+            )
     return out
 
 
@@ -300,7 +314,12 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
     """Tutte le righe del giorno (senza note), ordinate per orario."""
     fixtures = db.execute(
         select(CecchinoTodayFixture)
-        .where(CecchinoTodayFixture.scan_date == day, CecchinoTodayFixture.local_fixture_id.is_not(None))
+        .where(
+            CecchinoTodayFixture.scan_date == day,
+            CecchinoTodayFixture.local_fixture_id.is_not(None),
+            # solo le partite calcolate da Cecchino (07/11/2026)
+            CecchinoTodayFixture.eligibility_status == "eligible",
+        )
         .order_by(CecchinoTodayFixture.kickoff.asc().nulls_last(), CecchinoTodayFixture.id.asc())
     ).scalars().all()
     if not fixtures:
@@ -356,6 +375,8 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         if not any(b["enough"] for b in blocks.values()):
             continue
         idx, cls = balance.get(int(f.id), (None, None))
+        quotes = _quotes(f)
+        main = {q["key"]: q["quota"] for q in quotes}
         kickoff = _aware(f.kickoff)
         out.append(
             {
@@ -376,7 +397,8 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "standings_complete": complete,
                 "home_rank": ranks.get(home),
                 "away_rank": ranks.get(away),
-                "quotes": _quotes(f),
+                "quotes": quotes,
+                "match_type": match_type(*(main.get(k) for k in ("HOME", "DRAW", "AWAY"))),
             }
         )
     return out

@@ -470,8 +470,22 @@ def _finish(b: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_report(entries: list[AnalystEntry]) -> dict[str, Any]:
-    """Report come nel file (segni per mese e gruppo, gestione cassa) + confronto con il tool e scheda."""
+def build_report(
+    entries: list[AnalystEntry],
+    *,
+    codes: dict[int, set[str]] | None = None,
+    code_labels: dict[str, str] | None = None,
+    quota_codes: set[str] | None = None,
+) -> dict[str, Any]:
+    """Report come nel file (segni per mese e gruppo, gestione cassa) + confronto con il tool e scheda.
+
+    Dal 07/11/2026 anche gli errori ricorrenti (motivi delle giocate: avvisi delle regole e revisioni) e il
+    confronto tra giocate dentro e fuori dalle regole di acquisto."""
+    codes = codes or {}
+    code_labels = code_labels or {}
+    quota_codes = quota_codes or set()
+    by_code: dict[str, dict[str, Any]] = defaultdict(_bucket)
+    by_rule: dict[str, dict[str, Any]] = defaultdict(_bucket)
     total = _bucket()
     by_month: dict[str, dict[str, Any]] = defaultdict(_bucket)
     by_month_group: dict[tuple[str, str], dict[str, Any]] = defaultdict(_bucket)
@@ -487,6 +501,10 @@ def build_report(entries: list[AnalystEntry]) -> dict[str, Any]:
         for key, item in (e.checklist_json or {}).items():
             if isinstance(item, dict) and item.get("value") in CHECKLIST_VALUES:
                 _add(checklist[(key, item["value"])], e)
+        mine = codes.get(e.id, set())
+        for code in mine:
+            _add(by_code[code], e)
+        _add(by_rule["fuori" if mine & quota_codes else "dentro"], e)
     labels = {c["key"]: c["label"] for c in CHECKLIST}
     return {
         "total": _finish(total),
@@ -505,4 +523,13 @@ def build_report(entries: list[AnalystEntry]) -> dict[str, Any]:
             for (k, v), b in sorted(checklist.items(), key=lambda x: (list(labels).index(x[0][0]) if x[0][0] in labels else 99, x[0][1]))
         ],
         "groups": MARKET_GROUPS,
+        "errors": [
+            {"code": c, "label": code_labels.get(c, c), **_finish(b)}
+            for c, b in sorted(by_code.items(), key=lambda x: (-x[1]["lost"], -x[1]["entries"]))
+        ],
+        "rules": [
+            {"key": k, "label": "Dentro le regole" if k == "dentro" else "Fuori dalle regole", **_finish(by_rule[k])}
+            for k in ("dentro", "fuori")
+            if k in by_rule
+        ],
     }

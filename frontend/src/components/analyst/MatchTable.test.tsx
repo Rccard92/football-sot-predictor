@@ -61,11 +61,12 @@ const response: MatchTableResponse = {
       home_rank: 5,
       away_rank: 3,
       quotes: [
-        { key: 'HOME', label: '1', group: 'Fisse', quota: 2.1 },
-        { key: 'DRAW', label: 'X', group: 'Fisse', quota: 3.2 },
+        { key: 'HOME', label: '1', group: 'Fisse', quota: 2.1, status: 'out', warnings: ['Oltre la quota massima 1,55'] },
+        { key: 'DRAW', label: 'X', group: 'Fisse', quota: 3.2, status: 'ok', warnings: [] },
         { key: 'AWAY', label: '2', group: 'Fisse', quota: null },
         { key: 'OVER_2_5', label: 'Over 2.5', group: 'Over', quota: 1.85 },
       ],
+      match_type: 'Scala 1X',
       my_note: '',
       other_notes: [],
       started: false,
@@ -127,6 +128,11 @@ describe('MatchTable', () => {
     expect(within(detail).getByText('1,85')).toBeTruthy()
     expect(within(detail).getAllByText('Meno di 3 gare (2)').length).toBe(2)
     expect(screen.queryByText(/Equilibrio/)).toBeNull()
+    // tipo di partita e quote colorate con le regole di acquisto
+    expect(within(detail).getByText('Scala 1X')).toBeTruthy()
+    expect(within(detail).getByText('2,10').className).toContain('text-rose-700')
+    expect(within(detail).getByText('3,20').className).toContain('text-emerald-700')
+    expect(within(detail).getByText('2,10').closest('[title]')?.getAttribute('title')).toContain('Oltre la quota massima')
   })
 
   it('classifica completa: totale, casa e trasferta', async () => {

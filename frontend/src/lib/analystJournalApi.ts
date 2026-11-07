@@ -62,6 +62,10 @@ export type JournalMeta = {
   is_admin: boolean
   /** Account a cui vanno le giocate di chi e' collegato (null finche' l'accesso di emergenza non ha scritto). */
   user_id: number | null
+  /** motivi d'errore automatici (regole di acquisto) e quelli da scegliere nella revisione (07/11/2026) */
+  error_codes?: Record<string, string>
+  review_tags?: Record<string, string>
+  match_types?: string[]
 }
 
 /** Cosa diceva il tool quando la giocata e' stata scelta (dalla pagina di origine). */
@@ -106,6 +110,13 @@ export type JournalEntry = {
   table_note?: string | null
   /** revisioni dopo la partita, dell'analista e degli amministratori (solo nell'elenco giocate) */
   reviews?: EntryReview[]
+  /** regole di acquisto controllate al salvataggio (solo nell'elenco giocate) */
+  match_type?: string | null
+  quota_cecchino?: number | null
+  rule_warnings?: RuleWarning[]
+  out_of_rules?: boolean
+  error_codes?: string[]
+  to_review?: boolean
   minutes_spent: number | null
   outcome: Outcome
   result_ht: string | null
@@ -192,6 +203,8 @@ export type JournalReport = {
   sources: (ReportRow & { source: string; label: string })[]
   checklist: (ReportRow & { key: string; label: string; value: ChecklistValue })[]
   groups: string[]
+  errors?: (ReportRow & { code: string; label: string })[]
+  rules?: (ReportRow & { key: 'dentro' | 'fuori'; label: string })[]
 }
 
 export type EntryInput = {
@@ -260,7 +273,17 @@ export type TableBlock =
 export type TableCards =
   | { games: number; available: false }
   | { games: number; available: true; own: number; opponents: number; own_avg: number; opponents_avg: number }
-export type TableQuote = { key: string; label: string; group: string; quota: number | null }
+export type QuotaStatus = 'ok' | 'out' | 'avoid' | 'none'
+export type TableQuote = {
+  key: string
+  label: string
+  group: string
+  quota: number | null
+  quota_cecchino?: number | null
+  /** regole di acquisto (07/11/2026): ok si compra, out fuori fascia, avoid segno da evitare, none nessuna regola */
+  status?: QuotaStatus
+  warnings?: string[]
+}
 export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
 export type MatchTableRow = {
   today_fixture_id: number
@@ -278,6 +301,8 @@ export type MatchTableRow = {
   home_rank: number | null
   away_rank: number | null
   quotes: TableQuote[]
+  /** Equilibrio, Squilibrio, Scala 1X o Scala X2 dalle quote 1-X-2 (regola di Giovanni, solo nel Diario) */
+  match_type?: string | null
   my_note: string
   other_notes: { user_name: string | null; note: string }[]
   started: boolean
@@ -324,9 +349,25 @@ export type MatchStandings = {
   tables: Record<StandingsKind, StandingRow[]>
 }
 export const getMatchStandings = (todayFixtureId: number) => request<MatchStandings>(`/table/standings/${todayFixtureId}`)
-export type EntryReview = { user_id: number; user_name: string | null; text: string; updated_at: string | null; mine: boolean }
-export const saveEntryReview = (entryId: number, text: string) =>
-  send<{ entry_id: number; review: EntryReview }>('POST', `/entries/${entryId}/review`, { text })
+export type EntryReview = { user_id: number; user_name: string | null; text: string; tags?: string[]; updated_at: string | null; mine: boolean }
+export const saveEntryReview = (entryId: number, text: string, tags?: string[]) =>
+  send<{ entry_id: number; review: EntryReview }>('POST', `/entries/${entryId}/review`, { text, tags })
+
+// --- regole di acquisto (07/11/2026) ---
+export type RuleWarning = { code: string; text: string }
+export type MarketRule = { min?: number; max?: number; cecchino_mult?: number; avoid?: boolean }
+export type BuyRules = { checklist_min: number; under_no_squilibrio: boolean; markets: Record<string, MarketRule> }
+export type PlayCheck = {
+  match_type: string | null
+  quota_cecchino: number | null
+  warnings: RuleWarning[]
+  checklist_warning: RuleWarning | null
+  rule: MarketRule | null
+}
+export const checkPlay = (input: { today_fixture_id: number; market_key: string; quota: number | null; checklist?: Checklist }) =>
+  send<PlayCheck>('POST', '/check', input)
+export const getBuyRules = () => request<{ rules: BuyRules; markets: MarketInfo[]; can_edit: boolean }>('/rules')
+export const saveBuyRules = (rules: BuyRules) => send<{ rules: BuyRules }>('POST', '/rules', { rules })
 export const saveMatchNote = (todayFixtureId: number, note: string) =>
   send<{ today_fixture_id: number; note: string }>('POST', `/table/notes/${todayFixtureId}`, { note })
 

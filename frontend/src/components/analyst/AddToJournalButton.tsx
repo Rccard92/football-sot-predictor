@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { useOptionalAuth } from '../../contexts/AuthContext'
 import { AdminHttpError } from '../../lib/api'
 import {
+  checkPlay,
   createEntry,
   formatEuro,
   getCycle,
@@ -14,6 +15,7 @@ import {
   type FixtureInfo,
   type JournalMeta,
   type JournalSource,
+  type PlayCheck,
   type ToolSnapshot,
 } from '../../lib/analystJournalApi'
 import { ChecklistEditor } from './ChecklistEditor'
@@ -93,6 +95,7 @@ function AddToJournalDialog({
   const [minutesText, setMinutesText] = useState('')
   const [showChecklist, setShowChecklist] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [rulesCheck, setRulesCheck] = useState<PlayCheck | null>(null)
 
   useEffect(() => {
     openedAt.current = Date.now()
@@ -131,6 +134,24 @@ function AddToJournalDialog({
       window.clearTimeout(t)
     }
   }, [cycleId, quotaValue])
+
+  // regole di acquisto (07/11/2026): avvisano mentre si sceglie, ma l'ultima parola resta all'analista
+  useEffect(() => {
+    if (!market) return
+    let alive = true
+    const t = window.setTimeout(() => {
+      checkPlay({ today_fixture_id: todayFixtureId, market_key: market, quota: quotaValue > 1 ? quotaValue : null, checklist }).then(
+        (r) => alive && setRulesCheck(r),
+        () => alive && setRulesCheck(null),
+      )
+    }, 300)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [todayFixtureId, market, quotaValue, checklist])
+  const shownCheck = market ? rulesCheck : null
+  const outOfRules = Boolean(shownCheck?.warnings.length)
 
   const save = async () => {
     if (!market) return setError('Scegli il pronostico')
@@ -268,6 +289,8 @@ function AddToJournalDialog({
           </label>
         </div>
 
+        {shownCheck ? <RulesAlert check={shownCheck} /> : null}
+
         <div>
           <button type="button" className="text-sm font-semibold text-slate-800" onClick={() => setShowChecklist((v) => !v)}>
             {showChecklist ? '▾' : '▸'} Scheda pronostico
@@ -305,10 +328,42 @@ function AddToJournalDialog({
             disabled={busy || !info || fx?.started}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            {busy ? 'Salvo…' : 'Salva nel diario'}
+            {busy ? 'Salvo…' : outOfRules ? 'Salva lo stesso' : 'Salva nel diario'}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function quotaText(v: number | null | undefined): string {
+  return v == null ? '—' : v.toFixed(2).replace('.', ',')
+}
+
+/** Avviso delle regole di acquisto di Giovanni: non blocca, la giocata fuori regola resta segnata nel diario. */
+function RulesAlert({ check }: { check: PlayCheck }) {
+  const facts = [
+    check.match_type ? `Partita: ${check.match_type}` : null,
+    check.quota_cecchino ? `quota Cecchino ${quotaText(check.quota_cecchino)}` : null,
+    check.rule?.min || check.rule?.max
+      ? `fascia ${check.rule.min ? `da ${quotaText(check.rule.min)}` : ''}${check.rule.min && check.rule.max ? ' ' : ''}${check.rule.max ? `a ${quotaText(check.rule.max)}` : ''}`
+      : null,
+  ].filter(Boolean)
+  return (
+    <div className="space-y-1.5">
+      {check.warnings.length ? (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+          <p className="font-semibold">Attenzione: questa giocata non è da comprare</p>
+          {check.warnings.map((w) => (
+            <p key={w.code}>{w.text}</p>
+          ))}
+          <p className="mt-1 text-[13px] text-rose-700">Puoi salvarla lo stesso: resterà segnata «fuori regola» nel diario e nel report.</p>
+        </div>
+      ) : check.rule ? (
+        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Dentro le regole di acquisto.</p>
+      ) : null}
+      {check.checklist_warning ? <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{check.checklist_warning.text}</p> : null}
+      {facts.length ? <p className="text-[13px] text-slate-500">{facts.join(' · ')}</p> : null}
     </div>
   )
 }
