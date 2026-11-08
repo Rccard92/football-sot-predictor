@@ -402,11 +402,18 @@ const STANDINGS_TABS: [StandingsKind, string][] = [
   ['away', 'Trasferta'],
 ]
 
-/** Classifica completa del campionato, ricostruita dai risultati: totale, solo casa, solo trasferta. */
+/** Classifica completa del campionato, ricostruita dai risultati: totale, solo casa, solo trasferta.
+ *  08/11/2026: un clic su una delle due squadre della partita accende le avversarie delle sue ultime 5 gare
+ *  (in casa, fuori o in totale, come la scheda aperta) con il colore del risultato, e sotto compare il box
+ *  con quelle partite. La posizione dell'avversaria nel box e' quella della classifica totale. */
+const SCOPE_WORDS: Record<StandingsKind, string> = { total: 'partite', home: 'partite in casa', away: 'partite fuori casa' }
+const ROW_TINT: Record<TableOutcome, string> = { V: 'bg-emerald-50', N: 'bg-slate-100', P: 'bg-rose-50' }
+
 function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => void }) {
   const [data, setData] = useState<MatchStandings | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [kind, setKind] = useState<StandingsKind>('total')
+  const [selected, setSelected] = useState<number | null>(null)
   useEffect(() => {
     let alive = true
     getMatchStandings(row.today_fixture_id).then(
@@ -422,7 +429,25 @@ function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => 
     }
   }, [row.today_fixture_id])
   const rows = data?.tables[kind] ?? []
-  const mark = (id: number) => (data && (id === data.home_team_id || id === data.away_team_id) ? 'bg-indigo-50 font-semibold text-slate-900' : 'text-slate-700')
+  const playing = data ? [data.home_team_id, data.away_team_id] : []
+  const games = useMemo(() => (data && selected !== null ? (data.recent?.[String(selected)]?.[kind] ?? []) : []), [data, selected, kind])
+  const byOpponent = useMemo(() => {
+    const out = new Map<number, TableGame[]>()
+    for (const g of games) if (g.opponent_id != null) out.set(g.opponent_id, [...(out.get(g.opponent_id) ?? []), g])
+    return out
+  }, [games])
+  const teamName = (id: number | null) => (id === null ? '' : (data?.tables.total.find((r) => r.team_id === id)?.team ?? (id === data?.home_team_id ? row.home_team : row.away_team)))
+
+  const rowClass = (id: number) => {
+    if (selected !== null) {
+      if (id === selected) return 'bg-indigo-100 font-semibold text-slate-900'
+      const met = byOpponent.get(id)
+      if (met) return `${ROW_TINT[met[met.length - 1].ft_outcome ?? 'N']} font-medium text-slate-900`
+      return 'text-slate-400'
+    }
+    return playing.includes(id) ? 'bg-indigo-50 font-semibold text-slate-900' : 'text-slate-700'
+  }
+
   return (
     <div className="fixed inset-0 z-[70] flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" onClick={onClose}>
       <aside className="h-full w-full max-w-2xl space-y-4 overflow-y-auto bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -455,10 +480,15 @@ function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => 
         {!data && !error ? <p className="text-sm text-slate-500">Carico la classifica…</p> : null}
         {data ? (
           <>
+            <p className="text-[13px] text-slate-500">
+              {selected === null
+                ? `Clicca su ${row.home_team} o ${row.away_team} per vedere contro chi hanno giocato le ultime 5 ${SCOPE_WORDS[kind]}.`
+                : `${teamName(selected)}: avversarie delle ultime 5 ${SCOPE_WORDS[kind]}, colorate con il risultato (verde vinta, grigio pari, rosso persa). Clicca di nuovo per togliere.`}
+            </p>
             <table className="w-full text-[13px] tabular-nums">
               <thead>
                 <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
-                  <th className="py-1.5 pr-2 text-left font-semibold">#</th>
+                  <th className="py-1.5 pl-1 pr-2 text-left font-semibold">#</th>
                   <th className="py-1.5 pr-2 text-left font-semibold">Squadra</th>
                   {['G', 'V', 'N', 'P', 'GF', 'GS', 'DR', 'Pt'].map((h) => (
                     <th key={h} className="px-1 py-1.5 text-right font-semibold">
@@ -468,29 +498,95 @@ function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => 
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.team_id} className={`border-b border-slate-100 ${mark(r.team_id)}`}>
-                    <td className="py-1.5 pr-2">{r.rank}</td>
-                    <td className="py-1.5 pr-2">{r.team ?? '—'}</td>
-                    <td className="px-1 py-1.5 text-right">{r.played}</td>
-                    <td className="px-1 py-1.5 text-right">{r.won}</td>
-                    <td className="px-1 py-1.5 text-right">{r.drawn}</td>
-                    <td className="px-1 py-1.5 text-right">{r.lost}</td>
-                    <td className="px-1 py-1.5 text-right">{r.gf}</td>
-                    <td className="px-1 py-1.5 text-right">{r.ga}</td>
-                    <td className="px-1 py-1.5 text-right">{r.gd > 0 ? `+${r.gd}` : r.gd}</td>
-                    <td className="px-1 py-1.5 text-right font-semibold text-slate-900">{r.points}</td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const met = selected !== null ? byOpponent.get(r.team_id) : undefined
+                  const clickable = playing.includes(r.team_id)
+                  return (
+                    <tr key={r.team_id} className={`border-b border-slate-100 ${rowClass(r.team_id)}`}>
+                      <td className="py-1.5 pl-1 pr-2">{r.rank}</td>
+                      <td className="py-1.5 pr-2">
+                        {clickable ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelected((s) => (s === r.team_id ? null : r.team_id))}
+                            aria-pressed={selected === r.team_id}
+                            className="font-semibold text-indigo-800 underline decoration-dotted underline-offset-2 hover:text-indigo-950"
+                          >
+                            {r.team ?? '—'}
+                          </button>
+                        ) : (
+                          r.team ?? '—'
+                        )}
+                        {met?.map((g, i) => (
+                          <span
+                            key={i}
+                            title={gameTitle(g, 'FT')}
+                            className={`ml-1.5 inline-flex h-5 min-w-[2rem] items-center justify-center rounded px-0.5 text-[11px] font-semibold ${g.ft_outcome ? SQUARE[g.ft_outcome] : 'bg-slate-50 text-slate-300'}`}
+                          >
+                            {g.ft ?? '·'}
+                          </span>
+                        ))}
+                      </td>
+                      <td className="px-1 py-1.5 text-right">{r.played}</td>
+                      <td className="px-1 py-1.5 text-right">{r.won}</td>
+                      <td className="px-1 py-1.5 text-right">{r.drawn}</td>
+                      <td className="px-1 py-1.5 text-right">{r.lost}</td>
+                      <td className="px-1 py-1.5 text-right">{r.gf}</td>
+                      <td className="px-1 py-1.5 text-right">{r.ga}</td>
+                      <td className="px-1 py-1.5 text-right">{r.gd > 0 ? `+${r.gd}` : r.gd}</td>
+                      <td className="px-1 py-1.5 text-right font-semibold text-slate-900">{r.points}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             <p className="text-[12px] text-slate-500">
               Ricostruita dai {data.games} risultati del campionato nel nostro archivio.
               {!data.complete ? ' Mancano alcuni risultati: le posizioni possono non essere esatte.' : ''}
             </p>
+            {selected !== null ? <RecentGamesBox team={teamName(selected)} kind={kind} games={games} /> : null}
           </>
         ) : null}
       </aside>
+    </div>
+  )
+}
+
+/** Le ultime 5 partite della squadra scelta, dalla piu' vecchia all'ultima, con PT e finale. */
+function RecentGamesBox({ team, kind, games }: { team: string | null; kind: StandingsKind; games: TableGame[] }) {
+  return (
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+      <p className="text-sm font-semibold text-slate-800">
+        {team} · ultime {games.length || 5} {SCOPE_WORDS[kind]}
+      </p>
+      {games.length === 0 ? (
+        <p className="mt-1 text-[13px] text-slate-500">Nessuna partita finora.</p>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          {games.map((g, i) => (
+            <div key={i} className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-2 text-[13px]">
+              <span className="tabular-nums text-slate-500">
+                {g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : '—'}
+              </span>
+              <span className="min-w-0 truncate text-slate-800">
+                <span className="text-slate-500">{g.home ? 'in casa con' : 'fuori con'}</span> <b>{g.opponent ?? '?'}</b>
+                {g.opponent_rank ? <span className="ml-1 text-[12px] text-slate-500">{g.opponent_rank}ª</span> : null}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-400">PT</span>
+                <span className={`inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded px-1 text-[12px] font-semibold tabular-nums ${g.ht_outcome ? SQUARE[g.ht_outcome] : 'bg-slate-50 text-slate-300'}`}>
+                  {g.ht ?? '·'}
+                </span>
+                <span className="text-[11px] font-semibold text-slate-400">FT</span>
+                <span className={`inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded px-1 text-[12px] font-semibold tabular-nums ${g.ft_outcome ? SQUARE[g.ft_outcome] : 'bg-slate-50 text-slate-300'}`}>
+                  {g.ft ?? '·'}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[12px] text-slate-500">Posizione dell&apos;avversaria nella classifica totale.</p>
     </div>
   )
 }

@@ -245,6 +245,7 @@ export const updateCycle = (id: number, input: Partial<{ name: string; notes: st
 export type TableOutcome = 'V' | 'N' | 'P'
 export type TableGame = {
   date: string | null
+  opponent_id?: number | null
   opponent: string | null
   opponent_rank: number | null
   home: boolean
@@ -347,6 +348,8 @@ export type MatchStandings = {
   games: number
   complete: boolean
   tables: Record<StandingsKind, StandingRow[]>
+  /** ultime 5 partite delle due squadre (per id squadra): totale, in casa, fuori */
+  recent?: Record<string, Record<StandingsKind, TableGame[]>>
 }
 export const getMatchStandings = (todayFixtureId: number) => request<MatchStandings>(`/table/standings/${todayFixtureId}`)
 export type EntryReview = { user_id: number; user_name: string | null; text: string; tags?: string[]; updated_at: string | null; mine: boolean }

@@ -97,6 +97,7 @@ def _game(g: dict[str, Any], team: int, ranks: dict[int, int], names: dict[int, 
     stronger = opponent in ranks and team in ranks and ranks[opponent] < ranks[team]
     return {
         "date": g["kickoff"].date().isoformat() if g["kickoff"] else None,
+        "opponent_id": opponent,
         "opponent": names.get(opponent),
         "opponent_rank": ranks.get(opponent),
         "home": home,
@@ -258,22 +259,38 @@ def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
     loc = db.get(Fixture, int(fx.local_fixture_id))
     if loc is None:
         return None
-    rows = [
-        (int(h), int(a), int(gh), int(ga))
-        for h, a, gh, ga in db.execute(
-            select(Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away).where(
-                Fixture.league_id == loc.league_id,
-                Fixture.season_id == loc.season_id,
-                Fixture.status.in_(FINISHED_STATUSES),
-                Fixture.goals_home.is_not(None),
-                Fixture.goals_away.is_not(None),
-            )
-        ).all()
-    ]
+    played_games = db.execute(
+        select(Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away).where(
+            Fixture.league_id == loc.league_id,
+            Fixture.season_id == loc.season_id,
+            Fixture.status.in_(FINISHED_STATUSES),
+            Fixture.goals_home.is_not(None),
+            Fixture.goals_away.is_not(None),
+        )
+    ).all()
+    rows = [(int(h), int(a), int(gh), int(ga)) for _id, _ko, h, a, gh, ga in played_games]
     team_ids = {r[0] for r in rows} | {r[1] for r in rows} | {int(loc.home_team_id), int(loc.away_team_id)}
     names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()}
     total = _table(rows, names, "total")
     played = [r["played"] for r in total]
+    ranks = {r["team_id"]: r["rank"] for r in total}
+    # ultime 5 partite delle due squadre, in totale, in casa e fuori (08/11/2026): al clic sulla squadra la
+    # classifica accende le avversarie e il box sotto mostra i risultati (posizione = classifica totale)
+    recent: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    ordered = sorted(played_games, key=lambda g: (_aware(g.kickoff_at) or datetime.min.replace(tzinfo=timezone.utc), g.id))
+    picked: dict[int, dict[str, list[int]]] = {}
+    for team in (int(loc.home_team_id), int(loc.away_team_id)):
+        mine = [g for g in ordered if int(g.home_team_id) == team or int(g.away_team_id) == team]
+        picked[team] = {
+            "total": [int(g.id) for g in mine][-MAX_GAMES:],
+            "home": [int(g.id) for g in mine if int(g.home_team_id) == team][-MAX_GAMES:],
+            "away": [int(g.id) for g in mine if int(g.away_team_id) == team][-MAX_GAMES:],
+        }
+    history = _history(db, {i for scopes in picked.values() for ids in scopes.values() for i in ids})
+    for team, scopes in picked.items():
+        recent[str(team)] = {
+            kind: [_game(history[i], team, ranks, names) for i in ids if i in history] for kind, ids in scopes.items()
+        }
     return {
         "today_fixture_id": int(fx.id),
         "league": fx.league_name,
@@ -283,6 +300,7 @@ def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
         "games": len(rows),
         "complete": bool(played) and max(played) - min(played) <= 2,
         "tables": {"total": total, "home": _table(rows, names, "home"), "away": _table(rows, names, "away")},
+        "recent": recent,
     }
 
 
