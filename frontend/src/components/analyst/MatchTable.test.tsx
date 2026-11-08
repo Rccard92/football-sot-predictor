@@ -92,7 +92,18 @@ vi.mock('../../lib/analystJournalApi', async (orig) => ({
           { rank: 2, team_id: 1, team: 'Casa FC', played: 2, won: 1, drawn: 0, lost: 1, gf: 3, ga: 3, gd: 0, points: 3 },
         ],
         home: [{ rank: 1, team_id: 1, team: 'Casa FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
-        away: [{ rank: 1, team_id: 2, team: 'Ospite FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
+        away: [
+          { rank: 1, team_id: 2, team: 'Ospite FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 },
+          { rank: 2, team_id: 1, team: 'Casa FC', played: 1, won: 0, drawn: 0, lost: 1, gf: 1, ga: 3, gd: -2, points: 0 },
+        ],
+      },
+      recent: {
+        '1': {
+          total: [{ ...g('1-3', '0-1', 'P', 'P'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1, home: false }],
+          home: [{ ...g('2-0', '1-0', 'V', 'V'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1 }],
+          away: [{ ...g('1-3', '0-1', 'P', 'P'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1, home: false }],
+        },
+        '2': { total: [], home: [], away: [] },
       },
     }),
   ),
@@ -145,7 +156,19 @@ describe('MatchTable', () => {
     await userEvent.click(within(aside).getByRole('button', { name: 'Casa' }))
     expect(within(aside).queryByText('Ospite FC')).toBeNull()
     await userEvent.click(within(aside).getByRole('button', { name: 'Trasferta' }))
-    expect(within(aside).getByText('Ospite FC')).toBeTruthy()
+    expect(within(aside).getAllByText('Ospite FC').length).toBeGreaterThan(0)
+    // clic sulla squadra di casa: si accende l'avversaria delle ultime gare fuori e compare il box
+    await userEvent.click(within(aside).getByRole('button', { name: 'Casa FC' }))
+    const opponentRow = within(aside).getAllByText('Ospite FC')[0].closest('tr')!
+    expect(opponentRow.className).toContain('bg-rose-50')
+    expect(within(aside).getByText(/Casa FC · ultime 1 partite fuori casa/)).toBeTruthy()
+    // in casa la stessa selezione mostra la vittoria 2-0
+    await userEvent.click(within(aside).getByRole('button', { name: 'Casa' }))
+    expect(within(aside).getByText(/ultime 1 partite in casa/)).toBeTruthy()
+    expect(within(aside).getAllByText('2-0').length).toBeGreaterThan(0)
+    // secondo clic: si toglie
+    await userEvent.click(within(aside).getByRole('button', { name: 'Casa FC' }))
+    expect(within(aside).queryByText(/ultime 1 partite/)).toBeNull()
   })
 
   it('il pulsante Domani chiede il giorno dopo', async () => {
