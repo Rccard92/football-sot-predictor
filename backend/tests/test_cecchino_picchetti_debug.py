@@ -181,8 +181,10 @@ def test_final_quota_1_uses_weights():
         for p in mkt["picchetti"]
         if p.get("weighted_contribution") is not None
     )
-    assert contrib_sum == pytest.approx(mkt["final_odd"], abs=0.02)
+    # quota x peso = la quota di prima (v1); dal 09/11/2026 la quota mostrata e' la v2
+    assert contrib_sum == pytest.approx(out["final"]["v1"]["quota_1"], abs=0.02)
     assert mkt["final_odd"] == pytest.approx(out["final"]["quota_1"], abs=0.02)
+    assert mkt["version"] == "1x2_v2_20261109"
 
 
 def test_final_quota_x_uses_weights():
@@ -194,7 +196,8 @@ def test_final_quota_x_uses_weights():
         for p in mkt["picchetti"]
         if p.get("weighted_contribution") is not None
     )
-    assert contrib_sum == pytest.approx(mkt["final_odd"], abs=0.02)
+    assert contrib_sum == pytest.approx(out["final"]["v1"]["quota_x"], abs=0.02)
+    assert mkt["final_odd"] == pytest.approx(out["final"]["quota_x"], abs=0.02)
 
 
 def test_final_quota_2_uses_weights():
@@ -206,7 +209,22 @@ def test_final_quota_2_uses_weights():
         for p in mkt["picchetti"]
         if p.get("weighted_contribution") is not None
     )
-    assert contrib_sum == pytest.approx(mkt["final_odd"], abs=0.02)
+    assert contrib_sum == pytest.approx(out["final"]["v1"]["quota_2"], abs=0.02)
+    assert mkt["final_odd"] == pytest.approx(out["final"]["quota_2"], abs=0.02)
+
+
+def test_kpi_explanation_v2_matches_the_stored_quota():
+    """Dal 09/11/2026 la spiegazione del pannello KPI rifa' il calcolo v2 e torna con la quota salvata."""
+    from app.services.cecchino.cecchino_kpi_explanations import _explain_quota_cecchino_1x2
+
+    out = _output_dict()
+    debug = build_cecchino_picchetti_debug(cecchino_output=out)
+    for sel, q in ((SEL_HOME, "quota_1"), (SEL_DRAW, "quota_x"), (SEL_AWAY, "quota_2")):
+        row = {"market_key": sel, "quota_cecchino": round(out["final"][q], 2)}
+        expl = _explain_quota_cecchino_1x2(row, sel, debug)
+        assert expl["status"] == "available"
+        assert expl["consistency"]["status"] in ("match", "rounding_match")
+        assert "fattore campo" in expl["formula_symbolic"]
 
 
 def test_one_x_derived_from_prob_1_and_x():
