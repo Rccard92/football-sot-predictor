@@ -99,7 +99,20 @@ export type JournalEntry = {
   market_key: string
   market_label: string
   market_group: string | null
+  /** quota presa dall'analista */
   quota: number
+  /** quota presa e CLV (09/11/2026) */
+  bookmaker?: string | null
+  quota_tool?: number | null
+  quota_tool_at?: string | null
+  closing_quota?: number | null
+  closing_bookmaker?: string | null
+  closing_at?: string | null
+  /** ok = chiusura letta, nd = non disponibile, null = ancora da leggere */
+  closing_status?: 'ok' | 'nd' | null
+  closing_note?: string | null
+  /** quota presa / quota di chiusura - 1 */
+  clv?: number | null
   stake: number | null
   stake_suggested: number | null
   tool: ToolSnapshot
@@ -136,6 +149,8 @@ export type FixtureInfo = {
     country_name: string | null
     home_team: string
     away_team: string
+    /** quando il tool ha letto le quote del book (09/11/2026) */
+    odds_checked_at?: string | null
   }
   markets: (MarketInfo & { quota_book: number | null; prob_cecchino: number | null })[]
   hints: Record<string, string>
@@ -192,6 +207,10 @@ export type ReportRow = {
   hours: number
   profit_per_hour: number | null
   tool_prob_pct: number | null
+  /** CLV (09/11/2026): giocate con la chiusura, CLV medio e quota delle giocate con CLV positivo */
+  clv_n?: number
+  clv_avg_pct?: number | null
+  clv_pos_pct?: number | null
 }
 
 export type JournalReport = {
@@ -211,6 +230,8 @@ export type EntryInput = {
   today_fixture_id: number
   market_key: string
   quota: number
+  /** bookmaker della quota presa (obbligatorio dal 09/11/2026) */
+  bookmaker: string
   source: JournalSource
   stake?: number | null
   stake_suggested?: number | null
@@ -326,6 +347,8 @@ export type MatchTableRow = {
   editable?: boolean
   not_editable_reason?: string | null
   goal_form?: GoalForm | null
+  /** quando il tool ha letto le quote del book (09/11/2026) */
+  odds_checked_at?: string | null
 }
 export type MatchTableResponse = {
   day: string

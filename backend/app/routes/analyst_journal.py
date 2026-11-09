@@ -48,6 +48,7 @@ from app.services.analyst.journal import (
     fixture_fields,
     is_locked,
     kpi_row,
+    odds_read_at,
     settle_entries,
     tool_snapshot,
 )
@@ -67,6 +68,7 @@ from app.services.analyst.rules import (
     quota_warnings,
     save_rules,
 )
+from app.services.analyst.closing import refresh_clv
 from app.services.analyst.form import GOAL_FORM_MARKETS
 from app.services.analyst.table import day_rows, filter_rows, league_tables, row_for
 
@@ -179,6 +181,17 @@ def _float(value: Any, field: str, *, minimum: float | None = None) -> float | N
     if minimum is not None and out < minimum:
         raise HTTPException(status_code=400, detail=f"{field}: deve essere almeno {minimum:g}")
     return out
+
+
+def _iso(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).isoformat()
+
+
+def _bookmaker(value: Any) -> str | None:
+    text_value = " ".join(str(value or "").split())[:40]
+    return text_value or None
 
 
 def _entries_query(principal: Principal, *, user_id, date_from, date_to, cycle_id, outcome):
@@ -369,6 +382,8 @@ def fixture_info(
             "match_date": fields["match_date"].isoformat(),
             "kickoff": kickoff.isoformat() if kickoff else None,
             "started": bool(kickoff and kickoff <= _now()),
+            # ora della quota del tool (09/11/2026): avviso se ha piu' di 6 ore
+            "odds_checked_at": _iso(odds_read_at(fx)),
         },
         "markets": markets,
         "hints": checklist_hints(db, fx, market_key),
@@ -604,7 +619,11 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_pr
         raise HTTPException(status_code=400, detail="Origine non valida")
     quota = _float(body.get("quota"), "Quota", minimum=1.01)
     if quota is None:
-        raise HTTPException(status_code=400, detail="Inserisci la quota")
+        raise HTTPException(status_code=400, detail="Inserisci la quota presa")
+    # quota presa e CLV (09/11/2026): il bookmaker della quota presa e' obbligatorio
+    bookmaker = _bookmaker(body.get("bookmaker"))
+    if bookmaker is None:
+        raise HTTPException(status_code=400, detail="Scrivi il bookmaker della quota presa")
     duplicate = db.execute(
         select(AnalystEntry.id).where(
             AnalystEntry.user_id == user.id,
@@ -627,6 +646,10 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_pr
         market_key=market_key,
         market_label=market["label"],
         quota=quota,
+        bookmaker=bookmaker,
+        # la quota del tool (book di Today) resta salvata a parte, con l'ora in cui e' stata letta
+        quota_tool=_float((kpi_row(fx, market_key) or {}).get("quota_book"), "Quota del tool"),
+        quota_tool_at=odds_read_at(fx),
         stake=_float(body.get("stake"), "Puntata", minimum=0.01),
         stake_suggested=_float(body.get("stake_suggested"), "Puntata suggerita"),
         tool_json=tool_snapshot(fx, market_key, body.get("tool") if isinstance(body.get("tool"), dict) else None),
@@ -654,19 +677,31 @@ def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Dep
     if "minutes_spent" in body:
         raw = body.get("minutes_spent")
         entry.minutes_spent = int(raw) if str(raw or "").isdigit() else None
-    pre_match = {"market_key", "quota", "stake", "cycle_id", "checklist", "analysis_note", "stake_suggested"} & set(body)
+    pre_match = {"market_key", "quota", "bookmaker", "stake", "cycle_id", "checklist", "analysis_note", "stake_suggested"} & set(body)
     if pre_match and locked:
         raise HTTPException(status_code=400, detail="La partita è iniziata: si possono cambiare solo le note")
     if "market_key" in body:
         market = MARKET_BY_KEY.get(str(body["market_key"]))
         if market is None:
             raise HTTPException(status_code=400, detail="Pronostico non valido")
+        if market["key"] != entry.market_key:
+            # segno cambiato: la chiusura gia' letta non vale piu', il giro la rilegge
+            entry.closing_quota = entry.closing_bookmaker = entry.closing_at = entry.closing_status = entry.closing_note = None
+            entry.clv = None
+            fx_now = db.get(CecchinoTodayFixture, entry.today_fixture_id) if entry.today_fixture_id else None
+            entry.quota_tool = _float((kpi_row(fx_now, market["key"]) or {}).get("quota_book"), "Quota del tool") if fx_now else None
         entry.market_key, entry.market_label = market["key"], market["label"]
+    if "bookmaker" in body:
+        bookmaker = _bookmaker(body.get("bookmaker"))
+        if bookmaker is None:
+            raise HTTPException(status_code=400, detail="Scrivi il bookmaker della quota presa")
+        entry.bookmaker = bookmaker
     if "quota" in body:
         quota = _float(body["quota"], "Quota", minimum=1.01)
         if quota is None:
             raise HTTPException(status_code=400, detail="Inserisci la quota")
         entry.quota = quota
+        refresh_clv(entry)
     if "stake" in body:
         entry.stake = _float(body["stake"], "Puntata", minimum=0.01)
     if "stake_suggested" in body:
@@ -803,6 +838,14 @@ def reports(
 _OUTCOME_XLS = {"won": "VINTA", "lost": "PERSA", "void": "NULLA", "pending": ""}
 
 
+def _closing_label(e: AnalystEntry) -> str | None:
+    if e.closing_status == "nd":
+        return "n.d."
+    if not e.closing_bookmaker:
+        return None
+    return e.closing_bookmaker + (" (recuperata)" if e.closing_note and "recuperata" in e.closing_note else "")
+
+
 @router.get("/export.xlsx")
 def export_xlsx(
     date_from: date | None = None,
@@ -814,6 +857,7 @@ def export_xlsx(
     """Le giocate nello schema del foglio "GARE ATTUALE KW", piu' puntata, profitto e scheda."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
     rows = list(
         db.execute(
@@ -827,7 +871,8 @@ def export_xlsx(
     ws = wb.active
     ws.title = "GARE"
     headers = [
-        "GARA", "DATA", "KW", "INCONTRO", "CAMPIONATO", "PRONOSTICO", "QUOTA", "RISULTATO PT", "RISULTATO FINALE",
+        "GARA", "DATA", "KW", "INCONTRO", "CAMPIONATO", "PRONOSTICO", "QUOTA PRESA", "BOOKMAKER", "QUOTA TOOL",
+        "QUOTA CHIUSURA", "BOOK CHIUSURA", "CLV %", "RISULTATO PT", "RISULTATO FINALE",
         "ESITO", "VERSIONE SCELTA", "PUNTATA €", "PROFITTO €", "ORIGINE", "PROB. TOOL %", "MINUTI", "ANALISTA",
         "MODALITÀ DI INTERVENTO", "NOTE",
     ] + [c["label"] for c in CHECKLIST]
@@ -851,6 +896,11 @@ def export_xlsx(
                 e.league_name,
                 e.market_label,
                 e.quota,
+                e.bookmaker,
+                e.quota_tool,
+                e.closing_quota,
+                _closing_label(e),
+                round(100.0 * e.clv, 1) if e.clv is not None else None,
                 e.result_ht,
                 e.result_ft,
                 _OUTCOME_XLS.get(e.outcome, e.outcome),
@@ -873,8 +923,9 @@ def export_xlsx(
         for cell in row:
             cell.font = Font(name="Arial")
         row[1].number_format = "DD/MM/YYYY"
-    for col, width in zip("ABCDEFGHIJKLMNOPQRS", (6, 11, 5, 34, 24, 13, 7, 11, 13, 9, 18, 10, 11, 15, 11, 8, 18, 40, 40)):
-        ws.column_dimensions[col].width = width
+    widths = (6, 11, 5, 34, 24, 13, 8, 13, 8, 10, 14, 7, 11, 13, 9, 18, 10, 11, 15, 11, 8, 18, 40, 40)
+    for i, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
