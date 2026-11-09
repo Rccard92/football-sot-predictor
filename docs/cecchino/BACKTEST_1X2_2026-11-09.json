@@ -1,0 +1,529 @@
+{
+ "dati": {
+  "partite": 7835,
+  "dal": "2606190000",
+  "al": "2611082230",
+  "prima_meta": {
+   "partite": 3917,
+   "dal": "2606190000",
+   "al": "2609071800"
+  },
+  "seconda_meta": {
+   "partite": 3918,
+   "dal": "2609071900",
+   "al": "2611082230"
+  }
+ },
+ "controllo": {
+  "partite_controllate": 7835,
+  "quota_di_oggi_ricostruita_pct": 100.0,
+  "partite_con_un_picchetto_a_zero": 0
+ },
+ "fattore_campo_stimato_prima_meta": {
+  "k1": 1.25,
+  "kX": 1.05,
+  "logloss_prima_meta": 1.0497
+ },
+ "seconda_meta": {
+  "V0 Cecchino di oggi": {
+   "n": 3918,
+   "somma_prob_pct": 95.1,
+   "favorito_pct": 45.6,
+   "brier": 0.6363,
+   "logloss": 1.1112,
+   "prob_media_pct": [
+    38.1,
+    24.6,
+    32.3
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 2285,
+   "vinte_valore_pct": 23.2,
+   "resa_valore_pct": -10.9,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 396,
+     "resa_pct": -27.0
+    },
+    "X": {
+     "giocate": 829,
+     "resa_pct": -7.0
+    },
+    "2": {
+     "giocate": 1060,
+     "resa_pct": -7.8
+    }
+   }
+  },
+  "V0 riportato al 100%": {
+   "n": 3918,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 45.6,
+   "brier": 0.6361,
+   "logloss": 1.0601,
+   "prob_media_pct": [
+    40.1,
+    25.9,
+    34.0
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 2756,
+   "vinte_valore_pct": 23.9,
+   "resa_valore_pct": -11.5,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 529,
+     "resa_pct": -24.7
+    },
+    "X": {
+     "giocate": 1005,
+     "resa_pct": -7.8
+    },
+    "2": {
+     "giocate": 1222,
+     "resa_pct": -8.8
+    }
+   }
+  },
+  "P1 somma al 100%": {
+   "n": 3918,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 46.1,
+   "brier": 0.6343,
+   "logloss": 1.0564,
+   "prob_media_pct": [
+    39.7,
+    26.1,
+    34.2
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 2745,
+   "vinte_valore_pct": 23.7,
+   "resa_valore_pct": -9.8,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 495,
+     "resa_pct": -22.3
+    },
+    "X": {
+     "giocate": 989,
+     "resa_pct": -7.2
+    },
+    "2": {
+     "giocate": 1261,
+     "resa_pct": -7.0
+    }
+   }
+  },
+  "P2 fattore campo stimato (1.25/1.05)": {
+   "n": 3918,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 47.4,
+   "brier": 0.631,
+   "logloss": 1.0524,
+   "prob_media_pct": [
+    44.3,
+    24.8,
+    30.9
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 2478,
+   "vinte_valore_pct": 24.0,
+   "resa_valore_pct": -11.9,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 853,
+     "resa_pct": -18.4
+    },
+    "X": {
+     "giocate": 777,
+     "resa_pct": -5.9
+    },
+    "2": {
+     "giocate": 848,
+     "resa_pct": -11.0
+    }
+   }
+  },
+  "P2 fattore campo proposto (1,08/0,98)": {
+   "n": 3918,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 46.0,
+   "brier": 0.6319,
+   "logloss": 1.0536,
+   "prob_media_pct": [
+    41.6,
+    25.0,
+    33.3
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 2580,
+   "vinte_valore_pct": 23.6,
+   "resa_valore_pct": -11.6,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 621,
+     "resa_pct": -20.0
+    },
+    "X": {
+     "giocate": 809,
+     "resa_pct": -8.6
+    },
+    "2": {
+     "giocate": 1150,
+     "resa_pct": -9.2
+    }
+   }
+  },
+  "Bet365 senza margine": {
+   "n": 3918,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 51.2,
+   "brier": 0.5987,
+   "logloss": 1.0022,
+   "prob_media_pct": [
+    43.2,
+    25.1,
+    31.7
+   ],
+   "frequenza_pct": [
+    44.0,
+    24.6,
+    31.4
+   ],
+   "giocate_valore": 0,
+   "vinte_valore_pct": null,
+   "resa_valore_pct": null,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "X": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "2": {
+     "giocate": 0,
+     "resa_pct": null
+    }
+   }
+  }
+ },
+ "primo_tempo_seconda_meta": {
+  "Cecchino PT di oggi": {
+   "n": 3916,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 40.2,
+   "brier": 0.6715,
+   "logloss": 1.11,
+   "prob_media_pct": [
+    31.8,
+    41.1,
+    27.2
+   ],
+   "frequenza_pct": [
+    34.2,
+    40.4,
+    25.4
+   ],
+   "giocate_valore": 2538,
+   "vinte_valore_pct": 27.2,
+   "resa_valore_pct": -14.7,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 655,
+     "resa_pct": -12.9
+    },
+    "X": {
+     "giocate": 803,
+     "resa_pct": -9.7
+    },
+    "2": {
+     "giocate": 1080,
+     "resa_pct": -19.6
+    }
+   }
+  },
+  "Cecchino PT riportato al 100%": {
+   "n": 3916,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 40.2,
+   "brier": 0.6715,
+   "logloss": 1.11,
+   "prob_media_pct": [
+    31.8,
+    41.1,
+    27.2
+   ],
+   "frequenza_pct": [
+    34.2,
+    40.4,
+    25.4
+   ],
+   "giocate_valore": 2539,
+   "vinte_valore_pct": 27.3,
+   "resa_valore_pct": -14.6,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 656,
+     "resa_pct": -12.5
+    },
+    "X": {
+     "giocate": 803,
+     "resa_pct": -9.7
+    },
+    "2": {
+     "giocate": 1080,
+     "resa_pct": -19.6
+    }
+   }
+  },
+  "Bet365 PT senza margine": {
+   "n": 3916,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 44.7,
+   "brier": 0.6354,
+   "logloss": 1.0489,
+   "prob_media_pct": [
+    34.0,
+    39.4,
+    26.6
+   ],
+   "frequenza_pct": [
+    34.2,
+    40.4,
+    25.4
+   ],
+   "giocate_valore": 0,
+   "vinte_valore_pct": null,
+   "resa_valore_pct": null,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "X": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "2": {
+     "giocate": 0,
+     "resa_pct": null
+    }
+   }
+  }
+ },
+ "differenze_seconda_meta": {
+  "P1 meno V0": {
+   "brier": {
+    "diff": -0.002,
+    "ic95": [
+     -0.0027,
+     -0.0012
+    ]
+   },
+   "logloss": {
+    "diff": -0.0548,
+    "ic95": [
+     -0.057,
+     -0.0526
+    ]
+   }
+  },
+  "P1 meno V0 al 100%": {
+   "brier": {
+    "diff": -0.0017,
+    "ic95": [
+     -0.0028,
+     -0.0007
+    ]
+   },
+   "logloss": {
+    "diff": -0.0037,
+    "ic95": [
+     -0.0055,
+     -0.0019
+    ]
+   }
+  },
+  "P2 stimato meno P1": {
+   "brier": {
+    "diff": -0.0033,
+    "ic95": [
+     -0.0056,
+     -0.0011
+    ]
+   },
+   "logloss": {
+    "diff": -0.004,
+    "ic95": [
+     -0.0071,
+     -0.0009
+    ]
+   }
+  },
+  "P2 1,08/0,98 meno P1": {
+   "brier": {
+    "diff": -0.0024,
+    "ic95": [
+     -0.0034,
+     -0.0015
+    ]
+   },
+   "logloss": {
+    "diff": -0.0028,
+    "ic95": [
+     -0.0041,
+     -0.0014
+    ]
+   }
+  }
+ },
+ "fattore_campo_stimato_seconda_meta_solo_controllo": {
+  "k1": 1.22,
+  "kX": 1.02,
+  "logloss": 1.052292253718573
+ },
+ "quote_con_valore_tutte_le_partite": {
+  "V0": {
+   "quote": 23505,
+   "book_sopra_cecchino_pct": 32.3,
+   "book_sopra_x1_15_pct": 19.2
+  },
+  "P1": {
+   "quote": 23505,
+   "book_sopra_cecchino_pct": 38.0,
+   "book_sopra_x1_15_pct": 23.2
+  },
+  "P2 stimato": {
+   "quote": 23505,
+   "book_sopra_cecchino_pct": 36.4,
+   "book_sopra_x1_15_pct": 21.0
+  }
+ },
+ "tutte_le_partite": {
+  "V0 Cecchino di oggi": {
+   "n": 7835,
+   "somma_prob_pct": 94.9,
+   "favorito_pct": 45.7,
+   "brier": 0.6362,
+   "logloss": 1.1124,
+   "prob_media_pct": [
+    38.0,
+    24.8,
+    32.2
+   ],
+   "frequenza_pct": [
+    44.1,
+    24.8,
+    31.1
+   ],
+   "giocate_valore": 4516,
+   "vinte_valore_pct": 23.2,
+   "resa_valore_pct": -8.2,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 770,
+     "resa_pct": -3.1
+    },
+    "X": {
+     "giocate": 1665,
+     "resa_pct": -10.2
+    },
+    "2": {
+     "giocate": 2081,
+     "resa_pct": -8.4
+    }
+   }
+  },
+  "P1 somma al 100%": {
+   "n": 7835,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 45.8,
+   "brier": 0.6339,
+   "logloss": 1.0555,
+   "prob_media_pct": [
+    39.6,
+    26.3,
+    34.1
+   ],
+   "frequenza_pct": [
+    44.1,
+    24.8,
+    31.1
+   ],
+   "giocate_valore": 5456,
+   "vinte_valore_pct": 23.7,
+   "resa_valore_pct": -7.1,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 955,
+     "resa_pct": -4.8
+    },
+    "X": {
+     "giocate": 2003,
+     "resa_pct": -9.4
+    },
+    "2": {
+     "giocate": 2498,
+     "resa_pct": -6.2
+    }
+   }
+  },
+  "Bet365 senza margine": {
+   "n": 7835,
+   "somma_prob_pct": 100.0,
+   "favorito_pct": 50.4,
+   "brier": 0.6036,
+   "logloss": 1.0094,
+   "prob_media_pct": [
+    43.2,
+    25.1,
+    31.6
+   ],
+   "frequenza_pct": [
+    44.1,
+    24.8,
+    31.1
+   ],
+   "giocate_valore": 0,
+   "vinte_valore_pct": null,
+   "resa_valore_pct": null,
+   "resa_per_segno": {
+    "1": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "X": {
+     "giocate": 0,
+     "resa_pct": null
+    },
+    "2": {
+     "giocate": 0,
+     "resa_pct": null
+    }
+   }
+  }
+ }
+}

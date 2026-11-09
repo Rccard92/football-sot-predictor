@@ -79,11 +79,28 @@ def test_picchetto_quotas_excel_parity(key, home, away, expected_quotas):
 
 
 def test_final_quotas_and_probs_excel_parity():
+    """Il file Excel fa la media pesata delle quote: dal 09/11/2026 quel calcolo resta in final.v1."""
     out = build_full_cecchino_output(_san_lorenzo_riestra_input())
     assert out.status == STATUS_AVAILABLE
-    assert out.final.quota_1 == pytest.approx(2.381, abs=0.01)
-    assert out.final.quota_x == pytest.approx(2.579, abs=0.01)
-    assert out.final.quota_2 == pytest.approx(5.719, abs=0.01)
-    assert out.final.prob_1 == pytest.approx(0.4200, abs=0.01)
-    assert out.final.prob_x == pytest.approx(0.3877, abs=0.01)
-    assert out.final.prob_2 == pytest.approx(0.1749, abs=0.01)
+    v1 = out.final.v1
+    assert v1["quota_1"] == pytest.approx(2.381, abs=0.01)
+    assert v1["quota_x"] == pytest.approx(2.579, abs=0.01)
+    assert v1["quota_2"] == pytest.approx(5.719, abs=0.01)
+    assert 1 / v1["quota_1"] == pytest.approx(0.4200, abs=0.01)
+    assert 1 / v1["quota_x"] == pytest.approx(0.3877, abs=0.01)
+    assert 1 / v1["quota_2"] == pytest.approx(0.1749, abs=0.01)
+
+
+def test_final_v2_sums_to_100_with_home_factor():
+    """Dal 09/11/2026: media pesata delle probabilita', fattore campo 1,25 / 1,05, somma al 100%."""
+    out = build_full_cecchino_output(_san_lorenzo_riestra_input())
+    f = out.final
+    assert f.version == "1x2_v2_20261109"
+    assert f.prob_1 + f.prob_x + f.prob_2 == pytest.approx(1.0, abs=1e-9)
+    raw = f.raw_probs
+    k1, kx = f.home_factor["1"], f.home_factor["x"]
+    tot = raw["1"] * k1 + raw["x"] * kx + raw["2"]
+    assert f.prob_1 == pytest.approx(raw["1"] * k1 / tot)
+    assert f.prob_2 == pytest.approx(raw["2"] / tot)
+    assert f.quota_1 == pytest.approx(1 / f.prob_1)
+    assert "final_sum_out_of_tolerance" not in f.warnings

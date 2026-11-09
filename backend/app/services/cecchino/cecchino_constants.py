@@ -126,6 +126,16 @@ CECCHINO_GOAL_MARKET_WEIGHTS: dict[str, float] = {
     PICCHETTO_KEY_LAST5_HOME_AWAY: 0.30,
 }
 
+# Quota finale 1-X-2 dal 09/11/2026 (documento "Modifiche" di Giovanni, punto 4; back test
+# docs/cecchino/BACKTEST_1X2_2026-11-09.md): media pesata delle PROBABILITA' dei picchetti (somma al 100%;
+# prima la media delle quote dava ~95%), poi fattore campo 1 x 1,25 e X x 1,05 (stimato sulla prima meta'
+# del back test) e di nuovo somma al 100%. La quota di prima resta salvata in final.v1.
+CECCHINO_1X2_VERSION = "1x2_v2_20261109"
+CECCHINO_1X2_VERSION_V1 = "1x2_v1_media_quote"
+CECCHINO_HOME_FACTOR_1 = 1.25
+CECCHINO_HOME_FACTOR_X = 1.05
+CECCHINO_1X2_SUM_TOLERANCE = 0.005
+
 # Alias retrocompatibile per engine 1X2 e debug picchetti 1/X/2
 FINAL_QUOTA_WEIGHTS: dict[str, float] = dict(CECCHINO_1X2_WEIGHTS)
 

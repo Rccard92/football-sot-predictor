@@ -728,6 +728,86 @@ def _explain_rating(row: dict[str, Any], market_label: str) -> dict[str, Any]:
     )
 
 
+def _explain_quota_cecchino_1x2_v2(row: dict[str, Any], market_label: str, mkt: dict[str, Any], stored: float | None) -> dict[str, Any]:
+    """Quota Cecchino 1/X/2 dal 09/11/2026: media pesata delle probabilita' dei picchetti, fattore campo, somma 100%."""
+    mk = str(row.get("market_key") or "")
+    sign = {"HOME": "1", "DRAW": "x", "AWAY": "2"}.get(mk, "1")
+    formula = (
+        "Probabilità = 0,3 / Quota Picchetto 1 + 0,3 / Quota Picchetto 2\n"
+        "+ 0,2 / Quota Picchetto 3 + 0,2 / Quota Picchetto 4\n"
+        "× fattore campo (1 × 1,25, X × 1,05, 2 × 1), poi somma dei tre segni al 100%\n"
+        "Quota Cecchino = 1 / Probabilità"
+    )
+    inputs: list[dict[str, Any]] = []
+    applied: list[str] = []
+    raw_this = 0.0
+    ok = True
+    for i, p in enumerate(mkt.get("picchetti") or [], start=1):
+        if not isinstance(p, dict):
+            ok = False
+            continue
+        name = str(p.get("name") or f"picchetto_{i}")
+        odd = _num(p.get("odd"))
+        weight = _num(p.get("weight")) or FINAL_QUOTA_WEIGHTS.get(name, 0.0)
+        inputs.append(
+            _input(
+                key=f"picchetto_{name}",
+                label=f"Picchetto {name}",
+                value={"odd": odd, "weight": weight, "probability": p.get("probability"), "status": p.get("status")},
+                display_value=f"{_fmt_it(weight * 100 if weight is not None else None, 0)}% / {_fmt_it(odd)}" if odd and weight is not None else "—",
+                source_path=f"cecchino_output_json.picchetti[{name}]",
+            )
+        )
+        if not odd or weight is None:
+            ok = False
+            applied.append(f"{name}: dato incompleto")
+            continue
+        raw_this += weight / odd
+        applied.append(f"{_fmt_it(weight * 100, 0)}% / {_fmt_it(odd)} = {_fmt_it(weight / odd, 4)}")
+    factor = (mkt.get("home_factor") or {}) if isinstance(mkt.get("home_factor"), dict) else {}
+    raw_all = (mkt.get("raw_probs") or {}) if isinstance(mkt.get("raw_probs"), dict) else {}
+    try:
+        denom = sum(float(raw_all[s]) * float(factor.get(s, 1.0)) for s in ("1", "x", "2"))
+    except (KeyError, TypeError, ValueError):
+        denom = 0.0
+    k = _num(factor.get(sign)) or 1.0
+    if not ok or denom <= 0 or raw_this <= 0:
+        return _unavailable(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="quota_cecchino",
+            formula_symbolic=formula,
+            inputs=inputs,
+            reason="Picchetti incompleti o assenti per il calcolo Quota Cecchino 1/X/2",
+            formula_version=str(mkt.get("version")),
+            description="Quota Cecchino 1/X/2: media pesata delle probabilità dei quattro picchetti, fattore campo, somma al 100%.",
+            purpose="Quota modello usata per probabilità, edge e rating.",
+        )
+    prob = raw_this * k / denom
+    audit = round(1.0 / prob, 2)
+    applied.append(f"Probabilità prima del fattore campo = {_fmt_it(raw_this, 4)}")
+    applied.append(f"× fattore campo {_fmt_it(k)} e somma al 100% → probabilità {_fmt_it(prob * 100, 2)}%")
+    applied.append(f"Quota = 1 / {_fmt_it(prob, 4)} = {_fmt_it(audit)}")
+    return _base_explanation(
+        market_key=mk,
+        market_label=market_label,
+        metric_key="quota_cecchino",
+        status="available",
+        calculation_type="weighted_picchetti_probabilities",
+        description="Quota Cecchino 1/X/2: media pesata delle probabilità dei quattro picchetti, fattore campo, somma al 100% (dal 09/11/2026).",
+        purpose="Quota modello usata per probabilità, edge e rating.",
+        formula_symbolic=formula,
+        formula_applied=applied,
+        inputs=inputs,
+        stored_result=stored,
+        stored_result_display=_fmt_it(stored),
+        audit_result=audit,
+        consistency=_consistency(stored, audit, abs_tol=0.01, rounding_tol=0.05),
+        rounding={"policy": "round", "precision": 2, "display_precision": 2},
+        formula_version=str(mkt.get("version")),
+    )
+
+
 def _explain_quota_cecchino_1x2(
     row: dict[str, Any],
     market_label: str,
@@ -737,6 +817,8 @@ def _explain_quota_cecchino_1x2(
     stored = _num(row.get("quota_cecchino"))
     mkt = (picchetti_debug.get("markets") or {}).get(mk) or {}
     pics = mkt.get("picchetti") or []
+    if str(mkt.get("version") or "").startswith("1x2_v2"):
+        return _explain_quota_cecchino_1x2_v2(row, market_label, mkt, stored)
     formula = (
         "Quota Cecchino =\n"
         "Quota Picchetto 1 × Peso 1\n"

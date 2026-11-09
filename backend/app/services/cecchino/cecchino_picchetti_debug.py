@@ -215,6 +215,10 @@ def _build_1x2_market_debug(
         "segno": segno,
         "picchetti": picchetto_rows,
         "final_odd": round(final_odd, 2) if final_odd is not None else None,
+        # calcolo v2 dal 09/11/2026: versione, fattore campo e probabilita' prima del fattore (tutti e tre i segni)
+        "version": final.get("version"),
+        "home_factor": final.get("home_factor"),
+        "raw_probs": final.get("raw_probs"),
         "formula": _format_weighted_formula(
             FINAL_QUOTA_WEIGHTS,
             f"quota_cecchino_{segno.lower()}",

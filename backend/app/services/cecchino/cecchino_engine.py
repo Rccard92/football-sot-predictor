@@ -9,6 +9,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.services.cecchino.cecchino_constants import (
+    CECCHINO_1X2_SUM_TOLERANCE,
+    CECCHINO_1X2_VERSION,
+    CECCHINO_1X2_VERSION_V1,
+    CECCHINO_HOME_FACTOR_1,
+    CECCHINO_HOME_FACTOR_X,
     FINAL_QUOTA_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
     PICCHETTO_KEY_LAST5_HOME_AWAY,
@@ -131,9 +136,20 @@ class FinalOddsBlock:
     status: str = STATUS_INSUFFICIENT_DATA
     warnings: list[str] = field(default_factory=list)
     weights: dict[str, float] = field(default_factory=lambda: dict(FINAL_QUOTA_WEIGHTS))
+    # dal 09/11/2026: versione del calcolo, fattore campo, probabilita' prima del fattore e quota di prima (v1)
+    version: str = CECCHINO_1X2_VERSION
+    home_factor: dict[str, float] = field(default_factory=dict)
+    raw_probs: dict[str, float] = field(default_factory=dict)
+    v1: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        probs = [self.prob_1, self.prob_x, self.prob_2]
         return {
+            "version": self.version,
+            "home_factor": dict(self.home_factor),
+            "raw_probs": {k: round(v, 6) for k, v in self.raw_probs.items()},
+            "sum_prob": round(sum(probs), 6) if all(p is not None for p in probs) else None,
+            "v1": dict(self.v1) if self.v1 else None,
             "quota_1": round(self.quota_1, 4) if self.quota_1 is not None else None,
             "quota_x": round(self.quota_x, 4) if self.quota_x is not None else None,
             "quota_2": round(self.quota_2, 4) if self.quota_2 is not None else None,
@@ -328,63 +344,78 @@ def picchetti_blocks_from_output_json(output: dict[str, Any]) -> dict[str, Picch
     return blocks
 
 
+def _home_factor() -> tuple[float, float]:
+    try:
+        from app.core.config import get_settings
+
+        st = get_settings()
+        return float(st.cecchino_home_factor_1), float(st.cecchino_home_factor_x)
+    except Exception:  # noqa: BLE001 - senza configurazione (script, test) valgono i valori del back test
+        return CECCHINO_HOME_FACTOR_1, CECCHINO_HOME_FACTOR_X
+
+
 def compute_final_odds(
     picchetti: dict[str, PicchettoBlock],
     *,
     weights: dict[str, float] | None = None,
+    home_factor: tuple[float, float] | None = None,
 ) -> FinalOddsBlock:
-    """Quota finale Cecchino = media ponderata delle quote dei picchetti."""
+    """Quota finale Cecchino 1-X-2 (v2 dal 09/11/2026, documento "Modifiche" di Giovanni, punto 4).
+
+    1. probabilita' = 0,3/q totali + 0,3/q casa-fuori + 0,2/q ultime 6 + 0,2/q ultime 5 (media pesata delle
+       probabilita' dei picchetti: la somma fa 100%; la media delle quote di prima dava ~95%);
+    2. fattore campo: probabilita' 1 x 1,25 e X x 1,05, la 2 invariata, poi di nuovo somma al 100%;
+    3. quota = 1 / probabilita'.
+    La quota di prima (media pesata delle quote) resta in `v1` per il confronto."""
     w = weights or FINAL_QUOTA_WEIGHTS
-    final = FinalOddsBlock(weights=dict(w))
+    k1, kx = home_factor if home_factor is not None else _home_factor()
+    final = FinalOddsBlock(weights=dict(w), home_factor={"1": k1, "x": kx, "2": 1.0})
     missing_keys: list[str] = []
-    weighted_warnings: list[str] = []
+    v1 = {"quota_1": 0.0, "quota_x": 0.0, "quota_2": 0.0}
+    raw = {"1": 0.0, "x": 0.0, "2": 0.0}
+    weight_sum = 0.0
 
     for pic_key, weight in w.items():
         block = picchetti.get(pic_key)
         if block is None or block.status not in PICCHETTO_STATUSES_FOR_FINAL:
             missing_keys.append(pic_key)
             continue
-        for outcome_attr, quota_attr in (
-            ("outcome_1", "quota_1"),
-            ("outcome_x", "quota_x"),
-            ("outcome_2", "quota_2"),
+        weight_sum += float(weight)
+        for outcome_attr, quota_attr, sign in (
+            ("outcome_1", "quota_1", "1"),
+            ("outcome_x", "quota_x", "x"),
+            ("outcome_2", "quota_2", "2"),
         ):
             outcome = getattr(block, outcome_attr)
-            if outcome is None or outcome.quota is None:
+            if outcome is None or outcome.quota is None or float(outcome.quota) <= 0:
                 missing_keys.append(f"{pic_key}:{quota_attr}")
                 continue
-            current = getattr(final, quota_attr)
-            setattr(final, quota_attr, (current or 0.0) + weight * float(outcome.quota))
+            v1[quota_attr] += weight * float(outcome.quota)
+            raw[sign] += weight / float(outcome.quota)
 
     if missing_keys:
         final.status = STATUS_INSUFFICIENT_DATA
         final.warnings.append(f"missing_picchetto_quotas:{','.join(missing_keys)}")
         return final
 
-    final.quota_1 = final.quota_1  # type: ignore[assignment]
-    final.quota_x = final.quota_x
-    final.quota_2 = final.quota_2
-
-    for quota_attr, prob_attr in (
-        ("quota_1", "prob_1"),
-        ("quota_x", "prob_x"),
-        ("quota_2", "prob_2"),
-    ):
-        q = getattr(final, quota_attr)
-        if q is None or q <= 0:
-            setattr(final, prob_attr, None)
-            weighted_warnings.append(f"{WARNING_ZERO_PROBABILITY}:final_{prob_attr}")
-        else:
-            setattr(final, prob_attr, 1.0 / q)
-
-    if weighted_warnings or any(
-        getattr(final, p) is None for p in ("prob_1", "prob_x", "prob_2")
-    ):
-        final.warnings = weighted_warnings
+    final.v1 = {k: round(v, 4) for k, v in v1.items()}
+    final.v1.update({"version": CECCHINO_1X2_VERSION_V1})  # type: ignore[dict-item]
+    # pesi che non sommano a 1 (modelli di ricerca): media pesata vera
+    if weight_sum > 0:
+        raw = {k: v / weight_sum for k, v in raw.items()}
+    final.raw_probs = dict(raw)
+    scaled = {"1": raw["1"] * k1, "x": raw["x"] * kx, "2": raw["2"]}
+    total = sum(scaled.values())
+    if total <= 0 or any(v <= 0 for v in scaled.values()):
         final.status = STATUS_INSUFFICIENT_DATA
-    else:
-        final.status = STATUS_AVAILABLE
-
+        final.warnings.append(f"{WARNING_ZERO_PROBABILITY}:final")
+        return final
+    final.prob_1, final.prob_x, final.prob_2 = (scaled[k] / total for k in ("1", "x", "2"))
+    final.quota_1, final.quota_x, final.quota_2 = (1.0 / p for p in (final.prob_1, final.prob_x, final.prob_2))
+    # controllo: 1/q1 + 1/qX + 1/q2 = 100% (tolleranza 0,5%)
+    if abs(sum(1.0 / q for q in (final.quota_1, final.quota_x, final.quota_2)) - 1.0) > CECCHINO_1X2_SUM_TOLERANCE:
+        final.warnings.append("final_sum_out_of_tolerance")
+    final.status = STATUS_AVAILABLE
     return final
 
 
