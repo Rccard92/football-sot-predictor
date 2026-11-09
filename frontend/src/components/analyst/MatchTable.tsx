@@ -20,6 +20,7 @@ import { getCecchinoTodayDetail, type CecchinoTodayDetailResponse } from '../../
 import { CecchinoTodayKpiPanel } from '../cecchino/CecchinoTodayKpiPanel'
 import { todayCard, todayCardPadding } from '../cecchino/cecchinoTodayStyles'
 import { AddToJournalButton } from './AddToJournalButton'
+import { OddsAge } from './OddsAge'
 
 /** Tabella analisi (bozza di Giovanni, 05/11/2026; grafica rifatta il 05/11): lista compatta delle partite con
  *  la forma a quadratini, e scheda della partita scelta con il dettaglio, il pannello KPI, il diario e le note.
@@ -898,6 +899,7 @@ function MatchDetail({
       {row.quotes.length ? (
         <div className="rounded-xl bg-slate-50 p-3">
           <p className={LABEL}>Quote ({row.quotes.length})</p>
+          <OddsAge iso={row.odds_checked_at} className="mt-0.5" />
           <div className="mt-1 space-y-1.5">
             {groups.map((g) => (
               <div key={g} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[13px]">

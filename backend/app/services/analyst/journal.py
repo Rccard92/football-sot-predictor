@@ -146,6 +146,16 @@ def entry_payload(entry: AnalystEntry, *, user_name: str | None = None, now: dat
         "market_label": entry.market_label,
         "market_group": market.get("group"),
         "quota": entry.quota,
+        # quota presa e CLV (09/11/2026)
+        "bookmaker": entry.bookmaker,
+        "quota_tool": entry.quota_tool,
+        "quota_tool_at": _aware(entry.quota_tool_at).isoformat() if entry.quota_tool_at else None,
+        "closing_quota": entry.closing_quota,
+        "closing_bookmaker": entry.closing_bookmaker,
+        "closing_at": _aware(entry.closing_at).isoformat() if entry.closing_at else None,
+        "closing_status": entry.closing_status,
+        "closing_note": entry.closing_note,
+        "clv": entry.clv,
         "stake": entry.stake,
         "stake_suggested": entry.stake_suggested,
         "tool": entry.tool_json or {},
@@ -175,6 +185,22 @@ def fixture_fields(fx: CecchinoTodayFixture) -> dict[str, Any]:
         "home_team": fx.home_team_name or "Casa",
         "away_team": fx.away_team_name or "Trasferta",
     }
+
+
+def odds_read_at(fx: CecchinoTodayFixture) -> datetime | None:
+    """Quando il tool ha letto le quote del book (09/11/2026): dalla fotografia delle quote, se no odds_checked_at.
+
+    odds_checked_at e' valorizzato solo per una parte delle partite; odds_meta.odds_fetched_at c'e' sempre
+    (la scansione di domani riusa le quote lette il giorno prima: si vede qui)."""
+    meta = ((getattr(fx, "odds_snapshot_json", None) or {}).get("odds_meta")) or {}
+    for key in ("odds_fetched_at", "odds_updated_at", "odds_cached_at"):
+        raw = meta.get(key)
+        if raw:
+            try:
+                return _aware(datetime.fromisoformat(str(raw).replace("Z", "+00:00")))
+            except ValueError:
+                continue
+    return _aware(getattr(fx, "odds_checked_at", None))
 
 
 def kpi_row(fx: CecchinoTodayFixture, market_key: str) -> dict[str, Any] | None:
@@ -417,12 +443,20 @@ def cycle_payload(db: Session, cycle: AnalystCycle, *, quota: float | None = Non
 
 
 def _bucket() -> dict[str, Any]:
-    return {"entries": 0, "settled": 0, "won": 0, "lost": 0, "void": 0, "staked": 0.0, "profit": 0.0, "units": 0.0, "minutes": 0, "quota_sum": 0.0, "prob_sum": 0.0, "prob_n": 0}
+    return {
+        "entries": 0, "settled": 0, "won": 0, "lost": 0, "void": 0, "staked": 0.0, "profit": 0.0, "units": 0.0, "minutes": 0,
+        "quota_sum": 0.0, "prob_sum": 0.0, "prob_n": 0, "clv_sum": 0.0, "clv_n": 0, "clv_pos": 0,
+    }
 
 
 def _add(b: dict[str, Any], e: AnalystEntry) -> None:
     b["entries"] += 1
     b["minutes"] += int(e.minutes_spent or 0)
+    # CLV (09/11/2026): conta appena c'e' la chiusura, anche prima del risultato; esclusi i rimborsi
+    if e.clv is not None and e.outcome != ENTRY_VOID:
+        b["clv_sum"] += float(e.clv)
+        b["clv_n"] += 1
+        b["clv_pos"] += 1 if e.clv > 0 else 0
     if e.outcome == ENTRY_PENDING:
         return
     if e.outcome == ENTRY_VOID:
@@ -467,6 +501,9 @@ def _finish(b: dict[str, Any]) -> dict[str, Any]:
         "hours": round(hours, 1),
         "profit_per_hour": round(b["profit"] / hours, 2) if hours else None,
         "tool_prob_pct": round(100.0 * b["prob_sum"] / b["prob_n"], 1) if b["prob_n"] else None,
+        "clv_n": b["clv_n"],
+        "clv_avg_pct": round(100.0 * b["clv_sum"] / b["clv_n"], 1) if b["clv_n"] else None,
+        "clv_pos_pct": round(100.0 * b["clv_pos"] / b["clv_n"], 1) if b["clv_n"] else None,
     }
 
 

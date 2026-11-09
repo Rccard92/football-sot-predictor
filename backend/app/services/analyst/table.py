@@ -39,7 +39,7 @@ from app.models.fixture import Fixture
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.team import Team
 from app.services.analyst.form import LeagueSeason, diff_level, goal_form, signs, strength
-from app.services.analyst.journal import MARKETS
+from app.services.analyst.journal import MARKETS, odds_read_at
 from app.services.analyst.rules import match_type
 
 MIN_GAMES = 3
@@ -61,6 +61,10 @@ def _aware(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _iso_or_none(dt: datetime | None) -> str | None:
+    return dt.isoformat() if dt else None
 
 
 def _int(value: Any) -> int | None:
@@ -505,6 +509,8 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "editable": not short,
                 "not_editable_reason": ("Meno di 3 gare in stagione: " + " e ".join(short)) if short else None,
                 "goal_form": goal_form(blocks["forma_casa"], blocks["forma_fuori"]),
+                # ora in cui il tool ha letto le quote (09/11/2026): sopra le quote, avviso oltre 6 ore
+                "odds_checked_at": _iso_or_none(odds_read_at(f)),
             }
         )
     return out

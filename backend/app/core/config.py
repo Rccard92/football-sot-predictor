@@ -82,6 +82,8 @@ class Settings(BaseSettings):
 
     # Precarica i Master Pattern all'avvio del server (prima scheda partita piu' veloce)
     cecchino_warm_pattern_cache: bool = False
+    # Diario analisi (09/11/2026): quota di chiusura delle giocate 60 minuti prima del calcio d'inizio
+    analyst_closing_enabled: bool = True
 
     # Cron formazioni pre-match: false = in pausa (esce subito, nessuna chiamata API-Football)
     cecchino_prematch_lineups_enabled: bool = True

@@ -80,6 +80,19 @@ def warm_engines_compare_cache() -> None:
     threading.Thread(target=_run, name="warm-engines-compare", daemon=True).start()
 
 
+@app.on_event("startup")
+def start_analyst_closing() -> None:
+    """Diario analisi: ogni 5 minuti rilegge le quote delle partite con una giocata, 60 minuti prima del calcio
+    d'inizio, e calcola il CLV (documento "Modifiche" di Giovanni, 09/11/2026). Una chiamata per partita."""
+    if not settings.analyst_closing_enabled or not settings.api_football_key:
+        return
+    import threading
+
+    from app.services.analyst.closing import closing_loop
+
+    threading.Thread(target=closing_loop, name="analyst-closing", daemon=True).start()
+
+
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_unhandled_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Log degli errori SQLAlchemy non gestiti a livello di route (senza URL/credenziali)."""

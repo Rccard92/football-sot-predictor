@@ -343,7 +343,7 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
             </div>
             <div className="divide-y divide-slate-100">
               {rows.map((e) => (
-                <button key={e.id} type="button" onClick={() => setOpenId(e.id)} className="grid w-full gap-1 px-4 py-2.5 text-left hover:bg-slate-50 sm:grid-cols-[110px_minmax(0,1fr)_110px_70px_90px_110px_90px] sm:items-center sm:gap-3">
+                <button key={e.id} type="button" onClick={() => setOpenId(e.id)} className="grid w-full gap-1 px-4 py-2.5 text-left hover:bg-slate-50 sm:grid-cols-[110px_minmax(0,1fr)_110px_96px_90px_110px_90px] sm:items-center sm:gap-3">
                   <span className="text-[13px] text-slate-500">{kickoffText(e.kickoff)}</span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-slate-900">
@@ -355,7 +355,11 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
                     </span>
                   </span>
                   <span className="text-sm font-semibold text-slate-800">{e.market_label}</span>
-                  <span className="text-sm tabular-nums text-slate-700">@ {e.quota}</span>
+                  <span className="text-sm tabular-nums text-slate-700">
+                    @ {e.quota}
+                    {e.bookmaker ? <span className="block text-[11px] text-slate-400">{e.bookmaker}</span> : null}
+                    <ClvBadge entry={e} />
+                  </span>
                   <span className="text-sm tabular-nums text-slate-700">{e.stake ? formatEuro(e.stake) : '—'}</span>
                   <span>
                     <span className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${OUTCOME_BADGE[e.outcome]}`}>{OUTCOME_LABELS[e.outcome]}</span>
@@ -396,6 +400,48 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
   )
 }
 
+function clvText(v: number): string {
+  const pctValue = Math.round(v * 1000) / 10
+  return `${pctValue > 0 ? '+' : pctValue < 0 ? '−' : ''}${Math.abs(pctValue).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+}
+
+function closingTitle(e: JournalEntry): string {
+  if (e.closing_status === 'nd') return `Chiusura non disponibile${e.closing_note ? `: ${e.closing_note}` : ''}`
+  if (e.closing_status !== 'ok') return 'La quota di chiusura si legge 60 minuti prima del calcio d’inizio'
+  return `Chiusura ${e.closing_quota} ${e.closing_bookmaker ?? ''}${e.closing_note ? ` (${e.closing_note})` : ''} · CLV = quota presa ÷ chiusura − 1`
+}
+
+/** CLV della giocata (09/11/2026): verde se abbiamo comprato meglio della chiusura, rosso se peggio. */
+function ClvBadge({ entry }: { entry: JournalEntry }) {
+  if (entry.closing_status === 'nd') {
+    return (
+      <span className="mt-0.5 block w-fit rounded px-1 text-[11px] text-slate-400 ring-1 ring-inset ring-slate-200" title={closingTitle(entry)}>
+        CLV n.d.
+      </span>
+    )
+  }
+  if (entry.clv == null) return null
+  const tone = entry.clv > 0 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : entry.clv < 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'
+  return (
+    <span className={`mt-0.5 block w-fit rounded px-1 text-[11px] font-semibold ring-1 ring-inset ${tone}`} title={closingTitle(entry)}>
+      CLV {clvText(entry.clv)}
+    </span>
+  )
+}
+
+function ClosingLine({ entry }: { entry: JournalEntry }) {
+  const bits = [
+    entry.quota_tool ? `quota del tool ${entry.quota_tool}` : null,
+    entry.closing_status === 'ok' && entry.closing_quota
+      ? `chiusura ${entry.closing_quota} ${entry.closing_bookmaker ?? ''}${entry.closing_note ? ` (${entry.closing_note})` : ''}`.trim()
+      : entry.closing_status === 'nd'
+        ? `chiusura n.d.${entry.closing_note ? ` (${entry.closing_note})` : ''}`
+        : 'chiusura: si legge 60 minuti prima del calcio d’inizio',
+    entry.clv != null ? `CLV ${clvText(entry.clv)}` : null,
+  ].filter(Boolean)
+  return <p className="mt-1 text-[13px] text-slate-500">{bits.join(' · ')}</p>
+}
+
 function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry; meta: JournalMeta; onClose: () => void; onChanged: () => void }) {
   // solo il proprietario modifica; l'amministratore legge i diari degli altri
   const mine = meta.can_write && meta.user_id === entry.user_id
@@ -404,6 +450,7 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
   const [notes, setNotes] = useState(entry.notes ?? '')
   const [minutes, setMinutes] = useState(entry.minutes_spent ? String(entry.minutes_spent) : '')
   const [quota, setQuota] = useState(String(entry.quota))
+  const [bookmaker, setBookmaker] = useState(entry.bookmaker ?? '')
   const [stake, setStake] = useState(entry.stake ? String(entry.stake) : '')
   const [busy, setBusy] = useState(false)
 
@@ -415,6 +462,7 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
         patch.checklist = checklist
         patch.analysis_note = analysisNote
         patch.quota = Number(quota.replace(',', '.'))
+        if (bookmaker.trim() && bookmaker.trim() !== (entry.bookmaker ?? '')) patch.bookmaker = bookmaker.trim()
         patch.stake = stake ? Number(stake.replace(',', '.')) : null
       }
       await updateEntry(entry.id, patch)
@@ -462,7 +510,8 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
               {entry.home_team} – {entry.away_team}
             </h2>
             <p className="text-sm text-slate-700">
-              <strong>{entry.market_label}</strong> @ {entry.quota} · {entry.source_label}
+              <strong>{entry.market_label}</strong> @ {entry.quota}
+              {entry.bookmaker ? ` (${entry.bookmaker})` : ''} · {entry.source_label}
               {entry.user_name ? ` · ${entry.user_name}` : ''}
             </p>
           </div>
@@ -479,6 +528,7 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
             {entry.profit !== null ? ` · ${money(entry.profit)}` : ''}
           </p>
           {toolBits.length ? <p className="mt-1 text-[13px] text-slate-500">Il tool, quando l&apos;hai scelta: {toolBits.join(' · ')}</p> : null}
+          <ClosingLine entry={entry} />
           {entry.locked ? <p className="mt-1 text-[13px] text-slate-500">Partita iniziata: si possono cambiare solo note e minuti.</p> : null}
           {entry.match_type || entry.quota_cecchino ? (
             <p className="mt-1 text-[13px] text-slate-500">
@@ -499,8 +549,12 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
         {!entry.locked && mine ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-[13px] font-medium text-slate-600">Quota</span>
+              <span className="text-[13px] font-medium text-slate-600">Quota presa</span>
               <input className={inputClass} value={quota} onChange={(e) => setQuota(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-[13px] font-medium text-slate-600">Bookmaker</span>
+              <input className={inputClass} value={bookmaker} maxLength={40} onChange={(e) => setBookmaker(e.target.value)} />
             </label>
             <label className="block">
               <span className="text-[13px] font-medium text-slate-600">Puntata (€)</span>
@@ -865,7 +919,7 @@ function ReportTab({ filters }: { filters: Filters }) {
   const months = [...new Set(report.month_groups.map((r) => r.month))].sort().reverse()
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Tile label="Giocate" value={String(t.entries)} sub={`${t.settled} chiuse`} />
         <Tile label="Resa" value={pct(t.win_pct)} sub={`pari a ${pct(t.breakeven_pct)}`} />
         <Tile label="Quota media" value={t.avg_quota ? String(t.avg_quota) : '—'} />
@@ -874,6 +928,14 @@ function ReportTab({ filters }: { filters: Filters }) {
         <Tile label="Puntato" value={formatEuro(t.staked)} />
         <Tile label="Ore di analisi" value={String(t.hours)} />
         <Tile label="Guadagno orario" value={t.profit_per_hour !== null ? money(t.profit_per_hour) : '—'} />
+        {/* CLV (09/11/2026): si compra meglio del mercato? Il numero con cui si valida una strategia dopo 50 giocate */}
+        <Tile
+          label="CLV medio"
+          value={t.clv_avg_pct != null ? `${t.clv_avg_pct > 0 ? '+' : ''}${pct(t.clv_avg_pct)}` : '—'}
+          sub={t.clv_n ? `su ${t.clv_n} giocate${t.clv_n < 50 ? ' (servono 50)' : ''}` : 'nessuna chiusura ancora'}
+          tone={t.clv_avg_pct != null ? (t.clv_avg_pct > 0 ? 'pos' : t.clv_avg_pct < 0 ? 'neg' : undefined) : undefined}
+        />
+        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="quota presa sopra la chiusura" />
       </div>
 
       <ReportTable

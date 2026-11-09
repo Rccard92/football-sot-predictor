@@ -82,6 +82,18 @@ class AnalystEntry(Base, TimestampMixin):
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # controllo delle regole di acquisto al salvataggio (07/11/2026): tipo di partita, quota Cecchino, avvisi
     rule_check_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # quota presa e CLV (09/11/2026): "quota" e' la quota presa dall'analista, con il suo bookmaker;
+    # la quota del tool (book di Today) resta a parte con l'ora in cui e' stata letta
+    bookmaker: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    quota_tool: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quota_tool_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # chiusura: quota riletta 60 minuti prima del calcio d'inizio (Bet365, poi Pinnacle, poi Betfair)
+    closing_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
+    closing_bookmaker: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    closing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closing_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ok | nd
+    closing_note: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    clv: Mapped[float | None] = mapped_column(Float, nullable=True)  # quota presa / chiusura - 1
 
 
 class AnalystMatchNote(Base, TimestampMixin):

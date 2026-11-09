@@ -19,8 +19,28 @@ import {
   type ToolSnapshot,
 } from '../../lib/analystJournalApi'
 import { ChecklistEditor } from './ChecklistEditor'
+import { OddsAge } from './OddsAge'
 
 const JOURNAL_TAB = 'diario-analisi'
+/** bookmaker piu' usati (si puo' scrivere anche un altro) */
+const BOOKMAKERS = ['Bet365', 'Sisal', 'Snai', 'Eurobet', 'Goldbet', 'Lottomatica', 'Planetwin365', 'Betfair', 'William Hill', 'Unibet', 'Pinnacle']
+const LAST_BOOK_KEY = 'diario-ultimo-bookmaker'
+
+function lastBookmaker(): string {
+  try {
+    return window.localStorage.getItem(LAST_BOOK_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function rememberBookmaker(name: string) {
+  try {
+    window.localStorage.setItem(LAST_BOOK_KEY, name)
+  } catch {
+    // niente: e' solo una comodita'
+  }
+}
 const inputClass =
   'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none'
 
@@ -85,7 +105,9 @@ function AddToJournalDialog({
   const [cycles, setCycles] = useState<Cycle[]>([])
   const [error, setError] = useState<string | null>(null)
   const [market, setMarket] = useState(marketKey ?? '')
-  const [quotaText, setQuotaText] = useState(quota ? String(quota) : '')
+  // quota presa (09/11/2026): la scrive l'analista, non si riempie con la quota del tool
+  const [quotaText, setQuotaText] = useState('')
+  const [bookmaker, setBookmaker] = useState(lastBookmaker)
   const [cycleId, setCycleId] = useState<number | null>(null)
   const [stakeText, setStakeText] = useState('')
   const [suggestion, setSuggestion] = useState<Cycle['suggestion'] | null>(null)
@@ -113,12 +135,7 @@ function AddToJournalDialog({
   const marketRow = useMemo(() => info?.markets.find((m) => m.key === market) ?? null, [info, market])
   const quotaValue = Number(quotaText.replace(',', '.'))
 
-  // la quota del book di Today se la pagina di origine non l'ha passata
-  const onMarketChange = (key: string) => {
-    setMarket(key)
-    const row = info?.markets.find((m) => m.key === key)
-    if (row?.quota_book && (key !== marketKey || !quota)) setQuotaText(String(row.quota_book))
-  }
+  const onMarketChange = (key: string) => setMarket(key)
 
   useEffect(() => {
     if (!cycleId || !(quotaValue > 1)) return
@@ -155,7 +172,8 @@ function AddToJournalDialog({
 
   const save = async () => {
     if (!market) return setError('Scegli il pronostico')
-    if (!(quotaValue > 1)) return setError('Inserisci una quota valida')
+    if (!(quotaValue > 1)) return setError('Scrivi la quota presa')
+    if (!bookmaker.trim()) return setError('Scrivi il bookmaker della quota presa')
     const stake = stakeText ? Number(stakeText.replace(',', '.')) : null
     if (stake !== null && !(stake > 0)) return setError('Puntata non valida')
     const minutes = minutesText ? Number(minutesText) : Math.max(1, Math.round((Date.now() - openedAt.current) / 60000))
@@ -166,6 +184,7 @@ function AddToJournalDialog({
         today_fixture_id: todayFixtureId,
         market_key: market,
         quota: quotaValue,
+        bookmaker: bookmaker.trim(),
         source,
         stake,
         stake_suggested: cycleId && suggestion?.stake ? suggestion.stake : null,
@@ -176,6 +195,7 @@ function AddToJournalDialog({
         notes,
         minutes_spent: Number.isFinite(minutes) ? minutes : null,
       })
+      rememberBookmaker(bookmaker.trim())
       toast.success('Aggiunta al diario')
       onClose()
     } catch (e) {
@@ -245,16 +265,35 @@ function AddToJournalDialog({
               ))}
             </select>
           </label>
-          <label className="block">
-            <span className="text-[13px] font-medium text-slate-600">Quota presa</span>
-            <input className={inputClass} inputMode="decimal" value={quotaText} onChange={(e) => setQuotaText(e.target.value)} />
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-2">
+            <label className="block">
+              <span className="text-[13px] font-medium text-slate-600">Quota presa *</span>
+              <input className={inputClass} inputMode="decimal" placeholder="es. 1,85" value={quotaText} onChange={(e) => setQuotaText(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-[13px] font-medium text-slate-600">Bookmaker *</span>
+              <input className={inputClass} list="diario-bookmakers" placeholder="es. Bet365" value={bookmaker} onChange={(e) => setBookmaker(e.target.value)} maxLength={40} />
+              <datalist id="diario-bookmakers">
+                {BOOKMAKERS.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+            </label>
+            <div className="col-span-2">
+              {marketRow?.quota_book || quota ? (
+                <span className="block text-[13px] text-slate-500">
+                  Quota del tool <b className="tabular-nums text-slate-700">{quotaText2(marketRow?.quota_book ?? quota)}</b> (salvata a parte per il confronto)
+                </span>
+              ) : null}
+              <OddsAge iso={fx?.odds_checked_at} />
+            </div>
             {marketRow?.prob_cecchino ? (
-              <span className="mt-1 block text-[13px] text-slate-500">
+              <span className="col-span-2 block text-[13px] text-slate-500">
                 Probabilità del tool {(marketRow.prob_cecchino * 100).toFixed(0)}%
                 {tool?.probability ? ` · in pagina ${Math.round(tool.probability > 1 ? tool.probability : tool.probability * 100)}%` : ''}
               </span>
             ) : null}
-          </label>
+          </div>
           <label className="block">
             <span className="text-[13px] font-medium text-slate-600">Progressione (metodo di cassa)</span>
             <select className={inputClass} value={cycleId ?? ''} onChange={(e) => setCycleId(e.target.value ? Number(e.target.value) : null)}>
@@ -377,4 +416,8 @@ function RulesAlert({ check }: { check: PlayCheck }) {
       {facts.length ? <p className="text-[13px] text-slate-500">{facts.join(' · ')}</p> : null}
     </div>
   )
+}
+
+function quotaText2(v: number | null | undefined): string {
+  return v == null ? '—' : Number(v).toFixed(2).replace('.', ',')
 }
