@@ -67,7 +67,8 @@ from app.services.analyst.rules import (
     quota_warnings,
     save_rules,
 )
-from app.services.analyst.table import day_rows, filter_rows, league_tables
+from app.services.analyst.form import GOAL_FORM_MARKETS
+from app.services.analyst.table import day_rows, filter_rows, league_tables, row_for
 
 router = APIRouter(prefix="/analyst-journal", tags=["analyst-journal"])
 
@@ -273,6 +274,8 @@ def match_table(
                 **q,
                 "status": quota_status(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type")),
                 "warnings": [w["text"] for w in quota_warnings(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type"))],
+                # "forma da gol" (09/11/2026): avviso arancione, non cambia il colore della regola
+                "goal_alert": bool((r.get("goal_form") or {}).get("alert")) and q["key"] in GOAL_FORM_MARKETS,
             }
             for q in r["quotes"]
         ]
@@ -396,6 +399,32 @@ def update_rules(body: dict[str, Any], principal: Principal = Depends(journal_pr
     return {"rules": load_rules(db)}
 
 
+def _table_alerts(db: Session, fx: CecchinoTodayFixture | None, market_key: str) -> dict[str, Any]:
+    """Avvisi della Tabella per una partita (09/11/2026): "forma da gol" e partita non editabile. Non bloccano."""
+    row = row_for(db, int(fx.id)) if fx is not None else None
+    if row is None:
+        return {"goal_form": None, "goal_alert": False, "editable": True, "not_editable_reason": None}
+    form = row.get("goal_form")
+    return {
+        "goal_form": form,
+        "goal_alert": bool(form and form.get("alert") and market_key in GOAL_FORM_MARKETS),
+        "editable": bool(row.get("editable", True)),
+        "not_editable_reason": row.get("not_editable_reason"),
+    }
+
+
+def _entry_check(db: Session, fx: CecchinoTodayFixture | None, market_key: str, quota: float) -> dict[str, Any]:
+    check = entry_check(load_rules(db), fx, market_key, quota)
+    try:
+        alerts = _table_alerts(db, fx, market_key)
+    except Exception:  # noqa: BLE001 - l'avviso non deve mai impedire di salvare la giocata
+        alerts = None
+    if alerts:
+        check["goal_form"] = alerts["goal_form"]
+        check["goal_alert"] = alerts["goal_alert"]
+    return check
+
+
 @router.post("/check")
 def check_play(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Avvisi per "Aggiungi al diario" mentre si sceglie segno e quota: non blocca niente."""
@@ -417,6 +446,7 @@ def check_play(body: dict[str, Any], principal: Principal = Depends(journal_prin
     warnings = quota_warnings(rules, market_key, quota, ctx["quota_cecchino"], ctx["match_type"]) if market_key else []
     cl = checklist_warning(rules, body.get("checklist")) if "checklist" in body else None
     return {
+        **_table_alerts(db, fx, market_key),
         "match_type": ctx["match_type"],
         "quota_cecchino": ctx["quota_cecchino"],
         "warnings": warnings,
@@ -606,7 +636,7 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_pr
         minutes_spent=int(body["minutes_spent"]) if str(body.get("minutes_spent") or "").isdigit() else None,
         outcome=ENTRY_PENDING,
         # regole di acquisto (07/11/2026): avvisa e non blocca, ma la giocata fuori regola resta segnata
-        rule_check_json=entry_check(load_rules(db), fx, market_key, quota),
+        rule_check_json=_entry_check(db, fx, market_key, quota),
     )
     db.add(entry)
     db.commit()
@@ -654,7 +684,7 @@ def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Dep
         entry.analysis_note = str(body.get("analysis_note") or "").strip() or None
     if {"market_key", "quota"} & set(body):
         fx = db.get(CecchinoTodayFixture, entry.today_fixture_id) if entry.today_fixture_id else None
-        entry.rule_check_json = entry_check(load_rules(db), fx, entry.market_key, entry.quota)
+        entry.rule_check_json = _entry_check(db, fx, entry.market_key, entry.quota)
     db.commit()
     return {"entry": entry_payload(entry)}
 

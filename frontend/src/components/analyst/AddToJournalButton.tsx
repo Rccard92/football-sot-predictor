@@ -363,6 +363,17 @@ function RulesAlert({ check }: { check: PlayCheck }) {
         <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Dentro le regole di acquisto.</p>
       ) : null}
       {check.checklist_warning ? <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{check.checklist_warning.text}</p> : null}
+      {check.goal_alert && check.goal_form ? (
+        <p className="rounded-xl border border-orange-300 bg-orange-50 px-3 py-2 text-[13px] text-orange-800" role="status">
+          Forma da gol: {check.goal_form.goals} gol in {check.goal_form.games} gare ({String(check.goal_form.avg).replace('.', ',')} a partita, sopra{' '}
+          {String(check.goal_form.threshold).replace('.', ',')}). È solo un avviso.
+        </p>
+      ) : null}
+      {check.editable === false && check.not_editable_reason ? (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+          {check.not_editable_reason}: nella Tabella del Diario questa partita non si aggiunge.
+        </p>
+      ) : null}
       {facts.length ? <p className="text-[13px] text-slate-500">{facts.join(' · ')}</p> : null}
     </div>
   )
