@@ -255,9 +255,15 @@ export type TableGame = {
   ht_outcome: TableOutcome | null
   bold_ft: boolean
   bold_ht: boolean
+  /** differenza punti avversaria - squadra alla data della gara, a parita' di partite (09/11/2026) */
+  diff?: number | null
+  /** strong da +3 (cornice), weak da -3, even in mezzo */
+  level?: DiffLevel | null
 }
+export type DiffLevel = 'strong' | 'even' | 'weak'
+export type TableSigns = { ht_games: number; x_pt: number; u15_pt: number; ft_games: number; x: number; u25: number; u35: number }
 export type TableBlock =
-  | { games: number; enough: false }
+  | { games: number; enough: false; missing_results?: string[] }
   | {
       games: number
       enough: true
@@ -270,6 +276,12 @@ export type TableBlock =
       ht_conceded: number
       results: TableGame[]
       team_rank: number | null
+      /** media dei +/- (09/11/2026): sopra 0 calendario duro, sotto 0 facile */
+      strength?: number | null
+      strength_level?: DiffLevel | null
+      signs?: TableSigns
+      /** gare gia' passate senza risultato nel nostro archivio (date) */
+      missing_results?: string[]
     }
 export type TableCards =
   | { games: number; available: false }
@@ -284,7 +296,10 @@ export type TableQuote = {
   /** regole di acquisto (07/11/2026): ok si compra, out fuori fascia, avoid segno da evitare, none nessuna regola */
   status?: QuotaStatus
   warnings?: string[]
+  /** avviso "forma da gol" su Under 2,5 e Under 1,5 PT (09/11/2026) */
+  goal_alert?: boolean
 }
+export type GoalForm = { goals: number; games: number; avg: number; alert: boolean; threshold: number; markets: string[] }
 export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
 export type MatchTableRow = {
   today_fixture_id: number
@@ -307,6 +322,10 @@ export type MatchTableRow = {
   my_note: string
   other_notes: { user_name: string | null; note: string }[]
   started: boolean
+  /** meno di 3 gare in casa (squadra di casa) o fuori (ospite): non si aggiunge al diario (09/11/2026) */
+  editable?: boolean
+  not_editable_reason?: string | null
+  goal_form?: GoalForm | null
 }
 export type MatchTableResponse = {
   day: string
@@ -366,6 +385,10 @@ export type PlayCheck = {
   warnings: RuleWarning[]
   checklist_warning: RuleWarning | null
   rule: MarketRule | null
+  goal_form?: GoalForm | null
+  goal_alert?: boolean
+  editable?: boolean
+  not_editable_reason?: string | null
 }
 export const checkPlay = (input: { today_fixture_id: number; market_key: string; quota: number | null; checklist?: Checklist }) =>
   send<PlayCheck>('POST', '/check', input)

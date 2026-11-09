@@ -10,6 +10,7 @@ import {
   type QuotaStatus,
   type StandingsKind,
   type TableQuote,
+  type DiffLevel,
   type TableBlock,
   type TableCards,
   type TableGame,
@@ -26,7 +27,11 @@ import { AddToJournalButton } from './AddToJournalButton'
  *  06/11 (richieste di Giovanni): risultato dentro il quadratino, cornice anche sui pareggi, gol PT e FT in ogni
  *  blocco, media dei gialli, classifica completa (totale, casa, trasferta), indicatore di equilibrio tolto.
  *  07/11: solo partite calcolate da Cecchino; quote colorate con le regole di acquisto (verde si compra, rosso fuori
- *  fascia, barrata da evitare); tipo di partita Equilibrio / Squilibrio / Scala dalle quote 1-X-2 (solo qui). */
+ *  fascia, barrata da evitare); tipo di partita Equilibrio / Squilibrio / Scala dalle quote 1-X-2 (solo qui).
+ *  09/11 (documento "Modifiche" di Giovanni, regola: aggiungere, non togliere): numero +/- sotto ogni risultato
+ *  (differenza punti alla data della gara), cornice da +3, nome e data dell'avversaria, forza media, gol e segni,
+ *  casa/fuori una sotto l'altra (PT poi finale) e forma totale con lo stesso schema, note in fondo; solo gare della
+ *  stagione in corso; "forma da gol" in arancione su Under 2,5 e Under 1,5 PT; partita non editabile con meno di 3 gare. */
 
 const btn = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'
 const selectClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm'
@@ -37,6 +42,14 @@ const SQUARE: Record<TableOutcome, string> = {
   P: 'bg-rose-100 text-rose-800',
 }
 const OUTCOME_WORD: Record<TableOutcome, string> = { V: 'vinta', N: 'pareggiata', P: 'persa' }
+/** cornice (avversaria piu' forte di almeno 3 punti alla data): verde, rosso o grigio scuro secondo l'esito */
+const RING: Record<TableOutcome, string> = { V: 'ring-emerald-600', N: 'ring-slate-600', P: 'ring-rose-600' }
+const DIFF_TEXT: Record<DiffLevel, string> = { strong: 'font-semibold text-emerald-700', even: 'text-slate-400', weak: 'font-semibold text-rose-700' }
+const DIFF_PILL: Record<DiffLevel, string> = {
+  strong: 'bg-emerald-600 text-white font-semibold',
+  even: 'bg-slate-100 text-slate-500',
+  weak: 'bg-rose-600 text-white font-semibold',
+}
 const MAIN_QUOTES = ['HOME', 'DRAW', 'AWAY']
 const QUOTE_CLASS: Record<QuotaStatus, string> = {
   ok: 'text-emerald-700',
@@ -114,33 +127,52 @@ function decimal(v: number): string {
   return v.toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+/** +5, 0, −3 (segno meno tipografico) */
+function signed(v: number): string {
+  return v > 0 ? `+${v}` : v < 0 ? `−${Math.abs(v)}` : '0'
+}
+
+function signedDecimal(v: number): string {
+  const text = decimal(Math.abs(v))
+  return v > 0 ? `+${text}` : v < 0 ? `−${text}` : text
+}
+
+function shortDate(iso: string | null): string {
+  return iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : ''
+}
+
 function gameTitle(g: TableGame, half: 'PT' | 'FT'): string {
   const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
   const score = half === 'PT' ? g.ht : g.ft
-  const rank = g.opponent_rank ? ` (${g.opponent_rank}ª)` : ''
-  const date = g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : ''
-  return `${date} ${g.home ? 'in casa con' : 'fuori con'} ${g.opponent ?? '?'}${rank}: ${score ?? '—'} ${half}${outcome ? `, ${OUTCOME_WORD[outcome]}` : ''}`
+  const rank = g.opponent_rank ? ` (oggi ${g.opponent_rank}ª)` : ''
+  const diff = g.diff != null ? ` · ${signed(g.diff)} punti alla data` : ''
+  return `${shortDate(g.date)} ${g.home ? 'in casa con' : 'fuori con'} ${g.opponent ?? '?'}${rank}: ${score ?? '—'} ${half}${outcome ? `, ${OUTCOME_WORD[outcome]}` : ''}${diff}`
 }
 
 /** Quadratini con il risultato (gol della squadra prima), dalla gara piu' vecchia (sinistra) all'ultima (destra):
- *  verde vinta, grigio pari, rosso persa; cornice = avversaria piu' in alto in classifica. */
-function FormSquares({ games, half, size = 'sm' }: { games: TableGame[]; half: 'PT' | 'FT'; size?: 'sm' | 'md' }) {
+ *  colore pieno = esito (verde vinta, grigio pari, rosso persa); cornice e grassetto = avversaria piu' forte di
+ *  almeno 3 punti alla data della gara (09/11/2026; prima era la classifica di oggi). Sotto, il numero +/-. */
+function FormSquares({ games, half, size = 'sm', showDiff = false }: { games: TableGame[]; half: 'PT' | 'FT'; size?: 'sm' | 'md'; showDiff?: boolean }) {
   const box = size === 'md' ? 'h-6 min-w-[2.25rem] px-1 text-[12px]' : 'h-5 min-w-[2rem] px-0.5 text-[11px]'
   return (
-    <span className="inline-flex gap-0.5 align-middle">
+    <span className="inline-flex gap-0.5 align-top">
       {games.map((g, i) => {
         const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
         const score = half === 'PT' ? g.ht : g.ft
         const strong = half === 'PT' ? g.bold_ht : g.bold_ft
         return (
-          <span
-            key={i}
-            title={gameTitle(g, half)}
-            className={`inline-flex ${box} items-center justify-center rounded font-semibold tabular-nums ${outcome ? SQUARE[outcome] : 'bg-slate-50 text-slate-300'} ${
-              strong ? 'ring-2 ring-inset ring-current' : ''
-            }`}
-          >
-            {outcome && score ? score : '·'}
+          <span key={i} className="inline-flex flex-col items-center">
+            <span
+              title={gameTitle(g, half)}
+              className={`inline-flex ${box} items-center justify-center rounded tabular-nums ${outcome ? SQUARE[outcome] : 'bg-slate-50 text-slate-300'} ${
+                strong && outcome ? `font-bold ring-2 ring-inset ${RING[outcome]}` : 'font-medium'
+              }`}
+            >
+              {outcome && score ? score : '·'}
+            </span>
+            {showDiff ? (
+              <span className={`mt-px text-[10px] leading-3 tabular-nums ${g.level ? DIFF_TEXT[g.level] : 'text-slate-300'}`}>{g.diff != null ? signed(g.diff) : '·'}</span>
+            ) : null}
           </span>
         )
       })}
@@ -148,12 +180,29 @@ function FormSquares({ games, half, size = 'sm' }: { games: TableGame[]; half: '
   )
 }
 
+/** Forza media delle avversarie: verde da +3 (calendario duro), rosso da -3 (facile), grigio in mezzo. */
+function StrengthBadge({ value, level, size = 'sm' }: { value?: number | null; level?: DiffLevel | null; size?: 'sm' | 'md' }) {
+  if (value == null) return null
+  const pad = size === 'md' ? 'px-2 py-0.5 text-[15px]' : 'px-1.5 py-0.5 text-[12px]'
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-md tabular-nums ${pad} ${DIFF_PILL[level ?? 'even']}`}
+      title="Forza media delle avversarie: media dei numeri +/− (sopra 0 calendario duro, sotto 0 facile)"
+    >
+      {signedDecimal(value)}
+    </span>
+  )
+}
+
 function ListForm({ block }: { block: TableBlock }) {
   if (!block.enough) return <span className="text-[12px] text-slate-400" title={`Solo ${block.games} gare`}>—</span>
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <FormSquares games={block.results} half="FT" />
-      <span className="w-6 text-[13px] font-semibold tabular-nums text-slate-900">{block.points}</span>
+    <span className="inline-flex items-start gap-1.5 whitespace-nowrap">
+      <FormSquares games={block.results} half="FT" showDiff />
+      <span className="w-6 pt-0.5 text-[13px] font-semibold tabular-nums text-slate-900">{block.points}</span>
+      <span className="w-11 pt-px">
+        <StrengthBadge value={block.strength} level={block.strength_level} />
+      </span>
     </span>
   )
 }
@@ -171,7 +220,7 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
     >
       <span className="pt-0.5 font-semibold tabular-nums text-slate-900">{kickoffTime(row.kickoff)}</span>
       <span className="min-w-0">
-        <span className="block truncate font-medium text-slate-900">
+        <span className="block font-medium text-slate-900">
           {row.home_team}
           {row.home_rank ? <span className="ml-1 text-[12px] font-normal text-slate-400">{row.home_rank}ª</span> : null}
           <span className="mx-1 text-slate-300">–</span>
@@ -211,44 +260,196 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
   )
 }
 
-function GoalsLine({ label, scored, conceded, games, total }: { label: string; scored: number; conceded: number; games: number; total: number }) {
+type Half = 'PT' | 'FT'
+
+/** Una gara nella scheda: risultato, avversaria, data (nella forma totale anche casa o fuori) e numero +/-. */
+function GameCell({ g, half, total }: { g: TableGame; half: Half; total: boolean }) {
+  const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
+  const score = half === 'PT' ? g.ht : g.ft
+  const strong = half === 'PT' ? g.bold_ht : g.bold_ft
   return (
-    <p className="text-[13px] text-slate-700">
-      <span className="inline-block w-14 text-[12px] text-slate-500">Gol {label}</span>
-      <b className="tabular-nums">{scored}</b> fatti · <b className="tabular-nums">{conceded}</b> subiti
-      {games < total ? <span className="text-[12px] text-slate-400"> (su {games})</span> : null}
-    </p>
+    <div className="min-w-0 text-center">
+      <div
+        title={gameTitle(g, half)}
+        className={`flex h-7 items-center justify-center rounded-md text-[14px] tabular-nums ${outcome ? SQUARE[outcome] : 'bg-slate-50 text-slate-300'} ${
+          strong && outcome ? `font-bold ring-2 ring-inset ${RING[outcome]}` : 'font-medium'
+        }`}
+      >
+        {outcome && score ? score : '·'}
+      </div>
+      <p className="mt-0.5 truncate text-[12px] leading-4 text-slate-700" title={g.opponent ?? undefined}>
+        {g.opponent ?? '?'}
+      </p>
+      <p className="text-[11px] leading-4 text-slate-400">
+        {shortDate(g.date)}
+        {total ? ` · ${g.home ? 'casa' : 'fuori'}` : ''}
+      </p>
+      {g.diff != null ? (
+        <span className={`mt-0.5 inline-block rounded px-1.5 text-[11px] leading-4 tabular-nums ${DIFF_PILL[g.level ?? 'even']}`}>{signed(g.diff)}</span>
+      ) : null}
+    </div>
   )
 }
 
-function BlockCard({ title, block }: { title: string; block: TableBlock }) {
+/** Gol fatti-subiti e quante volte e' uscito il segno nelle gare mostrate, un segno per riga. */
+function SignsBox({ block, half }: { block: Extract<TableBlock, { enough: true }>; half: Half }) {
+  const s = block.signs
+  const lines: [string, number, number][] = s
+    ? half === 'PT'
+      ? [
+          ['X PT', s.x_pt, s.ht_games],
+          ['U1,5 PT', s.u15_pt, s.ht_games],
+        ]
+      : [
+          ['X', s.x, s.ft_games],
+          ['U2,5', s.u25, s.ft_games],
+          ['U3,5', s.u35, s.ft_games],
+        ]
+    : []
+  const scored = half === 'PT' ? block.ht_scored : block.scored
+  const conceded = half === 'PT' ? block.ht_conceded : block.conceded
+  const games = half === 'PT' ? block.ht_games : block.games
   return (
-    <div className="rounded-xl bg-slate-50 p-3">
-      <p className={LABEL}>{title}</p>
+    <div>
+      <p className="text-[15px] font-semibold tabular-nums text-slate-900" title="Gol fatti - subiti nelle gare mostrate">
+        Gol {half} {scored}-{conceded}
+        {games < block.games ? <span className="ml-1 text-[11px] font-normal text-slate-400">(su {games})</span> : null}
+      </p>
+      {lines.length ? (
+        <div className="mt-1 space-y-0.5 rounded-md bg-amber-50 px-2 py-1 text-[13px] tabular-nums text-slate-800">
+          {lines.map(([label, n, of]) => (
+            <p key={label}>
+              {label} {n}/{of}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function FormLine({ team, venue, block, half, total }: { team: string; venue: string; block: TableBlock; half: Half; total: boolean }) {
+  const missing = block.missing_results ?? []
+  return (
+    <div>
+      <p className="text-[13px] text-slate-600">
+        <b className="text-slate-900">{team}</b> · {venue}
+        {block.enough && half === 'FT' ? (
+          <>
+            {' '}
+            · <b className="text-slate-900">{block.points} pt</b>{' '}
+            <span className="text-[12px] text-slate-400">
+              su {block.max_points} · {block.games} gare
+            </span>
+          </>
+        ) : null}
+        {missing.length ? (
+          <span
+            className="ml-1.5 text-[12px] text-amber-700"
+            title="Gare già passate ma senza risultato nel nostro archivio: le ultime potrebbero non essere davvero le ultime"
+          >
+            manca il risultato del {missing.map((d) => shortDate(d)).join(', ')}
+          </span>
+        ) : null}
+      </p>
       {!block.enough ? (
-        <p className="mt-1 text-[13px] text-slate-400">Meno di 3 gare ({block.games})</p>
+        <p className="mt-1 text-[13px] text-slate-400">Meno di 3 gare in stagione ({block.games})</p>
       ) : (
-        <>
-          <p className="mt-0.5 text-[15px] font-semibold text-slate-900">
-            {block.points} pt <span className="text-[12px] font-normal text-slate-500">su {block.max_points} · {block.games} gare</span>
-          </p>
-          <div className="mt-1.5 space-y-1">
-            <p className="flex items-center gap-2">
-              <span className="w-5 text-[11px] font-semibold text-slate-400">PT</span>
-              <FormSquares games={block.results} half="PT" size="md" />
-            </p>
-            <p className="flex items-center gap-2">
-              <span className="w-5 text-[11px] font-semibold text-slate-400">FT</span>
-              <FormSquares games={block.results} half="FT" size="md" />
-            </p>
+        <div className="mt-1 flex flex-wrap items-start gap-x-3 gap-y-2">
+          <div className="grid min-w-[300px] flex-1 grid-cols-5 gap-1.5">
+            {block.results.map((g, i) => (
+              <GameCell key={i} g={g} half={half} total={total} />
+            ))}
           </div>
-          <div className="mt-1.5 space-y-0.5">
-            <GoalsLine label="PT" scored={block.ht_scored ?? 0} conceded={block.ht_conceded ?? 0} games={block.ht_games ?? 0} total={block.games} />
-            <GoalsLine label="FT" scored={block.scored} conceded={block.conceded} games={block.games} total={block.games} />
+          <div className="flex items-start gap-3">
+            <div className="w-16 border-l border-slate-200 pl-2 text-center">
+              <p className="text-[11px] leading-3 text-slate-400">Forza media</p>
+              <div className="mt-1">
+                <StrengthBadge value={block.strength} level={block.strength_level} size="md" />
+              </div>
+            </div>
+            <div className="w-28 border-l border-slate-200 pl-2">
+              <SignsBox block={block} half={half} />
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
+  )
+}
+
+function FormSection({
+  title,
+  subtitle,
+  tone,
+  half,
+  total,
+  lines,
+}: {
+  title: string
+  subtitle: string
+  tone: 'navy' | 'teal'
+  half: Half
+  total: boolean
+  lines: { team: string; venue: string; block: TableBlock }[]
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white ${tone === 'navy' ? 'bg-slate-800' : 'bg-teal-800'}`}>
+          {title}
+        </span>
+        <span className="text-[13px] text-slate-500">{subtitle}</span>
+      </p>
+      <div className="mt-2 space-y-3">
+        {lines.map((l) => (
+          <FormLine key={l.team + l.venue} team={l.team} venue={l.venue} block={l.block} half={half} total={total} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** Legenda in fondo alla scheda (in sunto, come chiesto da Giovanni). */
+function FormNotes() {
+  return (
+    <div className="rounded-xl border-l-4 border-slate-700 bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Note</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[13px] text-slate-700">
+        <li>
+          <b>Colore</b> = esito (verde vinta, rosso persa, grigio pari). <b>Bordo</b> = avversaria più forte di almeno 3 punti.
+        </li>
+        <li>
+          <b>+/−</b> = punti dell&apos;avversaria meno i nostri, alla data della gara e a parità di partite. Verde da +3, rosso da −3, grigio tra −2 e +2 (alla
+          pari).
+        </li>
+        <li>
+          <b>Forza media</b> = media dei numeri: sopra 0 calendario duro, sotto 0 facile.
+        </li>
+        <li>
+          <b>Segni</b> = quante volte è uscito X PT, Under 1,5 PT, X, Under 2,5, Under 3,5 nelle gare mostrate.
+        </li>
+        <li>
+          <b>Solo stagione in corso.</b> Meno di 3 gare in casa e 3 fuori = gara non editabile.
+        </li>
+        <li>
+          <b>Forma da gol</b>: sopra 2,7 gol a partita (casa della squadra di casa e fuori dell&apos;ospite) avviso arancione su Under 2,5 e Under 1,5 PT.
+        </li>
+        <li>Nell&apos;elenco a sinistra nome e data al passaggio del mouse.</li>
+      </ul>
+    </div>
+  )
+}
+
+function GoalFormPill({ form }: { form?: MatchTableRow['goal_form'] }) {
+  if (!form?.alert) return null
+  return (
+    <span
+      className="inline-flex items-center whitespace-nowrap rounded-md bg-orange-100 px-1.5 py-0.5 text-[12px] font-medium text-orange-800 ring-1 ring-inset ring-orange-300"
+      title={`${form.goals} gol in ${form.games} gare (casa della squadra di casa e fuori dell'ospite): avviso su Under 2,5 e Under 1,5 PT`}
+    >
+      Forma da gol {decimal(form.avg)}
+    </span>
   )
 }
 
@@ -622,8 +823,9 @@ function MatchDetail({
             {row.away_team}
             {row.away_rank ? <span className="ml-1 text-[13px] font-normal text-slate-400">{row.away_rank}ª</span> : null}
           </h2>
-          <div className="mt-1">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <MatchTypePill kind={row.match_type} />
+            <GoalFormPill form={row.goal_form} />
           </div>
           {!row.standings_complete ? (
             <p className="mt-1 text-[12px] text-amber-700" title="Nel campionato mancano alcuni risultati: posizioni e cornici possono non essere esatte">
@@ -644,18 +846,47 @@ function MatchDetail({
         <button type="button" className={btn} onClick={onStandings}>
           Classifica
         </button>
-        {!row.started ? <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact /> : null}
+        {!row.started && row.editable === false ? (
+          <span className="self-center text-[13px] text-amber-700" title="Regola di Giovanni (09/11/2026): servono almeno 3 gare in casa e 3 fuori nella stagione">
+            {row.not_editable_reason ?? 'Meno di 3 gare in stagione'}: non si aggiunge al diario
+          </span>
+        ) : !row.started ? (
+          <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact />
+        ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <BlockCard title={`Forma casa · ${row.home_team} in casa`} block={row.blocks.forma_casa} />
-        <BlockCard title={`Forma fuori · ${row.away_team} fuori`} block={row.blocks.forma_fuori} />
-        <BlockCard title={`Forma totale · ${row.home_team}`} block={row.blocks.forma_totale_casa} />
-        <BlockCard title={`Forma totale · ${row.away_team}`} block={row.blocks.forma_totale_fuori} />
+      <div className="space-y-3">
+        {(['PT', 'FT'] as const).map((half) => (
+          <FormSection
+            key={`casa-fuori-${half}`}
+            title={half === 'PT' ? 'Primo tempo' : 'Finale'}
+            subtitle="casa / fuori a confronto"
+            tone="navy"
+            half={half}
+            total={false}
+            lines={[
+              { team: row.home_team, venue: 'in casa', block: row.blocks.forma_casa },
+              { team: row.away_team, venue: 'fuori', block: row.blocks.forma_fuori },
+            ]}
+          />
+        ))}
+        {(['PT', 'FT'] as const).map((half) => (
+          <FormSection
+            key={`totale-${half}`}
+            title={half === 'PT' ? 'Forma totale · primo tempo' : 'Forma totale · finale'}
+            subtitle="casa e fuori insieme"
+            tone="teal"
+            half={half}
+            total
+            lines={[
+              { team: row.home_team, venue: 'totale', block: row.blocks.forma_totale_casa },
+              { team: row.away_team, venue: 'totale', block: row.blocks.forma_totale_fuori },
+            ]}
+          />
+        ))}
       </div>
       <p className="text-[12px] text-slate-500">
-        Risultati con i gol della squadra per primi, dalla gara più vecchia a sinistra all&apos;ultima a destra. Cornice = contro una squadra più in alto in
-        classifica (anche nei pareggi). Passa sopra un quadratino per avversaria e data.
+        Risultati con i gol della squadra per primi, dalla gara più vecchia a sinistra all&apos;ultima a destra. Solo gare della stagione in corso.
       </p>
 
       <div className="space-y-1 rounded-xl bg-slate-50 p-3">
@@ -674,8 +905,12 @@ function MatchDetail({
                 {row.quotes
                   .filter((q) => q.group === g)
                   .map((q) => (
-                    <span key={q.key} className="whitespace-nowrap" title={quoteTitle(q)}>
-                      <span className="text-slate-500">{q.label}</span>{' '}
+                    <span
+                      key={q.key}
+                      className={`whitespace-nowrap ${q.goal_alert ? 'rounded bg-orange-100 px-1 ring-1 ring-inset ring-orange-300' : ''}`}
+                      title={[q.goal_alert && row.goal_form ? `Forma da gol: ${decimal(row.goal_form.avg)} gol a partita` : '', quoteTitle(q) ?? ''].filter(Boolean).join(' — ') || undefined}
+                    >
+                      <span className={q.goal_alert ? 'text-orange-800' : 'text-slate-500'}>{q.label}</span>{' '}
                       <b className={`tabular-nums ${QUOTE_CLASS[q.status ?? 'none']}`}>{quoteText(q.quota)}</b>
                     </span>
                   ))}
@@ -687,11 +922,19 @@ function MatchDetail({
             <span className="font-semibold text-emerald-700">Verde</span> si compra, <span className="font-semibold text-rose-700">rosso</span> fuori
             dalla quota minima o massima, <span className="text-slate-400 line-through">barrata</span> segno da evitare, nera senza regola. Passa sopra
             una quota per il motivo.
+            {row.goal_form?.alert ? (
+              <>
+                {' '}
+                <span className="font-semibold text-orange-700">Arancione</span>: forma da gol sopra 2,7, solo un avviso.
+              </>
+            ) : null}
           </p>
         </div>
       ) : null}
 
       <NoteEditor key={row.today_fixture_id} row={row} canWrite={canWrite} onSaved={onNoteSaved} />
+
+      <FormNotes />
     </div>
   )
 }
@@ -825,7 +1068,7 @@ export function MatchTable() {
           {data ? ` · ${data.total} partite${upcoming ? ' da giocare' : ''} su ${data.total_day}` : ''}
           {pages > 1 ? ` · pagina ${page} di ${pages}` : ''}. Quadratini con il risultato finale:{' '}
           <span className="font-semibold text-emerald-700">verde</span> vinta, <span className="font-semibold text-slate-500">grigio</span> pari,{' '}
-          <span className="font-semibold text-rose-700">rosso</span> persa, con i punti accanto. Quote 1-X-2 in verde se si comprano, in rosso se
+          <span className="font-semibold text-rose-700">rosso</span> persa, sotto il numero +/− alla data, poi punti e forza media. Quote 1-X-2 in verde se si comprano, in rosso se
           fuori regola. Solo le partite calcolate da Cecchino.
         </p>
       </div>
@@ -842,13 +1085,13 @@ export function MatchTable() {
       ) : null}
 
       {data && rows.length > 0 ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div className="space-y-3">
             <div className={`${todayCard} overflow-hidden`}>
               <div className="hidden grid-cols-[44px_minmax(0,1fr)_auto_96px] gap-x-3 border-b border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:grid">
                 <span>Ora</span>
                 <span>Partita</span>
-                <span>Forma casa · fuori</span>
+                <span>Forma casa · fuori · punti · forza</span>
                 <span className="text-center">1 · X · 2</span>
               </div>
               {groups.map((g) => (

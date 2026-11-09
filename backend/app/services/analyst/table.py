@@ -14,7 +14,12 @@ Bozza di Giovanni (04/11/2026) e decisioni del 05/11/2026:
 - tipo di partita dalle quote 1-X-2 con la regola di Giovanni (vedi rules.py), solo in questa pagina;
 - equilibrio = indice e classe gia' salvati da Today (cecchino_balance_v5_evaluations);
 - quote = tutte quelle del pannello KPI.
-Le gare recenti sono quelle della fotografia della scansione del mattino (stesso campionato, coppe escluse).
+Dal 09/11/2026 (documento "Modifiche" di Giovanni, vedi form.py): le gare recenti NON arrivano piu' dalla
+fotografia del calcolo Cecchino (che a inizio stagione completa con la stagione passata) ma dalle gare del
+campionato nella stagione in corso; ogni risultato ha il numero +/- (differenza punti alla data della gara) e la
+cornice va con quel numero (da +3), non piu' con la classifica di oggi; ogni blocco ha forza media e segni;
+la partita non si puo' aggiungere al diario se la squadra di casa ha meno di 3 gare in casa o l'ospite meno di
+3 fuori; avviso "forma da gol" sopra 2,7 gol a partita.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.fixture import Fixture
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.team import Team
+from app.services.analyst.form import LeagueSeason, diff_level, goal_form, signs, strength
 from app.services.analyst.journal import MARKETS
 from app.services.analyst.rules import match_type
 
@@ -41,13 +47,14 @@ MAX_GAMES = 5
 CACHE_SECONDS = 600  # la fotografia del mattino non cambia: si ricalcola al massimo ogni 10 minuti
 _cache: dict[date, tuple[float, list[dict[str, Any]]]] = {}
 
-# blocco -> (chiave della fotografia, squadra: "home" | "away")
-_SNAPSHOT_KEYS = {
-    "forma_casa": ("home_recent_context_5", "home"),
-    "forma_fuori": ("away_recent_context_5", "away"),
-    "forma_totale_casa": ("home_recent_total_6", "home"),
-    "forma_totale_fuori": ("away_recent_total_6", "away"),
+# blocco -> (squadra: "home" | "away", gare: "home" = solo in casa, "away" = solo fuori, None = tutte)
+_BLOCKS = {
+    "forma_casa": ("home", "home"),
+    "forma_fuori": ("away", "away"),
+    "forma_totale_casa": ("home", None),
+    "forma_totale_fuori": ("away", None),
 }
+_VOID_STATUSES = frozenset({"PST", "CANC", "ABD", "AWD", "WO"})
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -88,38 +95,57 @@ def standings(games: list[tuple[int, int, int, int]]) -> tuple[dict[int, int], b
     return {team: i + 1 for i, team in enumerate(order)}, complete
 
 
-def _game(g: dict[str, Any], team: int, ranks: dict[int, int], names: dict[int, str]) -> dict[str, Any]:
+def _game(
+    g: dict[str, Any], team: int, ranks: dict[int, int], names: dict[int, str], diff: int | None = None
+) -> dict[str, Any]:
     home = g["home"] == team
     gf, ga = (g["gh"], g["ga"]) if home else (g["ga"], g["gh"])
     hf, ha = (g["hth"], g["hta"]) if home else (g["hta"], g["hth"])
     opponent = g["away"] if home else g["home"]
     ft, ht = _outcome(gf, ga), _outcome(hf, ha)
-    stronger = opponent in ranks and team in ranks and ranks[opponent] < ranks[team]
+    if diff is None:
+        # Classifica (riquadro): posizione di oggi, come prima
+        stronger = opponent in ranks and team in ranks and ranks[opponent] < ranks[team]
+    else:
+        # Tabella (dal 09/11/2026): avversaria piu' forte di almeno 3 punti alla data della gara
+        stronger = diff_level(diff) == "strong"
     return {
         "date": g["kickoff"].date().isoformat() if g["kickoff"] else None,
         "opponent_id": opponent,
         "opponent": names.get(opponent),
-        "opponent_rank": ranks.get(opponent),
+        "opponent_rank": ranks.get(opponent),  # posizione nella classifica di oggi
         "home": home,
         "ft": f"{gf}-{ga}" if ft else None,  # sempre dal punto di vista della squadra in esame
         "ht": f"{hf}-{ha}" if ht else None,
         "ft_outcome": ft,
         "ht_outcome": ht,
-        # cornice contro le squadre piu' in alto: vittorie, pareggi e sconfitte (pareggi dal 06/11/2026)
+        "diff": diff,
+        "level": diff_level(diff),
+        # cornice e grassetto: vittorie, pareggi e sconfitte (pareggi dal 06/11/2026)
         "bold_ft": bool(stronger and ft),
         "bold_ht": bool(stronger and ht),
     }
 
 
-def _block(games: list[dict[str, Any]], team: int, ranks: dict[int, int], names: dict[int, str]) -> dict[str, Any]:
+def _block(
+    games: list[dict[str, Any]],
+    team: int,
+    ranks: dict[int, int],
+    names: dict[int, str],
+    season: LeagueSeason | None = None,
+    missing: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     games = [g for g in games if g["gh"] is not None and g["ga"] is not None][-MAX_GAMES:]
+    lacking = [g["kickoff"].date().isoformat() for g in (missing or []) if g["kickoff"]]
     if len(games) < MIN_GAMES:
-        return {"games": len(games), "enough": False}
-    rows = [_game(g, team, ranks, names) for g in games]
+        return {"games": len(games), "enough": False, "missing_results": lacking}
+    rows = [_game(g, team, ranks, names, season.diff(team, g) if season else None) for g in games]
     points = sum(3 if r["ft_outcome"] == "V" else 1 if r["ft_outcome"] == "N" else 0 for r in rows)
     scored = sum(int(r["ft"].split("-")[0]) for r in rows if r["ft"])
     conceded = sum(int(r["ft"].split("-")[1]) for r in rows if r["ft"])
     halves = [r["ht"] for r in rows if r["ht"]]
+    diffs = [r["diff"] for r in rows if r["diff"] is not None]
+    avg = strength(diffs)
     return {
         "games": len(rows),
         "enough": True,
@@ -133,6 +159,11 @@ def _block(games: list[dict[str, Any]], team: int, ranks: dict[int, int], names:
         "ht_conceded": sum(int(h.split("-")[1]) for h in halves),
         "results": rows,
         "team_rank": ranks.get(team),
+        # dal 09/11/2026
+        "strength": avg,
+        "strength_level": None if avg is None else "strong" if avg >= 3 else "weak" if avg <= -3 else "even",
+        "signs": signs(rows),
+        "missing_results": lacking,
     }
 
 
@@ -206,23 +237,60 @@ def _yellows(db: Session, ids: set[int]) -> dict[int, dict[str, int]]:
     return out
 
 
-def _league_standings(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, int], tuple[dict[int, int], bool]]:
+def _league_seasons(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, int], LeagueSeason]:
+    """Tutte le gare (anche da giocare) di ogni campionato e stagione: forma, classifica alla data, risultati mancanti."""
     if not pairs:
         return {}
-    games: dict[tuple[int, int], list[tuple[int, int, int, int]]] = defaultdict(list)
+    postgres = db.get_bind().dialect.name == "postgresql"
+    cols = [
+        Fixture.id,
+        Fixture.league_id,
+        Fixture.season_id,
+        Fixture.kickoff_at,
+        Fixture.home_team_id,
+        Fixture.away_team_id,
+        Fixture.goals_home,
+        Fixture.goals_away,
+        Fixture.status,
+        Fixture.round,
+    ]
+    if postgres:
+        cols += [
+            func.jsonb_extract_path_text(Fixture.raw_json, "score", "halftime", "home"),
+            func.jsonb_extract_path_text(Fixture.raw_json, "score", "halftime", "away"),
+        ]
+    else:
+        cols.append(Fixture.raw_json)
+    games: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     rows = db.execute(
-        select(Fixture.league_id, Fixture.season_id, Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away).where(
-            Fixture.league_id.in_({p[0] for p in pairs}),
-            Fixture.season_id.in_({p[1] for p in pairs}),
-            Fixture.status.in_(FINISHED_STATUSES),
-            Fixture.goals_home.is_not(None),
-            Fixture.goals_away.is_not(None),
-        )
+        select(*cols).where(Fixture.league_id.in_({p[0] for p in pairs}), Fixture.season_id.in_({p[1] for p in pairs}))
     ).all()
-    for lg, season, h, a, gh, ga in rows:
-        if (lg, season) in pairs:
-            games[(lg, season)].append((int(h), int(a), int(gh), int(ga)))
-    return {p: standings(games.get(p, [])) for p in pairs}
+    for row in rows:
+        pair = (int(row.league_id), int(row.season_id))
+        if pair not in pairs:
+            continue
+        if postgres:
+            hth, hta = _int(row[10]), _int(row[11])
+        else:
+            ht = (((row[10] or {}).get("score") or {}).get("halftime")) or {}
+            hth, hta = _int(ht.get("home")), _int(ht.get("away"))
+        status = row.status or ""
+        finished = status in FINISHED_STATUSES and row.goals_home is not None and row.goals_away is not None
+        games[pair].append(
+            {
+                "id": int(row.id),
+                "kickoff": _aware(row.kickoff_at),
+                "home": int(row.home_team_id),
+                "away": int(row.away_team_id),
+                "gh": row.goals_home if finished else None,
+                "ga": row.goals_away if finished else None,
+                "hth": hth if finished else None,
+                "hta": hta if finished else None,
+                "round": row.round,
+                "void": status in _VOID_STATUSES or status in FINISHED_STATUSES,
+            }
+        )
+    return {p: LeagueSeason(games.get(p, [])) for p in pairs}
 
 
 def _table(rows: list[tuple[int, int, int, int]], names: dict[int, str], side: str) -> list[dict[str, Any]]:
@@ -345,26 +413,37 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
     locals_ = {
         int(r.id): r
         for r in db.execute(
-            select(Fixture.id, Fixture.home_team_id, Fixture.away_team_id, Fixture.league_id, Fixture.season_id).where(
+            select(Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.league_id, Fixture.season_id).where(
                 Fixture.id.in_({int(f.local_fixture_id) for f in fixtures})
             )
         ).all()
     }
-    wanted: dict[int, dict[str, list[int]]] = {}
-    all_ids: set[int] = set()
-    for f in fixtures:
-        snap = ((f.stats_snapshot_json or {}).get("input_snapshot")) or {}
-        ids = {}
-        for block, (key, _side) in _SNAPSHOT_KEYS.items():
-            raw = ((snap.get(key) or {}).get("fixture_ids")) or []
-            ids[block] = [int(x) for x in raw if _int(x) is not None]
-            all_ids.update(ids[block])
-        wanted[int(f.id)] = ids
-    history = _history(db, all_ids)
-    yellows = _yellows(db, all_ids)
     pairs = {(int(r.league_id), int(r.season_id)) for r in locals_.values()}
-    tables = _league_standings(db, pairs)
-    team_ids = {g["home"] for g in history.values()} | {g["away"] for g in history.values()}
+    seasons = _league_seasons(db, pairs)
+    # classifica di oggi (posizioni accanto ai nomi, invariata): tutte le gare finite della stagione
+    tables = {
+        p: standings([(g["home"], g["away"], int(g["gh"]), int(g["ga"])) for g in season.finished]) for p, season in seasons.items()
+    }
+    now = datetime.now(timezone.utc)
+    picked: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    lacking: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    for f in fixtures:
+        loc = locals_.get(int(f.local_fixture_id))
+        if loc is None:
+            continue
+        season = seasons[(int(loc.league_id), int(loc.season_id))]
+        target = {"id": int(loc.id), "kickoff": _aware(loc.kickoff_at)}
+        teams = {"home": int(loc.home_team_id), "away": int(loc.away_team_id)}
+        picked[int(f.id)] = {
+            block: season.recent(teams[who], target, side=side, limit=MAX_GAMES) for block, (who, side) in _BLOCKS.items()
+        }
+        lacking[int(f.id)] = {
+            block: season.missing_before(teams[who], target, now=now, side=side) for block, (who, side) in _BLOCKS.items()
+        }
+    shown_ids = {int(g["id"]) for blocks in picked.values() for gs in blocks.values() for g in gs}
+    yellows = _yellows(db, shown_ids)
+    team_ids = {g[k] for blocks in picked.values() for gs in blocks.values() for g in gs for k in ("home", "away")}
+    team_ids |= {int(r.home_team_id) for r in locals_.values()} | {int(r.away_team_id) for r in locals_.values()}
     names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()} if team_ids else {}
     balance = {
         int(fid): (float(idx) if idx is not None else None, cls)
@@ -379,19 +458,25 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for f in fixtures:
         loc = locals_.get(int(f.local_fixture_id))
-        if loc is None:
+        if loc is None or int(f.id) not in picked:
             continue
+        pair = (int(loc.league_id), int(loc.season_id))
+        season = seasons[pair]
         home, away = int(loc.home_team_id), int(loc.away_team_id)
-        ranks, complete = tables.get((int(loc.league_id), int(loc.season_id)), ({}, False))
-        games = {block: [history[i] for i in ids if i in history] for block, ids in wanted[int(f.id)].items()}
-        # le "ultime 6 totali" della fotografia: si tengono le 5 piu' recenti (in ordine dalla piu' vecchia)
-        games = {block: sorted(gs, key=lambda g: g["kickoff"] or datetime.min.replace(tzinfo=timezone.utc)) for block, gs in games.items()}
+        ranks, complete = tables.get(pair, ({}, False))
+        games = picked[int(f.id)]
         blocks = {
-            block: _block(games[block], home if side == "home" else away, ranks, names)
-            for block, (_key, side) in _SNAPSHOT_KEYS.items()
+            block: _block(games[block], home if who == "home" else away, ranks, names, season, lacking[int(f.id)][block])
+            for block, (who, _side) in _BLOCKS.items()
         }
         if not any(b["enough"] for b in blocks.values()):
             continue
+        # meno di 3 gare in casa (squadra di casa) o fuori (ospite) nella stagione: non si aggiunge al diario
+        short = [
+            f"{f.home_team_name} ha {blocks['forma_casa']['games']} gare in casa" if blocks["forma_casa"]["games"] < MIN_GAMES else None,
+            f"{f.away_team_name} ha {blocks['forma_fuori']['games']} gare fuori" if blocks["forma_fuori"]["games"] < MIN_GAMES else None,
+        ]
+        short = [s for s in short if s]
         idx, cls = balance.get(int(f.id), (None, None))
         quotes = _quotes(f)
         main = {q["key"]: q["quota"] for q in quotes}
@@ -417,9 +502,20 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "away_rank": ranks.get(away),
                 "quotes": quotes,
                 "match_type": match_type(*(main.get(k) for k in ("HOME", "DRAW", "AWAY"))),
+                "editable": not short,
+                "not_editable_reason": ("Meno di 3 gare in stagione: " + " e ".join(short)) if short else None,
+                "goal_form": goal_form(blocks["forma_casa"], blocks["forma_fuori"]),
             }
         )
     return out
+
+
+def row_for(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
+    """La riga della Tabella di una partita (per il controllo di "Aggiungi al diario")."""
+    fx = db.get(CecchinoTodayFixture, today_fixture_id)
+    if fx is None:
+        return None
+    return next((r for r in day_rows(db, fx.scan_date) if r["today_fixture_id"] == int(today_fixture_id)), None)
 
 
 def day_rows(db: Session, day: date) -> list[dict[str, Any]]:
