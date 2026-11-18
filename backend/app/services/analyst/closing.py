@@ -244,13 +244,37 @@ def run_closing(db: Session, client: Any, now: datetime | None = None, *, max_ca
     return out
 
 
+def run_extra_jobs(db: Session, client: Any) -> dict[str, Any]:
+    """Migliorie di Giovanni del 17/11/2026, nello stesso giro: seconda lettura a 75', calendario con le coppe,
+    formazioni e indisponibili. Ognuna ha il suo tetto di chiamate e un errore non ferma le altre."""
+    from app.core.config import get_settings
+
+    if not getattr(get_settings(), "analyst_extras_enabled", True):
+        return {"enabled": False}
+    from app.services.analyst.calendar import refresh_calendar
+    from app.services.analyst.lineups import refresh_injuries, refresh_lineups
+    from app.services.analyst.odds_reads import run_second_read
+
+    out: dict[str, Any] = {}
+    for name, job in (("t75", run_second_read), ("calendar", refresh_calendar), ("lineups", refresh_lineups), ("injuries", refresh_injuries)):
+        try:
+            out[name] = job(db, client)
+        except Exception:  # noqa: BLE001
+            logger.exception("diario: %s non eseguito", name)
+            db.rollback()
+            out[name] = "errore"
+    return out
+
+
 def run_closing_locked(db: Session, client: Any) -> dict[str, Any] | None:
     """Come run_closing, ma solo se nessun altro giro e' in corso (Postgres); in locale (sqlite) gira e basta."""
     postgres = db.get_bind().dialect.name == "postgresql"
     if postgres and not db.execute(text("select pg_try_advisory_lock(:k)"), {"k": _LOCK_ID}).scalar():
         return None
     try:
-        return run_closing(db, client)
+        res = run_closing(db, client)
+        res["extras"] = run_extra_jobs(db, client)
+        return res
     finally:
         if postgres:
             db.execute(text("select pg_advisory_unlock(:k)"), {"k": _LOCK_ID})
@@ -269,7 +293,7 @@ def closing_loop() -> None:
         db = SessionLocal()
         try:
             res = run_closing_locked(db, ApiFootballClient())
-            if res and (res["calls"] or res["nd"]):
+            if res and (res["calls"] or res["nd"] or res.get("extras")):
                 logger.info("analyst closing %s", res)
         except Exception:  # noqa: BLE001
             logger.exception("analyst closing: giro fallito")

@@ -273,4 +273,44 @@ describe('MatchTable', () => {
     expect(within(detail).getByText('Classifica incompleta (mancano alcuni risultati)')).toBeTruthy()
     expect(screen.getAllByLabelText('Giallo · solo da leggere').length).toBeGreaterThan(0)
   })
+
+  it('movimento quote, calendario con le coppe e formazioni (18/11/2026)', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    const row = {
+      ...response.rows[0],
+      odds_move: {
+        status: 'ok' as const,
+        read_at: '2099-11-05T17:45:00+00:00',
+        markets: [
+          { key: 'HOME', morning_quota: 2.1, later_quota: 1.9, morning_prob: 0.456, later_prob: 0.504, move_points: 4.8, cecchino_prob: 0.52, toward_cecchino: true, clv_morning: 0.058 },
+          { key: 'UNDER_2_5', morning_quota: 1.8, later_quota: 1.95, morning_prob: 0.531, later_prob: 0.49, move_points: -4.1, cecchino_prob: 0.6, toward_cecchino: false, clv_morning: -0.118 },
+        ],
+      },
+      schedule: {
+        home: { last: { date: '2099-11-01', kickoff: null, competition: 'Coppa Italia', league_match: false, opponent: 'Rivale', home: true, days: 4 }, next: { date: '2099-11-08', kickoff: null, competition: 'Serie Z', league_match: true, opponent: 'Altra', home: false, days: 3 }, games_7: 1, games_14: 2 },
+        away: null,
+      },
+      squads: {
+        home: {
+          lineups_known: 10,
+          habitual: [{ id: 1, name: 'Rossi', pos: 'G' }],
+          injured: [{ name: 'Rossi', kind: 'Missing Fixture', reason: 'Injury', starter: true }],
+          missing_starters: 1,
+          probable: [],
+          history: [{ date: '2099-10-20', opponent: 'Rivale', rosa: { complete: false, missing: 3, text: '−3 titolari (portiere, 2 difensori)' } }],
+        },
+      },
+    }
+    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
+    expect(within(detail).getByText((t) => t.startsWith('▲ +4,8 punti')).className).toContain('text-emerald-700')
+    expect(within(detail).getByText(/▼ −4,1 punti/).className).toContain('text-rose-700')
+    expect(within(detail).getByText('Coppa Italia')).toBeTruthy()
+    expect(within(detail).getByText(/tra 3 giorni: possibile turnover/)).toBeTruthy()
+    expect(within(detail).getByText('Calendario non disponibile')).toBeTruthy()
+    expect(within(detail).getByText('1 su 11')).toBeTruthy()
+    expect(within(detail).getByText('−3 titolari (portiere, 2 difensori)')).toBeTruthy()
+  })
 })

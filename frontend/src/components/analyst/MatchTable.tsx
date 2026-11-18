@@ -10,6 +10,9 @@ import {
   type PtForm,
   type QuotaStatus,
   type Reliability,
+  type ScheduleGame,
+  type TeamSchedule,
+  type TeamSquad,
   type Remaining,
   type StandingsKind,
   type TableQuote,
@@ -733,6 +736,231 @@ function ReliabilityBox({ row }: { row: MatchTableRow }) {
   )
 }
 
+const MOVE_LABEL: Record<string, string> = {
+  HOME: '1',
+  DRAW: 'X',
+  AWAY: '2',
+  OVER_2_5: 'Over 2,5',
+  UNDER_2_5: 'Under 2,5',
+  OVER_1_5: 'Over 1,5',
+  UNDER_3_5: 'Under 3,5',
+  DRAW_PT: 'X PT',
+  UNDER_PT_1_5: 'Under 1,5 PT',
+}
+
+function pctText(p: number | null | undefined, digits = 1): string {
+  return p == null ? '—' : `${(p * 100).toLocaleString('it-IT', { minimumFractionDigits: digits, maximumFractionDigits: digits })}%`
+}
+
+/** Movimento delle quote tra il mattino e 75' dal via (Miglioria 1 di Giovanni, 18/11/2026). */
+function OddsMoveBox({ row }: { row: MatchTableRow }) {
+  const m = row.odds_move
+  return (
+    <section className="rounded-xl border border-slate-200 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Movimento delle quote · mattino → 75&apos; dal via</p>
+      {!m ? (
+        <p className="mt-1 text-[13px] text-slate-500">La seconda lettura Bet365 arriva 75 minuti prima del calcio d&apos;inizio (per 8 settimane, dal 18/11).</p>
+      ) : m.status !== 'ok' || !m.markets.length ? (
+        <p className="mt-1 text-[13px] text-slate-500">Seconda lettura fatta, ma Bet365 non aveva quote per questa partita.</p>
+      ) : (
+        <>
+          <div className="mt-1.5 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-[13px] tabular-nums">
+              <thead>
+                <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+                  <th className="py-1 pr-2 text-left font-semibold">Mercato</th>
+                  <th className="px-1 py-1 text-right font-semibold">Mattino</th>
+                  <th className="px-1 py-1 text-right font-semibold">T-75</th>
+                  <th className="px-1 py-1 text-right font-semibold">Prob. senza margine</th>
+                  <th className="px-1 py-1 text-right font-semibold">Movimento</th>
+                  <th className="py-1 pl-2 text-left font-semibold">Cecchino</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.markets.map((x) => (
+                  <tr key={x.key} className="border-b border-slate-100">
+                    <td className="py-1 pr-2 text-slate-700">{MOVE_LABEL[x.key] ?? x.key}</td>
+                    <td className="px-1 py-1 text-right">{quoteText(x.morning_quota)}</td>
+                    <td className="px-1 py-1 text-right">{quoteText(x.later_quota)}</td>
+                    <td className="px-1 py-1 text-right text-slate-600">
+                      {pctText(x.morning_prob)} → {pctText(x.later_prob)}
+                    </td>
+                    <td
+                      className={`px-1 py-1 text-right font-semibold ${x.toward_cecchino === true ? 'text-emerald-700' : x.toward_cecchino === false ? 'text-rose-700' : 'text-slate-500'}`}
+                    >
+                      {x.move_points > 0 ? '▲ +' : x.move_points < 0 ? '▼ −' : ''}
+                      {Math.abs(x.move_points).toLocaleString('it-IT', { maximumFractionDigits: 1 })} punti
+                    </td>
+                    <td className="py-1 pl-2 text-slate-600">
+                      {x.cecchino_prob == null
+                        ? '—'
+                        : `${x.cecchino_prob > x.morning_prob ? 'più alta' : 'più bassa'} del book (${pctText(x.cecchino_prob, 0)})`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Verde = il mercato si è mosso verso il numero del Cecchino (chi ha comprato al mattino ha CLV positivo), rosso = contro. Letta alle{' '}
+            {m.read_at ? new Date(m.read_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }) : '—'}.
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function scheduleDate(g: ScheduleGame): string {
+  return g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) : '—'
+}
+
+function CompetitionBadge({ g }: { g: ScheduleGame }) {
+  return (
+    <span
+      className={`ml-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium ${g.league_match ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}
+      title={g.competition ?? undefined}
+    >
+      {g.league_match ? 'Campionato' : (g.competition ?? 'Altra competizione')}
+    </span>
+  )
+}
+
+function TeamScheduleCard({ team, s }: { team: string; s: TeamSchedule | null }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-[13px] font-semibold text-slate-900">{team}</p>
+      {!s ? (
+        <p className="mt-1 text-[13px] text-slate-400">Calendario non disponibile</p>
+      ) : (
+        <div className="mt-1 space-y-1.5 text-[13px]">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Ultima gara</p>
+            {s.last ? (
+              <>
+                <p className="font-semibold text-slate-900">
+                  {scheduleDate(s.last)}
+                  <CompetitionBadge g={s.last} />
+                </p>
+                <p className="text-[12px] text-slate-500">
+                  {s.last.days} giorni di riposo · {s.last.home ? 'in casa con' : 'fuori con'} {s.last.opponent ?? '?'}
+                </p>
+              </>
+            ) : (
+              <p className="text-slate-400">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Prossima gara</p>
+            {s.next ? (
+              <>
+                <p className="font-semibold text-slate-900">
+                  {scheduleDate(s.next)}
+                  <CompetitionBadge g={s.next} />
+                </p>
+                <p className={`text-[12px] ${s.next.days != null && s.next.days <= 3 ? 'font-medium text-amber-700' : 'text-slate-500'}`}>
+                  tra {s.next.days} giorni{s.next.days != null && s.next.days <= 3 ? ': possibile turnover' : ''} · {s.next.home ? 'in casa con' : 'fuori con'}{' '}
+                  {s.next.opponent ?? '?'}
+                </p>
+              </>
+            ) : (
+              <p className="text-slate-400">—</p>
+            )}
+          </div>
+          <p className="text-[12px] text-slate-500">
+            Gare negli ultimi 7 giorni: {s.games_7} · negli ultimi 14: {s.games_14}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Calendario delle due squadre, coppe comprese (Miglioria 2 di Giovanni, 18/11/2026). */
+function ScheduleBox({ row }: { row: MatchTableRow }) {
+  if (!row.schedule) return null
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Calendario delle due squadre (tutte le competizioni)</p>
+      <p className="text-[12px] text-slate-500">Riposo e impegni ravvicinati: le coppe contano.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <TeamScheduleCard team={row.home_team} s={row.schedule.home} />
+        <TeamScheduleCard team={row.away_team} s={row.schedule.away} />
+      </div>
+    </section>
+  )
+}
+
+function SquadCard({ team, s }: { team: string; s?: TeamSquad }) {
+  if (!s) return <div className="rounded-xl border border-slate-200 p-3 text-[13px] text-slate-400">{team}: formazioni non disponibili</div>
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 text-[13px]">
+      <p className="font-semibold text-slate-900">{team}</p>
+      <p className="mt-0.5 text-slate-700">
+        <b>Indisponibili ({s.injured.length})</b>
+        {s.injured.length
+          ? `: ${s.injured.map((i) => `${i.name ?? '?'} (${[i.reason, i.starter ? 'titolare' : null].filter(Boolean).join(', ') || i.kind || '—'})`).join(', ')}`
+          : ': nessuno annunciato dal fornitore'}
+      </p>
+      {s.habitual ? (
+        <>
+          <p className="mt-0.5 text-slate-700">
+            <b>Titolari mancanti:</b>{' '}
+            <span className={s.missing_starters ? 'font-semibold text-rose-700' : 'font-semibold text-emerald-700'}>{s.missing_starters} su 11</span>
+            {s.missing_starters ? '' : ' · rosa completa'}
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-500" title="Titolari abituali (presenze da titolare nelle ultime 10 gare) meno gli indisponibili">
+            Probabile formazione: {(s.probable ?? []).map((p) => p.name ?? '?').join(', ')}
+          </p>
+        </>
+      ) : (
+        <p className="mt-0.5 text-[12px] text-slate-400">Titolari abituali n.d. (servono almeno 5 formazioni, ne abbiamo {s.lineups_known})</p>
+      )}
+    </div>
+  )
+}
+
+/** Indisponibili e formazioni (Miglioria 3 di Giovanni, 18/11/2026): oggi chi manca, ieri con che rosa. */
+function SquadsBox({ row }: { row: MatchTableRow }) {
+  const sq = row.squads
+  if (!sq) return null
+  const lines: { team: string; s?: TeamSquad }[] = [
+    { team: row.home_team, s: sq.home },
+    { team: row.away_team, s: sq.away },
+  ]
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Indisponibili e formazioni</p>
+      <p className="text-[12px] text-slate-500">Oggi: chi manca. Storico: con che rosa ha giocato ogni gara della forma.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {lines.map((l) => (
+          <SquadCard key={l.team} team={l.team} s={l.s} />
+        ))}
+      </div>
+      {lines.map((l) =>
+        l.s?.history.some((h) => h.rosa) ? (
+          <div key={`h-${l.team}`} className="mt-2">
+            <p className="text-[12px] font-semibold text-slate-600">{l.team} · ultime gare</p>
+            <table className="mt-0.5 w-full text-[13px]">
+              <tbody>
+                {l.s.history.map((h, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="w-16 py-1 tabular-nums text-slate-500">{shortDate(h.date)}</td>
+                    <td className="py-1 text-slate-700">{h.opponent ?? '?'}</td>
+                    <td className={`py-1 text-right ${h.rosa ? (h.rosa.complete ? 'text-emerald-700' : 'text-rose-700') : 'text-slate-400'}`} title={h.rosa?.players?.filter(Boolean).join(', ')}>
+                      {h.rosa ? h.rosa.text : 'n.d.'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null,
+      )}
+    </section>
+  )
+}
+
 function GoalFormPill({ form }: { form?: MatchTableRow['goal_form'] }) {
   if (!form?.alert) return null
   return (
@@ -1197,6 +1425,10 @@ function MatchDetail({
       <p className="text-[12px] text-slate-500">
         Risultati con i gol della squadra per primi, dalla gara più vecchia a sinistra all&apos;ultima a destra. Solo gare della stagione in corso.
       </p>
+
+      <ScheduleBox row={row} />
+      <SquadsBox row={row} />
+      <OddsMoveBox row={row} />
 
       {/* 18/11/2026: senza dati per nessuna delle due squadre il riquadro non si mostra */}
       {row.yellows.home.available || row.yellows.away.available ? (

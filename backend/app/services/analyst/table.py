@@ -56,6 +56,7 @@ from app.services.analyst.form import (
     strength_ppg,
 )
 from app.services.analyst.leagues import league_admitted
+from app.services.analyst.table_extras import compute_extras
 from app.services.analyst.journal import MARKETS, odds_read_at
 from app.services.analyst.rules import match_type
 
@@ -378,6 +379,7 @@ def _reliability(
     odds_at: datetime | None,
     kickoff: datetime | None,
     cards: dict[str, dict[str, Any]],
+    lineups_known: bool | None = None,
 ) -> dict[str, Any]:
     """Indice di affidabilita' della gara (Modifica 1 di Giovanni, 18/11/2026).
 
@@ -398,6 +400,8 @@ def _reliability(
         yellow.append(f"Quote lette più di {ODDS_OLD_HOURS} ore prima della gara")
     if not all((c or {}).get("available") for c in cards.values()):
         yellow.append("Ammonizioni mancanti")
+    if lineups_known is False:
+        yellow.append("Formazioni mancanti")
     level = "red" if red else "yellow" if yellow else "green"
     return {"level": level, "red": red, "yellow": yellow}
 
@@ -580,6 +584,12 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         }
     shown_ids = {int(g["id"]) for blocks in picked.values() for gs in blocks.values() for g in gs}
     yellows = _yellows(db, shown_ids)
+    # 18/11/2026: movimento quote, calendario con le coppe, formazioni; gialli dagli eventi dove mancano le statistiche
+    extras, event_yellows = compute_extras(db, fixtures, locals_, targets, seasons, picked)
+    for fid, sides in event_yellows.items():
+        have = yellows.get(fid) or {}
+        if "home" not in have or "away" not in have:
+            yellows[fid] = {**sides, **have}
     team_ids = {g[k] for blocks in picked.values() for gs in blocks.values() for g in gs for k in ("home", "away")}
     team_ids |= {int(r.home_team_id) for r in locals_.values()} | {int(r.away_team_id) for r in locals_.values()}
     names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()} if team_ids else {}
@@ -634,6 +644,11 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
             "home": _cards(games["forma_totale_casa"], home, yellows),
             "away": _cards(games["forma_totale_fuori"], away, yellows),
         }
+        extra = extras.get(int(f.id)) or {}
+        squads = extra.get("squads") or {}
+        for side in squads.values():
+            for h in side.get("history") or []:
+                h["opponent"] = names.get(h.get("opponent_id"))
         reliability = _reliability(
             problems=problems,
             future_games=[
@@ -643,6 +658,7 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
             odds_at=odds_read_at(f),
             kickoff=target["kickoff"],
             cards=cards,
+            lineups_known=bool(squads) and all((squads.get(s) or {}).get("habitual") for s in ("home", "away")),
         )
         out.append(
             {
@@ -678,6 +694,10 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                     "home": season.remaining(home, target, now=now),
                     "away": season.remaining(away, target, now=now),
                 },
+                # migliorie 1-3 (18/11/2026): movimento quote a 75', ultima/prossima gara, formazioni
+                "odds_move": extra.get("odds_move"),
+                "schedule": extra.get("schedule"),
+                "squads": squads or None,
             }
         )
     return out

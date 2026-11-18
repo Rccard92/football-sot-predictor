@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     cecchino_warm_pattern_cache: bool = False
     # Diario analisi (09/11/2026): quota di chiusura delle giocate 60 minuti prima del calcio d'inizio
     analyst_closing_enabled: bool = True
+    # Diario analisi (18/11/2026): seconda lettura a 75', calendario con le coppe, formazioni e indisponibili
+    analyst_extras_enabled: bool = True
     # Cecchino 1-X-2 v2 (09/11/2026): fattore campo; 1.0 e 1.0 lo spengono senza rilascio (verifica a 30 giorni)
     cecchino_home_factor_1: float = 1.25
     cecchino_home_factor_x: float = 1.05

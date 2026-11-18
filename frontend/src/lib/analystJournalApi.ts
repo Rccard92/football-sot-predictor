@@ -373,7 +373,60 @@ export type MatchTableRow = {
   remaining?: { home: Remaining | null; away: Remaining | null }
   pt_form?: PtForm | null
   reliability?: Reliability
+  /** seconda lettura Bet365 a 75' dal via (18/11/2026, 8 settimane) */
+  odds_move?: OddsMove | null
+  /** ultima e prossima gara in tutte le competizioni (18/11/2026) */
+  schedule?: { home: TeamSchedule | null; away: TeamSchedule | null } | null
+  /** formazioni e indisponibili (18/11/2026) */
+  squads?: { home?: TeamSquad; away?: TeamSquad } | null
 }
+export type OddsMoveMarket = {
+  key: string
+  morning_quota: number | null
+  later_quota: number | null
+  morning_prob: number
+  later_prob: number
+  move_points: number
+  cecchino_prob: number | null
+  /** il mercato si e' mosso dalla parte del Cecchino (null = non giudicabile) */
+  toward_cecchino: boolean | null
+  /** quota del mattino x probabilita' a T-75 - 1 */
+  clv_morning: number | null
+}
+export type OddsMove = { status: 'ok' | 'nd'; read_at: string | null; markets: OddsMoveMarket[] }
+export type ScheduleGame = {
+  date: string | null
+  kickoff: string | null
+  competition: string | null
+  league_match: boolean
+  opponent: string | null
+  home: boolean
+  days: number | null
+}
+export type TeamSchedule = { last: ScheduleGame | null; next: ScheduleGame | null; games_7: number; games_14: number }
+export type SquadPlayer = { id: number; name: string | null; pos: string | null; starts?: number; of?: number }
+export type TeamSquad = {
+  lineups_known: number
+  habitual: SquadPlayer[] | null
+  injured: { name: string | null; kind: string | null; reason: string | null; starter: boolean }[]
+  missing_starters: number
+  probable: SquadPlayer[] | null
+  history: { date: string | null; opponent?: string | null; rosa: { complete: boolean; missing: number; text: string; players?: (string | null)[] } | null }[]
+}
+export type OddsMovesSummary = {
+  reads: number
+  until: string
+  markets: {
+    key: string
+    n: number
+    avg_abs_move_points: number | null
+    toward_cecchino_pct: number | null
+    judged: number
+    clv_morning_avg_pct: number | null
+    clv_morning_pos_pct: number | null
+  }[]
+}
+export const getOddsMoves = () => request<OddsMovesSummary>('/odds-moves')
 /** gare che mancano: esatte dal calendario, o stima con la lunghezza della stagione precedente (season_games);
  *  phase "knockout" = gara a eliminazione diretta, "end" = stagione regolare finita */
 export type Remaining = { games: number; exact: boolean; season_games?: number; phase?: 'knockout' | 'end' }

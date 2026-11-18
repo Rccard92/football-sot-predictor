@@ -348,6 +348,24 @@ def match_standings(today_fixture_id: int, principal: Principal = Depends(journa
     return out
 
 
+_moves_cache: dict[str, Any] = {}
+
+
+@router.get("/odds-moves")
+def odds_moves(principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Seconda lettura a 75' (18/11/2026, 8 settimane): per mercato quante volte il mercato va verso il Cecchino."""
+    import time as _time
+
+    from app.services.analyst.odds_reads import summary
+
+    hit = _moves_cache.get("v")
+    if hit and _time.monotonic() - hit[0] < 600:
+        return hit[1]
+    out = summary(db)
+    _moves_cache["v"] = (_time.monotonic(), out)
+    return out
+
+
 # --- partita (per il dialogo "Aggiungi al diario") ------------------------------------------------
 
 

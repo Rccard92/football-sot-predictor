@@ -14,6 +14,8 @@ import {
   getBuyRules,
   getJournalMeta,
   getJournalReport,
+  getOddsMoves,
+  type OddsMovesSummary,
   journalExportUrl,
   listAnalysts,
   listCycles,
@@ -909,6 +911,76 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 
 // --- report ---------------------------------------------------------------------------------------
 
+const MOVE_NAMES: Record<string, string> = {
+  HOME: '1',
+  DRAW: 'X',
+  AWAY: '2',
+  OVER_2_5: 'Over 2,5',
+  UNDER_2_5: 'Under 2,5',
+  OVER_1_5: 'Over 1,5',
+  UNDER_3_5: 'Under 3,5',
+  DRAW_PT: 'X PT',
+  UNDER_PT_1_5: 'Under 1,5 PT',
+}
+
+/** Seconda lettura a 75' su tutte le gare del Diario (18/11/2026, 8 settimane): il mercato va verso il Cecchino? */
+function OddsMovesReport() {
+  const [data, setData] = useState<OddsMovesSummary | null>(null)
+  useEffect(() => {
+    let alive = true
+    getOddsMoves().then(
+      (d) => {
+        if (alive) setData(d)
+      },
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (!data) return null
+  return (
+    <section className={`${todayCard} ${todayCardPadding}`}>
+      <h3 className={todaySectionTitle}>Movimento delle quote · mattino → 75&apos; dal via</h3>
+      <p className={todaySectionSubtitle}>
+        Tutte le gare del Diario, seconda lettura Bet365 fino al {new Date(`${data.until}T12:00:00Z`).toLocaleDateString('it-IT')} · {data.reads} letture.
+        &quot;Verso il Cecchino&quot; = il mercato si è mosso dalla parte del nostro numero; il CLV è quello di chi comprava al mattino.
+      </p>
+      {data.markets.length ? (
+        <table className="mt-2 w-full text-[13px] tabular-nums">
+          <thead>
+            <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+              <th className="py-1 text-left font-semibold">Mercato</th>
+              <th className="px-1 py-1 text-right font-semibold">Quote</th>
+              <th className="px-1 py-1 text-right font-semibold">Verso il Cecchino</th>
+              <th className="px-1 py-1 text-right font-semibold">Movimento medio</th>
+              <th className="px-1 py-1 text-right font-semibold">CLV del mattino</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.markets.map((m) => (
+              <tr key={m.key} className="border-b border-slate-100">
+                <td className="py-1 text-slate-700">{MOVE_NAMES[m.key] ?? m.key}</td>
+                <td className="px-1 py-1 text-right">{m.n}</td>
+                <td className="px-1 py-1 text-right">
+                  {m.toward_cecchino_pct != null ? `${m.toward_cecchino_pct.toLocaleString('it-IT')}%` : '—'}
+                  <span className="text-[11px] text-slate-400"> su {m.judged}</span>
+                </td>
+                <td className="px-1 py-1 text-right">{m.avg_abs_move_points != null ? `${m.avg_abs_move_points.toLocaleString('it-IT')} punti` : '—'}</td>
+                <td className="px-1 py-1 text-right">
+                  {m.clv_morning_avg_pct != null ? `${m.clv_morning_avg_pct > 0 ? '+' : ''}${m.clv_morning_avg_pct.toLocaleString('it-IT')}%` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mt-2 text-[13px] text-slate-500">Ancora nessuna seconda lettura: arrivano 75 minuti prima di ogni gara del Diario.</p>
+      )}
+    </section>
+  )
+}
+
 function ReportTab({ filters }: { filters: Filters }) {
   const [report, setReport] = useState<JournalReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -955,6 +1027,8 @@ function ReportTab({ filters }: { filters: Filters }) {
           sub={t.clv_ratio_n ? `vecchia formula · ${t.clv_ratio_n} giocate · positivi ${pct(t.clv_ratio_pos_pct ?? null)}` : 'vecchia formula'}
         />
       </div>
+
+      <OddsMovesReport />
 
       <ReportTable
         title="Report segni"
