@@ -37,6 +37,12 @@ Una combo coerente per partita dei 16 campionati (scenari partita aperta, chiusa
 
 - Esito con il regolamento della V4 sulle statistiche post-partita di API-Football.
 - CLV = quota presa / quota di chiusura dello stesso book − 1, quando la chiusura esiste.
+- **Chiusura, regola fissa dal 18/11/2026 (decisione di Giovanni, non si cambia a metà prova):** è l'istantanea
+  "chiusura" che il job della V4 legge ogni 15 minuti prima delle partite, in pratica **circa 30 minuti prima del
+  via** (mediana 28'), stesso book e stessa linea della giocata. Si salva anche la quota dell'esito opposto
+  (`closing_opposite`) e il **CLV senza margine** = quota presa × probabilità di chiusura senza margine − 1
+  (`clv_novig`); il CLV "quota ÷ chiusura − 1" resta per confronto. Se la chiusura non è stata letta, la giocata
+  è segnata **"chiusura mancante"**: mai la quota presa al posto della chiusura.
 - Le giocate in osservazione si misurano come quelle consigliate, ma nella pagina sono marcate "non consigliata".
 
 ## Registro delle deviazioni

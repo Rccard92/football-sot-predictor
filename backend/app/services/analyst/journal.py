@@ -155,7 +155,9 @@ def entry_payload(entry: AnalystEntry, *, user_name: str | None = None, now: dat
         "closing_at": _aware(entry.closing_at).isoformat() if entry.closing_at else None,
         "closing_status": entry.closing_status,
         "closing_note": entry.closing_note,
-        "clv": entry.clv,
+        "clv": entry.clv,  # dal 18/11/2026: senza margine (quota presa x probabilita' di chiusura - 1)
+        "clv_ratio": getattr(entry, "clv_ratio", None),  # vecchia formula: quota presa / chiusura - 1
+        "closing_prob": getattr(entry, "closing_prob", None),
         "stake": entry.stake,
         "stake_suggested": entry.stake_suggested,
         "tool": entry.tool_json or {},
@@ -446,6 +448,7 @@ def _bucket() -> dict[str, Any]:
     return {
         "entries": 0, "settled": 0, "won": 0, "lost": 0, "void": 0, "staked": 0.0, "profit": 0.0, "units": 0.0, "minutes": 0,
         "quota_sum": 0.0, "prob_sum": 0.0, "prob_n": 0, "clv_sum": 0.0, "clv_n": 0, "clv_pos": 0,
+        "clv_ratio_sum": 0.0, "clv_ratio_n": 0, "clv_ratio_pos": 0,
     }
 
 
@@ -457,6 +460,12 @@ def _add(b: dict[str, Any], e: AnalystEntry) -> None:
         b["clv_sum"] += float(e.clv)
         b["clv_n"] += 1
         b["clv_pos"] += 1 if e.clv > 0 else 0
+    # vecchia formula (quota presa / chiusura - 1), tenuta a parte dal 18/11/2026 per confronto
+    ratio = getattr(e, "clv_ratio", None)
+    if ratio is not None and e.outcome != ENTRY_VOID:
+        b["clv_ratio_sum"] += float(ratio)
+        b["clv_ratio_n"] += 1
+        b["clv_ratio_pos"] += 1 if ratio > 0 else 0
     if e.outcome == ENTRY_PENDING:
         return
     if e.outcome == ENTRY_VOID:
@@ -504,6 +513,9 @@ def _finish(b: dict[str, Any]) -> dict[str, Any]:
         "clv_n": b["clv_n"],
         "clv_avg_pct": round(100.0 * b["clv_sum"] / b["clv_n"], 1) if b["clv_n"] else None,
         "clv_pos_pct": round(100.0 * b["clv_pos"] / b["clv_n"], 1) if b["clv_n"] else None,
+        "clv_ratio_n": b["clv_ratio_n"],
+        "clv_ratio_avg_pct": round(100.0 * b["clv_ratio_sum"] / b["clv_ratio_n"], 1) if b["clv_ratio_n"] else None,
+        "clv_ratio_pos_pct": round(100.0 * b["clv_ratio_pos"] / b["clv_ratio_n"], 1) if b["clv_ratio_n"] else None,
     }
 
 

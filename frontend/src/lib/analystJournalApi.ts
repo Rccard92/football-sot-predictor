@@ -111,8 +111,12 @@ export type JournalEntry = {
   /** ok = chiusura letta, nd = non disponibile, null = ancora da leggere */
   closing_status?: 'ok' | 'nd' | null
   closing_note?: string | null
-  /** quota presa / quota di chiusura - 1 */
+  /** dal 18/11/2026: quota presa x probabilita' di chiusura senza margine - 1 */
   clv?: number | null
+  /** vecchia formula: quota presa / quota di chiusura - 1 */
+  clv_ratio?: number | null
+  /** probabilita' di chiusura senza margine (stesso mercato e bookmaker della chiusura) */
+  closing_prob?: number | null
   stake: number | null
   stake_suggested: number | null
   tool: ToolSnapshot
@@ -211,6 +215,10 @@ export type ReportRow = {
   clv_n?: number
   clv_avg_pct?: number | null
   clv_pos_pct?: number | null
+  /** vecchia formula, tenuta a parte dal 18/11/2026 */
+  clv_ratio_n?: number
+  clv_ratio_avg_pct?: number | null
+  clv_ratio_pos_pct?: number | null
 }
 
 export type JournalReport = {

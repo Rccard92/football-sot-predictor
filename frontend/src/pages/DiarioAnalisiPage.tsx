@@ -408,7 +408,9 @@ function clvText(v: number): string {
 function closingTitle(e: JournalEntry): string {
   if (e.closing_status === 'nd') return `Chiusura non disponibile${e.closing_note ? `: ${e.closing_note}` : ''}`
   if (e.closing_status !== 'ok') return 'La quota di chiusura si legge 60 minuti prima del calcio d’inizio'
-  return `Chiusura ${e.closing_quota} ${e.closing_bookmaker ?? ''}${e.closing_note ? ` (${e.closing_note})` : ''} · CLV = quota presa ÷ chiusura − 1`
+  const prob = e.closing_prob != null ? ` · probabilità di chiusura senza margine ${(e.closing_prob * 100).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : ''
+  const ratio = e.clv_ratio != null ? ` · con la vecchia formula (quota ÷ chiusura − 1) ${clvText(e.clv_ratio)}` : ''
+  return `Chiusura ${e.closing_quota} ${e.closing_bookmaker ?? ''}${e.closing_note ? ` (${e.closing_note})` : ''}${prob} · CLV = quota presa × probabilità senza margine − 1${ratio}`
 }
 
 /** CLV della giocata (09/11/2026): verde se abbiamo comprato meglio della chiusura, rosso se peggio. */
@@ -420,7 +422,15 @@ function ClvBadge({ entry }: { entry: JournalEntry }) {
       </span>
     )
   }
-  if (entry.clv == null) return null
+  if (entry.clv == null) {
+    // chiusura letta ma senza probabilita' senza margine (giocate vecchie): resta la vecchia formula, scritta come tale
+    if (entry.clv_ratio == null) return null
+    return (
+      <span className="mt-0.5 block w-fit rounded px-1 text-[11px] text-slate-500 ring-1 ring-inset ring-slate-200" title={closingTitle(entry)}>
+        CLV n.d. · q/c {clvText(entry.clv_ratio)}
+      </span>
+    )
+  }
   const tone = entry.clv > 0 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : entry.clv < 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'
   return (
     <span className={`mt-0.5 block w-fit rounded px-1 text-[11px] font-semibold ring-1 ring-inset ${tone}`} title={closingTitle(entry)}>
@@ -437,7 +447,9 @@ function ClosingLine({ entry }: { entry: JournalEntry }) {
       : entry.closing_status === 'nd'
         ? `chiusura n.d.${entry.closing_note ? ` (${entry.closing_note})` : ''}`
         : 'chiusura: si legge 60 minuti prima del calcio d’inizio',
-    entry.clv != null ? `CLV ${clvText(entry.clv)}` : null,
+    entry.closing_prob != null ? `senza margine ${(entry.closing_prob * 100).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : null,
+    entry.clv != null ? `CLV ${clvText(entry.clv)}` : entry.closing_status === 'ok' ? 'CLV senza margine n.d.' : null,
+    entry.clv_ratio != null ? `quota ÷ chiusura ${clvText(entry.clv_ratio)}` : null,
   ].filter(Boolean)
   return <p className="mt-1 text-[13px] text-slate-500">{bits.join(' · ')}</p>
 }
@@ -935,7 +947,13 @@ function ReportTab({ filters }: { filters: Filters }) {
           sub={t.clv_n ? `su ${t.clv_n} giocate${t.clv_n < 50 ? ' (servono 50)' : ''}` : 'nessuna chiusura ancora'}
           tone={t.clv_avg_pct != null ? (t.clv_avg_pct > 0 ? 'pos' : t.clv_avg_pct < 0 ? 'neg' : undefined) : undefined}
         />
-        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="quota presa sopra la chiusura" />
+        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="senza margine (dal 18/11)" />
+        {/* 18/11/2026: la vecchia formula resta a parte, per confrontare i numeri */}
+        <Tile
+          label="CLV quota ÷ chiusura"
+          value={t.clv_ratio_avg_pct != null ? `${t.clv_ratio_avg_pct > 0 ? '+' : ''}${pct(t.clv_ratio_avg_pct)}` : '—'}
+          sub={t.clv_ratio_n ? `vecchia formula · ${t.clv_ratio_n} giocate · positivi ${pct(t.clv_ratio_pos_pct ?? null)}` : 'vecchia formula'}
+        />
       </div>
 
       <ReportTable

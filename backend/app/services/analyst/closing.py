@@ -5,7 +5,11 @@
 - Bookmaker della chiusura: Bet365; solo se Bet365 non ha quel segno, Pinnacle (il riferimento piu' preciso per
   la chiusura), poi Betfair. Il bookmaker usato si salva sempre accanto alla quota. Nessuno dei tre: "n.d.".
 - Le doppie chance ricavate dall'1-X-2 non valgono come chiusura (non hanno il margine del book).
-- CLV = quota presa / quota di chiusura - 1. Sopra 0 abbiamo comprato meglio del mercato.
+- CLV (dal 18/11/2026, decisione di Giovanni) = quota presa x probabilita' di chiusura senza margine - 1 (vedi
+  novig.py: stesso mercato e stesso bookmaker della chiusura). La vecchia formula, quota presa / quota di
+  chiusura - 1, resta in clv_ratio. Sopra 0 abbiamo comprato meglio del mercato.
+- Giocate con la chiusura gia' letta prima del 18/11: la probabilita' senza margine si ricava rileggendo le quote
+  (solo partite degli ultimi 7 giorni), segnato nella nota.
 - Giocate gia' salvate: si prova a recuperare la chiusura se la partita e' degli ultimi 7 giorni (dopo il
   fornitore non tiene piu' le quote); la quota letta dopo l'inizio e' segnata come "recuperata". Altrimenti n.d.
 
@@ -23,6 +27,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.analyst_journal import AnalystEntry
+from app.services.analyst.novig import clv_novig, novig_prob
 from app.services.cecchino.cecchino_canonical_book_payload import build_single_bookmaker_payload
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,8 @@ LOOP_SECONDS = 300
 CLOSING_OK = "ok"
 CLOSING_ND = "nd"
 NOTE_RECOVERED = "recuperata dopo il calcio d'inizio"
+NOTE_NOVIG_LATE = "senza margine dalle quote rilette dopo la chiusura"
+NOTE_NOVIG_ND = "senza margine n.d."
 _LOCK_ID = 20261109  # pg_try_advisory_lock: un solo giro alla volta anche durante un riavvio
 
 
@@ -81,15 +88,26 @@ def book_quotes(items: list[dict[str, Any]], book_id: int, name: str, slug: str)
 
 def pick_closing(items: list[dict[str, Any]], market_key: str) -> tuple[float | None, str | None]:
     """Quota di chiusura del segno: Bet365, se manca Pinnacle, poi Betfair."""
+    q, name, _quotes = pick_closing_quotes(items, market_key)
+    return q, name
+
+
+def pick_closing_quotes(items: list[dict[str, Any]], market_key: str) -> tuple[float | None, str | None, dict[str, float]]:
+    """Come pick_closing, con tutte le quote di quel bookmaker (per la probabilita' senza margine)."""
     for book_id, name, slug in CLOSING_BOOKS:
-        q = book_quotes(items, book_id, name, slug).get(market_key)
+        quotes = book_quotes(items, book_id, name, slug)
+        q = quotes.get(market_key)
         if q:
-            return q, name
-    return None, None
+            return q, name, quotes
+    return None, None, {}
+
+
+def _book_by_name(name: str | None) -> tuple[int, str, str] | None:
+    return next((b for b in CLOSING_BOOKS if b[1] == name), None)
 
 
 def apply_closing(entry: AnalystEntry, items: list[dict[str, Any]] | None, now: datetime, *, recovered: bool = False) -> None:
-    q, book = pick_closing(items or [], entry.market_key) if items else (None, None)
+    q, book, quotes = pick_closing_quotes(items or [], entry.market_key) if items else (None, None, {})
     entry.closing_at = now
     if q is None:
         entry.closing_status = CLOSING_ND
@@ -99,12 +117,27 @@ def apply_closing(entry: AnalystEntry, items: list[dict[str, Any]] | None, now: 
     entry.closing_bookmaker = book
     entry.closing_status = CLOSING_OK
     entry.closing_note = NOTE_RECOVERED if recovered else None
-    entry.clv = clv_value(entry.quota, q)
+    entry.closing_prob = novig_prob(quotes, entry.market_key)
+    entry.clv_ratio = clv_value(entry.quota, q)
+    entry.clv = clv_novig(entry.quota, entry.closing_prob)
+
+
+def apply_novig_late(entry: AnalystEntry, items: list[dict[str, Any]] | None) -> None:
+    """Chiusura letta prima del 18/11: probabilita' senza margine dalle quote rilette dello stesso bookmaker."""
+    book = _book_by_name(entry.closing_bookmaker)
+    quotes = book_quotes(items or [], *book) if book and items else {}
+    prob = novig_prob(quotes, entry.market_key)
+    entry.closing_prob = prob
+    entry.clv = clv_novig(entry.quota, prob)
+    note = NOTE_NOVIG_LATE if prob is not None else NOTE_NOVIG_ND
+    entry.closing_note = f"{entry.closing_note} · {note}"[:120] if entry.closing_note else note
 
 
 def refresh_clv(entry: AnalystEntry) -> None:
     """Se cambia la quota presa, il CLV si ricalcola sulla chiusura gia' letta."""
-    entry.clv = clv_value(entry.quota, entry.closing_quota) if entry.closing_status == CLOSING_OK else None
+    ok = entry.closing_status == CLOSING_OK
+    entry.clv_ratio = clv_value(entry.quota, entry.closing_quota) if ok else None
+    entry.clv = clv_novig(entry.quota, entry.closing_prob) if ok else None
 
 
 def due_entries(db: Session, now: datetime) -> tuple[list[AnalystEntry], list[AnalystEntry], list[AnalystEntry]]:
@@ -118,6 +151,8 @@ def due_entries(db: Session, now: datetime) -> tuple[list[AnalystEntry], list[An
     ).all()
     upcoming, recover, old = [], [], []
     for e in rows:
+        if e.closing_status is not None:  # gia' letta (la query lo filtra; qui per sicurezza)
+            continue
         ko = _aware(e.kickoff)
         if e.provider_fixture_id is None or ko < now - timedelta(days=RECOVER_DAYS):
             old.append(e)
@@ -126,6 +161,30 @@ def due_entries(db: Session, now: datetime) -> tuple[list[AnalystEntry], list[An
         else:
             recover.append(e)
     return upcoming, recover, old
+
+
+def novig_missing(db: Session, now: datetime) -> list[AnalystEntry]:
+    """Chiusure lette prima del 18/11/2026 senza probabilita' senza margine, ancora recuperabili (7 giorni)."""
+    rows = db.scalars(
+        select(AnalystEntry).where(
+            AnalystEntry.closing_status == CLOSING_OK,
+            AnalystEntry.closing_prob.is_(None),
+            AnalystEntry.provider_fixture_id.is_not(None),
+            AnalystEntry.kickoff >= now - timedelta(days=RECOVER_DAYS),
+        )
+    ).all()
+    done = (NOTE_NOVIG_ND, NOTE_NOVIG_LATE)
+    since = now - timedelta(days=RECOVER_DAYS)
+    return [
+        e
+        for e in rows
+        if e.closing_status == CLOSING_OK
+        and getattr(e, "closing_prob", None) is None
+        and e.provider_fixture_id is not None
+        and e.kickoff is not None
+        and _aware(e.kickoff) >= since
+        and not any(n in (e.closing_note or "") for n in done)
+    ]
 
 
 def run_closing(db: Session, client: Any, now: datetime | None = None, *, max_calls: int = 60) -> dict[str, Any]:
@@ -143,6 +202,23 @@ def run_closing(db: Session, client: Any, now: datetime | None = None, *, max_ca
         groups[int(e.provider_fixture_id)].append((e, False))
     for e in recover:
         groups[int(e.provider_fixture_id)].append((e, True))
+    # chiusure gia' lette senza probabilita' senza margine: una rilettura per partita (al massimo meta' delle chiamate)
+    late: dict[int, list[AnalystEntry]] = defaultdict(list)
+    for e in novig_missing(db, now):
+        late[int(e.provider_fixture_id)].append(e)
+    out["novig_late"] = 0
+    for fixture_id, entries_late in late.items():
+        if out["calls"] >= max_calls // 2:
+            break
+        try:
+            items_late = client.get_fixture_odds_by_fixture(fixture_id)
+        except Exception:  # noqa: BLE001 - senza quote il CLV senza margine resta n.d.
+            logger.warning("analyst closing: quote non rilette per la partita %s", fixture_id, exc_info=True)
+            items_late = None
+        out["calls"] += 1
+        for e in entries_late:
+            apply_novig_late(e, items_late)
+            out["novig_late"] += 1
     for fixture_id, entries in groups.items():
         if out["calls"] >= max_calls:
             break
@@ -203,4 +279,4 @@ def closing_loop() -> None:
         time.sleep(LOOP_SECONDS)
 
 
-__all__ = ["apply_closing", "book_quotes", "clv_value", "pick_closing", "refresh_clv", "run_closing"]
+__all__ = ["apply_closing", "apply_novig_late", "book_quotes", "clv_value", "pick_closing", "pick_closing_quotes", "refresh_clv", "run_closing"]

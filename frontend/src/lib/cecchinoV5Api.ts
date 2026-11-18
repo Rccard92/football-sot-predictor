@@ -82,6 +82,9 @@ export type V5Play = {
   taken_at: string | null
   closing_quota: number | null
   clv: number | null
+  /** 18/11/2026: chiusura dell'esito opposto (stesso book, stessa linea) e CLV senza margine */
+  closing_opposite?: number | null
+  clv_novig?: number | null
   result: string | null
   profit_units: number | null
   score: string | null
@@ -159,6 +162,9 @@ export type V5FixturePlay = {
   taken_at: string | null
   closing_quota: number | null
   clv: number | null
+  /** 18/11/2026: chiusura dell'esito opposto (stesso book, stessa linea) e CLV senza margine */
+  closing_opposite?: number | null
+  clv_novig?: number | null
   result: string | null
   profit_units: number | null
   combo?: V5Combo | null

@@ -696,7 +696,7 @@ def update_entry(entry_id: int, body: dict[str, Any], principal: Principal = Dep
         if market["key"] != entry.market_key:
             # segno cambiato: la chiusura gia' letta non vale piu', il giro la rilegge
             entry.closing_quota = entry.closing_bookmaker = entry.closing_at = entry.closing_status = entry.closing_note = None
-            entry.clv = None
+            entry.clv = entry.clv_ratio = entry.closing_prob = None
             fx_now = db.get(CecchinoTodayFixture, entry.today_fixture_id) if entry.today_fixture_id else None
             entry.quota_tool = _float((kpi_row(fx_now, market["key"]) or {}).get("quota_book"), "Quota del tool") if fx_now else None
         entry.market_key, entry.market_label = market["key"], market["label"]
@@ -881,7 +881,8 @@ def export_xlsx(
     ws.title = "GARE"
     headers = [
         "GARA", "DATA", "KW", "INCONTRO", "CAMPIONATO", "PRONOSTICO", "QUOTA PRESA", "BOOKMAKER", "QUOTA TOOL",
-        "QUOTA CHIUSURA", "BOOK CHIUSURA", "CLV %", "RISULTATO PT", "RISULTATO FINALE",
+        "QUOTA CHIUSURA", "BOOK CHIUSURA", "PROB. CHIUSURA SENZA MARGINE %", "CLV %", "CLV QUOTA/CHIUSURA %",
+        "RISULTATO PT", "RISULTATO FINALE",
         "ESITO", "VERSIONE SCELTA", "PUNTATA €", "PROFITTO €", "ORIGINE", "PROB. TOOL %", "MINUTI", "ANALISTA",
         "MODALITÀ DI INTERVENTO", "NOTE",
     ] + [c["label"] for c in CHECKLIST]
@@ -909,7 +910,9 @@ def export_xlsx(
                 e.quota_tool,
                 e.closing_quota,
                 _closing_label(e),
+                round(100.0 * e.closing_prob, 1) if e.closing_prob is not None else None,
                 round(100.0 * e.clv, 1) if e.clv is not None else None,
+                round(100.0 * e.clv_ratio, 1) if e.clv_ratio is not None else None,
                 e.result_ht,
                 e.result_ft,
                 _OUTCOME_XLS.get(e.outcome, e.outcome),

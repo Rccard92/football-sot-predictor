@@ -93,7 +93,11 @@ class AnalystEntry(Base, TimestampMixin):
     closing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closing_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ok | nd
     closing_note: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    clv: Mapped[float | None] = mapped_column(Float, nullable=True)  # quota presa / chiusura - 1
+    # dal 18/11/2026 (Giovanni): CLV = quota presa x probabilita' di chiusura senza margine - 1;
+    # la vecchia formula (quota presa / chiusura - 1) resta in clv_ratio per confronto
+    clv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    clv_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    closing_prob: Mapped[float | None] = mapped_column(Float, nullable=True)  # chiusura senza margine
 
 
 class AnalystMatchNote(Base, TimestampMixin):
