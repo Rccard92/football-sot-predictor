@@ -1,0 +1,161 @@
+# Campionati del sito ammessi nell'archivio (paese|campionato). Regola di AbbaPadre del 29 ott 2026:
+# niente amichevoli, coppe, femminile, nazionali, categorie poco conosciute.
+# Ammessi (precisato alle 17:12): prime divisioni maschili ovunque, seconde divisioni di tutta Europa, Serie C italiana, terze serie seguite;
+# fuori Europa le seconde solo di Argentina, Brasile, Giappone (scelte da AbbaPadre), Corea del Sud e USA (USL Championship, scelte dal CF). Un campionato nuovo si aggiunge qui a mano.
+# 6 nov 2026, AbbaPadre: «ligue 3 di campionati importanti europei li possiamo accettare». Il CF legge: terze serie dei 5 campionati maggiori (Francia Ligue 3, Spagna Primera RFEF; Inghilterra, Germania, Italia già c'erano).
+England|Premier League
+England|Championship
+England|League One
+Scotland|Premiership
+Scotland|Championship
+Germany|Bundesliga
+Germany|2. Bundesliga
+Germany|3. Liga
+Italy|Serie A
+Italy|Serie B
+Spain|La Liga
+Spain|Segunda División
+France|Ligue 1
+France|Ligue 2
+Netherlands|Eredivisie
+Netherlands|Eerste Divisie
+Belgium|Jupiler Pro League
+Portugal|Primeira Liga
+Turkey|Süper Lig
+Turkey|1. Lig
+Greece|Super League 1
+Austria|Bundesliga
+Switzerland|Super League
+Denmark|Superliga
+Sweden|Allsvenskan
+Norway|Eliteserien
+Finland|Veikkausliiga
+Iceland|Úrvalsdeild
+Ireland|Premier Division
+Northern-Ireland|Premiership
+Wales|Premier League
+Poland|Ekstraklasa
+Czech-Republic|Czech Liga
+Slovakia|Super Liga
+Slovenia|1. SNL
+Croatia|HNL
+Serbia|Super Liga
+Bosnia|Premijer Liga
+Montenegro|First League
+Macedonia|First League
+Kosovo|Superliga
+Hungary|NB I
+Romania|Liga I
+Bulgaria|First League
+Moldova|Super Liga
+Ukraine|Premier League
+Russia|Premier League
+Armenia|Premier League
+Georgia|Erovnuli Liga
+Kazakhstan|Premier League
+Uzbekistan|Super League
+Kyrgyzstan|Premier League
+Estonia|Meistriliiga
+Latvia|Virsliga
+Lithuania|A Lyga
+Faroe-Islands|Meistaradeildin
+Luxembourg|National Division
+Malta|Premier League
+Israel|Ligat Ha'al
+Saudi-Arabia|Pro League
+Kuwait|Premier League
+Iraq|Iraqi League
+Lebanon|Premier League
+Morocco|Botola Pro
+Egypt|Premier League
+Ethiopia|Premier League
+Malawi|Super League
+Zimbabwe|Premier Soccer League
+USA|Major League Soccer
+Canada|Canadian Premier League
+Mexico|Liga MX
+Guatemala|Liga Nacional
+El-Salvador|Primera Division
+Nicaragua|Primera Division
+Costa-Rica|Primera División
+Panama|Liga Panameña de Fútbol
+Dominican-Republic|Liga Mayor
+Brazil|Serie A
+Argentina|Liga Profesional Argentina
+Uruguay|Primera División
+Uruguay|Primera División - Apertura
+Paraguay|Division Profesional - Clausura
+Paraguay|Division Profesional - Apertura
+Chile|Primera División
+Colombia|Primera A
+Ecuador|Liga Pro
+Peru|Primera División
+Bolivia|Primera División
+Venezuela|Primera División
+Japan|J1 League
+South-Korea|K League 1
+China|Super League
+Australia|A-League
+Italy|Serie C - Girone A
+Italy|Serie C - Girone B
+Italy|Serie C - Girone C
+Sweden|Superettan
+Norway|1. Division
+Denmark|1. Division
+Poland|I Liga
+Czech-Republic|FNL
+Slovakia|2. liga
+Croatia|First NL
+Serbia|Prva Liga
+Hungary|NB II
+Romania|Liga II
+Bulgaria|Second League
+Ukraine|Persha Liga
+Georgia|Erovnuli Liga 2
+Kazakhstan|1. Division
+Israel|Liga Leumit
+Lithuania|1 Lyga
+Switzerland|Challenge League
+Austria|2. Liga
+Argentina|Primera Nacional
+Brazil|Serie B
+Japan|J2 League
+South-Korea|K League 2
+USA|USL Championship
+France|Ligue 3
+Spain|Primera División RFEF - Group 1
+Spain|Primera División RFEF - Group 2
+# 17 nov 2026, CF: aggiunta la prima divisione nigeriana (regola «prime divisioni ovunque»), trovata nel giro del Diario.
+Nigeria|NPFL
+# 17 nov 2026, AbbaPadre ha scelto «Allargare come proposto»: tutte le seconde divisioni fuori Europa (non oltre) e tutte le terze divisioni europee (non oltre).
+# (Superato il 18 nov: National League inglese, League One e League Two scozzesi escono; anche la League Two inglese esce, vedi in fondo.)
+# Restano fuori: Inghilterra dalla 6ª in giù, Scozia Highland/Lowland, Argentina Primera B Metro, Federal A e Primera C, Brasile C e D e i campionati statali,
+# Australia NPL (campionati statali, non c'è una seconda nazionale), USA USL League One/Two, J3, K3/K4, China League Two, Serie D, Segunda/Tercera RFEF, femminile.
+# Campionati del sito che ci sono già e mancavano qui. Prime divisioni (regola «prime ovunque»):
+Albania|Superliga
+Azerbaijan|Premyer Liqa
+Ghana|Premier League
+Honduras|Liga Nacional
+Mongolia|Premier League
+Qatar|Stars League
+# Seconde divisioni europee (regola «seconde di tutta Europa»):
+Greece|Super League 2
+Portugal|Segunda Liga
+# Terze divisioni europee (17 nov):
+Poland|II Liga - East
+Turkey|2. Lig
+# Seconde divisioni fuori Europa (17 nov):
+Chile|Primera B
+China|League One
+Colombia|Primera B
+Ecuador|Liga Pro Serie B
+Mexico|Liga de Expansión MX
+Paraguay|Division Intermedia
+Saudi-Arabia|Division 1
+Thailand|Thai League 2
+Uruguay|Segunda División
+Uzbekistan|Pro League A
+# 18 nov 2026, AbbaPadre: «in caso di conflitto si applica il "Mai semiprofessionistici", pertanto le leghe anche di 2 divisione che sono semiprofessionisti restano fuori».
+# Tolte 57 leghe (elenco in campionati-ammessi-18-nov.md). Le prime divisioni restano tutte (regola «prime ovunque»). Le terze rimaste sono professionistiche:
+# Inghilterra League One, Germania 3. Liga, Italia Serie C, Francia Ligue 3, Spagna Primera RFEF, Polonia II Liga, Turchia 2. Lig.
+# 18 nov 2026 9:31 Roma, AbbaPadre: «Nei campionati importanti fermiamoci alla terza divisione non oltre per intenderci la serie C italiana»: League Two inglese tolta.

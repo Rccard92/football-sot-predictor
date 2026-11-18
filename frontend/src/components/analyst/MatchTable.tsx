@@ -7,7 +7,12 @@ import {
   type MatchStandings,
   type MatchTableResponse,
   type MatchTableRow,
+  type PtForm,
   type QuotaStatus,
+  type Reliability,
+  type ScheduleGame,
+  type TeamSchedule,
+  type TeamSquad,
   type Remaining,
   type StandingsKind,
   type TableQuote,
@@ -134,8 +139,9 @@ function signed(v: number): string {
   return v > 0 ? `+${v}` : v < 0 ? `−${Math.abs(v)}` : '0'
 }
 
-function signedDecimal(v: number): string {
-  const text = decimal(Math.abs(v))
+/** punti a partita con due decimali e il segno: +0,45, −1,20, 0,00 (18/11/2026) */
+function ppgText(v: number): string {
+  const text = Math.abs(v).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return v > 0 ? `+${text}` : v < 0 ? `−${text}` : text
 }
 
@@ -147,7 +153,7 @@ function gameTitle(g: TableGame, half: 'PT' | 'FT'): string {
   const outcome = half === 'PT' ? g.ht_outcome : g.ft_outcome
   const score = half === 'PT' ? g.ht : g.ft
   const rank = g.opponent_rank ? ` (oggi ${g.opponent_rank}ª)` : ''
-  const diff = g.diff != null ? ` · ${signed(g.diff)} punti alla data` : ''
+  const diff = g.diff != null ? ` · ${ppgText(g.diff)} punti a partita alla data${g.diff_points != null ? ` (${signed(g.diff_points)} punti)` : ''}` : ''
   return `${shortDate(g.date)} ${g.home ? 'in casa con' : 'fuori con'} ${g.opponent ?? '?'}${rank}: ${score ?? '—'} ${half}${outcome ? `, ${OUTCOME_WORD[outcome]}` : ''}${diff}`
 }
 
@@ -173,7 +179,7 @@ function FormSquares({ games, half, size = 'sm', showDiff = false }: { games: Ta
               {outcome && score ? score : '·'}
             </span>
             {showDiff ? (
-              <span className={`mt-px text-[10px] leading-3 tabular-nums ${g.level ? DIFF_TEXT[g.level] : 'text-slate-300'}`}>{g.diff != null ? signed(g.diff) : '·'}</span>
+              <span className={`mt-px text-[10px] leading-3 tabular-nums ${g.level ? DIFF_TEXT[g.level] : 'text-slate-300'}`}>{g.diff != null ? ppgText(g.diff) : '·'}</span>
             ) : null}
           </span>
         )
@@ -182,16 +188,16 @@ function FormSquares({ games, half, size = 'sm', showDiff = false }: { games: Ta
   )
 }
 
-/** Forza media delle avversarie: verde da +3 (calendario duro), rosso da -3 (facile), grigio in mezzo. */
+/** Forza media delle avversarie in punti a partita (18/11/2026): verde da +0,3, rosso da −0,3, grigio in mezzo. */
 function StrengthBadge({ value, level, size = 'sm' }: { value?: number | null; level?: DiffLevel | null; size?: 'sm' | 'md' }) {
   if (value == null) return null
   const pad = size === 'md' ? 'px-2 py-0.5 text-[15px]' : 'px-1.5 py-0.5 text-[12px]'
   return (
     <span
       className={`inline-flex items-center justify-center rounded-md tabular-nums ${pad} ${DIFF_PILL[level ?? 'even']}`}
-      title="Forza media delle avversarie: media dei numeri +/− (sopra 0 calendario duro, sotto 0 facile)"
+      title="Forza media delle avversarie in punti a partita: sopra 0 calendario duro, sotto 0 facile (da ±0,3 colorata)"
     >
-      {signedDecimal(value)}
+      {ppgText(value)}
     </span>
   )
 }
@@ -269,24 +275,6 @@ function RemainingLine({ row }: { row: MatchTableRow }) {
   )
 }
 
-/** Controllo automatico dei dati delle squadre (18/11/2026): rosso = gara esclusa da tutto il tool. */
-function DataCheckBox({ row }: { row: MatchTableRow }) {
-  if (row.data_check?.level !== 'red') return null
-  return (
-    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-900">
-      <p className="font-semibold">Dati da verificare · gara esclusa</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-        {row.data_check.problems.map((p) => (
-          <li key={p}>{p}</li>
-        ))}
-      </ul>
-      <p className="mt-1 text-[12px] text-rose-700">
-        Probabile fusione di due squadre con lo stesso codice del fornitore: classifica, forma e Cecchino di questa gara non sono affidabili.
-      </p>
-    </div>
-  )
-}
-
 function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; selected: boolean; onSelect: () => void; showLeague: boolean }) {
   const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k))
   return (
@@ -298,7 +286,10 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
       } ${row.started ? 'opacity-70' : ''}`}
       aria-pressed={selected}
     >
-      <span className="pt-0.5 font-semibold tabular-nums text-slate-900">{kickoffTime(row.kickoff)}</span>
+      <span className="flex items-center gap-1.5 pt-0.5 font-semibold tabular-nums text-slate-900">
+        <ReliabilityDot r={row.reliability} />
+        {kickoffTime(row.kickoff)}
+      </span>
       <span className="min-w-0">
         <span className="block font-medium text-slate-900">
           {row.home_team}
@@ -371,7 +362,7 @@ function GameCell({ g, half, total }: { g: TableGame; half: Half; total: boolean
         {total ? ` · ${g.home ? 'casa' : 'fuori'}` : ''}
       </p>
       {g.diff != null ? (
-        <span className={`mt-0.5 inline-block rounded px-1.5 text-[11px] leading-4 tabular-nums ${DIFF_PILL[g.level ?? 'even']}`}>{signed(g.diff)}</span>
+        <span className={`mt-0.5 inline-block rounded px-1.5 text-[11px] leading-4 tabular-nums ${DIFF_PILL[g.level ?? 'even']}`}>{ppgText(g.diff)}</span>
       ) : null}
     </div>
   )
@@ -503,14 +494,17 @@ function FormNotes() {
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Note</p>
       <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[13px] text-slate-700">
         <li>
-          <b>Colore</b> = esito (verde vinta, rosso persa, grigio pari). <b>Bordo</b> = avversaria più forte di almeno 3 punti.
+          <b>Colore</b> = esito (verde vinta, rosso persa, grigio pari). <b>Bordo</b> = avversaria più forte di almeno 0,3 punti a partita.
         </li>
         <li>
-          <b>+/−</b> = punti dell&apos;avversaria meno i nostri, alla data della gara e a parità di partite. Verde da +3, rosso da −3, grigio tra −2 e +2 (alla
-          pari).
+          <b>+/−</b> = punti a partita dell&apos;avversaria meno i nostri, alla data della gara (dal 18/11, prima erano punti). Verde da +0,30, rosso da
+          −0,30, grigio in mezzo (alla pari).
         </li>
         <li>
-          <b>Forza media</b> = media dei numeri: sopra 0 calendario duro, sotto 0 facile.
+          <b>Forza media</b> = media dei numeri: sopra 0 calendario duro, sotto 0 facile. Si confronta tra inizio e fine stagione.
+        </li>
+        <li>
+          <b>Affidabilità</b>: pallino verde (tutto a posto), giallo (solo da leggere), rosso (gara esclusa). Solo i campionati ammessi.
         </li>
         <li>
           <b>Segni</b> = quante volte è uscito X PT, Under 1,5 PT, X, Under 2,5, Under 3,5 nelle gare mostrate.
@@ -521,9 +515,449 @@ function FormNotes() {
         <li>
           <b>Forma da gol</b>: sopra 2,7 gol a partita (casa della squadra di casa e fuori dell&apos;ospite) avviso arancione su Under 2,5 e Under 1,5 PT.
         </li>
+        <li>
+          <b>Gol PT</b>: sopra 1,5 gol del primo tempo a gara (stesse gare) avviso arancione su Under 1,5 PT e X PT.
+        </li>
         <li>Nell&apos;elenco a sinistra nome e data al passaggio del mouse.</li>
       </ul>
     </div>
+  )
+}
+
+function PtFormPill({ form }: { form?: PtForm | null }) {
+  if (!form?.alert) return null
+  return (
+    <span
+      className="inline-flex items-center whitespace-nowrap rounded-md bg-orange-100 px-1.5 py-0.5 text-[12px] font-medium text-orange-800 ring-1 ring-inset ring-orange-300"
+      title={`${form.goals} gol PT in ${form.games} gare (casa della squadra di casa e fuori dell'ospite): avviso su Under 1,5 PT e X PT`}
+    >
+      Gol PT {decimal(form.avg)}
+    </span>
+  )
+}
+
+/** Barra di una riga del riquadro primo tempo: quante volte e' uscito il segno. */
+function PtBarLine({ label, n, of }: { label: string; n: number; of: number }) {
+  const pct = of ? Math.round((100 * n) / of) : 0
+  return (
+    <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-[12px] text-slate-700">
+      <span>{label}</span>
+      <span className="h-1.5 rounded-full bg-amber-100">
+        <span className="block h-1.5 rounded-full bg-amber-500" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="tabular-nums">
+        {n}/{of} · {pct}%
+      </span>
+    </div>
+  )
+}
+
+function PtTeamCard({ team, venue, block }: { team: string; venue: string; block: TableBlock }) {
+  if (!block.enough || !block.ht_games) {
+    return (
+      <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3 text-[13px] text-slate-400">
+        {team} · {venue}: meno di 3 gare
+      </div>
+    )
+  }
+  const s = block.signs
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-amber-800">
+        {team} · {venue}
+      </p>
+      <p className="text-[24px] font-semibold leading-8 tabular-nums text-slate-900" title="Gol del primo tempo fatti – subiti">
+        {block.ht_scored}–{block.ht_conceded}
+      </p>
+      <p className="text-[12px] text-slate-600">{decimal((block.ht_scored + block.ht_conceded) / block.ht_games)} gol PT a gara</p>
+      {s ? (
+        <div className="mt-1.5 space-y-1">
+          <PtBarLine label="X PT" n={s.x_pt} of={s.ht_games} />
+          <PtBarLine label="U1,5 PT" n={s.u15_pt} of={s.ht_games} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** Riquadro primo tempo (Modifica 4 di Giovanni, 18/11/2026): le due squadre e la media insieme. */
+function PtBox({ row }: { row: MatchTableRow }) {
+  const f = row.pt_form
+  return (
+    <section className="rounded-xl border border-slate-200 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Primo tempo · ultime 5 (casa in casa, ospite fuori)</p>
+      <p className="text-[12px] text-slate-500">Gol del primo tempo fatti e subiti, pareggi al 45&apos; e Under 1,5 PT.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <PtTeamCard team={row.home_team} venue="in casa" block={row.blocks.forma_casa} />
+        <PtTeamCard team={row.away_team} venue="fuori" block={row.blocks.forma_fuori} />
+      </div>
+      {f ? (
+        <div className={`mt-2 flex flex-wrap items-end gap-x-6 gap-y-2 rounded-xl px-3 py-2.5 text-white ${f.alert ? 'bg-orange-700' : 'bg-slate-800'}`}>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide opacity-80">Media delle due squadre</p>
+            <p className="text-[20px] font-semibold tabular-nums">{decimal(f.avg)} gol PT</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide opacity-80">X PT</p>
+            <p className="text-[20px] font-semibold tabular-nums">{f.x_pct}%</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide opacity-80">Under 1,5 PT</p>
+            <p className="text-[20px] font-semibold tabular-nums">{f.u15_pct}%</p>
+          </div>
+          <p className="min-w-[180px] flex-1 text-[12px] opacity-90">
+            Su {f.games} gare insieme.{' '}
+            {f.alert
+              ? `Sopra ${decimal(f.threshold)} gol PT a gara: avviso su Under 1,5 PT e X PT.`
+              : `Fino a ${decimal(f.threshold)} gol PT a gara: nessun avviso.`}
+          </p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+const STRENGTH_SCALE = 1.5
+const STRENGTH_EDGE = 0.3
+const LEVEL_TEXT: Record<DiffLevel, string> = { strong: 'text-emerald-700', even: 'text-slate-700', weak: 'text-rose-700' }
+const DOT: Record<TableOutcome, string> = { V: 'bg-emerald-500', N: 'bg-slate-400', P: 'bg-rose-500' }
+
+function barPos(v: number): number {
+  const c = Math.max(-STRENGTH_SCALE, Math.min(STRENGTH_SCALE, v))
+  return ((c + STRENGTH_SCALE) / (2 * STRENGTH_SCALE)) * 100
+}
+
+function strengthSentence(block: Extract<TableBlock, { enough: true }>): string {
+  const v = block.strength ?? 0
+  const pts = `i suoi ${block.points} punti su ${block.max_points}`
+  if (block.strength_level === 'weak') return `Ha affrontato avversarie più deboli (in media ${ppgText(Math.abs(v))} punti a partita sotto): ${pts} valgono meno di quanto sembra.`
+  if (block.strength_level === 'strong') return `Ha affrontato avversarie più forti (in media ${ppgText(Math.abs(v))} punti a partita sopra): ${pts} valgono più di quanto sembra.`
+  return `Avversarie alla pari (in media ${ppgText(v)} punti a partita): ${pts} si leggono così come sono.`
+}
+
+function StrengthBar({ team, venue, block }: { team: string; venue: string; block: TableBlock }) {
+  if (!block.enough || block.strength == null) return null
+  const level = block.strength_level ?? 'even'
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div className="w-44 shrink-0">
+          <p className="truncate text-[13px] font-semibold text-slate-900">{team}</p>
+          <p className="text-[12px] text-slate-500">
+            {venue} · ultime {block.games}
+          </p>
+        </div>
+        <span className={`w-16 text-right text-[18px] font-semibold tabular-nums ${LEVEL_TEXT[level]}`}>{ppgText(block.strength)}</span>
+        <div className="relative h-3 min-w-[180px] flex-1 rounded-full bg-slate-200" aria-label="Barra della forza delle avversarie">
+          <span className="absolute inset-y-0 left-0 rounded-l-full bg-rose-200" style={{ width: `${barPos(-STRENGTH_EDGE)}%` }} />
+          <span className="absolute inset-y-0 right-0 rounded-r-full bg-emerald-200" style={{ width: `${100 - barPos(STRENGTH_EDGE)}%` }} />
+          {block.results.map((g, i) =>
+            g.diff != null && g.ft_outcome ? (
+              <span
+                key={i}
+                title={gameTitle(g, 'FT')}
+                className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-white ${DOT[g.ft_outcome]}`}
+                style={{ left: `${barPos(g.diff)}%` }}
+              />
+            ) : null,
+          )}
+          <span className="absolute -top-1 h-5 w-1 -translate-x-1/2 rounded bg-slate-900" style={{ left: `${barPos(block.strength)}%` }} title="Media" />
+        </div>
+      </div>
+      <p className="mt-1.5 text-[13px] text-slate-700">{strengthSentence(block)}</p>
+    </div>
+  )
+}
+
+/** Forza media delle avversarie come barra (Modifica 3 di Giovanni, 18/11/2026), in punti a partita. */
+function StrengthBars({ row }: { row: MatchTableRow }) {
+  if (!row.blocks.forma_casa.enough && !row.blocks.forma_fuori.enough) return null
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Forza media delle avversarie · ultime 5</p>
+      <p className="text-[12px] text-slate-500">
+        Ogni pallino è una gara (verde vinta, grigio pari, rosso persa), la tacca nera è la media: a destra avversarie più forti, a sinistra più deboli.
+      </p>
+      <div className="mt-2 space-y-2">
+        <StrengthBar team={row.home_team} venue="casa" block={row.blocks.forma_casa} />
+        <StrengthBar team={row.away_team} venue="fuori" block={row.blocks.forma_fuori} />
+      </div>
+      <p className="mt-1.5 flex justify-between text-[11px] text-slate-400">
+        <span>◀ molto più deboli (−1,5)</span>
+        <span>pari (−0,3 / +0,3)</span>
+        <span>molto più forti (+1,5) ▶</span>
+      </p>
+    </section>
+  )
+}
+
+const RELIABILITY_STYLE: Record<Reliability['level'], { label: string; box: string; dot: string; note: string }> = {
+  green: {
+    label: 'Verde · gara analizzabile',
+    box: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+    dot: 'bg-emerald-500',
+    note: 'Squadre verificate, classifica completa, quote recenti, ammonizioni presenti.',
+  },
+  yellow: { label: 'Giallo · solo da leggere', box: 'border-amber-200 bg-amber-50 text-amber-900', dot: 'bg-amber-400', note: '' },
+  red: { label: 'Rosso · gara esclusa', box: 'border-rose-200 bg-rose-50 text-rose-900', dot: 'bg-rose-500', note: '' },
+}
+
+function ReliabilityDot({ r }: { r?: Reliability }) {
+  if (!r) return null
+  const s = RELIABILITY_STYLE[r.level]
+  return <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${s.dot}`} title={[s.label, ...r.red, ...r.yellow].join(' · ')} aria-label={s.label} />
+}
+
+/** Affidabilita' dei dati della gara (Modifica 1 di Giovanni, 18/11/2026): verde, giallo o rosso con i motivi. */
+function ReliabilityBox({ row }: { row: MatchTableRow }) {
+  const r = row.reliability
+  if (!r) return null
+  const s = RELIABILITY_STYLE[r.level]
+  const reasons = [...r.red, ...r.yellow]
+  return (
+    <div className={`rounded-xl border p-3 text-[13px] ${s.box}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Affidabilità dei dati della gara</p>
+      <p className="mt-0.5 font-semibold">{s.label}</p>
+      {reasons.length ? (
+        <ul className="mt-1 list-disc space-y-0.5 pl-5">
+          {reasons.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-0.5">{s.note}</p>
+      )}
+      {row.data_check?.level === 'red' ? (
+        <p className="mt-1 text-[12px] opacity-80">
+          Probabile fusione di due squadre con lo stesso codice del fornitore: classifica, forma e Cecchino di questa gara non sono affidabili.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+const MOVE_LABEL: Record<string, string> = {
+  HOME: '1',
+  DRAW: 'X',
+  AWAY: '2',
+  OVER_2_5: 'Over 2,5',
+  UNDER_2_5: 'Under 2,5',
+  OVER_1_5: 'Over 1,5',
+  UNDER_3_5: 'Under 3,5',
+  DRAW_PT: 'X PT',
+  UNDER_PT_1_5: 'Under 1,5 PT',
+}
+
+function pctText(p: number | null | undefined, digits = 1): string {
+  return p == null ? '—' : `${(p * 100).toLocaleString('it-IT', { minimumFractionDigits: digits, maximumFractionDigits: digits })}%`
+}
+
+/** Movimento delle quote tra il mattino e 75' dal via (Miglioria 1 di Giovanni, 18/11/2026). */
+function OddsMoveBox({ row }: { row: MatchTableRow }) {
+  const m = row.odds_move
+  return (
+    <section className="rounded-xl border border-slate-200 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Movimento delle quote · mattino → 75&apos; dal via</p>
+      {!m ? (
+        <p className="mt-1 text-[13px] text-slate-500">La seconda lettura Bet365 arriva 75 minuti prima del calcio d&apos;inizio (per 8 settimane, dal 18/11).</p>
+      ) : m.status !== 'ok' || !m.markets.length ? (
+        <p className="mt-1 text-[13px] text-slate-500">Seconda lettura fatta, ma Bet365 non aveva quote per questa partita.</p>
+      ) : (
+        <>
+          <div className="mt-1.5 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-[13px] tabular-nums">
+              <thead>
+                <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+                  <th className="py-1 pr-2 text-left font-semibold">Mercato</th>
+                  <th className="px-1 py-1 text-right font-semibold">Mattino</th>
+                  <th className="px-1 py-1 text-right font-semibold">T-75</th>
+                  <th className="px-1 py-1 text-right font-semibold">Prob. senza margine</th>
+                  <th className="px-1 py-1 text-right font-semibold">Movimento</th>
+                  <th className="py-1 pl-2 text-left font-semibold">Cecchino</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.markets.map((x) => (
+                  <tr key={x.key} className="border-b border-slate-100">
+                    <td className="py-1 pr-2 text-slate-700">{MOVE_LABEL[x.key] ?? x.key}</td>
+                    <td className="px-1 py-1 text-right">{quoteText(x.morning_quota)}</td>
+                    <td className="px-1 py-1 text-right">{quoteText(x.later_quota)}</td>
+                    <td className="px-1 py-1 text-right text-slate-600">
+                      {pctText(x.morning_prob)} → {pctText(x.later_prob)}
+                    </td>
+                    <td
+                      className={`px-1 py-1 text-right font-semibold ${x.toward_cecchino === true ? 'text-emerald-700' : x.toward_cecchino === false ? 'text-rose-700' : 'text-slate-500'}`}
+                    >
+                      {x.move_points > 0 ? '▲ +' : x.move_points < 0 ? '▼ −' : ''}
+                      {Math.abs(x.move_points).toLocaleString('it-IT', { maximumFractionDigits: 1 })} punti
+                    </td>
+                    <td className="py-1 pl-2 text-slate-600">
+                      {x.cecchino_prob == null
+                        ? '—'
+                        : `${x.cecchino_prob > x.morning_prob ? 'più alta' : 'più bassa'} del book (${pctText(x.cecchino_prob, 0)})`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Verde = il mercato si è mosso verso il numero del Cecchino (chi ha comprato al mattino ha CLV positivo), rosso = contro. Letta alle{' '}
+            {m.read_at ? new Date(m.read_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }) : '—'}.
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function scheduleDate(g: ScheduleGame): string {
+  return g.date ? new Date(`${g.date}T12:00:00Z`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) : '—'
+}
+
+function CompetitionBadge({ g }: { g: ScheduleGame }) {
+  return (
+    <span
+      className={`ml-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium ${g.league_match ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}
+      title={g.competition ?? undefined}
+    >
+      {g.league_match ? 'Campionato' : (g.competition ?? 'Altra competizione')}
+    </span>
+  )
+}
+
+function TeamScheduleCard({ team, s }: { team: string; s: TeamSchedule | null }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-[13px] font-semibold text-slate-900">{team}</p>
+      {!s ? (
+        <p className="mt-1 text-[13px] text-slate-400">Calendario non disponibile</p>
+      ) : (
+        <div className="mt-1 space-y-1.5 text-[13px]">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Ultima gara</p>
+            {s.last ? (
+              <>
+                <p className="font-semibold text-slate-900">
+                  {scheduleDate(s.last)}
+                  <CompetitionBadge g={s.last} />
+                </p>
+                <p className="text-[12px] text-slate-500">
+                  {s.last.days} giorni di riposo · {s.last.home ? 'in casa con' : 'fuori con'} {s.last.opponent ?? '?'}
+                </p>
+              </>
+            ) : (
+              <p className="text-slate-400">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Prossima gara</p>
+            {s.next ? (
+              <>
+                <p className="font-semibold text-slate-900">
+                  {scheduleDate(s.next)}
+                  <CompetitionBadge g={s.next} />
+                </p>
+                <p className={`text-[12px] ${s.next.days != null && s.next.days <= 3 ? 'font-medium text-amber-700' : 'text-slate-500'}`}>
+                  tra {s.next.days} giorni{s.next.days != null && s.next.days <= 3 ? ': possibile turnover' : ''} · {s.next.home ? 'in casa con' : 'fuori con'}{' '}
+                  {s.next.opponent ?? '?'}
+                </p>
+              </>
+            ) : (
+              <p className="text-slate-400">—</p>
+            )}
+          </div>
+          <p className="text-[12px] text-slate-500">
+            Gare negli ultimi 7 giorni: {s.games_7} · negli ultimi 14: {s.games_14}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Calendario delle due squadre, coppe comprese (Miglioria 2 di Giovanni, 18/11/2026). */
+function ScheduleBox({ row }: { row: MatchTableRow }) {
+  if (!row.schedule) return null
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Calendario delle due squadre (tutte le competizioni)</p>
+      <p className="text-[12px] text-slate-500">Riposo e impegni ravvicinati: le coppe contano.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <TeamScheduleCard team={row.home_team} s={row.schedule.home} />
+        <TeamScheduleCard team={row.away_team} s={row.schedule.away} />
+      </div>
+    </section>
+  )
+}
+
+function SquadCard({ team, s }: { team: string; s?: TeamSquad }) {
+  if (!s) return <div className="rounded-xl border border-slate-200 p-3 text-[13px] text-slate-400">{team}: formazioni non disponibili</div>
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 text-[13px]">
+      <p className="font-semibold text-slate-900">{team}</p>
+      <p className="mt-0.5 text-slate-700">
+        <b>Indisponibili ({s.injured.length})</b>
+        {s.injured.length
+          ? `: ${s.injured.map((i) => `${i.name ?? '?'} (${[i.reason, i.starter ? 'titolare' : null].filter(Boolean).join(', ') || i.kind || '—'})`).join(', ')}`
+          : ': nessuno annunciato dal fornitore'}
+      </p>
+      {s.habitual ? (
+        <>
+          <p className="mt-0.5 text-slate-700">
+            <b>Titolari mancanti:</b>{' '}
+            <span className={s.missing_starters ? 'font-semibold text-rose-700' : 'font-semibold text-emerald-700'}>{s.missing_starters} su 11</span>
+            {s.missing_starters ? '' : ' · rosa completa'}
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-500" title="Titolari abituali (presenze da titolare nelle ultime 10 gare) meno gli indisponibili">
+            Probabile formazione: {(s.probable ?? []).map((p) => p.name ?? '?').join(', ')}
+          </p>
+        </>
+      ) : (
+        <p className="mt-0.5 text-[12px] text-slate-400">Titolari abituali n.d. (servono almeno 5 formazioni, ne abbiamo {s.lineups_known})</p>
+      )}
+    </div>
+  )
+}
+
+/** Indisponibili e formazioni (Miglioria 3 di Giovanni, 18/11/2026): oggi chi manca, ieri con che rosa. */
+function SquadsBox({ row }: { row: MatchTableRow }) {
+  const sq = row.squads
+  if (!sq) return null
+  const lines: { team: string; s?: TeamSquad }[] = [
+    { team: row.home_team, s: sq.home },
+    { team: row.away_team, s: sq.away },
+  ]
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Indisponibili e formazioni</p>
+      <p className="text-[12px] text-slate-500">Oggi: chi manca. Storico: con che rosa ha giocato ogni gara della forma.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {lines.map((l) => (
+          <SquadCard key={l.team} team={l.team} s={l.s} />
+        ))}
+      </div>
+      {lines.map((l) =>
+        l.s?.history.some((h) => h.rosa) ? (
+          <div key={`h-${l.team}`} className="mt-2">
+            <p className="text-[12px] font-semibold text-slate-600">{l.team} · ultime gare</p>
+            <table className="mt-0.5 w-full text-[13px]">
+              <tbody>
+                {l.s.history.map((h, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="w-16 py-1 tabular-nums text-slate-500">{shortDate(h.date)}</td>
+                    <td className="py-1 text-slate-700">{h.opponent ?? '?'}</td>
+                    <td className={`py-1 text-right ${h.rosa ? (h.rosa.complete ? 'text-emerald-700' : 'text-rose-700') : 'text-slate-400'}`} title={h.rosa?.players?.filter(Boolean).join(', ')}>
+                      {h.rosa ? h.rosa.text : 'n.d.'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null,
+      )}
+    </section>
   )
 }
 
@@ -924,6 +1358,7 @@ function MatchDetail({
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <MatchTypePill kind={row.match_type} />
             <GoalFormPill form={row.goal_form} />
+            <PtFormPill form={row.pt_form} />
           </div>
           {!row.standings_complete ? (
             <p className="mt-1 text-[12px] text-amber-700" title="Nel campionato mancano alcuni risultati: posizioni e cornici possono non essere esatte">
@@ -953,22 +1388,24 @@ function MatchDetail({
           <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact />
         ) : null}
       </div>
-      <DataCheckBox row={row} />
+      <ReliabilityBox row={row} />
 
       <div className="space-y-3">
         {(['PT', 'FT'] as const).map((half) => (
-          <FormSection
-            key={`casa-fuori-${half}`}
-            title={half === 'PT' ? 'Primo tempo' : 'Finale'}
-            subtitle="casa / fuori a confronto"
-            tone="navy"
-            half={half}
-            total={false}
-            lines={[
-              { team: row.home_team, venue: 'in casa', block: row.blocks.forma_casa },
-              { team: row.away_team, venue: 'fuori', block: row.blocks.forma_fuori },
-            ]}
-          />
+          <div key={`casa-fuori-${half}`} className="space-y-3">
+            <FormSection
+              title={half === 'PT' ? 'Primo tempo' : 'Finale'}
+              subtitle="casa / fuori a confronto"
+              tone="navy"
+              half={half}
+              total={false}
+              lines={[
+                { team: row.home_team, venue: 'in casa', block: row.blocks.forma_casa },
+                { team: row.away_team, venue: 'fuori', block: row.blocks.forma_fuori },
+              ]}
+            />
+            {half === 'PT' ? <PtBox row={row} /> : <StrengthBars row={row} />}
+          </div>
         ))}
         {(['PT', 'FT'] as const).map((half) => (
           <FormSection
@@ -988,6 +1425,10 @@ function MatchDetail({
       <p className="text-[12px] text-slate-500">
         Risultati con i gol della squadra per primi, dalla gara più vecchia a sinistra all&apos;ultima a destra. Solo gare della stagione in corso.
       </p>
+
+      <ScheduleBox row={row} />
+      <SquadsBox row={row} />
+      <OddsMoveBox row={row} />
 
       {/* 18/11/2026: senza dati per nessuna delle due squadre il riquadro non si mostra */}
       {row.yellows.home.available || row.yellows.away.available ? (

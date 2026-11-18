@@ -240,7 +240,11 @@ function SealedPlays({ plays, labels }: { plays: V5FixturePlay[]; labels: Record
               <div className={LABEL}>
                 quota {num(p.quota)} {p.bookmaker} (letta {time(p.taken_at)}) · prob. {pct(p.probability)}
                 {p.expected != null ? ` · attesi ${num(p.expected, 1)}` : ''}
-                {p.closing_quota != null ? ` · chiusura ${num(p.closing_quota)}` : ''}
+                {p.closing_quota != null
+                  ? ` · chiusura ${num(p.closing_quota)}${p.closing_opposite != null ? ` / opposta ${num(p.closing_opposite)}` : ''}${p.clv_novig != null ? ` · CLV ${num(100 * p.clv_novig, 1)}%` : ''}`
+                  : p.result
+                    ? ' · chiusura mancante'
+                    : ''}
                 {p.combo ? ` · quota minima ${num(p.combo.min_quota)}` : ''}
               </div>
             </li>

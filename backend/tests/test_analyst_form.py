@@ -125,11 +125,13 @@ def test_block_has_numbers_border_strength_and_signs():
     season = LeagueSeason(games)
     block = _block(season.recent(A, game(9, 30, A, B), limit=5), A, {}, {B: "B", C: "C", D: "D"}, season)
     assert block["enough"] and block["games"] == 3
-    diffs = [r["diff"] for r in block["results"]]
+    # dal 18/11/2026 il numero e' in punti a partita; quello in punti resta in diff_points
     # gara 1: 0; gara 3: C 1 in 1, A 3 in 1 -> -2; gara 5: D 4 in 2, A 4 in 2 -> 0
-    assert diffs == [0, -2, 0]
+    assert [r["diff_points"] for r in block["results"]] == [0, -2, 0]
+    assert [r["diff"] for r in block["results"]] == [0.0, -2.0, 0.0]
     assert not any(r["bold_ft"] for r in block["results"])
-    assert block["strength"] == -0.7 and block["strength_level"] == "even"
+    assert block["strength"] == -0.67 and block["strength_level"] == "weak"
+    assert block["strength_points"] == -0.7
     assert block["signs"] == {"ht_games": 3, "x_pt": 1, "u15_pt": 2, "ft_games": 3, "x": 1, "u25": 2, "u35": 2}
 
 
@@ -138,7 +140,8 @@ def test_border_follows_the_number_not_todays_table():
     season = LeagueSeason([game(1, 0, B, C, 3, 0), game(2, 7, B, D, 3, 0), game(3, 14, A, B, 1, 1), game(4, 21, A, C, 2, 0), game(5, 28, D, A, 0, 0)])
     block = _block(season.recent(A, game(9, 40, A, C), limit=5), A, {A: 1, B: 9}, {}, season)
     first = block["results"][0]
-    assert first["diff"] == 6 and first["level"] == "strong"
+    # B 6 punti in 2 gare (3 a partita), A nessuna gara: +3 punti a partita
+    assert first["diff_points"] == 6 and first["diff"] == 3.0 and first["level"] == "strong"
     # oggi B e' 9ª e A 1ª: con la classifica di oggi non ci sarebbe la cornice, alla data si'
     assert first["bold_ft"] and first["bold_ht"] and first["opponent_rank"] == 9
 
@@ -259,3 +262,65 @@ def test_season_lengths_from_the_previous_season():
     assert season_lengths(prev) == {"": 2}
     split = [(A, B, "Apertura - 1"), (C, D, "Apertura - 1"), (A, B, "Clausura - 1"), (C, D, "Clausura - 1"), (A, C, "Clausura - 2"), (B, D, "Clausura - 2")]
     assert season_lengths(split) == {"apertura": 1, "clausura": 2}
+
+
+# --- 18/11/2026, fase 2-3: punti a partita, primo tempo, campionati ammessi, affidabilita' ---
+
+from app.services.analyst.form import alert_markets, ppg_diff, ppg_level, pt_form, strength_ppg  # noqa: E402
+from app.services.analyst.leagues import league_admitted, parse_leagues  # noqa: E402
+from app.services.analyst.table import _reliability  # noqa: E402
+
+
+def test_points_per_game_difference_and_threshold():
+    # avversaria 22 punti in 10, squadra 15 in 9: 2,2 - 1,67 = +0,53
+    assert ppg_diff(22, 10, 15, 9) == 0.53
+    assert ppg_diff(0, 0, 0, 0) == 0.0
+    assert ppg_diff(6, 2, 0, 0) == 3.0  # chi non ha giocato conta 0
+    assert [ppg_level(x) for x in (0.3, 0.29, -0.29, -0.3, None)] == ["strong", "even", "even", "weak", None]
+    assert strength_ppg([0.5, 0.25, -0.1]) == 0.22
+
+
+def test_pt_form_average_of_the_two_teams_and_alert():
+    def block(halves):
+        return {"enough": True, "results": [{"ht": h} for h in halves]}
+
+    # esempio di Giovanni: casa 5-3 in 5 gare, ospite 4-7 in 5 -> 19 gol PT in 10 = 1,9
+    home = block(["1-0", "2-1", "0-0", "1-2", "1-0"])
+    away = block(["0-2", "1-1", "2-2", "1-1", "0-1"])
+    f = pt_form(home, away)
+    assert f["goals"] == 19 and f["games"] == 10 and f["avg"] == 1.9 and f["alert"]
+    assert f["x_pt"] == 4 and f["x_pct"] == 40 and f["u15_pt"] == 4 and f["u15_pct"] == 40
+    calm = pt_form(block(["0-0", "1-0", "0-0"]), block(["0-1", "0-0", "1-0"]))
+    assert calm["avg"] == 0.5 and not calm["alert"]
+    assert pt_form({"enough": False}, away) is None
+    row = {"goal_form": {"alert": True, "markets": ["UNDER_2_5", "UNDER_PT_1_5"]}, "pt_form": f}
+    assert alert_markets(row) == {"UNDER_2_5", "UNDER_PT_1_5", "DRAW_PT"}
+    assert alert_markets({"goal_form": None, "pt_form": calm}) == set()
+
+
+def test_admitted_leagues_file():
+    parsed = parse_leagues("# commento con | barra\nItaly|Serie A\nCosta-Rica|Primera División\n\n")
+    assert parsed == {("italy", "serie a"), ("costa-rica", "primera división")}
+    # il file vero: ammessi e non ammessi del 17-18 novembre
+    assert league_admitted("Italy", "Serie C - Girone A")
+    assert league_admitted("Costa-Rica", "Primera División")
+    assert league_admitted("nigeria", " NPFL ")
+    assert not league_admitted("Costa-Rica", "Liga de Ascenso")
+    assert not league_admitted("England", "National League")
+    assert not league_admitted("England", "League Two")
+    assert not league_admitted("Argentina", "Torneo Federal A")
+    assert not league_admitted("Scotland", "Football League - Lowland League")
+
+
+def test_reliability_green_yellow_red():
+    ko = T0 + timedelta(days=10)
+    ok_cards = {"home": {"available": True}, "away": {"available": True}}
+    green = _reliability(problems=[], future_games=[], standings_complete=True, odds_at=ko - timedelta(hours=3), kickoff=ko, cards=ok_cards)
+    assert green["level"] == "green" and not green["yellow"] and not green["red"]
+    yellow = _reliability(
+        problems=[], future_games=[], standings_complete=False, odds_at=ko - timedelta(hours=20), kickoff=ko,
+        cards={"home": {"available": False}, "away": {"available": True}},
+    )
+    assert yellow["level"] == "yellow" and len(yellow["yellow"]) == 3
+    red = _reliability(problems=["Rosario: due gare"], future_games=[{"id": 1}], standings_complete=True, odds_at=None, kickoff=ko, cards=ok_cards)
+    assert red["level"] == "red" and len(red["red"]) == 2

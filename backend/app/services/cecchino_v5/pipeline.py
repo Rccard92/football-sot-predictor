@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cecchino_v4 import CecchinoV4Fixture, CecchinoV4OddsSnapshot, CecchinoV4Prediction
 from app.models.cecchino_v5 import CecchinoV5Play
+from app.services.analyst.novig import clv_novig, novig_prob, opposite_key
 from app.services.cecchino_v4.measure.metrics import clv as clv_value
 from app.services.cecchino_v4.selection.labels import market_label
 from app.services.cecchino_v4.selection.settlement import LOST, VOID, WON, profit_units, settle
@@ -422,9 +423,53 @@ def _finished(f: CecchinoV4Fixture) -> bool:
     return (f.status or "") in FINISHED_STATUSES and f.ft_home is not None and f.ft_away is not None
 
 
+def _fill_novig(play: CecchinoV5Play, markets: dict[str, Any]) -> None:
+    """Quota opposta di chiusura (stesso book, stessa linea) e CLV senza margine (Giovanni, 18/11/2026).
+
+    Senza la chiusura la giocata resta "mancante": mai la quota presa al posto della chiusura."""
+    if play.closing_quota is None or not markets:
+        return
+    other = opposite_key(play.market_key)
+    if other and markets.get(other) is not None:
+        try:
+            play.closing_opposite = float(markets[other])
+        except (TypeError, ValueError):
+            play.closing_opposite = None
+    play.clv_novig = clv_novig(play.quota, novig_prob(markets, play.market_key))
+
+
+def backfill_novig(db: Session) -> int:
+    """Giocate con la chiusura gia' letta ma senza CLV senza margine: si ricava dall'istantanea di chiusura."""
+    plays = db.execute(
+        select(CecchinoV5Play).where(
+            CecchinoV5Play.closing_quota.is_not(None),
+            CecchinoV5Play.clv_novig.is_(None),
+            CecchinoV5Play.specialist != COMBO_KEY,
+        )
+    ).scalars().all()
+    if not plays:
+        return 0
+    closing: dict[tuple[int, int], dict[str, Any]] = {}
+    for snap in db.execute(
+        select(CecchinoV4OddsSnapshot).where(
+            CecchinoV4OddsSnapshot.fixture_id.in_({p.fixture_id for p in plays}), CecchinoV4OddsSnapshot.kind == "chiusura"
+        )
+    ).scalars():
+        closing[(snap.fixture_id, snap.bookmaker_id)] = snap.markets_json or {}
+    done = 0
+    for p in plays:
+        _fill_novig(p, closing.get((p.fixture_id, p.bookmaker_id)) or {})
+        done += 1 if p.clv_novig is not None else 0
+    return done
+
+
 def settle_plays(db: Session, *, now: datetime | None = None) -> int:
     """Esito, chiusura e CLV delle giocate aperte. Ritorna quante giocate ha chiuso."""
     now = now or _now()
+    try:
+        backfill_novig(db)
+    except Exception:  # noqa: BLE001 - il CLV senza margine non deve fermare il regolamento
+        logger.warning("v5: CLV senza margine non calcolato", exc_info=True)
     rows = db.execute(
         select(CecchinoV5Play, CecchinoV4Fixture)
         .join(CecchinoV4Fixture, CecchinoV4Fixture.id == CecchinoV5Play.fixture_id)
@@ -456,6 +501,7 @@ def settle_plays(db: Session, *, now: datetime | None = None) -> int:
             if cq is not None:
                 play.closing_quota = float(cq)
                 play.clv = clv_value(play.quota, play.closing_quota)
+                _fill_novig(play, closing.get((f.id, play.bookmaker_id)) or {})
         outcome = None
         if _finished(f):
             result = {"ft_home": f.ft_home, "ft_away": f.ft_away, "ht_home": f.ht_home, "ht_away": f.ht_away}
@@ -509,6 +555,9 @@ def plays_for_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "taken_at": p.taken_at.isoformat() if p.taken_at else None,
                 "closing_quota": p.closing_quota,
                 "clv": p.clv,
+                # 18/11/2026: chiusura dell'esito opposto e CLV senza margine (Giovanni)
+                "closing_opposite": p.closing_opposite,
+                "clv_novig": p.clv_novig,
                 "result": p.result,
                 "profit_units": p.profit_units,
                 "score": f"{f.ft_home}-{f.ft_away}" if f.ft_home is not None else None,

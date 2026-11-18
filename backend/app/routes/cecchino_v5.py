@@ -24,6 +24,14 @@ def _parse_date(raw: str | None) -> date:
         raise HTTPException(status_code=422, detail=f"data non valida: {raw}") from exc
 
 
+@router.get("/v5/valore-u25-exam")
+def get_valore_u25_exam(start: bool = Query(default=False)) -> JSONResponse:
+    """Prova storica V5 Valore Under 2,5 (Giovanni, 17-18/11/2026): start=true la avvia in background, poi si legge."""
+    from app.services.cecchino_v5.valore_u25_exam import exam_state
+
+    return JSONResponse(content=jsonable_encoder(exam_state(start=start)))
+
+
 @router.get("/v5/plays")
 def get_v5_plays(date_: str | None = Query(default=None, alias="date"), db: Session = Depends(readonly_session)) -> JSONResponse:
     return JSONResponse(content=jsonable_encoder(serving.v5_day(db, _parse_date(date_))))

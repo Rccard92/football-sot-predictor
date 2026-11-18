@@ -36,6 +36,9 @@ class CecchinoV5Play(Base):
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # orario della quota
     closing_quota: Mapped[float | None] = mapped_column(Float, nullable=True)
     clv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 18/11/2026 (Giovanni): chiusura dell'esito opposto (stesso book, stessa linea) e CLV senza margine
+    closing_opposite: Mapped[float | None] = mapped_column(Float, nullable=True)
+    clv_novig: Mapped[float | None] = mapped_column(Float, nullable=True)
     result: Mapped[str | None] = mapped_column(String(16), nullable=True)
     profit_units: Mapped[float | None] = mapped_column(Float, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

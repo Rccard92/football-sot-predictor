@@ -111,8 +111,12 @@ export type JournalEntry = {
   /** ok = chiusura letta, nd = non disponibile, null = ancora da leggere */
   closing_status?: 'ok' | 'nd' | null
   closing_note?: string | null
-  /** quota presa / quota di chiusura - 1 */
+  /** dal 18/11/2026: quota presa x probabilita' di chiusura senza margine - 1 */
   clv?: number | null
+  /** vecchia formula: quota presa / quota di chiusura - 1 */
+  clv_ratio?: number | null
+  /** probabilita' di chiusura senza margine (stesso mercato e bookmaker della chiusura) */
+  closing_prob?: number | null
   stake: number | null
   stake_suggested: number | null
   tool: ToolSnapshot
@@ -211,6 +215,10 @@ export type ReportRow = {
   clv_n?: number
   clv_avg_pct?: number | null
   clv_pos_pct?: number | null
+  /** vecchia formula, tenuta a parte dal 18/11/2026 */
+  clv_ratio_n?: number
+  clv_ratio_avg_pct?: number | null
+  clv_ratio_pos_pct?: number | null
 }
 
 export type JournalReport = {
@@ -276,9 +284,11 @@ export type TableGame = {
   ht_outcome: TableOutcome | null
   bold_ft: boolean
   bold_ht: boolean
-  /** differenza punti avversaria - squadra alla data della gara, a parita' di partite (09/11/2026) */
+  /** dal 18/11/2026: punti a partita dell'avversaria meno i nostri, alla data della gara */
   diff?: number | null
-  /** strong da +3 (cornice), weak da -3, even in mezzo */
+  /** la vecchia differenza in punti (formula del 09/11), per confronto */
+  diff_points?: number | null
+  /** strong da +0,3 (cornice), weak da -0,3, even in mezzo */
   level?: DiffLevel | null
 }
 export type DiffLevel = 'strong' | 'even' | 'weak'
@@ -300,6 +310,8 @@ export type TableBlock =
       /** media dei +/- (09/11/2026): sopra 0 calendario duro, sotto 0 facile */
       strength?: number | null
       strength_level?: DiffLevel | null
+      /** la vecchia forza media in punti (prima del 18/11/2026) */
+      strength_points?: number | null
       signs?: TableSigns
       /** gare gia' passate senza risultato nel nostro archivio (date) */
       missing_results?: string[]
@@ -321,6 +333,10 @@ export type TableQuote = {
   goal_alert?: boolean
 }
 export type GoalForm = { goals: number; games: number; avg: number; alert: boolean; threshold: number; markets: string[] }
+/** primo tempo della squadra di casa (in casa) e dell'ospite (fuori) insieme (18/11/2026) */
+export type PtForm = GoalForm & { x_pt: number; u15_pt: number; x_pct: number; u15_pct: number }
+/** indice di affidabilita' dei dati della gara (18/11/2026) */
+export type Reliability = { level: 'green' | 'yellow' | 'red'; red: string[]; yellow: string[] }
 export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
 export type MatchTableRow = {
   today_fixture_id: number
@@ -355,7 +371,62 @@ export type MatchTableRow = {
   moved?: { status: string; kickoff: string | null } | null
   /** gare di campionato che mancano, compresa questa (18/11/2026) */
   remaining?: { home: Remaining | null; away: Remaining | null }
+  pt_form?: PtForm | null
+  reliability?: Reliability
+  /** seconda lettura Bet365 a 75' dal via (18/11/2026, 8 settimane) */
+  odds_move?: OddsMove | null
+  /** ultima e prossima gara in tutte le competizioni (18/11/2026) */
+  schedule?: { home: TeamSchedule | null; away: TeamSchedule | null } | null
+  /** formazioni e indisponibili (18/11/2026) */
+  squads?: { home?: TeamSquad; away?: TeamSquad } | null
 }
+export type OddsMoveMarket = {
+  key: string
+  morning_quota: number | null
+  later_quota: number | null
+  morning_prob: number
+  later_prob: number
+  move_points: number
+  cecchino_prob: number | null
+  /** il mercato si e' mosso dalla parte del Cecchino (null = non giudicabile) */
+  toward_cecchino: boolean | null
+  /** quota del mattino x probabilita' a T-75 - 1 */
+  clv_morning: number | null
+}
+export type OddsMove = { status: 'ok' | 'nd'; read_at: string | null; markets: OddsMoveMarket[] }
+export type ScheduleGame = {
+  date: string | null
+  kickoff: string | null
+  competition: string | null
+  league_match: boolean
+  opponent: string | null
+  home: boolean
+  days: number | null
+}
+export type TeamSchedule = { last: ScheduleGame | null; next: ScheduleGame | null; games_7: number; games_14: number }
+export type SquadPlayer = { id: number; name: string | null; pos: string | null; starts?: number; of?: number }
+export type TeamSquad = {
+  lineups_known: number
+  habitual: SquadPlayer[] | null
+  injured: { name: string | null; kind: string | null; reason: string | null; starter: boolean }[]
+  missing_starters: number
+  probable: SquadPlayer[] | null
+  history: { date: string | null; opponent?: string | null; rosa: { complete: boolean; missing: number; text: string; players?: (string | null)[] } | null }[]
+}
+export type OddsMovesSummary = {
+  reads: number
+  until: string
+  markets: {
+    key: string
+    n: number
+    avg_abs_move_points: number | null
+    toward_cecchino_pct: number | null
+    judged: number
+    clv_morning_avg_pct: number | null
+    clv_morning_pos_pct: number | null
+  }[]
+}
+export const getOddsMoves = () => request<OddsMovesSummary>('/odds-moves')
 /** gare che mancano: esatte dal calendario, o stima con la lunghezza della stagione precedente (season_games);
  *  phase "knockout" = gara a eliminazione diretta, "end" = stagione regolare finita */
 export type Remaining = { games: number; exact: boolean; season_games?: number; phase?: 'knockout' | 'end' }

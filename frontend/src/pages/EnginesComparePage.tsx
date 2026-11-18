@@ -241,9 +241,13 @@ function V5DayBlock({ day, onDay }: { day: string; onDay: (d: string) => void })
                         <span>prob. {num(100 * p.probability, 0)}%</span>
                         {p.expected != null ? <span>attesi {num(p.expected, 1)}</span> : null}
                         {p.closing_quota != null ? (
-                          <span className={tone(p.clv)}>
-                            chiusura {num(p.closing_quota)} ({signed(p.clv == null ? null : 100 * p.clv, 1, '%')})
+                          <span className={tone(p.clv_novig ?? p.clv)} title="CLV senza margine = quota presa × probabilità di chiusura senza margine − 1 (tra parentesi quota ÷ chiusura − 1)">
+                            chiusura {num(p.closing_quota)}
+                            {p.closing_opposite != null ? ` / opposta ${num(p.closing_opposite)}` : ''} · CLV{' '}
+                            {p.clv_novig != null ? signed(100 * p.clv_novig, 1, '%') : 'n.d.'} ({signed(p.clv == null ? null : 100 * p.clv, 1, '%')})
                           </span>
+                        ) : p.result ? (
+                          <span className="text-slate-400">chiusura mancante</span>
                         ) : null}
                         <span className="text-slate-400">{p.competition}</span>
                       </div>

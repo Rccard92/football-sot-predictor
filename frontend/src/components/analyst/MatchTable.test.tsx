@@ -17,7 +17,7 @@ const g = (ft: string, ht: string, ftOutcome: 'V' | 'N' | 'P', htOutcome: 'V' | 
   bold_ft: boldFt,
   bold_ht: false,
   diff,
-  level: diff == null ? null : diff >= 3 ? 'strong' : diff <= -3 ? 'weak' : 'even',
+  level: diff == null ? null : diff >= 0.3 ? 'strong' : diff <= -0.3 ? 'weak' : 'even',
 })
 
 const response: MatchTableResponse = {
@@ -52,8 +52,8 @@ const response: MatchTableResponse = {
           ht_scored: 1,
           ht_conceded: 1,
           team_rank: 5,
-          results: [g('2-0', '1-0', 'V', 'V', false, -4), g('1-1', '0-0', 'N', 'N', true, 4), g('1-3', '0-1', 'P', 'P', true, 7)],
-          strength: 2.3,
+          results: [g('2-0', '1-0', 'V', 'V', false, -0.45), g('1-1', '0-0', 'N', 'N', true, 0.4), g('1-3', '0-1', 'P', 'P', true, 0.7)],
+          strength: 0.22,
           strength_level: 'even',
           signs: { ht_games: 3, x_pt: 1, u15_pt: 3, ft_games: 3, x: 1, u25: 2, u35: 2 },
           missing_results: ['2026-10-27'],
@@ -162,10 +162,10 @@ describe('MatchTable', () => {
     await screen.findAllByText('Casa FC')
     const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
     // numeri sotto i risultati: verde da +3, rosso da -3
-    expect(within(detail).getAllByText('+7')[0].className).toContain('bg-emerald-600')
-    expect(within(detail).getAllByText('−4')[0].className).toContain('bg-rose-600')
+    expect(within(detail).getAllByText('+0,70')[0].className).toContain('bg-emerald-600')
+    expect(within(detail).getAllByText('−0,45')[0].className).toContain('bg-rose-600')
     // forza media e segni
-    expect(within(detail).getAllByText('+2,3').length).toBeGreaterThan(0)
+    expect(within(detail).getAllByText('+0,22').length).toBeGreaterThan(0)
     expect(within(detail).getAllByText('U1,5 PT 3/3').length).toBe(1)
     expect(within(detail).getAllByText('U3,5 2/3').length).toBe(1)
     // nome e data dell'avversaria nella scheda, risultato mancante segnalato
@@ -179,8 +179,8 @@ describe('MatchTable', () => {
     expect(within(detail).queryByRole('button', { name: /Aggiungi/ })).toBeNull()
     // nell'elenco: numero sotto il quadratino e forza media
     const list = screen.getAllByRole('button', { pressed: true })[0]
-    expect(within(list).getByText('+2,3')).toBeTruthy()
-    expect(within(list).getByText('+4').className).toContain('text-emerald-700')
+    expect(within(list).getByText('+0,22')).toBeTruthy()
+    expect(within(list).getByText('+0,40').className).toContain('text-emerald-700')
     // note in fondo
     expect(within(detail).getByText(/Solo stagione in corso/)).toBeTruthy()
   })
@@ -226,6 +226,7 @@ describe('MatchTable', () => {
       ...response.rows[0],
       yellows: { home: { games: 1, available: false as const }, away: { games: 0, available: false as const } },
       data_check: { level: 'red' as const, problems: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'] },
+      reliability: { level: 'red' as const, red: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'], yellow: ['Ammonizioni mancanti'] },
       moved: { status: 'moved', kickoff: '2099-12-06T00:30:00+00:00' },
       remaining: { home: { games: 4, exact: true }, away: { games: 9, exact: false, season_games: 30 } },
       not_editable_reason: 'Dati della squadra da verificare (gara esclusa) · Gara spostata al 06/12',
@@ -234,7 +235,7 @@ describe('MatchTable', () => {
     render(<MatchTable />)
     await screen.findAllByText('Casa FC')
     const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    expect(within(detail).getByText('Dati da verificare · gara esclusa')).toBeTruthy()
+    expect(within(detail).getByText('Rosso · gara esclusa')).toBeTruthy()
     expect(within(detail).getByText(/due gare quasi nello stesso momento/)).toBeTruthy()
     expect(within(detail).getByText(/Gara spostata al 06\/12: non si aggiunge al diario/)).toBeTruthy()
     expect(within(detail).getByText(/Casa FC: mancano 4 gare · Ospite FC: circa 9 gare \(stima\)/)).toBeTruthy()
@@ -244,5 +245,72 @@ describe('MatchTable', () => {
     const list = screen.getAllByRole('button', { pressed: true })[0]
     expect(within(list).getByText('dati da verificare').className).toContain('bg-rose-100')
     expect(within(list).getByText('spostata al 06/12')).toBeTruthy()
+  })
+
+  it('barra della forza, riquadro primo tempo e affidabilità gialla (18/11/2026)', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    const row = {
+      ...response.rows[0],
+      blocks: { ...response.rows[0].blocks, forma_fuori: response.rows[0].blocks.forma_casa },
+      pt_form: { goals: 19, games: 10, avg: 1.9, alert: true, threshold: 1.5, markets: ['UNDER_PT_1_5', 'DRAW_PT'], x_pt: 2, u15_pt: 5, x_pct: 20, u15_pct: 50 },
+      reliability: { level: 'yellow' as const, red: [], yellow: ['Classifica incompleta (mancano alcuni risultati)'] },
+    }
+    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
+    // riquadro primo tempo: risultato PT grande e media delle due squadre
+    expect(within(detail).getByText('Primo tempo · ultime 5 (casa in casa, ospite fuori)')).toBeTruthy()
+    expect(within(detail).getAllByText('1–1').length).toBe(2)
+    expect(within(detail).getByText('1,9 gol PT')).toBeTruthy()
+    expect(within(detail).getByText('20%')).toBeTruthy()
+    expect(within(detail).getByText('Gol PT 1,9')).toBeTruthy()
+    // barra della forza con la frase
+    expect(within(detail).getByText('Forza media delle avversarie · ultime 5')).toBeTruthy()
+    expect(within(detail).getAllByText((t) => t.startsWith('Avversarie alla pari (in media +0,22 punti a partita): i suoi 4 punti su 9')).length).toBe(2)
+    // affidabilità gialla con il motivo, pallino nell'elenco
+    expect(within(detail).getByText('Giallo · solo da leggere')).toBeTruthy()
+    expect(within(detail).getByText('Classifica incompleta (mancano alcuni risultati)')).toBeTruthy()
+    expect(screen.getAllByLabelText('Giallo · solo da leggere').length).toBeGreaterThan(0)
+  })
+
+  it('movimento quote, calendario con le coppe e formazioni (18/11/2026)', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    const row = {
+      ...response.rows[0],
+      odds_move: {
+        status: 'ok' as const,
+        read_at: '2099-11-05T17:45:00+00:00',
+        markets: [
+          { key: 'HOME', morning_quota: 2.1, later_quota: 1.9, morning_prob: 0.456, later_prob: 0.504, move_points: 4.8, cecchino_prob: 0.52, toward_cecchino: true, clv_morning: 0.058 },
+          { key: 'UNDER_2_5', morning_quota: 1.8, later_quota: 1.95, morning_prob: 0.531, later_prob: 0.49, move_points: -4.1, cecchino_prob: 0.6, toward_cecchino: false, clv_morning: -0.118 },
+        ],
+      },
+      schedule: {
+        home: { last: { date: '2099-11-01', kickoff: null, competition: 'Coppa Italia', league_match: false, opponent: 'Rivale', home: true, days: 4 }, next: { date: '2099-11-08', kickoff: null, competition: 'Serie Z', league_match: true, opponent: 'Altra', home: false, days: 3 }, games_7: 1, games_14: 2 },
+        away: null,
+      },
+      squads: {
+        home: {
+          lineups_known: 10,
+          habitual: [{ id: 1, name: 'Rossi', pos: 'G' }],
+          injured: [{ name: 'Rossi', kind: 'Missing Fixture', reason: 'Injury', starter: true }],
+          missing_starters: 1,
+          probable: [],
+          history: [{ date: '2099-10-20', opponent: 'Rivale', rosa: { complete: false, missing: 3, text: '−3 titolari (portiere, 2 difensori)' } }],
+        },
+      },
+    }
+    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
+    expect(within(detail).getByText((t) => t.startsWith('▲ +4,8 punti')).className).toContain('text-emerald-700')
+    expect(within(detail).getByText(/▼ −4,1 punti/).className).toContain('text-rose-700')
+    expect(within(detail).getByText('Coppa Italia')).toBeTruthy()
+    expect(within(detail).getByText(/tra 3 giorni: possibile turnover/)).toBeTruthy()
+    expect(within(detail).getByText('Calendario non disponibile')).toBeTruthy()
+    expect(within(detail).getByText('1 su 11')).toBeTruthy()
+    expect(within(detail).getByText('−3 titolari (portiere, 2 difensori)')).toBeTruthy()
   })
 })

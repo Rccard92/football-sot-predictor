@@ -14,6 +14,8 @@ import {
   getBuyRules,
   getJournalMeta,
   getJournalReport,
+  getOddsMoves,
+  type OddsMovesSummary,
   journalExportUrl,
   listAnalysts,
   listCycles,
@@ -408,7 +410,9 @@ function clvText(v: number): string {
 function closingTitle(e: JournalEntry): string {
   if (e.closing_status === 'nd') return `Chiusura non disponibile${e.closing_note ? `: ${e.closing_note}` : ''}`
   if (e.closing_status !== 'ok') return 'La quota di chiusura si legge 60 minuti prima del calcio d’inizio'
-  return `Chiusura ${e.closing_quota} ${e.closing_bookmaker ?? ''}${e.closing_note ? ` (${e.closing_note})` : ''} · CLV = quota presa ÷ chiusura − 1`
+  const prob = e.closing_prob != null ? ` · probabilità di chiusura senza margine ${(e.closing_prob * 100).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : ''
+  const ratio = e.clv_ratio != null ? ` · con la vecchia formula (quota ÷ chiusura − 1) ${clvText(e.clv_ratio)}` : ''
+  return `Chiusura ${e.closing_quota} ${e.closing_bookmaker ?? ''}${e.closing_note ? ` (${e.closing_note})` : ''}${prob} · CLV = quota presa × probabilità senza margine − 1${ratio}`
 }
 
 /** CLV della giocata (09/11/2026): verde se abbiamo comprato meglio della chiusura, rosso se peggio. */
@@ -420,7 +424,15 @@ function ClvBadge({ entry }: { entry: JournalEntry }) {
       </span>
     )
   }
-  if (entry.clv == null) return null
+  if (entry.clv == null) {
+    // chiusura letta ma senza probabilita' senza margine (giocate vecchie): resta la vecchia formula, scritta come tale
+    if (entry.clv_ratio == null) return null
+    return (
+      <span className="mt-0.5 block w-fit rounded px-1 text-[11px] text-slate-500 ring-1 ring-inset ring-slate-200" title={closingTitle(entry)}>
+        CLV n.d. · q/c {clvText(entry.clv_ratio)}
+      </span>
+    )
+  }
   const tone = entry.clv > 0 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : entry.clv < 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'
   return (
     <span className={`mt-0.5 block w-fit rounded px-1 text-[11px] font-semibold ring-1 ring-inset ${tone}`} title={closingTitle(entry)}>
@@ -437,7 +449,9 @@ function ClosingLine({ entry }: { entry: JournalEntry }) {
       : entry.closing_status === 'nd'
         ? `chiusura n.d.${entry.closing_note ? ` (${entry.closing_note})` : ''}`
         : 'chiusura: si legge 60 minuti prima del calcio d’inizio',
-    entry.clv != null ? `CLV ${clvText(entry.clv)}` : null,
+    entry.closing_prob != null ? `senza margine ${(entry.closing_prob * 100).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : null,
+    entry.clv != null ? `CLV ${clvText(entry.clv)}` : entry.closing_status === 'ok' ? 'CLV senza margine n.d.' : null,
+    entry.clv_ratio != null ? `quota ÷ chiusura ${clvText(entry.clv_ratio)}` : null,
   ].filter(Boolean)
   return <p className="mt-1 text-[13px] text-slate-500">{bits.join(' · ')}</p>
 }
@@ -897,6 +911,76 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 
 // --- report ---------------------------------------------------------------------------------------
 
+const MOVE_NAMES: Record<string, string> = {
+  HOME: '1',
+  DRAW: 'X',
+  AWAY: '2',
+  OVER_2_5: 'Over 2,5',
+  UNDER_2_5: 'Under 2,5',
+  OVER_1_5: 'Over 1,5',
+  UNDER_3_5: 'Under 3,5',
+  DRAW_PT: 'X PT',
+  UNDER_PT_1_5: 'Under 1,5 PT',
+}
+
+/** Seconda lettura a 75' su tutte le gare del Diario (18/11/2026, 8 settimane): il mercato va verso il Cecchino? */
+function OddsMovesReport() {
+  const [data, setData] = useState<OddsMovesSummary | null>(null)
+  useEffect(() => {
+    let alive = true
+    getOddsMoves().then(
+      (d) => {
+        if (alive) setData(d)
+      },
+      () => undefined,
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (!data) return null
+  return (
+    <section className={`${todayCard} ${todayCardPadding}`}>
+      <h3 className={todaySectionTitle}>Movimento delle quote · mattino → 75&apos; dal via</h3>
+      <p className={todaySectionSubtitle}>
+        Tutte le gare del Diario, seconda lettura Bet365 fino al {new Date(`${data.until}T12:00:00Z`).toLocaleDateString('it-IT')} · {data.reads} letture.
+        &quot;Verso il Cecchino&quot; = il mercato si è mosso dalla parte del nostro numero; il CLV è quello di chi comprava al mattino.
+      </p>
+      {data.markets.length ? (
+        <table className="mt-2 w-full text-[13px] tabular-nums">
+          <thead>
+            <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+              <th className="py-1 text-left font-semibold">Mercato</th>
+              <th className="px-1 py-1 text-right font-semibold">Quote</th>
+              <th className="px-1 py-1 text-right font-semibold">Verso il Cecchino</th>
+              <th className="px-1 py-1 text-right font-semibold">Movimento medio</th>
+              <th className="px-1 py-1 text-right font-semibold">CLV del mattino</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.markets.map((m) => (
+              <tr key={m.key} className="border-b border-slate-100">
+                <td className="py-1 text-slate-700">{MOVE_NAMES[m.key] ?? m.key}</td>
+                <td className="px-1 py-1 text-right">{m.n}</td>
+                <td className="px-1 py-1 text-right">
+                  {m.toward_cecchino_pct != null ? `${m.toward_cecchino_pct.toLocaleString('it-IT')}%` : '—'}
+                  <span className="text-[11px] text-slate-400"> su {m.judged}</span>
+                </td>
+                <td className="px-1 py-1 text-right">{m.avg_abs_move_points != null ? `${m.avg_abs_move_points.toLocaleString('it-IT')} punti` : '—'}</td>
+                <td className="px-1 py-1 text-right">
+                  {m.clv_morning_avg_pct != null ? `${m.clv_morning_avg_pct > 0 ? '+' : ''}${m.clv_morning_avg_pct.toLocaleString('it-IT')}%` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mt-2 text-[13px] text-slate-500">Ancora nessuna seconda lettura: arrivano 75 minuti prima di ogni gara del Diario.</p>
+      )}
+    </section>
+  )
+}
+
 function ReportTab({ filters }: { filters: Filters }) {
   const [report, setReport] = useState<JournalReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -935,8 +1019,16 @@ function ReportTab({ filters }: { filters: Filters }) {
           sub={t.clv_n ? `su ${t.clv_n} giocate${t.clv_n < 50 ? ' (servono 50)' : ''}` : 'nessuna chiusura ancora'}
           tone={t.clv_avg_pct != null ? (t.clv_avg_pct > 0 ? 'pos' : t.clv_avg_pct < 0 ? 'neg' : undefined) : undefined}
         />
-        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="quota presa sopra la chiusura" />
+        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="senza margine (dal 18/11)" />
+        {/* 18/11/2026: la vecchia formula resta a parte, per confrontare i numeri */}
+        <Tile
+          label="CLV quota ÷ chiusura"
+          value={t.clv_ratio_avg_pct != null ? `${t.clv_ratio_avg_pct > 0 ? '+' : ''}${pct(t.clv_ratio_avg_pct)}` : '—'}
+          sub={t.clv_ratio_n ? `vecchia formula · ${t.clv_ratio_n} giocate · positivi ${pct(t.clv_ratio_pos_pct ?? null)}` : 'vecchia formula'}
+        />
       </div>
+
+      <OddsMovesReport />
 
       <ReportTable
         title="Report segni"

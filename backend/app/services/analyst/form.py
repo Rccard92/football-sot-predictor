@@ -22,7 +22,11 @@ Dal 18/11/2026 (documento "Errori, modifiche, migliorie" di Giovanni):
   Succede quando il fornitore da' lo stesso codice a due squadre diverse (Rosario, Costa Rica: due gare il
   1° novembre alle 19:00). Queste gare si tolgono da tutto il tool;
 - gare che mancano alla fine del campionato: esatte se nel nostro archivio c'e' il calendario, altrimenti
-  stima con la lunghezza della stagione precedente; "fase finale" nelle gare a eliminazione diretta.
+  stima con la lunghezza della stagione precedente; "fase finale" nelle gare a eliminazione diretta;
+- il numero +/- e la forza media sono in PUNTI A PARTITA (Pa/Ga - Ps/Gs): la differenza in punti cresceva con
+  le giornate (estremi da +-24 a giugno a +-48 a novembre). Soglia +-0,3, confermata sullo storico (108.488
+  gare: 36% piu' forti, 28% pari, 36% piu' deboli, come la vecchia regola +-3 punti a 35/30/35);
+- riquadro primo tempo con la media delle due squadre; sopra 1,5 gol PT a gara avviso su Under 1,5 PT e X PT.
 """
 
 from __future__ import annotations
@@ -133,6 +137,13 @@ class LeagueSeason:
         ps, gs = self.record_before(team, game)
         pa, ga = self.record_before(opponent, game)
         return points_diff(pa, ga, ps, gs)
+
+    def diff_ppg(self, team: int, game: dict[str, Any]) -> float | None:
+        """Come diff() ma in punti a partita (18/11/2026): confrontabile tra inizio e fine stagione."""
+        opponent = game["away"] if game["home"] == team else game["home"]
+        ps, gs = self.record_before(team, game)
+        pa, ga = self.record_before(opponent, game)
+        return ppg_diff(pa, ga, ps, gs)
 
     def recent(self, team: int, before: dict[str, Any], *, side: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         """Ultime gare finite della squadra prima di "before" (side: "home", "away" o None = tutte), dalla piu' vecchia."""
@@ -268,6 +279,71 @@ def _day(dt: datetime) -> str:
     except Exception:  # pragma: no cover - tzdata assente
         pass
     return dt.strftime("%d/%m %H:%M")
+
+
+STRONG_PPG = 0.3  # dal 18/11/2026: soglia in punti a partita (storico: 36% piu' forti, 28% pari, 36% piu' deboli)
+PT_FORM_THRESHOLD = 1.5  # "sopra 1,5 gol PT a gara" (storico 15/08-15/11: U1,5 PT ROI -9,6% contro -5,3%)
+PT_FORM_MARKETS = ("UNDER_PT_1_5", "DRAW_PT")
+
+
+def ppg_diff(pa: int, ga: int, ps: int, gs: int) -> float | None:
+    """Punti a partita dell'avversaria meno quelli della squadra, alla data (18/11/2026).
+
+    Chi non ha ancora giocato conta 0 punti a partita, come nella formula in punti (Gs = 0: Pa - Ps)."""
+    opp = Fraction(pa, ga) if ga else Fraction(0)
+    own = Fraction(ps, gs) if gs else Fraction(0)
+    return float(excel_round(opp - own, 2))
+
+
+def ppg_level(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return "strong" if value >= STRONG_PPG else "weak" if value <= -STRONG_PPG else "even"
+
+
+def strength_ppg(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(excel_round(sum(Fraction(str(v)) for v in values) / len(values), 2))
+
+
+def pt_form(home_block: dict[str, Any], away_block: dict[str, Any]) -> dict[str, Any] | None:
+    """Primo tempo della squadra di casa (in casa) e dell'ospite (fuori) insieme, sulle stesse gare della forma.
+
+    Gol PT a gara = (fatti + subiti della casa + fatti + subiti dell'ospite) / (gare della casa + gare dell'ospite);
+    X PT e Under 1,5 PT in percentuale sulle gare insieme. Sopra 1,5 gol PT a gara: avviso su Under 1,5 PT e X PT."""
+    if not home_block.get("enough") or not away_block.get("enough"):
+        return None
+    halves = [tuple(int(x) for x in r["ht"].split("-")) for b in (home_block, away_block) for r in b["results"] if r.get("ht")]
+    if not halves:
+        return None
+    games = len(halves)
+    goals = sum(a + b for a, b in halves)
+    draws = sum(1 for a, b in halves if a == b)
+    under = sum(1 for a, b in halves if a + b < 2)
+    avg = goals / games
+    return {
+        "goals": goals,
+        "games": games,
+        "avg": float(excel_round(Fraction(goals, games), 1)),
+        "x_pt": draws,
+        "u15_pt": under,
+        "x_pct": round(100 * draws / games),
+        "u15_pct": round(100 * under / games),
+        "alert": avg > PT_FORM_THRESHOLD,
+        "threshold": PT_FORM_THRESHOLD,
+        "markets": list(PT_FORM_MARKETS),
+    }
+
+
+def alert_markets(row: dict[str, Any]) -> set[str]:
+    """Mercati con l'avviso arancione nella riga della Tabella: forma da gol e primo tempo (18/11/2026)."""
+    out: set[str] = set()
+    for key in ("goal_form", "pt_form"):
+        form = row.get(key) or {}
+        if form.get("alert"):
+            out |= set(form.get("markets") or [])
+    return out
 
 
 def strength(diffs: list[int]) -> float | None:

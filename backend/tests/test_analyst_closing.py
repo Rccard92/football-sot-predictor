@@ -55,6 +55,8 @@ def entry(**kw):
         closing_status=None,
         closing_note=None,
         clv=None,
+        clv_ratio=None,
+        closing_prob=None,
     )
     base.update(kw)
     return SimpleNamespace(**base)
@@ -87,7 +89,9 @@ def test_double_chance_derived_from_1x2_is_not_a_closing_price():
 def test_apply_closing_sets_book_status_and_clv():
     e = entry()
     apply_closing(e, response((8, "Bet365", bets("2.00", "3.40", "3.60"))), NOW)
-    assert (e.closing_quota, e.closing_bookmaker, e.closing_status, e.clv) == (2.0, "Bet365", CLOSING_OK, 0.1)
+    assert (e.closing_quota, e.closing_bookmaker, e.closing_status) == (2.0, "Bet365", CLOSING_OK)
+    # dal 18/11/2026: CLV senza margine (2,20 x 46,65% - 1); la vecchia formula resta in clv_ratio
+    assert e.closing_prob == 0.4665 and e.clv == 0.0263 and e.clv_ratio == 0.1
     assert e.closing_note is None
     nd = entry(market_key="UNDER_2_5")
     apply_closing(nd, response((8, "Bet365", bets("2.00", "3.40", "3.60"))), NOW)
@@ -95,10 +99,32 @@ def test_apply_closing_sets_book_status_and_clv():
 
 
 def test_changing_the_taken_odds_recomputes_clv():
-    e = entry(quota=2.20, closing_quota=2.0, closing_status=CLOSING_OK, clv=0.1)
+    e = entry(quota=2.20, closing_quota=2.0, closing_status=CLOSING_OK, clv=0.1, closing_prob=0.5)
     e.quota = 1.90
     refresh_clv(e)
-    assert e.clv == -0.05
+    assert e.clv == -0.05 and e.clv_ratio == -0.05
+
+
+def test_novig_probability_and_clv():
+    from app.services.analyst.novig import clv_novig, novig_prob, opposite_key
+
+    q = {"HOME": 2.0, "DRAW": 3.4, "AWAY": 3.6, "UNDER_2_5": 1.9, "OVER_2_5": 1.9}
+    assert novig_prob(q, "UNDER_2_5") == 0.5
+    assert novig_prob(q, "ONE_X") == round(1 - novig_prob(q, "AWAY"), 4)
+    assert novig_prob({"UNDER_2_5": 1.9}, "UNDER_2_5") is None  # manca l'Over: n.d., non un numero con il margine
+    assert opposite_key("STAT:cards:away:under:2.5") == "STAT:cards:away:over:2.5"
+    assert opposite_key("OVER_PT_1_5") == "UNDER_PT_1_5" and opposite_key("HOME") is None
+    assert clv_novig(2.1, 0.5) == 0.05 and clv_novig(2.1, None) is None
+
+
+def test_closings_read_before_the_change_get_the_novig_probability():
+    done = entry(closing_quota=2.0, closing_bookmaker="Bet365", closing_status=CLOSING_OK, kickoff=NOW - timedelta(days=2), clv_ratio=0.1)
+    too_old = entry(closing_quota=2.0, closing_bookmaker="Bet365", closing_status=CLOSING_OK, kickoff=NOW - timedelta(days=9), provider_fixture_id=999)
+    client = FakeClient(response((8, "Bet365", bets("2.00", "3.40", "3.60"))))
+    out = run_closing(FakeDb([done, too_old]), client, NOW)
+    assert client.calls == [111] and out["novig_late"] == 1
+    assert done.closing_prob == 0.4665 and done.clv == 0.0263 and "rilette" in done.closing_note
+    assert too_old.closing_prob is None and too_old.clv is None
 
 
 class FakeDb:
