@@ -497,7 +497,7 @@ export function BatchImportPanel({
                             <div>
                               <div className="font-semibold mb-1">Blocking reason</div>
                               <div style={{ color: 'var(--lab-muted)' }}>
-                                {item.blocking_reason || '—'}
+                                {item.blocking_reason || item.notice || '—'}
                               </div>
                             </div>
                             <div>

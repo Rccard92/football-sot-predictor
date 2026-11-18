@@ -613,6 +613,7 @@ export type BatchImportStatus =
   | 'duplicate_in_batch'
   | 'duplicate_competition_in_batch'
   | 'dataset_already_exists'
+  | 'update_existing'
 
 export type CecchinoLabBatchPreviewItem = {
   client_file_id: string
@@ -636,6 +637,9 @@ export type CecchinoLabBatchPreviewItem = {
   import_status: BatchImportStatus
   dataset_id: number | null
   blocking_reason: string | null
+  /** aggiornamento di una stagione gia' caricata (18/11/2026) */
+  notice?: string | null
+  existing_rows?: number | null
   issues: Array<{
     severity: string
     issue_code: string
@@ -686,6 +690,8 @@ export function batchImportStatusLabel(status: BatchImportStatus | string): stri
       return 'Duplicato'
     case 'dataset_already_exists':
       return 'Già presente'
+    case 'update_existing':
+      return 'Aggiornamento'
     case 'blocked':
       return 'Bloccato'
     default:
@@ -695,7 +701,7 @@ export function batchImportStatusLabel(status: BatchImportStatus | string): stri
 }
 
 export function batchImportStatusBadgeClass(status: BatchImportStatus | string): string {
-  if (status === 'ready') return 'lab-badge-ok'
+  if (status === 'ready' || status === 'update_existing') return 'lab-badge-ok'
   if (status === 'ready_with_warnings') return 'lab-badge-warn'
   if (status === 'already_imported' || status === 'dataset_already_exists') return 'lab-badge-muted'
   if (
@@ -709,7 +715,8 @@ export function batchImportStatusBadgeClass(status: BatchImportStatus | string):
 }
 
 export function isBatchItemReady(status: BatchImportStatus | string): boolean {
-  return status === 'ready' || status === 'ready_with_warnings'
+  // 18/11/2026: 'update_existing' = stessa stagione gia' caricata, entrano solo le partite nuove
+  return status === 'ready' || status === 'ready_with_warnings' || status === 'update_existing'
 }
 
 export function countBatchReadyItems(items: Array<{ import_status: string }>): number {

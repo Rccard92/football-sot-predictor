@@ -269,6 +269,10 @@ def get_or_create_dataset(
     return ds
 
 
+def _match_key(day: Any, home: str | None, away: str | None) -> tuple[Any, str, str]:
+    return (day, (home or "").strip().casefold(), (away or "").strip().casefold())
+
+
 def write_import_rows(
     db: Session,
     *,
@@ -301,11 +305,26 @@ def write_import_rows(
     db.add(imp)
     db.flush()
 
+    # 18/11/2026: un CSV aggiornato della stessa stagione (football-data aggiunge le gare nuove in fondo) non deve
+    # duplicare le gare gia' caricate: si salta ogni gara con stessa data e stesse squadre gia' nel dataset.
+    # Niente si cancella e le gare gia' presenti tengono il loro id (le previsioni salvate le citano).
+    existing = {
+        _match_key(d, h, a)
+        for d, h, a in db.query(CecchinoLabMatch.match_date, CecchinoLabMatch.home_team, CecchinoLabMatch.away_team)
+        .filter(CecchinoLabMatch.dataset_id == dataset.id)
+        .all()
+    }
     match_orms: list[tuple[ParsedMatchRow, CecchinoLabMatch]] = []
     imported = 0
+    already = 0
     for m in parsed.matches:
         if not m.importable:
             continue
+        key = _match_key(m.match_date, m.home_team, m.away_team)
+        if key in existing:
+            already += 1
+            continue
+        existing.add(key)
         orm = _match_to_orm(m, dataset_id=dataset.id, import_id=imp.id)
         db.add(orm)
         match_orms.append((m, orm))
@@ -323,6 +342,7 @@ def write_import_rows(
 
     imp.rows_imported = imported
     imp.rows_skipped = parsed.rows_total - imported
+    imp.summary_json = {**(parsed.summary or {}), "already_present": already}
     imp.status = IMPORT_STATUS_COMPLETED
     imp.completed_at = datetime.now(timezone.utc)
 

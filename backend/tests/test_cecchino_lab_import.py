@@ -169,3 +169,42 @@ def test_import_division_mismatch_raises():
         )
     assert exc.value.code == "division_mismatch"
     db.commit.assert_not_called()
+
+
+def test_updated_csv_skips_matches_already_in_the_dataset():
+    """18/11/2026: un CSV aggiornato della stessa stagione aggiunge solo le gare nuove (niente doppioni)."""
+    from datetime import date
+
+    db = MagicMock()
+    calls = {"n": 0}
+
+    def one_or_none_side_effect():
+        calls["n"] += 1
+        return None
+
+    filter_mock = MagicMock()
+    filter_mock.one_or_none.side_effect = one_or_none_side_effect
+    filter_mock.count.return_value = 1
+    # nel dataset c'e' gia' Arsenal-Wolves del 10/08/2024 (scritto con maiuscole e spazi diversi)
+    filter_mock.all.return_value = [(date(2024, 8, 10), " arsenal ", "WOLVES")]
+    db.query.return_value.filter.return_value = filter_mock
+
+    def flush_side_effect():
+        for call in db.add.call_args_list:
+            obj = call.args[0]
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+
+    db.flush.side_effect = flush_side_effect
+    csv = SAMPLE + "E0,17/08/2024,15:00,Brighton,Everton,3,0,H,1.70,3.80,5.00\n"
+    result = import_csv_bytes(
+        db,
+        csv.encode("utf-8"),
+        competition_key="premier_league",
+        season_label="2024/2025",
+        source_filename="E0.csv",
+        confirm=IMPORT_CONFIRM_TOKEN,
+    )
+    assert result["rows_imported"] == 1  # solo Brighton-Everton
+    added = [c.args[0] for c in db.add.call_args_list if type(c.args[0]).__name__ == "CecchinoLabMatch"]
+    assert [m.home_team for m in added] == ["Brighton"]
