@@ -182,9 +182,13 @@ def test_batch_already_imported_and_dataset_exists():
         return_value=existing_ds,
     ):
         out2 = batch_preview_csv_files(db, [("I1.csv", _csv("I1"))], season_label="2025/2026")
-    assert out2["items"][0]["import_status"] == IMPORT_STATUS_DATASET_ALREADY_EXISTS
+    # 18/11/2026: stagione gia' presente = aggiornamento (entrano solo le partite nuove), non piu' blocco
+    assert out2["items"][0]["import_status"] == "update_existing"
     assert out2["items"][0]["dataset_id"] == 3
-    assert "Sostituisci CSV" in (out2["items"][0]["blocking_reason"] or "")
+    assert out2["items"][0]["blocking_reason"] is None
+    assert "aggiornamento" in out2["items"][0]["notice"]
+    assert out2["ready_count"] == 1
+    _ = IMPORT_STATUS_DATASET_ALREADY_EXISTS
 
 
 def test_batch_blocked_and_ready_mix_no_db_write():

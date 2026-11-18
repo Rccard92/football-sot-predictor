@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_dataset import CecchinoLabDataset
 from app.models.cecchino_lab_import import CecchinoLabImport
+from app.models.cecchino_lab_match import CecchinoLabMatch
 from app.services.cecchino_data_lab.constants import (
     BATCH_ISSUES_CAP,
     BATCH_MAX_FILE_BYTES,
@@ -34,8 +35,10 @@ IMPORT_STATUS_ALREADY_IMPORTED = "already_imported"
 IMPORT_STATUS_DUPLICATE_IN_BATCH = "duplicate_in_batch"
 IMPORT_STATUS_DUPLICATE_COMPETITION_IN_BATCH = "duplicate_competition_in_batch"
 IMPORT_STATUS_DATASET_ALREADY_EXISTS = "dataset_already_exists"
+IMPORT_STATUS_UPDATE_EXISTING = "update_existing"  # 18/11/2026: stessa stagione, si aggiungono solo le gare nuove
 
 READY_STATUSES = frozenset({IMPORT_STATUS_READY, IMPORT_STATUS_READY_WITH_WARNINGS})
+IMPORTABLE_STATUSES = READY_STATUSES | {IMPORT_STATUS_UPDATE_EXISTING}
 
 
 def _empty_item(
@@ -95,6 +98,13 @@ def _find_existing_import(db: Session, file_sha256: str) -> CecchinoLabImport | 
         )
         .one_or_none()
     )
+
+
+def _existing_rows(db: Session, dataset_id: int) -> int:
+    try:
+        return int(db.query(CecchinoLabMatch).filter(CecchinoLabMatch.dataset_id == dataset_id).count())
+    except (TypeError, ValueError):
+        return 0
 
 
 def _find_existing_dataset(
@@ -301,6 +311,7 @@ def batch_preview_csv_files(
                 "missing_required_columns": preview.get("missing_required_columns") or [],
                 "_existing_import_id": existing_imp.id if existing_imp else None,
                 "_dataset_exists": existing_ds is not None,
+                "_existing_rows": _existing_rows(db, existing_ds.id) if existing_ds is not None else 0,
             }
         )
 
@@ -357,17 +368,30 @@ def batch_preview_csv_files(
             )
         elif item.get("_dataset_exists"):
             name = item.get("competition_name") or "Dataset"
-            item["import_status"] = IMPORT_STATUS_DATASET_ALREADY_EXISTS
-            item["blocking_reason"] = (
-                f"{name} {season} è già presente. "
-                f"Utilizza 'Sostituisci CSV' nella tab Dataset per modificarlo."
-            )
+            if item["import_status"] in READY_STATUSES:
+                # 18/11/2026: CSV aggiornato della stessa stagione: si aggiungono solo le gare nuove (l'import salta
+                # quelle gia' caricate con stessa data e squadre), senza cancellare niente
+                have = item.get("_existing_rows") or 0
+                item["import_status"] = IMPORT_STATUS_UPDATE_EXISTING
+                item["existing_rows"] = have
+                item["blocking_reason"] = None
+                item["notice"] = (
+                    f"{name} {season} è già presente con {have} partite: aggiornamento, "
+                    f"entrano solo le partite nuove (quelle già caricate si saltano)."
+                )
+            else:
+                item["import_status"] = IMPORT_STATUS_DATASET_ALREADY_EXISTS
+                item["blocking_reason"] = (
+                    f"{name} {season} è già presente. "
+                    f"Utilizza 'Sostituisci CSV' nella tab Dataset per modificarlo."
+                )
         # else keep ready / ready_with_warnings
 
         item.pop("_existing_import_id", None)
         item.pop("_dataset_exists", None)
+        item.pop("_existing_rows", None)
 
-    ready_count = sum(1 for it in items if it["import_status"] in READY_STATUSES)
+    ready_count = sum(1 for it in items if it["import_status"] in IMPORTABLE_STATUSES)
     warning_count = sum(
         1 for it in items if it["import_status"] == IMPORT_STATUS_READY_WITH_WARNINGS
     )
@@ -389,10 +413,11 @@ def batch_preview_csv_files(
     )
 
     rows_total = sum(int(it["rows_total"] or 0) for it in items)
+    # aggiornamento (18/11/2026): contano solo le partite nuove, circa quelle del file meno quelle gia' caricate
     rows_importable = sum(
-        int(it["rows_importable"] or 0)
+        max(int(it["rows_importable"] or 0) - (int(it.get("existing_rows") or 0) if it["import_status"] == IMPORT_STATUS_UPDATE_EXISTING else 0), 0)
         for it in items
-        if it["import_status"] in READY_STATUSES
+        if it["import_status"] in IMPORTABLE_STATUSES
     )
 
     return {
