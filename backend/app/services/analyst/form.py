@@ -22,7 +22,7 @@ Dal 18/11/2026 (documento "Errori, modifiche, migliorie" di Giovanni):
   Succede quando il fornitore da' lo stesso codice a due squadre diverse (Rosario, Costa Rica: due gare il
   1° novembre alle 19:00). Queste gare si tolgono da tutto il tool;
 - gare che mancano alla fine del campionato: esatte se nel nostro archivio c'e' il calendario, altrimenti
-  stima con andata e ritorno (solo andata per Apertura e Clausura).
+  stima con la lunghezza della stagione precedente; "fase finale" nelle gare a eliminazione diretta.
 """
 
 from __future__ import annotations
@@ -94,8 +94,11 @@ class LeagueSeason:
 
     games: dizionari con id, kickoff, home, away, gh, ga (gol finali, None se non finita) e round."""
 
-    def __init__(self, games: list[dict[str, Any]]):
+    def __init__(self, games: list[dict[str, Any]], season_length: dict[str, int] | None = None):
         self.games = sorted(games, key=_key)
+        # gare di campionato per squadra nella stagione precedente, per torneo ("" / apertura / clausura)
+        self.season_length: dict[str, int] = dict(season_length or {})
+        self._round_of: dict[int, str | None] = {int(g["id"]): g.get("round") for g in self.games}
         self.finished = [g for g in self.games if g["gh"] is not None and g["ga"] is not None]
         # gare di ogni squadra (in ordine di data): il sabato le partite del giorno sono centinaia
         self._by_team: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -208,8 +211,16 @@ class LeagueSeason:
         return any(g["gh"] is None and not g.get("void") and g["kickoff"] and g["kickoff"] > now + CALENDAR_AHEAD for g in self.games)
 
     def remaining(self, team: int, before: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
-        """Gare di campionato che mancano alla squadra, compresa questa: esatte dal calendario o stimate."""
+        """Gare di campionato che mancano alla squadra, compresa questa.
+
+        - gara a eliminazione diretta (quarti, semifinali, play-off): "fase finale", nessun numero;
+        - calendario nel nostro archivio: numero esatto;
+        - altrimenti stima con la lunghezza della stagione precedente dello stesso campionato (mediana delle
+          gare di campionato per squadra, separata per Apertura e Clausura); senza stagione precedente: nulla.
+          Non si stima piu' con "andata e ritorno": sbaglia nei campionati a conference o a gironi."""
         cutoff = _key(before)
+        if is_knockout(self._round_of.get(int(before["id"]))):
+            return {"games": 0, "exact": True, "phase": "knockout"}
         tour = self.tournament_at(before)
         if self.calendar_known(now):
             left = [
@@ -221,12 +232,32 @@ class LeagueSeason:
                 and tournament_of(g.get("round")) == tour
             ]
             return {"games": len(left), "exact": True}
-        teams = {int(t) for g in self.games if tournament_of(g.get("round")) == tour and not is_knockout(g.get("round")) for t in (g["home"], g["away"])}
-        if len(teams) < 2:
+        total = self.season_length.get(tour)
+        if not total and len(set(self.season_length.values())) == 1:
+            # nomi dei turni cambiati tra le stagioni (Costa Rica: "Apertura" l'anno scorso, "Regular Season" oggi)
+            total = next(iter(self.season_length.values()))
+        if not total:
             return None
-        total = (len(teams) - 1) * (1 if tour else 2)
         played = sum(1 for g in self.table_games_before(before) if int(team) in (int(g["home"]), int(g["away"])))
-        return {"games": max(total - played, 0), "exact": False, "teams": len(teams), "single_round": bool(tour)}
+        left = max(total - played, 0)
+        out: dict[str, Any] = {"games": left, "exact": False, "season_games": total}
+        if left == 0:
+            out["phase"] = "end"  # stagione regolare finita (o quasi): play-off o ultime gare non nel calendario
+        return out
+
+
+def season_lengths(games: list[tuple[int, int, str | None]]) -> dict[str, int]:
+    """Lunghezza di una stagione finita: mediana delle gare di campionato per squadra, per torneo.
+
+    games: (casa, ospite, giornata) delle gare finite. Eliminazione diretta esclusa."""
+    per: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for home, away, rnd in games:
+        if is_knockout(rnd):
+            continue
+        tour = tournament_of(rnd)
+        per[tour][int(home)] += 1
+        per[tour][int(away)] += 1
+    return {tour: int(round(median(counts.values()))) for tour, counts in per.items() if len(counts) >= 4}
 
 
 def _day(dt: datetime) -> str:

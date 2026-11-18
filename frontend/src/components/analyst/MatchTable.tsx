@@ -222,23 +222,50 @@ function movedLabel(moved: NonNullable<MatchTableRow['moved']>): string {
 /** Gare di campionato che mancano, compresa questa: esatte dal calendario o stimate (18/11/2026). */
 function remainingText(team: string, r: Remaining | null | undefined): string | null {
   if (!r) return null
+  if (r.phase === 'knockout') return null
+  if (r.phase === 'end') return `${team}: stagione regolare finita`
   if (r.exact) return `${team}: ${r.games === 1 ? 'manca 1 gara' : `mancano ${r.games} gare`}`
   return `${team}: circa ${r.games} ${r.games === 1 ? 'gara' : 'gare'}`
 }
 
-function RemainingLine({ row }: { row: MatchTableRow }) {
-  const home = remainingText(row.home_team, row.remaining?.home)
-  const away = remainingText(row.away_team, row.remaining?.away)
-  if (!home && !away) return null
-  const estimated = [row.remaining?.home, row.remaining?.away].some((r) => r && !r.exact)
+const ESTIMATE_NOTE = 'Stima: gare di campionato per squadra nella stagione precedente meno quelle giocate (nel nostro archivio manca il calendario)'
+
+function RemainingInfo({
+  homeTeam,
+  awayTeam,
+  home,
+  away,
+  className,
+}: {
+  homeTeam: string
+  awayTeam: string
+  home: Remaining | null | undefined
+  away: Remaining | null | undefined
+  className: string
+}) {
+  if (home?.phase === 'knockout' || away?.phase === 'knockout') {
+    return <p className={className}>Fase finale · gara a eliminazione diretta</p>
+  }
+  const texts = [remainingText(homeTeam, home), remainingText(awayTeam, away)].filter(Boolean)
+  if (!texts.length) return null
+  const estimated = [home, away].some((x) => x && !x.exact && !x.phase)
   return (
-    <p
-      className="mt-1 text-[12px] text-slate-500"
-      title={estimated ? 'Stima: andata e ritorno con le squadre del campionato (solo andata per Apertura e Clausura); nel nostro archivio manca il calendario' : 'Dal calendario del campionato'}
-    >
-      Fine campionato · {[home, away].filter(Boolean).join(' · ')}
+    <p className={className} title={estimated ? ESTIMATE_NOTE : 'Dal calendario del campionato'}>
+      Fine campionato · {texts.join(' · ')}
       {estimated ? ' (stima)' : ''}
     </p>
+  )
+}
+
+function RemainingLine({ row }: { row: MatchTableRow }) {
+  return (
+    <RemainingInfo
+      homeTeam={row.home_team}
+      awayTeam={row.away_team}
+      home={row.remaining?.home}
+      away={row.remaining?.away}
+      className="mt-1 text-[12px] text-slate-500"
+    />
   )
 }
 
@@ -808,16 +835,13 @@ function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => 
               {!data.complete ? ' Mancano alcuni risultati: le posizioni possono non essere esatte.' : ''}
             </p>
             {data.remaining ? (
-              <p className="text-[12px] text-slate-500">
-                Fine campionato ·{' '}
-                {[
-                  remainingText(row.home_team, data.remaining[String(data.home_team_id)]),
-                  remainingText(row.away_team, data.remaining[String(data.away_team_id)]),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-                {Object.values(data.remaining).some((r) => r && !r.exact) ? ' (stima: andata e ritorno, nel nostro archivio manca il calendario)' : ''}
-              </p>
+              <RemainingInfo
+                homeTeam={row.home_team}
+                awayTeam={row.away_team}
+                home={data.remaining[String(data.home_team_id)]}
+                away={data.remaining[String(data.away_team_id)]}
+                className="text-[12px] text-slate-500"
+              />
             ) : null}
             {selected !== null ? <RecentGamesBox team={teamName(selected)} kind={kind} games={games} /> : null}
           </>

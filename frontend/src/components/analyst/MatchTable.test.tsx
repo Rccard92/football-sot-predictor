@@ -227,7 +227,7 @@ describe('MatchTable', () => {
       yellows: { home: { games: 1, available: false as const }, away: { games: 0, available: false as const } },
       data_check: { level: 'red' as const, problems: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'] },
       moved: { status: 'moved', kickoff: '2099-12-06T00:30:00+00:00' },
-      remaining: { home: { games: 4, exact: true }, away: { games: 9, exact: false, teams: 12, single_round: false } },
+      remaining: { home: { games: 4, exact: true }, away: { games: 9, exact: false, season_games: 30 } },
       not_editable_reason: 'Dati della squadra da verificare (gara esclusa) · Gara spostata al 06/12',
     }
     vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
