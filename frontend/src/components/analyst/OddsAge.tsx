@@ -1,6 +1,6 @@
 import { oddsAge, STALE_HOURS } from './oddsAgeText'
 
-/** Ora della quota del tool sopra le quote, in arancio scuro se ha piu' di 6 ore (09/11/2026). */
+/** Ora della quota del tool sopra le quote, in arancio scuro se ha piu' di 12 ore (dal 18/11/2026; 6 ore dal 09/11). */
 export function OddsAge({ iso, className = '' }: { iso?: string | null; className?: string }) {
   const age = oddsAge(iso)
   if (!age) return null

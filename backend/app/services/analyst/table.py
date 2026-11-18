@@ -20,14 +20,20 @@ campionato nella stagione in corso; ogni risultato ha il numero +/- (differenza 
 cornice va con quel numero (da +3), non piu' con la classifica di oggi; ogni blocco ha forza media e segni;
 la partita non si puo' aggiungere al diario se la squadra di casa ha meno di 3 gare in casa o l'ospite meno di
 3 fuori; avviso "forma da gol" sopra 2,7 gol a partita.
+Dal 18/11/2026 (documento "Errori, modifiche, migliorie"): l'ora della gara e' quella della fotografia del
+mattino (o quella nuova se la gara e' stata anticipata): una gara rinviata non prende piu' nella forma le gare
+giocate dopo (FC Tulsa, 5 luglio, giocata il 6 agosto) e resta nel giorno originale come "rinviata", senza
+"Aggiungi"; posizioni e classifica del riquadro sono quelle alla data; controllo dei dati delle squadre
+(rosso = non si aggiunge, e dal 18/11 la gara e' esclusa anche da Today); gare mancanti alla fine.
 """
 
 from __future__ import annotations
 
 import time
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -55,6 +61,37 @@ _BLOCKS = {
     "forma_totale_fuori": ("away", None),
 }
 _VOID_STATUSES = frozenset({"PST", "CANC", "ABD", "AWD", "WO"})
+_ROME = ZoneInfo("Europe/Rome")
+MOVED_AFTER = timedelta(hours=12)  # ora del fornitore lontana da quella della fotografia: gara rinviata o spostata
+
+
+def match_cutoff(scan_kickoff: datetime | None, fixture_kickoff: datetime | None) -> datetime | None:
+    """Ora della gara per forma e classifica: la prima tra quella della fotografia del mattino e quella attuale.
+
+    Una gara rinviata cambia ora nel nostro archivio (FC Tulsa: 5 luglio -> 6 agosto) ma la riga di Today resta
+    nel giorno originale: la forma va presa a quella data, non a quella nuova."""
+    times = [t for t in (_aware(scan_kickoff), _aware(fixture_kickoff)) if t is not None]
+    return min(times) if times else None
+
+
+def moved_to(scan_kickoff: datetime | None, fixture_kickoff: datetime | None, status: str | None) -> dict[str, Any] | None:
+    """Gara rinviata o spostata rispetto alla fotografia del mattino (None se si gioca quando previsto)."""
+    a, b = _aware(scan_kickoff), _aware(fixture_kickoff)
+    if (status or "") in ("PST", "CANC", "ABD"):
+        return {"status": status, "kickoff": b.isoformat() if b else None}
+    if a is None or b is None or abs(b - a) <= MOVED_AFTER:
+        return None
+    return {"status": "moved", "kickoff": b.isoformat()}
+
+
+def _moved_text(moved: dict[str, Any]) -> str:
+    if moved["status"] == "CANC":
+        return "Gara annullata"
+    if moved["status"] == "ABD":
+        return "Gara sospesa"
+    if moved.get("kickoff") and moved["status"] == "moved":
+        return "Gara spostata al " + datetime.fromisoformat(moved["kickoff"]).astimezone(_ROME).strftime("%d/%m")
+    return "Gara rinviata"
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -194,39 +231,6 @@ def _cards(games: list[dict[str, Any]], team: int, yellows: dict[int, dict[str, 
     }
 
 
-def _history(db: Session, ids: set[int]) -> dict[int, dict[str, Any]]:
-    if not ids:
-        return {}
-    postgres = db.get_bind().dialect.name == "postgresql"
-    cols = [Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away, Fixture.status]
-    if postgres:
-        cols += [
-            func.jsonb_extract_path_text(Fixture.raw_json, "score", "halftime", "home"),
-            func.jsonb_extract_path_text(Fixture.raw_json, "score", "halftime", "away"),
-        ]
-    else:
-        cols.append(Fixture.raw_json)
-    out: dict[int, dict[str, Any]] = {}
-    for row in db.execute(select(*cols).where(Fixture.id.in_(ids))).all():
-        if postgres:
-            hth, hta = _int(row[7]), _int(row[8])
-        else:
-            ht = (((row[7] or {}).get("score") or {}).get("halftime")) or {}
-            hth, hta = _int(ht.get("home")), _int(ht.get("away"))
-        finished = (row.status or "") in FINISHED_STATUSES
-        out[int(row.id)] = {
-            "id": int(row.id),
-            "kickoff": _aware(row.kickoff_at),
-            "home": int(row.home_team_id),
-            "away": int(row.away_team_id),
-            "gh": row.goals_home if finished else None,
-            "ga": row.goals_away if finished else None,
-            "hth": hth if finished else None,
-            "hta": hta if finished else None,
-        }
-    return out
-
-
 def _yellows(db: Session, ids: set[int]) -> dict[int, dict[str, int]]:
     out: dict[int, dict[str, int]] = defaultdict(dict)
     if not ids:
@@ -241,7 +245,7 @@ def _yellows(db: Session, ids: set[int]) -> dict[int, dict[str, int]]:
     return out
 
 
-def _league_seasons(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, int], LeagueSeason]:
+def league_seasons(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, int], LeagueSeason]:
     """Tutte le gare (anche da giocare) di ogni campionato e stagione: forma, classifica alla data, risultati mancanti."""
     if not pairs:
         return {}
@@ -297,6 +301,40 @@ def _league_seasons(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int,
     return {p: LeagueSeason(games.get(p, [])) for p in pairs}
 
 
+def data_check(season: LeagueSeason, target: dict[str, Any], teams: dict[str, tuple[int, str | None]]) -> list[str]:
+    """Problemi nei dati delle due squadre alla data della gara (vuoto = tutto a posto)."""
+    out: list[str] = []
+    for team_id, name in teams.values():
+        out += [f"{name or 'Squadra'}: {p}" for p in season.data_problems(int(team_id), target)]
+    return out
+
+
+_CHECK_CACHE_SECONDS = 300
+_check_cache: dict[tuple[int, int], tuple[float, LeagueSeason]] = {}
+
+
+def fixture_data_problems(db: Session, local_fixture_id: int, *, scan_kickoff: datetime | None = None) -> list[str]:
+    """Controllo dei dati delle squadre per lo scan di Today (18/11/2026): se non e' vuoto la gara si esclude.
+
+    Le gare dello stesso campionato si leggono una volta ogni 5 minuti (il sabato ci sono decine di gare per lega)."""
+    loc = db.get(Fixture, int(local_fixture_id))
+    if loc is None or loc.league_id is None or loc.season_id is None:
+        return []
+    pair = (int(loc.league_id), int(loc.season_id))
+    hit = _check_cache.get(pair)
+    if hit and time.monotonic() - hit[0] < _CHECK_CACHE_SECONDS:
+        season = hit[1]
+    else:
+        season = league_seasons(db, {pair})[pair]
+        _check_cache[pair] = (time.monotonic(), season)
+        for old in [p for p, (ts, _) in _check_cache.items() if time.monotonic() - ts > _CHECK_CACHE_SECONDS]:
+            _check_cache.pop(old, None)
+    names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_({int(loc.home_team_id), int(loc.away_team_id)}))).all()}
+    target = {"id": int(loc.id), "kickoff": match_cutoff(scan_kickoff, loc.kickoff_at)}
+    teams = {side: (int(t), names.get(int(t))) for side, t in (("home", loc.home_team_id), ("away", loc.away_team_id))}
+    return data_check(season, target, teams)
+
+
 def _table(rows: list[tuple[int, int, int, int]], names: dict[int, str], side: str) -> list[dict[str, Any]]:
     """Una classifica: "total", "home" (solo gare in casa) o "away" (solo gare fuori). Ordine come standings()."""
     acc: dict[int, dict[str, int]] = defaultdict(lambda: {"played": 0, "won": 0, "drawn": 0, "lost": 0, "gf": 0, "ga": 0, "points": 0})
@@ -324,23 +362,20 @@ def _table(rows: list[tuple[int, int, int, int]], names: dict[int, str], side: s
 
 
 def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
-    """Classifica completa del campionato della partita: totale, casa e trasferta, dai risultati nel DB."""
+    """Classifica completa del campionato della partita: totale, casa e trasferta, dai risultati nel DB.
+
+    Dal 18/11/2026 e' la classifica ALLA DATA della gara (solo gare finite prima del calcio d'inizio, stesso
+    torneo, niente eliminazione diretta): aperta dopo la partita non contiene piu' la partita stessa."""
     fx = db.get(CecchinoTodayFixture, today_fixture_id)
     if fx is None or fx.local_fixture_id is None:
         return None
     loc = db.get(Fixture, int(fx.local_fixture_id))
-    if loc is None:
+    if loc is None or loc.league_id is None or loc.season_id is None:
         return None
-    played_games = db.execute(
-        select(Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.goals_home, Fixture.goals_away).where(
-            Fixture.league_id == loc.league_id,
-            Fixture.season_id == loc.season_id,
-            Fixture.status.in_(FINISHED_STATUSES),
-            Fixture.goals_home.is_not(None),
-            Fixture.goals_away.is_not(None),
-        )
-    ).all()
-    rows = [(int(h), int(a), int(gh), int(ga)) for _id, _ko, h, a, gh, ga in played_games]
+    pair = (int(loc.league_id), int(loc.season_id))
+    season = league_seasons(db, {pair})[pair]
+    target = {"id": int(loc.id), "kickoff": match_cutoff(fx.kickoff, loc.kickoff_at)}
+    rows = [(int(g["home"]), int(g["away"]), int(g["gh"]), int(g["ga"])) for g in season.table_games_before(target)]
     team_ids = {r[0] for r in rows} | {r[1] for r in rows} | {int(loc.home_team_id), int(loc.away_team_id)}
     names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()}
     total = _table(rows, names, "total")
@@ -349,21 +384,18 @@ def league_tables(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
     # ultime 5 partite delle due squadre, in totale, in casa e fuori (08/11/2026): al clic sulla squadra la
     # classifica accende le avversarie e il box sotto mostra i risultati (posizione = classifica totale)
     recent: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    ordered = sorted(played_games, key=lambda g: (_aware(g.kickoff_at) or datetime.min.replace(tzinfo=timezone.utc), g.id))
-    picked: dict[int, dict[str, list[int]]] = {}
     for team in (int(loc.home_team_id), int(loc.away_team_id)):
-        mine = [g for g in ordered if int(g.home_team_id) == team or int(g.away_team_id) == team]
-        picked[team] = {
-            "total": [int(g.id) for g in mine][-MAX_GAMES:],
-            "home": [int(g.id) for g in mine if int(g.home_team_id) == team][-MAX_GAMES:],
-            "away": [int(g.id) for g in mine if int(g.away_team_id) == team][-MAX_GAMES:],
-        }
-    history = _history(db, {i for scopes in picked.values() for ids in scopes.values() for i in ids})
-    for team, scopes in picked.items():
         recent[str(team)] = {
-            kind: [_game(history[i], team, ranks, names) for i in ids if i in history] for kind, ids in scopes.items()
+            kind: [_game(g, team, ranks, names) for g in season.recent(team, target, side=side, limit=MAX_GAMES)]
+            for kind, side in (("total", None), ("home", "home"), ("away", "away"))
         }
+    now = datetime.now(timezone.utc)
     return {
+        "as_of": target["kickoff"].isoformat() if target["kickoff"] else None,
+        "remaining": {
+            str(int(loc.home_team_id)): season.remaining(int(loc.home_team_id), target, now=now),
+            str(int(loc.away_team_id)): season.remaining(int(loc.away_team_id), target, now=now),
+        },
         "today_fixture_id": int(fx.id),
         "league": fx.league_name,
         "country": fx.country_name,
@@ -417,26 +449,25 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
     locals_ = {
         int(r.id): r
         for r in db.execute(
-            select(Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.league_id, Fixture.season_id).where(
-                Fixture.id.in_({int(f.local_fixture_id) for f in fixtures})
-            )
+            select(
+                Fixture.id, Fixture.kickoff_at, Fixture.home_team_id, Fixture.away_team_id, Fixture.league_id, Fixture.season_id, Fixture.status
+            ).where(Fixture.id.in_({int(f.local_fixture_id) for f in fixtures}))
         ).all()
     }
     pairs = {(int(r.league_id), int(r.season_id)) for r in locals_.values()}
-    seasons = _league_seasons(db, pairs)
-    # classifica di oggi (posizioni accanto ai nomi, invariata): tutte le gare finite della stagione
-    tables = {
-        p: standings([(g["home"], g["away"], int(g["gh"]), int(g["ga"])) for g in season.finished]) for p, season in seasons.items()
-    }
+    seasons = league_seasons(db, pairs)
     now = datetime.now(timezone.utc)
     picked: dict[int, dict[str, list[dict[str, Any]]]] = {}
     lacking: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    targets: dict[int, dict[str, Any]] = {}
     for f in fixtures:
         loc = locals_.get(int(f.local_fixture_id))
         if loc is None:
             continue
         season = seasons[(int(loc.league_id), int(loc.season_id))]
-        target = {"id": int(loc.id), "kickoff": _aware(loc.kickoff_at)}
+        # dal 18/11/2026: ora della fotografia del mattino (gara rinviata = forma alla data originale)
+        target = {"id": int(loc.id), "kickoff": match_cutoff(f.kickoff, loc.kickoff_at)}
+        targets[int(f.id)] = target
         teams = {"home": int(loc.home_team_id), "away": int(loc.away_team_id)}
         picked[int(f.id)] = {
             block: season.recent(teams[who], target, side=side, limit=MAX_GAMES) for block, (who, side) in _BLOCKS.items()
@@ -467,7 +498,9 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         pair = (int(loc.league_id), int(loc.season_id))
         season = seasons[pair]
         home, away = int(loc.home_team_id), int(loc.away_team_id)
-        ranks, complete = tables.get(pair, ({}, False))
+        target = targets[int(f.id)]
+        # classifica alla data della gara (dal 18/11/2026; prima era quella di oggi)
+        ranks, complete = standings([(g["home"], g["away"], int(g["gh"]), int(g["ga"])) for g in season.table_games_before(target)])
         games = picked[int(f.id)]
         blocks = {
             block: _block(games[block], home if who == "home" else away, ranks, names, season, lacking[int(f.id)][block])
@@ -481,6 +514,15 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
             f"{f.away_team_name} ha {blocks['forma_fuori']['games']} gare fuori" if blocks["forma_fuori"]["games"] < MIN_GAMES else None,
         ]
         short = [s for s in short if s]
+        problems = data_check(season, target, {"home": (home, f.home_team_name), "away": (away, f.away_team_name)})
+        moved = moved_to(f.kickoff, loc.kickoff_at, loc.status)
+        reasons = []
+        if problems:
+            reasons.append("Dati della squadra da verificare (gara esclusa)")
+        if moved:
+            reasons.append(_moved_text(moved))
+        if short:
+            reasons.append("Meno di 3 gare in stagione: " + " e ".join(short))
         idx, cls = balance.get(int(f.id), (None, None))
         quotes = _quotes(f)
         main = {q["key"]: q["quota"] for q in quotes}
@@ -506,11 +548,18 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "away_rank": ranks.get(away),
                 "quotes": quotes,
                 "match_type": match_type(*(main.get(k) for k in ("HOME", "DRAW", "AWAY"))),
-                "editable": not short,
-                "not_editable_reason": ("Meno di 3 gare in stagione: " + " e ".join(short)) if short else None,
+                "editable": not reasons,
+                "not_editable_reason": " · ".join(reasons) if reasons else None,
                 "goal_form": goal_form(blocks["forma_casa"], blocks["forma_fuori"]),
-                # ora in cui il tool ha letto le quote (09/11/2026): sopra le quote, avviso oltre 6 ore
+                # ora in cui il tool ha letto le quote (09/11/2026): sopra le quote, avviso oltre 12 ore (18/11)
                 "odds_checked_at": _iso_or_none(odds_read_at(f)),
+                # dal 18/11/2026
+                "data_check": {"level": "red", "problems": problems} if problems else {"level": "ok", "problems": []},
+                "moved": moved,
+                "remaining": {
+                    "home": season.remaining(home, target, now=now),
+                    "away": season.remaining(away, target, now=now),
+                },
             }
         )
     return out

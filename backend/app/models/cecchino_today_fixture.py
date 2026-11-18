@@ -29,6 +29,9 @@ ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE = "excluded_cecchino_not_calculable
 ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE = "excluded_kpi_not_calculable"
 ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED = "excluded_leakage_failed"
 ELIGIBILITY_EXCLUDED_MAPPING = "excluded_mapping_error"
+# 18/11/2026: dati della squadra sbagliati (due gare a meno di 12 ore, gare oltre la mediana + 4): il
+# fornitore ha dato lo stesso codice a due squadre diverse. Gara tolta da tutto il tool (decisione di Giovanni).
+ELIGIBILITY_EXCLUDED_DATA_ERROR = "excluded_data_error"
 ELIGIBILITY_ERROR = "error"
 
 PROVIDER_API_FOOTBALL = "api_football"

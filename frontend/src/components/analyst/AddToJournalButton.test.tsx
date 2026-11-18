@@ -53,7 +53,7 @@ describe('AddToJournalButton: quota presa e bookmaker (09/11/2026)', () => {
     expect(quota.value).toBe('')
     // quota del tool a parte e ora della quota con l'avviso (letta ieri)
     expect(screen.getByText(/Quota del tool/).textContent).toContain('1,85')
-    expect(screen.getByText(/Quote lette/).textContent).toContain('più di 6 ore')
+    expect(screen.getByText(/Quote lette/).textContent).toContain('più di 12 ore')
 
     await userEvent.click(screen.getByRole('button', { name: /Salva/ }))
     expect(await screen.findByText('Scrivi la quota presa')).toBeTruthy()

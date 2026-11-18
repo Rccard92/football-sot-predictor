@@ -14,6 +14,15 @@
 - Segni: quante volte e' uscito X PT, Under 1,5 PT, X, Under 2,5, Under 3,5 nelle gare mostrate.
 - "Forma da gol": gol del finale nelle gare in casa della squadra di casa e fuori dell'ospite (fino a 5 per
   parte); sopra 2,7 a partita compare un avviso arancione su Under 2,5 e Under 1,5 PT. Solo un avviso.
+
+Dal 18/11/2026 (documento "Errori, modifiche, migliorie" di Giovanni):
+- tutto (forma, classifica, forza) si calcola con le sole gare finite PRIMA del calcio d'inizio, anche aprendo
+  un giorno passato: la classifica del riquadro e le posizioni accanto ai nomi sono quelle alla data;
+- controllo dei dati della squadra: due gare a meno di 12 ore, oppure piu' gare di campionato della mediana + 4.
+  Succede quando il fornitore da' lo stesso codice a due squadre diverse (Rosario, Costa Rica: due gare il
+  1° novembre alle 19:00). Queste gare si tolgono da tutto il tool;
+- gare che mancano alla fine del campionato: esatte se nel nostro archivio c'e' il calendario, altrimenti
+  stima con andata e ritorno (solo andata per Apertura e Clausura).
 """
 
 from __future__ import annotations
@@ -21,12 +30,16 @@ from __future__ import annotations
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
+from statistics import median
 from typing import Any
 
 STRONG_DIFF = 3  # da +3 avversaria piu' forte di almeno una vittoria; da -3 piu' debole
+SAME_DAY_GAP = timedelta(hours=12)  # due gare della stessa squadra piu' vicine di cosi': dati sbagliati
+OVER_MEDIAN_GAMES = 4  # gare di campionato oltre la mediana del campionato + 4: dati sbagliati
+CALENDAR_AHEAD = timedelta(days=3)  # calendario "noto" se nell'archivio ci sono gare da giocare oltre 3 giorni
 GOAL_FORM_THRESHOLD = 2.7  # "sopra 2,7" gol a partita
 GOAL_FORM_MARKETS = ("UNDER_2_5", "UNDER_PT_1_5")
 _TOURNAMENTS = ("apertura", "clausura")
@@ -144,6 +157,86 @@ class LeagueSeason:
             if side is None or (side == "home" and g["home"] == team) or (side == "away" and g["away"] == team):
                 out.append(g)
         return out
+
+    def tournament_at(self, before: dict[str, Any]) -> str:
+        """Torneo in corso alla data (Apertura, Clausura o ""): quello dell'ultima gara di classifica finita prima."""
+        cutoff = _key(before)
+        current = ""
+        for g in self.finished:
+            if _key(g) >= cutoff:
+                break
+            if not is_knockout(g.get("round")):
+                current = tournament_of(g.get("round"))
+        return current
+
+    def table_games_before(self, before: dict[str, Any]) -> list[dict[str, Any]]:
+        """Gare finite prima di "before" che contano per la classifica alla data: stesso torneo, niente eliminazione diretta."""
+        cutoff = _key(before)
+        tour = self.tournament_at(before)
+        return [
+            g
+            for g in self.finished
+            if _key(g) < cutoff
+            and int(g["id"]) != int(before["id"])
+            and not is_knockout(g.get("round"))
+            and self.table_of.get(int(g["id"])) == tour
+        ]
+
+    def data_problems(self, team: int, before: dict[str, Any]) -> list[str]:
+        """Segnali che i dati della squadra sono sbagliati (due squadre con lo stesso codice del fornitore)."""
+        cutoff = _key(before)
+        out: list[str] = []
+        times = sorted(
+            [g["kickoff"] for g in self._by_team.get(int(team), []) if g["gh"] is not None and g["kickoff"] and _key(g) < cutoff and int(g["id"]) != int(before["id"])]
+            + ([before["kickoff"]] if before.get("kickoff") else [])
+        )
+        for a, b in zip(times, times[1:]):
+            if b - a < SAME_DAY_GAP:
+                out.append(f"due gare quasi nello stesso momento ({_day(a)} e {_day(b)})")
+                break
+        played: dict[int, int] = defaultdict(int)
+        for g in self.table_games_before(before):
+            played[int(g["home"])] += 1
+            played[int(g["away"])] += 1
+        if int(team) in played and len(played) >= 4:
+            mid = median(played.values())
+            if played[int(team)] > mid + OVER_MEDIAN_GAMES:
+                out.append(f"{played[int(team)]} gare di campionato, le altre squadre una mediana di {mid:g}")
+        return out
+
+    def calendar_known(self, now: datetime) -> bool:
+        return any(g["gh"] is None and not g.get("void") and g["kickoff"] and g["kickoff"] > now + CALENDAR_AHEAD for g in self.games)
+
+    def remaining(self, team: int, before: dict[str, Any], *, now: datetime) -> dict[str, Any] | None:
+        """Gare di campionato che mancano alla squadra, compresa questa: esatte dal calendario o stimate."""
+        cutoff = _key(before)
+        tour = self.tournament_at(before)
+        if self.calendar_known(now):
+            left = [
+                g
+                for g in self._by_team.get(int(team), [])
+                if (_key(g) >= cutoff or int(g["id"]) == int(before["id"]))
+                and not (g["gh"] is None and g.get("void"))
+                and not is_knockout(g.get("round"))
+                and tournament_of(g.get("round")) == tour
+            ]
+            return {"games": len(left), "exact": True}
+        teams = {int(t) for g in self.games if tournament_of(g.get("round")) == tour and not is_knockout(g.get("round")) for t in (g["home"], g["away"])}
+        if len(teams) < 2:
+            return None
+        total = (len(teams) - 1) * (1 if tour else 2)
+        played = sum(1 for g in self.table_games_before(before) if int(team) in (int(g["home"]), int(g["away"])))
+        return {"games": max(total - played, 0), "exact": False, "teams": len(teams), "single_round": bool(tour)}
+
+
+def _day(dt: datetime) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+
+        dt = dt.astimezone(ZoneInfo("Europe/Rome"))
+    except Exception:  # pragma: no cover - tzdata assente
+        pass
+    return dt.strftime("%d/%m %H:%M")
 
 
 def strength(diffs: list[int]) -> float | None:

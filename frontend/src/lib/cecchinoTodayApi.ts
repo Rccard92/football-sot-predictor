@@ -3027,6 +3027,7 @@ const ELIGIBILITY_STATUS_LABELS: Record<string, string> = {
   excluded_friendly: 'Amichevole',
   excluded_youth: 'Giovanili',
   excluded_mapping_error: 'Errore mapping',
+  excluded_data_error: 'Dati squadra non affidabili',
   error: 'Errore calcolo',
 }
 

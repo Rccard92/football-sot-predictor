@@ -8,6 +8,7 @@ import {
   type MatchTableResponse,
   type MatchTableRow,
   type QuotaStatus,
+  type Remaining,
   type StandingsKind,
   type TableQuote,
   type DiffLevel,
@@ -208,6 +209,57 @@ function ListForm({ block }: { block: TableBlock }) {
   )
 }
 
+/** Gara rinviata o spostata rispetto alla fotografia del mattino (18/11/2026). */
+function movedLabel(moved: NonNullable<MatchTableRow['moved']>): string {
+  if (moved.status === 'CANC') return 'annullata'
+  if (moved.status === 'ABD') return 'sospesa'
+  if (moved.status === 'moved' && moved.kickoff) {
+    return `spostata al ${new Date(moved.kickoff).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Rome' })}`
+  }
+  return 'rinviata'
+}
+
+/** Gare di campionato che mancano, compresa questa: esatte dal calendario o stimate (18/11/2026). */
+function remainingText(team: string, r: Remaining | null | undefined): string | null {
+  if (!r) return null
+  if (r.exact) return `${team}: ${r.games === 1 ? 'manca 1 gara' : `mancano ${r.games} gare`}`
+  return `${team}: circa ${r.games} ${r.games === 1 ? 'gara' : 'gare'}`
+}
+
+function RemainingLine({ row }: { row: MatchTableRow }) {
+  const home = remainingText(row.home_team, row.remaining?.home)
+  const away = remainingText(row.away_team, row.remaining?.away)
+  if (!home && !away) return null
+  const estimated = [row.remaining?.home, row.remaining?.away].some((r) => r && !r.exact)
+  return (
+    <p
+      className="mt-1 text-[12px] text-slate-500"
+      title={estimated ? 'Stima: andata e ritorno con le squadre del campionato (solo andata per Apertura e Clausura); nel nostro archivio manca il calendario' : 'Dal calendario del campionato'}
+    >
+      Fine campionato · {[home, away].filter(Boolean).join(' · ')}
+      {estimated ? ' (stima)' : ''}
+    </p>
+  )
+}
+
+/** Controllo automatico dei dati delle squadre (18/11/2026): rosso = gara esclusa da tutto il tool. */
+function DataCheckBox({ row }: { row: MatchTableRow }) {
+  if (row.data_check?.level !== 'red') return null
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-900">
+      <p className="font-semibold">Dati da verificare · gara esclusa</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+        {row.data_check.problems.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[12px] text-rose-700">
+        Probabile fusione di due squadre con lo stesso codice del fornitore: classifica, forma e Cecchino di questa gara non sono affidabili.
+      </p>
+    </div>
+  )
+}
+
 function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; selected: boolean; onSelect: () => void; showLeague: boolean }) {
   const main = MAIN_QUOTES.map((k) => row.quotes.find((q) => q.key === k))
   return (
@@ -233,6 +285,12 @@ function ListRow({ row, selected, onSelect, showLeague }: { row: MatchTableRow; 
           <MatchTypePill kind={row.match_type} />
           {row.my_note.trim() ? <span className="text-[12px] text-indigo-700" title="Hai scritto una nota">● nota</span> : null}
           {row.started ? <span className="text-[12px] text-slate-400">iniziata</span> : null}
+          {row.data_check?.level === 'red' ? (
+            <span className="rounded bg-rose-100 px-1.5 text-[12px] font-medium text-rose-800" title={row.data_check.problems.join(' · ')}>
+              dati da verificare
+            </span>
+          ) : null}
+          {row.moved ? <span className="rounded bg-slate-100 px-1.5 text-[12px] text-slate-600">{movedLabel(row.moved)}</span> : null}
         </span>
       </span>
       <span className="col-start-2 flex flex-col gap-1 sm:col-start-auto">
@@ -743,9 +801,24 @@ function StandingsDrawer({ row, onClose }: { row: MatchTableRow; onClose: () => 
               </tbody>
             </table>
             <p className="text-[12px] text-slate-500">
-              Ricostruita dai {data.games} risultati del campionato nel nostro archivio.
+              {data.as_of
+                ? `Classifica prima della gara (${new Date(data.as_of).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })}), ricostruita`
+                : 'Ricostruita'}{' '}
+              dai {data.games} risultati del campionato nel nostro archivio.
               {!data.complete ? ' Mancano alcuni risultati: le posizioni possono non essere esatte.' : ''}
             </p>
+            {data.remaining ? (
+              <p className="text-[12px] text-slate-500">
+                Fine campionato ·{' '}
+                {[
+                  remainingText(row.home_team, data.remaining[String(data.home_team_id)]),
+                  remainingText(row.away_team, data.remaining[String(data.away_team_id)]),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {Object.values(data.remaining).some((r) => r && !r.exact) ? ' (stima: andata e ritorno, nel nostro archivio manca il calendario)' : ''}
+              </p>
+            ) : null}
             {selected !== null ? <RecentGamesBox team={teamName(selected)} kind={kind} games={games} /> : null}
           </>
         ) : null}
@@ -833,6 +906,7 @@ function MatchDetail({
               classifica parziale
             </p>
           ) : null}
+          <RemainingLine row={row} />
         </div>
         {onClose ? (
           <button type="button" className={btn} onClick={onClose}>
@@ -848,13 +922,14 @@ function MatchDetail({
           Classifica
         </button>
         {!row.started && row.editable === false ? (
-          <span className="self-center text-[13px] text-amber-700" title="Regola di Giovanni (09/11/2026): servono almeno 3 gare in casa e 3 fuori nella stagione">
+          <span className="self-center text-[13px] text-amber-700" title="Regole di Giovanni: almeno 3 gare in casa e 3 fuori (09/11/2026); dati delle squadre verificati, gara non rinviata (18/11/2026)">
             {row.not_editable_reason ?? 'Meno di 3 gare in stagione'}: non si aggiunge al diario
           </span>
         ) : !row.started ? (
           <AddToJournalButton todayFixtureId={row.today_fixture_id} source="tabella" compact />
         ) : null}
       </div>
+      <DataCheckBox row={row} />
 
       <div className="space-y-3">
         {(['PT', 'FT'] as const).map((half) => (
@@ -890,11 +965,14 @@ function MatchDetail({
         Risultati con i gol della squadra per primi, dalla gara più vecchia a sinistra all&apos;ultima a destra. Solo gare della stagione in corso.
       </p>
 
-      <div className="space-y-1 rounded-xl bg-slate-50 p-3">
-        <p className={LABEL}>Gialli ultime 5 gare</p>
-        <CardsLine label={row.home_team} cards={row.yellows.home} />
-        <CardsLine label={row.away_team} cards={row.yellows.away} />
-      </div>
+      {/* 18/11/2026: senza dati per nessuna delle due squadre il riquadro non si mostra */}
+      {row.yellows.home.available || row.yellows.away.available ? (
+        <div className="space-y-1 rounded-xl bg-slate-50 p-3">
+          <p className={LABEL}>Gialli ultime 5 gare</p>
+          <CardsLine label={row.home_team} cards={row.yellows.home} />
+          <CardsLine label={row.away_team} cards={row.yellows.away} />
+        </div>
+      ) : null}
 
       {row.quotes.length ? (
         <div className="rounded-xl bg-slate-50 p-3">
