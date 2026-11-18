@@ -356,7 +356,9 @@ export type MatchTableRow = {
   /** gare di campionato che mancano, compresa questa (18/11/2026) */
   remaining?: { home: Remaining | null; away: Remaining | null }
 }
-export type Remaining = { games: number; exact: boolean; teams?: number; single_round?: boolean }
+/** gare che mancano: esatte dal calendario, o stima con la lunghezza della stagione precedente (season_games);
+ *  phase "knockout" = gara a eliminazione diretta, "end" = stagione regolare finita */
+export type Remaining = { games: number; exact: boolean; season_games?: number; phase?: 'knockout' | 'end' }
 export type MatchTableResponse = {
   day: string
   total: number

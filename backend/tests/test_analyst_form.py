@@ -10,6 +10,7 @@ from app.services.analyst.form import (
     goal_form,
     is_knockout,
     points_diff,
+    season_lengths,
     signs,
     strength,
     tournament_of,
@@ -230,10 +231,31 @@ def test_remaining_games_exact_with_calendar_or_estimated():
     season = LeagueSeason(games)
     target = {"id": 3, "kickoff": games[2]["kickoff"]}
     assert season.remaining(A, target, now=now) == {"games": 3, "exact": True}
-    # senza calendario: stima andata e ritorno (4 squadre: 6 gare), A ne ha giocata 1
-    season = LeagueSeason(games[:3])
+    # senza calendario: lunghezza della stagione precedente (30 gare), A ne ha giocata 1
+    season = LeagueSeason(games[:3], {"": 30})
     est = season.remaining(A, target, now=now)
-    assert est["exact"] is False and est["games"] == 5 and est["teams"] == 4
-    # Apertura: solo andata (3 gare)
-    ap = LeagueSeason([game(1, 0, A, B, 1, 0, rnd="Apertura - 1"), game(2, 0, C, D, 0, 0, rnd="Apertura - 1"), game(3, 7, A, C, rnd="Apertura - 2")])
-    assert ap.remaining(A, {"id": 3, "kickoff": T0 + timedelta(days=7)}, now=now)["games"] == 2
+    assert est == {"games": 29, "exact": False, "season_games": 30}
+    # senza stagione precedente: nessuna stima (non si inventa "andata e ritorno")
+    assert LeagueSeason(games[:3]).remaining(A, target, now=now) is None
+    # Apertura: la lunghezza dell'Apertura dell'anno prima
+    ap = LeagueSeason(
+        [game(1, 0, A, B, 1, 0, rnd="Apertura - 1"), game(2, 0, C, D, 0, 0, rnd="Apertura - 1"), game(3, 7, A, C, rnd="Apertura - 2")],
+        {"apertura": 15, "clausura": 17},
+    )
+    assert ap.remaining(A, {"id": 3, "kickoff": T0 + timedelta(days=7)}, now=now)["games"] == 14
+    # turni con nomi diversi dall'anno prima ma tornei della stessa lunghezza (Costa Rica)
+    cr = LeagueSeason(games[:3], {"apertura": 14, "clausura": 14})
+    assert cr.remaining(A, target, now=now)["games"] == 13
+    # gara a eliminazione diretta: fase finale
+    ko = LeagueSeason(games[:2] + [game(3, 7, A, C, rnd="Quarter-finals")], {"": 30})
+    assert ko.remaining(A, target, now=now) == {"games": 0, "exact": True, "phase": "knockout"}
+    # stagione regolare finita
+    done = LeagueSeason(games[:3], {"": 1})
+    assert done.remaining(A, target, now=now)["phase"] == "end"
+
+
+def test_season_lengths_from_the_previous_season():
+    prev = [(A, B, "Regular Season - 1"), (C, D, "Regular Season - 1"), (A, C, "Regular Season - 2"), (B, D, "Regular Season - 2"), (A, B, "Final")]
+    assert season_lengths(prev) == {"": 2}
+    split = [(A, B, "Apertura - 1"), (C, D, "Apertura - 1"), (A, B, "Clausura - 1"), (C, D, "Clausura - 1"), (A, C, "Clausura - 2"), (B, D, "Clausura - 2")]
+    assert season_lengths(split) == {"apertura": 1, "clausura": 2}

@@ -44,7 +44,8 @@ from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.fixture import Fixture
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.team import Team
-from app.services.analyst.form import LeagueSeason, diff_level, goal_form, signs, strength
+from app.models.season import Season
+from app.services.analyst.form import LeagueSeason, diff_level, goal_form, season_lengths, signs, strength
 from app.services.analyst.journal import MARKETS, odds_read_at
 from app.services.analyst.rules import match_type
 
@@ -298,7 +299,46 @@ def league_seasons(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, 
                 "void": status in _VOID_STATUSES or status in FINISHED_STATUSES,
             }
         )
-    return {p: LeagueSeason(games.get(p, [])) for p in pairs}
+    lengths = _previous_season_lengths(db, pairs)
+    return {p: LeagueSeason(games.get(p, []), lengths.get(p)) for p in pairs}
+
+
+def _previous_season_lengths(db: Session, pairs: set[tuple[int, int]]) -> dict[tuple[int, int], dict[str, int]]:
+    """Gare di campionato per squadra nella stagione precedente (stima delle gare che mancano, 18/11/2026)."""
+    try:
+        current = {
+            int(r.id): (int(r.league_id), int(r.year))
+            for r in db.execute(select(Season.id, Season.league_id, Season.year).where(Season.id.in_({p[1] for p in pairs}))).all()
+        }
+        wanted = {(lg, yr - 1) for lg, yr in current.values()}
+        if not wanted:
+            return {}
+        previous = {
+            (int(r.league_id), int(r.year)): int(r.id)
+            for r in db.execute(
+                select(Season.id, Season.league_id, Season.year).where(
+                    Season.league_id.in_({w[0] for w in wanted}), Season.year.in_({w[1] for w in wanted})
+                )
+            ).all()
+        }
+        ids = set(previous.values())
+        by_season: dict[int, list[tuple[int, int, str | None]]] = defaultdict(list)
+        if ids:
+            for r in db.execute(
+                select(Fixture.season_id, Fixture.home_team_id, Fixture.away_team_id, Fixture.round).where(
+                    Fixture.season_id.in_(ids), Fixture.status.in_(FINISHED_STATUSES)
+                )
+            ).all():
+                by_season[int(r.season_id)].append((int(r.home_team_id), int(r.away_team_id), r.round))
+        out: dict[tuple[int, int], dict[str, int]] = {}
+        for pair in pairs:
+            lg_yr = current.get(pair[1])
+            prev_id = previous.get((lg_yr[0], lg_yr[1] - 1)) if lg_yr else None
+            if prev_id is not None and by_season.get(prev_id):
+                out[pair] = season_lengths(by_season[prev_id])
+        return out
+    except Exception:  # pragma: no cover - la stima e' solo un'informazione in piu'
+        return {}
 
 
 def data_check(season: LeagueSeason, target: dict[str, Any], teams: dict[str, tuple[int, str | None]]) -> list[str]:
