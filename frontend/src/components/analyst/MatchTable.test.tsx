@@ -219,4 +219,30 @@ describe('MatchTable', () => {
     const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' })
     expect(days).toContain(tomorrow)
   })
+
+  it('dati da verificare, gara rinviata, gare mancanti e gialli nascosti (18/11/2026)', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    const row = {
+      ...response.rows[0],
+      yellows: { home: { games: 1, available: false as const }, away: { games: 0, available: false as const } },
+      data_check: { level: 'red' as const, problems: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'] },
+      moved: { status: 'moved', kickoff: '2099-12-06T00:30:00+00:00' },
+      remaining: { home: { games: 4, exact: true }, away: { games: 9, exact: false, teams: 12, single_round: false } },
+      not_editable_reason: 'Dati della squadra da verificare (gara esclusa) · Gara spostata al 06/12',
+    }
+    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
+    render(<MatchTable />)
+    await screen.findAllByText('Casa FC')
+    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
+    expect(within(detail).getByText('Dati da verificare · gara esclusa')).toBeTruthy()
+    expect(within(detail).getByText(/due gare quasi nello stesso momento/)).toBeTruthy()
+    expect(within(detail).getByText(/Gara spostata al 06\/12: non si aggiunge al diario/)).toBeTruthy()
+    expect(within(detail).getByText(/Casa FC: mancano 4 gare · Ospite FC: circa 9 gare \(stima\)/)).toBeTruthy()
+    // gialli senza dati per nessuna delle due: il riquadro non c'e'
+    expect(within(detail).queryByText('Gialli ultime 5 gare')).toBeNull()
+    // nell'elenco: etichette rosse e grigie
+    const list = screen.getAllByRole('button', { pressed: true })[0]
+    expect(within(list).getByText('dati da verificare').className).toContain('bg-rose-100')
+    expect(within(list).getByText('spostata al 06/12')).toBeTruthy()
+  })
 })

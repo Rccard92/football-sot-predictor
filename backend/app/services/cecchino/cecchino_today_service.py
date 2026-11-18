@@ -20,6 +20,7 @@ from app.models.cecchino_today_fixture import (
     ELIGIBILITY_ERROR,
     ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE,
     ELIGIBILITY_EXCLUDED_CUP,
+    ELIGIBILITY_EXCLUDED_DATA_ERROR,
     ELIGIBILITY_EXCLUDED_FRIENDLY,
     ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
     ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE,
@@ -270,6 +271,17 @@ def _merge_stats_import_info(
     return merged
 
 
+def _team_data_problems(db: Session, local_fixture_id: int) -> list[str]:
+    """Controllo dei dati delle squadre (vedi analyst/form.py); un errore del controllo non ferma lo scan."""
+    try:
+        from app.services.analyst.table import fixture_data_problems
+
+        return fixture_data_problems(db, int(local_fixture_id))
+    except Exception:  # pragma: no cover - il controllo non deve mai bloccare lo scan
+        logger.exception("cecchino_today team data check failed fixture=%s", local_fixture_id)
+        return []
+
+
 def _extract_leakage_status(stats_snapshot: dict[str, Any] | None) -> str:
     if not stats_snapshot:
         return "undefined"
@@ -330,6 +342,13 @@ def _persist_post_calc_snapshot(
             eligibility_reason = eligibility.eligibility_reason
             blocking_reasons = eligibility.blocking_reasons
             stored_warnings = eligibility.warnings
+        if eligibility_status == ELIGIBILITY_ELIGIBLE:
+            # 18/11/2026: squadre con dati sbagliati (stesso codice per due squadre) fuori da tutto il tool
+            problems = _team_data_problems(db, local_fixture_id)
+            if problems:
+                eligibility_status = ELIGIBILITY_EXCLUDED_DATA_ERROR
+                eligibility_reason = "Dati della squadra da verificare: " + "; ".join(problems)
+                blocking_reasons = ["team_data_error"]
 
     brief = _item_brief(api_item)
     provider_fixture_id = brief["provider_fixture_id"]
@@ -340,7 +359,8 @@ def _persist_post_calc_snapshot(
         existing_map=existing_map,
     )
     was_eligible = previous_status == ELIGIBILITY_ELIGIBLE or is_protected_eligible(existing)
-    if was_eligible and eligibility_status != ELIGIBILITY_ELIGIBLE and existing is not None:
+    # i dati sbagliati della squadra escludono anche una gara gia' eleggibile (scan del giorno prima)
+    if was_eligible and eligibility_status not in (ELIGIBILITY_ELIGIBLE, ELIGIBILITY_EXCLUDED_DATA_ERROR) and existing is not None:
         outcome = preserve_eligible_snapshot(
             existing,
             reason_code=warning_code_for_incoming_status(eligibility_status),
@@ -3212,6 +3232,8 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
         ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE: "Esclusa perché le quote finali Cecchino non sono calcolabili",
         ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE: "Esclusa perché il KPI 1X2 non è calcolabile",
         ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED: "Esclusa perché il leakage check non è superato",
+        ELIGIBILITY_EXCLUDED_DATA_ERROR: row.eligibility_reason
+        or "Esclusa perché i dati di una squadra non sono affidabili (due squadre con lo stesso codice)",
     }
     if row.eligibility_status in labels:
         return labels[row.eligibility_status]

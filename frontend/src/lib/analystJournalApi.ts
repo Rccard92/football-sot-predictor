@@ -349,7 +349,14 @@ export type MatchTableRow = {
   goal_form?: GoalForm | null
   /** quando il tool ha letto le quote del book (09/11/2026) */
   odds_checked_at?: string | null
+  /** controllo dei dati delle squadre (18/11/2026): red = gara esclusa (es. due squadre con lo stesso codice) */
+  data_check?: { level: 'ok' | 'red'; problems: string[] }
+  /** gara rinviata o spostata rispetto alla fotografia del mattino (18/11/2026) */
+  moved?: { status: string; kickoff: string | null } | null
+  /** gare di campionato che mancano, compresa questa (18/11/2026) */
+  remaining?: { home: Remaining | null; away: Remaining | null }
 }
+export type Remaining = { games: number; exact: boolean; teams?: number; single_round?: boolean }
 export type MatchTableResponse = {
   day: string
   total: number
@@ -392,6 +399,10 @@ export type MatchStandings = {
   tables: Record<StandingsKind, StandingRow[]>
   /** ultime 5 partite delle due squadre (per id squadra): totale, in casa, fuori */
   recent?: Record<string, Record<StandingsKind, TableGame[]>>
+  /** classifica alla data della gara: solo gare finite prima di quest'ora (18/11/2026) */
+  as_of?: string | null
+  /** gare che mancano alle due squadre, per id squadra (18/11/2026) */
+  remaining?: Record<string, Remaining | null>
 }
 export const getMatchStandings = (todayFixtureId: number) => request<MatchStandings>(`/table/standings/${todayFixtureId}`)
 export type EntryReview = { user_id: number; user_name: string | null; text: string; tags?: string[]; updated_at: string | null; mine: boolean }

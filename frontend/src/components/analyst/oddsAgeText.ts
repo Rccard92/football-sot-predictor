@@ -1,7 +1,8 @@
 /** Ora della quota del tool (documento "Modifiche" di Giovanni, 09/11/2026): si vede sopra le quote, con un
- *  avviso se ha piu' di 6 ore (la quota del mattino nel pomeriggio, o quella di ieri per le partite di oggi). */
+ *  avviso se ha piu' di 12 ore (la quota del mattino nel pomeriggio, o quella di ieri per le partite di oggi). */
 
-export const STALE_HOURS = 6
+/** Avviso quote vecchie: 6 ore dal 09/11/2026, 12 ore dal 18/11/2026 (documento di Giovanni). */
+export const STALE_HOURS = 12
 
 export function oddsAge(iso: string | null | undefined, now: number = Date.now()): { text: string; hours: number; stale: boolean } | null {
   if (!iso) return null

@@ -156,3 +156,84 @@ def test_goal_form_alert_above_2_7():
 def test_signs_count_each_line():
     s = signs([{"ht": "0-0", "ft": "1-1"}, {"ht": "1-1", "ft": "2-2"}, {"ht": None, "ft": "3-1"}])
     assert s == {"ht_games": 2, "x_pt": 2, "u15_pt": 1, "ft_games": 3, "x": 2, "u25": 1, "u35": 1}
+
+
+# --- 18/11/2026: documento "Errori, modifiche, migliorie" di Giovanni ---
+
+from app.services.analyst.table import match_cutoff, moved_to, standings  # noqa: E402
+
+
+def test_postponed_match_keeps_the_form_at_the_original_date():
+    # FC Tulsa: in lista il 5 luglio, giocata il 6 agosto; nel frattempo altre due gare
+    games = [
+        game(1, 0, A, B, 2, 0),
+        game(2, 10, A, C, 1, 0),  # dopo la data originale
+        game(3, 20, A, D, 0, 0),  # dopo la data originale
+        game(9, 30, A, B),  # la gara rinviata, ora il 31° giorno
+    ]
+    season = LeagueSeason(games)
+    original = T0 + timedelta(days=5)
+    cutoff = match_cutoff(original, games[3]["kickoff"])
+    assert cutoff == original
+    recent = season.recent(A, {"id": 9, "kickoff": cutoff})
+    assert [g["id"] for g in recent] == [1]
+    # rinviata: segnalata, con la data nuova
+    moved = moved_to(original, games[3]["kickoff"], "NS")
+    assert moved == {"status": "moved", "kickoff": games[3]["kickoff"].isoformat()}
+    assert moved_to(original, original + timedelta(hours=2), "NS") is None
+    assert moved_to(original, original, "PST")["status"] == "PST"
+
+
+def test_table_at_the_date_does_not_contain_the_match_itself():
+    games = [game(1, 0, A, B, 1, 0), game(2, 0, C, D, 0, 0), game(3, 7, B, A, 3, 0)]
+    season = LeagueSeason(games)
+    before = season.table_games_before({"id": 3, "kickoff": games[2]["kickoff"]})
+    ranks, _ = standings([(g["home"], g["away"], g["gh"], g["ga"]) for g in before])
+    assert ranks[A] == 1 and ranks[B] == 4  # prima della gara del 7° giorno
+    after = season.table_games_before({"id": 99, "kickoff": T0 + timedelta(days=30)})
+    ranks_after, _ = standings([(g["home"], g["away"], g["gh"], g["ga"]) for g in after])
+    assert ranks_after[B] == 1
+
+
+def test_two_games_a_few_hours_apart_are_a_data_error():
+    # Rosario: lo stesso codice per due squadre, due gare il 1° novembre alle 19:00
+    games = [game(1, 0, A, B, 3, 2), {**game(2, 0, C, A, 1, 5), "kickoff": T0 + timedelta(minutes=30)}, game(3, 7, A, D)]
+    season = LeagueSeason(games)
+    problems = season.data_problems(A, {"id": 3, "kickoff": games[2]["kickoff"]})
+    assert len(problems) == 1 and "due gare" in problems[0]
+    assert season.data_problems(B, {"id": 3, "kickoff": games[2]["kickoff"]}) == []
+    # un recupero il giorno dopo (19 ore) non e' un errore
+    ok = LeagueSeason([game(1, 0, A, B, 1, 0), {**game(2, 0, A, C, 1, 0), "kickoff": T0 + timedelta(hours=19)}])
+    assert ok.data_problems(A, {"id": 9, "kickoff": T0 + timedelta(days=5)}) == []
+
+
+def test_more_games_than_the_median_plus_four_is_a_data_error():
+    teams = [10, 11, 12, 13, 14, 15]
+    games, gid = [], 0
+    for day in range(6):  # 6 giornate da 3 gare: tutte le squadre a 6 gare
+        for i in range(3):
+            gid += 1
+            games.append(game(gid, day * 7, teams[(i + day) % 6], teams[(i + day + 3) % 6], 1, 1))
+    for k in range(5):  # la squadra 10 ne ha 5 in piu' (fusa con un'altra), a giorni diversi
+        gid += 1
+        games.append(game(gid, 50 + k * 3, 10, 99, 2, 0))
+    season = LeagueSeason(games)
+    target = {"id": 1000, "kickoff": T0 + timedelta(days=80)}
+    assert any("mediana" in p for p in season.data_problems(10, target))
+    assert season.data_problems(11, target) == []
+
+
+def test_remaining_games_exact_with_calendar_or_estimated():
+    # calendario noto: gare da giocare oltre 3 giorni nel nostro archivio
+    now = T0 + timedelta(days=8)
+    games = [game(1, 0, A, B, 1, 0), game(2, 0, C, D, 0, 0), game(3, 7, A, C), game(4, 14, D, A), game(5, 21, A, B)]
+    season = LeagueSeason(games)
+    target = {"id": 3, "kickoff": games[2]["kickoff"]}
+    assert season.remaining(A, target, now=now) == {"games": 3, "exact": True}
+    # senza calendario: stima andata e ritorno (4 squadre: 6 gare), A ne ha giocata 1
+    season = LeagueSeason(games[:3])
+    est = season.remaining(A, target, now=now)
+    assert est["exact"] is False and est["games"] == 5 and est["teams"] == 4
+    # Apertura: solo andata (3 gare)
+    ap = LeagueSeason([game(1, 0, A, B, 1, 0, rnd="Apertura - 1"), game(2, 0, C, D, 0, 0, rnd="Apertura - 1"), game(3, 7, A, C, rnd="Apertura - 2")])
+    assert ap.remaining(A, {"id": 3, "kickoff": T0 + timedelta(days=7)}, now=now)["games"] == 2
