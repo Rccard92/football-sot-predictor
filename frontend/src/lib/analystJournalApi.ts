@@ -276,9 +276,11 @@ export type TableGame = {
   ht_outcome: TableOutcome | null
   bold_ft: boolean
   bold_ht: boolean
-  /** differenza punti avversaria - squadra alla data della gara, a parita' di partite (09/11/2026) */
+  /** dal 18/11/2026: punti a partita dell'avversaria meno i nostri, alla data della gara */
   diff?: number | null
-  /** strong da +3 (cornice), weak da -3, even in mezzo */
+  /** la vecchia differenza in punti (formula del 09/11), per confronto */
+  diff_points?: number | null
+  /** strong da +0,3 (cornice), weak da -0,3, even in mezzo */
   level?: DiffLevel | null
 }
 export type DiffLevel = 'strong' | 'even' | 'weak'
@@ -300,6 +302,8 @@ export type TableBlock =
       /** media dei +/- (09/11/2026): sopra 0 calendario duro, sotto 0 facile */
       strength?: number | null
       strength_level?: DiffLevel | null
+      /** la vecchia forza media in punti (prima del 18/11/2026) */
+      strength_points?: number | null
       signs?: TableSigns
       /** gare gia' passate senza risultato nel nostro archivio (date) */
       missing_results?: string[]
@@ -321,6 +325,10 @@ export type TableQuote = {
   goal_alert?: boolean
 }
 export type GoalForm = { goals: number; games: number; avg: number; alert: boolean; threshold: number; markets: string[] }
+/** primo tempo della squadra di casa (in casa) e dell'ospite (fuori) insieme (18/11/2026) */
+export type PtForm = GoalForm & { x_pt: number; u15_pt: number; x_pct: number; u15_pct: number }
+/** indice di affidabilita' dei dati della gara (18/11/2026) */
+export type Reliability = { level: 'green' | 'yellow' | 'red'; red: string[]; yellow: string[] }
 export type TableBlockKey = 'forma_casa' | 'forma_fuori' | 'forma_totale_casa' | 'forma_totale_fuori'
 export type MatchTableRow = {
   today_fixture_id: number
@@ -355,6 +363,8 @@ export type MatchTableRow = {
   moved?: { status: string; kickoff: string | null } | null
   /** gare di campionato che mancano, compresa questa (18/11/2026) */
   remaining?: { home: Remaining | null; away: Remaining | null }
+  pt_form?: PtForm | null
+  reliability?: Reliability
 }
 /** gare che mancano: esatte dal calendario, o stima con la lunghezza della stagione precedente (season_games);
  *  phase "knockout" = gara a eliminazione diretta, "end" = stagione regolare finita */

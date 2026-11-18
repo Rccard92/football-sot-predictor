@@ -69,7 +69,8 @@ from app.services.analyst.rules import (
     save_rules,
 )
 from app.services.analyst.closing import refresh_clv
-from app.services.analyst.form import GOAL_FORM_MARKETS
+from app.services.analyst.form import alert_markets
+from app.services.analyst.leagues import NOT_ADMITTED_REASON, league_admitted
 from app.services.analyst.table import day_rows, filter_rows, league_tables, row_for
 
 router = APIRouter(prefix="/analyst-journal", tags=["analyst-journal"])
@@ -287,8 +288,8 @@ def match_table(
                 **q,
                 "status": quota_status(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type")),
                 "warnings": [w["text"] for w in quota_warnings(rules, q["key"], q["quota"], q.get("quota_cecchino"), r.get("match_type"))],
-                # "forma da gol" (09/11/2026): avviso arancione, non cambia il colore della regola
-                "goal_alert": bool((r.get("goal_form") or {}).get("alert")) and q["key"] in GOAL_FORM_MARKETS,
+                # "forma da gol" (09/11/2026) e primo tempo (18/11): avviso arancione, non cambia il colore della regola
+                "goal_alert": q["key"] in alert_markets(r),
             }
             for q in r["quotes"]
         ]
@@ -415,14 +416,19 @@ def update_rules(body: dict[str, Any], principal: Principal = Depends(journal_pr
 
 
 def _table_alerts(db: Session, fx: CecchinoTodayFixture | None, market_key: str) -> dict[str, Any]:
-    """Avvisi della Tabella per una partita (09/11/2026): "forma da gol" e partita non editabile. Non bloccano."""
+    """Avvisi della Tabella per una partita (09/11/2026): "forma da gol" e partita non editabile. Non bloccano.
+
+    Dal 18/11/2026 il campionato non ammesso non si puo' aggiungere (decisione di Giovanni)."""
+    if fx is not None and not league_admitted(fx.country_name, fx.league_name):
+        return {"goal_form": None, "goal_alert": False, "editable": False, "not_editable_reason": NOT_ADMITTED_REASON}
     row = row_for(db, int(fx.id)) if fx is not None else None
     if row is None:
         return {"goal_form": None, "goal_alert": False, "editable": True, "not_editable_reason": None}
     form = row.get("goal_form")
     return {
         "goal_form": form,
-        "goal_alert": bool(form and form.get("alert") and market_key in GOAL_FORM_MARKETS),
+        "pt_form": row.get("pt_form"),
+        "goal_alert": market_key in alert_markets(row),
         "editable": bool(row.get("editable", True)),
         "not_editable_reason": row.get("not_editable_reason"),
     }
@@ -610,6 +616,9 @@ def create_entry(body: dict[str, Any], principal: Principal = Depends(journal_pr
     kickoff = fx.kickoff if fx.kickoff is None or fx.kickoff.tzinfo else fx.kickoff.replace(tzinfo=timezone.utc)
     if kickoff is not None and kickoff <= _now():
         raise HTTPException(status_code=400, detail="La partita è già iniziata: non si può più aggiungere al diario")
+    # 18/11/2026 (Giovanni): i campionati non ammessi restano nel tool ma si tolgono dal Diario e dai pronostici
+    if not league_admitted(fx.country_name, fx.league_name):
+        raise HTTPException(status_code=400, detail=f"{NOT_ADMITTED_REASON}: {fx.country_name} · {fx.league_name}")
     market_key = str(body.get("market_key") or "")
     market = MARKET_BY_KEY.get(market_key)
     if market is None:

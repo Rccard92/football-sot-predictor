@@ -45,7 +45,17 @@ from app.models.fixture import Fixture
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.team import Team
 from app.models.season import Season
-from app.services.analyst.form import LeagueSeason, diff_level, goal_form, season_lengths, signs, strength
+from app.services.analyst.form import (
+    LeagueSeason,
+    goal_form,
+    ppg_level,
+    pt_form,
+    season_lengths,
+    signs,
+    strength,
+    strength_ppg,
+)
+from app.services.analyst.leagues import league_admitted
 from app.services.analyst.journal import MARKETS, odds_read_at
 from app.services.analyst.rules import match_type
 
@@ -138,19 +148,27 @@ def standings(games: list[tuple[int, int, int, int]]) -> tuple[dict[int, int], b
 
 
 def _game(
-    g: dict[str, Any], team: int, ranks: dict[int, int], names: dict[int, str], diff: int | None = None
+    g: dict[str, Any],
+    team: int,
+    ranks: dict[int, int],
+    names: dict[int, str],
+    diff: float | None = None,
+    diff_points: int | None = None,
+    scored: bool = False,
 ) -> dict[str, Any]:
+    """Una gara della forma. diff = punti a partita dell'avversaria meno i nostri alla data (dal 18/11/2026);
+    diff_points = la vecchia differenza in punti (formula del 09/11), tenuta per confronto."""
     home = g["home"] == team
     gf, ga = (g["gh"], g["ga"]) if home else (g["ga"], g["gh"])
     hf, ha = (g["hth"], g["hta"]) if home else (g["hta"], g["hth"])
     opponent = g["away"] if home else g["home"]
     ft, ht = _outcome(gf, ga), _outcome(hf, ha)
-    if diff is None:
-        # Classifica (riquadro): posizione di oggi, come prima
+    if not scored:
+        # Classifica (riquadro): posizione nella classifica mostrata, come prima
         stronger = opponent in ranks and team in ranks and ranks[opponent] < ranks[team]
     else:
-        # Tabella (dal 09/11/2026): avversaria piu' forte di almeno 3 punti alla data della gara
-        stronger = diff_level(diff) == "strong"
+        # Tabella: avversaria piu' forte alla data della gara (dal 18/11/2026 di almeno 0,3 punti a partita)
+        stronger = ppg_level(diff) == "strong"
     return {
         "date": g["kickoff"].date().isoformat() if g["kickoff"] else None,
         "opponent_id": opponent,
@@ -162,7 +180,8 @@ def _game(
         "ft_outcome": ft,
         "ht_outcome": ht,
         "diff": diff,
-        "level": diff_level(diff),
+        "diff_points": diff_points,
+        "level": ppg_level(diff),
         # cornice e grassetto: vittorie, pareggi e sconfitte (pareggi dal 06/11/2026)
         "bold_ft": bool(stronger and ft),
         "bold_ht": bool(stronger and ht),
@@ -181,13 +200,18 @@ def _block(
     lacking = [g["kickoff"].date().isoformat() for g in (missing or []) if g["kickoff"]]
     if len(games) < MIN_GAMES:
         return {"games": len(games), "enough": False, "missing_results": lacking}
-    rows = [_game(g, team, ranks, names, season.diff(team, g) if season else None) for g in games]
+    rows = [
+        _game(g, team, ranks, names, season.diff_ppg(team, g), season.diff(team, g), scored=True)
+        if season
+        else _game(g, team, ranks, names)
+        for g in games
+    ]
     points = sum(3 if r["ft_outcome"] == "V" else 1 if r["ft_outcome"] == "N" else 0 for r in rows)
     scored = sum(int(r["ft"].split("-")[0]) for r in rows if r["ft"])
     conceded = sum(int(r["ft"].split("-")[1]) for r in rows if r["ft"])
     halves = [r["ht"] for r in rows if r["ht"]]
     diffs = [r["diff"] for r in rows if r["diff"] is not None]
-    avg = strength(diffs)
+    avg = strength_ppg(diffs)
     return {
         "games": len(rows),
         "enough": True,
@@ -202,8 +226,10 @@ def _block(
         "results": rows,
         "team_rank": ranks.get(team),
         # dal 09/11/2026
+        # forza media in punti a partita (18/11/2026): da +0,3 avversarie piu' forti, da -0,3 piu' deboli
         "strength": avg,
-        "strength_level": None if avg is None else "strong" if avg >= 3 else "weak" if avg <= -3 else "even",
+        "strength_level": ppg_level(avg),
+        "strength_points": strength([r["diff_points"] for r in rows if r.get("diff_points") is not None]),
         "signs": signs(rows),
         "missing_results": lacking,
     }
@@ -339,6 +365,41 @@ def _previous_season_lengths(db: Session, pairs: set[tuple[int, int]]) -> dict[t
         return out
     except Exception:  # pragma: no cover - la stima e' solo un'informazione in piu'
         return {}
+
+
+ODDS_OLD_HOURS = 12
+
+
+def _reliability(
+    *,
+    problems: list[str],
+    future_games: list[dict[str, Any]],
+    standings_complete: bool,
+    odds_at: datetime | None,
+    kickoff: datetime | None,
+    cards: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Indice di affidabilita' della gara (Modifica 1 di Giovanni, 18/11/2026).
+
+    Rosso (gara esclusa): dati della squadra sbagliati (due gare a meno di 12 ore, gare oltre la mediana + 4),
+    forma con gare giocate dopo la partita. Il campionato non ammesso non arriva qui: e' gia' fuori dalla Tabella.
+    Giallo (solo da leggere): classifica incompleta, quote lette piu' di 12 ore prima del via, ammonizioni mancanti.
+    Verde: tutto a posto.
+    Non usati, perche' con i nostri dati non possono scattare: "punti diversi da 3V+N" e "somma delle gare
+    dispari" (la classifica la ricostruiamo noi dai risultati, quindi e' sempre coerente)."""
+    red = list(problems)
+    if future_games:
+        red.append("Forma con gare giocate dopo la partita")
+    yellow: list[str] = []
+    if not standings_complete:
+        yellow.append("Classifica incompleta (mancano alcuni risultati)")
+    odds_at, kickoff = _aware(odds_at), _aware(kickoff)
+    if odds_at and kickoff and (kickoff - odds_at).total_seconds() > ODDS_OLD_HOURS * 3600:
+        yellow.append(f"Quote lette più di {ODDS_OLD_HOURS} ore prima della gara")
+    if not all((c or {}).get("available") for c in cards.values()):
+        yellow.append("Ammonizioni mancanti")
+    level = "red" if red else "yellow" if yellow else "green"
+    return {"level": level, "red": red, "yellow": yellow}
 
 
 def data_check(season: LeagueSeason, target: dict[str, Any], teams: dict[str, tuple[int, str | None]]) -> list[str]:
@@ -484,6 +545,8 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         )
         .order_by(CecchinoTodayFixture.kickoff.asc().nulls_last(), CecchinoTodayFixture.id.asc())
     ).scalars().all()
+    # dal 18/11/2026: solo i campionati ammessi (campionati_ammessi.txt, decisione di Giovanni)
+    fixtures = [f for f in fixtures if league_admitted(f.country_name, f.league_name)]
     if not fixtures:
         return []
     locals_ = {
@@ -567,6 +630,20 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         quotes = _quotes(f)
         main = {q["key"]: q["quota"] for q in quotes}
         kickoff = _aware(f.kickoff)
+        cards = {
+            "home": _cards(games["forma_totale_casa"], home, yellows),
+            "away": _cards(games["forma_totale_fuori"], away, yellows),
+        }
+        reliability = _reliability(
+            problems=problems,
+            future_games=[
+                g for gs in games.values() for g in gs if target["kickoff"] and g["kickoff"] and g["kickoff"] >= target["kickoff"]
+            ],
+            standings_complete=complete,
+            odds_at=odds_read_at(f),
+            kickoff=target["kickoff"],
+            cards=cards,
+        )
         out.append(
             {
                 "today_fixture_id": int(f.id),
@@ -579,10 +656,7 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "eligible": f.eligibility_status == "eligible",
                 "balance": {"index": round(idx, 1) if idx is not None else None, "class": cls} if cls or idx is not None else None,
                 "blocks": blocks,
-                "yellows": {
-                    "home": _cards(games["forma_totale_casa"], home, yellows),
-                    "away": _cards(games["forma_totale_fuori"], away, yellows),
-                },
+                "yellows": cards,
                 "standings_complete": complete,
                 "home_rank": ranks.get(home),
                 "away_rank": ranks.get(away),
@@ -591,6 +665,10 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 "editable": not reasons,
                 "not_editable_reason": " · ".join(reasons) if reasons else None,
                 "goal_form": goal_form(blocks["forma_casa"], blocks["forma_fuori"]),
+                # riquadro primo tempo con la media delle due squadre e avviso sopra 1,5 gol PT (18/11/2026)
+                "pt_form": pt_form(blocks["forma_casa"], blocks["forma_fuori"]),
+                # indice di affidabilita' dei dati della gara (18/11/2026)
+                "reliability": reliability,
                 # ora in cui il tool ha letto le quote (09/11/2026): sopra le quote, avviso oltre 12 ore (18/11)
                 "odds_checked_at": _iso_or_none(odds_read_at(f)),
                 # dal 18/11/2026
