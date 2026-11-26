@@ -56,7 +56,10 @@ from app.services.analyst.form import (
     strength_ppg,
 )
 from app.services.analyst.leagues import league_admitted
+from app.services.analyst.motivation import LAST_ROUNDS, close_games, end_of_season
 from app.services.analyst.table_extras import compute_extras
+from app.services.analyst.weather import weather_for, weather_view
+from app.services.analyst.zones import zones_for
 from app.services.analyst.journal import MARKETS, odds_read_at
 from app.services.analyst.rules import match_type
 
@@ -593,6 +596,10 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
     team_ids = {g[k] for blocks in picked.values() for gs in blocks.values() for g in gs for k in ("home", "away")}
     team_ids |= {int(r.home_team_id) for r in locals_.values()} | {int(r.away_team_id) for r in locals_.values()}
     names = {int(i): n for i, n in db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all()} if team_ids else {}
+    # capitolato del 24/11/2026: meteo (modifiche 5 e 13) e zone della classifica (modifica 17)
+    weather = weather_for(db, {int(r.id) for r in locals_.values()})
+    zones = zones_for(db, pairs)
+    computed_at = now.isoformat()
     balance = {
         int(fid): (float(idx) if idx is not None else None, cls)
         for fid, idx, cls in db.execute(
@@ -646,9 +653,24 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
         }
         extra = extras.get(int(f.id)) or {}
         squads = extra.get("squads") or {}
-        for side in squads.values():
+        for side_key, block_key in (("home", "forma_totale_casa"), ("away", "forma_totale_fuori")):
+            side = squads.get(side_key) or {}
+            by_date = {r["date"]: r for r in (blocks[block_key].get("results") or [])} if blocks[block_key].get("enough") else {}
             for h in side.get("history") or []:
                 h["opponent"] = names.get(h.get("opponent_id"))
+                # modifica 7 (24/11/2026): la riga dello storico ha anche casa/fuori, posizione, forza e risultato
+                r = by_date.get(h.get("date"))
+                if r is not None:
+                    for k in ("home", "opponent_rank", "level", "ft", "ht", "ft_outcome"):
+                        h[k] = r.get(k)
+        remaining = {"home": season.remaining(home, target, now=now), "away": season.remaining(away, target, now=now)}
+        season_end = None
+        try:
+            season_end = _season_end(
+                season, target, f, home, away, remaining, names, zones.get(pair), extra.get("schedule"), {q["key"]: q["quota"] for q in _quotes(f)}, now
+            )
+        except Exception:  # noqa: BLE001 - un avviso non deve mai togliere la gara dalla Tabella
+            season_end = None
         reliability = _reliability(
             problems=problems,
             future_games=[
@@ -690,17 +712,62 @@ def compute_day(db: Session, day: date) -> list[dict[str, Any]]:
                 # dal 18/11/2026
                 "data_check": {"level": "red", "problems": problems} if problems else {"level": "ok", "problems": []},
                 "moved": moved,
-                "remaining": {
-                    "home": season.remaining(home, target, now=now),
-                    "away": season.remaining(away, target, now=now),
-                },
+                "remaining": remaining,
                 # migliorie 1-3 (18/11/2026): movimento quote a 75', ultima/prossima gara, formazioni
                 "odds_move": extra.get("odds_move"),
                 "schedule": extra.get("schedule"),
                 "squads": squads or None,
+                # capitolato del 24/11/2026
+                "computed_at": computed_at,
+                "weather": weather_view(weather.get(int(loc.id)), loc.kickoff_at),
+                "close_games": close_games(f.home_team_name or "Casa", f.away_team_name or "Trasferta", extra.get("schedule")),
+                "season_end": season_end,
             }
         )
     return out
+
+
+def _season_end(
+    season: LeagueSeason,
+    target: dict[str, Any],
+    f: CecchinoTodayFixture,
+    home: int,
+    away: int,
+    remaining: dict[str, Any],
+    names: dict[int, str],
+    zones_row: dict[str, Any] | None,
+    schedule: dict[str, Any] | None,
+    main: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Fine campionato e motivazione (modifica 17): solo quando a una delle due squadre restano 8 gare o meno."""
+    games = [x["games"] for x in remaining.values() if x and not x.get("phase") and x.get("games") is not None]
+    if not games or min(games) > LAST_ROUNDS:
+        return None
+    rows = [(int(g["home"]), int(g["away"]), int(g["gh"]), int(g["ga"])) for g in season.table_games_before(target)]
+    table = _table(rows, names, "total")
+    left: dict[int, int] = {}
+    for r in table:
+        rem = season.remaining(int(r["team_id"]), target, now=now)
+        if rem is None or rem.get("phase") == "knockout":
+            left = {}
+            break
+        left[int(r["team_id"])] = int(rem.get("games") or 0)
+    h, a = main.get("HOME"), main.get("AWAY")
+    favorite = ("home" if h < a else "away" if a < h else None) if h and a else None
+    return end_of_season(
+        home_id=home,
+        away_id=away,
+        home=f.home_team_name or "Casa",
+        away=f.away_team_name or "Trasferta",
+        remaining=remaining,
+        table=table,
+        left=left,
+        zones_row=zones_row,
+        country=f.country_name,
+        favorite=favorite,
+        schedule=schedule,
+    )
 
 
 def row_for(db: Session, today_fixture_id: int) -> dict[str, Any] | None:

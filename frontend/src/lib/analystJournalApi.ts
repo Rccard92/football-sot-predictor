@@ -66,7 +66,40 @@ export type JournalMeta = {
   error_codes?: Record<string, string>
   review_tags?: Record<string, string>
   match_types?: string[]
+  /** «Prima di salvare» (capitolato del 24/11/2026) */
+  answers?: { key: AnswerKey; label: string }[]
+  answer_values?: Record<AnswerValue, string>
+  risk_note_min?: number
+  exception_min?: number
+  photos?: { max: number; max_mb: number; caption_min: number }
 }
+
+export type AnswerKey = 'assenze' | 'allenatore' | 'motivazione'
+export type AnswerValue = 'si' | 'no' | 'nv'
+export type Answers = Partial<Record<AnswerKey, AnswerValue>>
+/** scheda tecnica salvata con la giocata e non modificabile (modifica 12) */
+export type TechSheet = {
+  saved_at?: string
+  quota?: number
+  q?: number | null
+  q_at?: string | null
+  q_source?: 't75' | 'morning' | null
+  quota_cecchino?: number | null
+  value?: number | null
+  state?: SignState | null
+  cecchino_version?: string
+  kpi_version?: string | null
+  rules_version?: string
+  rules_checked?: string[]
+  violated?: string[]
+  violated_text?: string[]
+  notes?: string[]
+  exception?: boolean
+  exception_reason?: string | null
+  alerts?: HeaderAlert[]
+}
+export type EntryPhoto = { id: number; caption: string; uploaded_at: string | null; after_kickoff: boolean; width: number; height: number; url: string }
+export type EntryChange = { field: string; old: string | null; new: string | null; after_kickoff: boolean; at: string | null }
 
 /** Cosa diceva il tool quando la giocata e' stata scelta (dalla pagina di origine). */
 export type ToolSnapshot = {
@@ -141,6 +174,12 @@ export type JournalEntry = {
   profit: number | null
   profit_units: number | null
   locked: boolean
+  /** capitolato del 24/11/2026 */
+  is_exception?: boolean
+  exception_reason?: string | null
+  answers?: Answers | null
+  risk_note?: string | null
+  tech?: TechSheet | null
 }
 
 export type FixtureInfo = {
@@ -232,6 +271,18 @@ export type JournalReport = {
   groups: string[]
   errors?: (ReportRow & { code: string; label: string })[]
   rules?: (ReportRow & { key: 'dentro' | 'fuori'; label: string })[]
+  /** quanto vale ogni regola (modifica 11) */
+  rule_value?: RuleValue
+}
+
+export type RuleGroup = { key: string; label: string; entries: number; settled: number; won: number; lost: number; units: number }
+export type RuleValue = {
+  groups: RuleGroup[]
+  hypothesis: RuleGroup
+  rule: string | null
+  alert: string | null
+  rule_filters: string[]
+  alert_filters: Record<string, string>
 }
 
 export type EntryInput = {
@@ -249,6 +300,11 @@ export type EntryInput = {
   analysis_note?: string
   notes?: string
   minutes_spent?: number | null
+  /** «Prima di salvare» ed eccezione (24/11/2026) */
+  answers?: Answers
+  risk_note?: string
+  exception?: boolean
+  exception_reason?: string
 }
 
 export type Filters = { date_from?: string; date_to?: string; user_id?: number | null }
@@ -262,6 +318,23 @@ export const listEntries = (f: Filters & { cycle_id?: number; outcome?: Outcome 
 export const createEntry = (input: EntryInput) => send<{ entry: JournalEntry }>('POST', '/entries', input)
 export const updateEntry = (id: number, input: Partial<EntryInput>) => send<{ entry: JournalEntry }>('PATCH', `/entries/${id}`, input)
 export const deleteEntry = (id: number) => send<{ deleted: number }>('DELETE', `/entries/${id}`)
+export const getEntry = (id: number) => request<{ entry: JournalEntry; changes: EntryChange[]; photos: EntryPhoto[] }>(`/entries/${id}`)
+export const uploadEntryPhoto = (id: number, file: File, caption: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('caption', caption)
+  return request<{ photo: EntryPhoto }>(`/entries/${id}/photos`, { method: 'POST', body: form })
+}
+export const removeEntryPhoto = (id: number, photoId: number) => send<{ removed: number }>('DELETE', `/entries/${id}/photos/${photoId}`)
+/** l'immagine si legge con il cookie di sessione e si mostra come blob (anche quando il sito e l'API sono su domini diversi) */
+export async function photoBlobUrl(photo: EntryPhoto): Promise<string> {
+  const res = await fetch(`${getApiBase()}${photo.url}`, { credentials: 'include' })
+  if (!res.ok) throw new AdminHttpError(res.status, 'Foto non disponibile', null)
+  return URL.createObjectURL(await res.blob())
+}
+/** segno bloccato scelto: si salva sulla carta (modifica 11) */
+export const savePaperPlay = (todayFixtureId: number, marketKey: string) =>
+  send<{ saved: boolean; id?: number }>('POST', '/paper', { today_fixture_id: todayFixtureId, market_key: marketKey })
 export const listCycles = (f: { user_id?: number | null; status?: string } = {}) => request<{ cycles: Cycle[] }>(`/cycles${qs(f)}`)
 export const getCycle = (id: number, quota?: number | null) =>
   request<{ cycle: Cycle; entries: JournalEntry[] }>(`/cycles/${id}${qs({ quota: quota ?? undefined })}`)
@@ -379,7 +452,44 @@ export type MatchTableRow = {
   schedule?: { home: TeamSchedule | null; away: TeamSchedule | null } | null
   /** formazioni e indisponibili (18/11/2026) */
   squads?: { home?: TeamSquad; away?: TeamSquad } | null
+  /** capitolato del 24/11/2026 */
+  evaluation?: RowEvaluation
+  computed_at?: string | null
+  weather?: WeatherView | null
+  close_games?: { code: string; label: string; text: string } | null
+  season_end?: SeasonEnd | null
 }
+export type SignState = 'playable' | 'check' | 'blocked' | 'out'
+export type SignReason = { code: string; rule?: string; text: string; short?: string }
+export type EvaluatedSign = {
+  key: string
+  label: string
+  group: string
+  /** Q: la quota usata dalle regole (seconda lettura se c'e', altrimenti mattino) */
+  q: number | null
+  q_at: string | null
+  q_source: 't75' | 'morning' | null
+  morning: number | null
+  change: number | null
+  prob_book: number | null
+  quota_cecchino: number | null
+  prob_cecchino: number | null
+  value: number | null
+  state: SignState
+  reasons: SignReason[]
+  notes: SignReason[]
+}
+export type RowEvaluation = {
+  signs: EvaluatedSign[]
+  counts: Record<SignState, number>
+  odds_at: string | null
+  second_read: { done: boolean; at: string | null; due: string | null }
+}
+export type WeatherHour = { at: string; temperature: number | null; precipitation: number | null; wind: number | null; code: number | null; icon: string; text: string }
+export type WeatherView = { status: 'ok' | 'nd'; fetched_at: string | null; kickoff?: WeatherHour; hours?: WeatherHour[] }
+export type HeaderAlert = { code: string; text: string }
+export type TeamMotivation = { status: 'decisa' | 'lotta' | 'salvezza' | 'senza'; text: string; best: number; worst: number; rank: number }
+export type SeasonEnd = { code: string; label: string; text: string; home: TeamMotivation | null; away: TeamMotivation | null; alerts: HeaderAlert[] }
 export type OddsMoveMarket = {
   key: string
   morning_quota: number | null
@@ -411,7 +521,20 @@ export type TeamSquad = {
   injured: { name: string | null; kind: string | null; reason: string | null; starter: boolean }[]
   missing_starters: number
   probable: SquadPlayer[] | null
-  history: { date: string | null; opponent?: string | null; rosa: { complete: boolean; missing: number; text: string; players?: (string | null)[] } | null }[]
+  history: {
+    date: string | null
+    opponent?: string | null
+    rosa: { complete: boolean; missing: number; text: string; players?: (string | null)[] } | null
+    /** dal 26/11/2026: casa/fuori, posizione, forza e risultato della stessa gara della forma */
+    home?: boolean
+    opponent_rank?: number | null
+    level?: DiffLevel | null
+    ft?: string | null
+    ht?: string | null
+    ft_outcome?: TableOutcome | null
+  }[]
+  /** il fornitore ha dato gli indisponibili per questa gara (altrimenti "n.d.", mai 0) */
+  injuries_known?: boolean
 }
 export type OddsMovesSummary = {
   reads: number
@@ -440,12 +563,33 @@ export type MatchTableResponse = {
   leagues: string[]
   rows: MatchTableRow[]
   can_write: boolean
+  match_types?: string[]
+  rules_version?: string
+  odds_at?: string | null
 }
-export type MatchTableParams = { day?: string; upcoming?: boolean; country?: string; league?: string; q?: string; page?: number }
+export type MatchTableParams = {
+  day?: string
+  upcoming?: boolean
+  country?: string
+  league?: string
+  q?: string
+  page?: number
+  playable?: boolean
+  match_type?: string
+}
 
 export const getMatchTable = (p: MatchTableParams = {}) =>
   request<MatchTableResponse>(
-    `/table${qs({ day: p.day, upcoming: p.upcoming === undefined ? undefined : String(p.upcoming), country: p.country, league: p.league, q: p.q, page: p.page })}`,
+    `/table${qs({
+      day: p.day,
+      upcoming: p.upcoming === undefined ? undefined : String(p.upcoming),
+      country: p.country,
+      league: p.league,
+      q: p.q,
+      page: p.page,
+      playable: p.playable ? 'true' : undefined,
+      match_type: p.match_type,
+    })}`,
   )
 export type StandingRow = {
   rank: number
@@ -485,7 +629,19 @@ export const saveEntryReview = (entryId: number, text: string, tags?: string[]) 
 // --- regole di acquisto (07/11/2026) ---
 export type RuleWarning = { code: string; text: string }
 export type MarketRule = { min?: number; max?: number; cecchino_mult?: number; avoid?: boolean }
-export type BuyRules = { checklist_min: number; under_no_squilibrio: boolean; markets: Record<string, MarketRule> }
+export type BuyRules = {
+  checklist_min: number
+  under_no_squilibrio: boolean
+  markets: Record<string, MarketRule>
+  /** blocchi del 24/11/2026 */
+  r1_pct?: number
+  r1_block?: boolean
+  r2_home_points_min?: number
+  r2_home_block?: boolean
+  r2_pt_zero_min?: number
+  r2_pt_block?: boolean
+  anomaly_pct?: number
+}
 export type PlayCheck = {
   match_type: string | null
   quota_cecchino: number | null
@@ -496,6 +652,12 @@ export type PlayCheck = {
   goal_alert?: boolean
   editable?: boolean
   not_editable_reason?: string | null
+  /** dal 26/11/2026: stato del segno su Q, quota presa diversa da Q, avvisi della testata */
+  sign?: EvaluatedSign | null
+  state_label?: string | null
+  quota_gap?: { pct: number; text: string } | null
+  alerts?: HeaderAlert[]
+  rules_version?: string
 }
 export const checkPlay = (input: { today_fixture_id: number; market_key: string; quota: number | null; checklist?: Checklist }) =>
   send<PlayCheck>('POST', '/check', input)
@@ -504,7 +666,7 @@ export const saveBuyRules = (rules: BuyRules) => send<{ rules: BuyRules }>('POST
 export const saveMatchNote = (todayFixtureId: number, note: string) =>
   send<{ today_fixture_id: number; note: string }>('POST', `/table/notes/${todayFixtureId}`, { note })
 
-export const getJournalReport = (f: Filters = {}) => request<JournalReport>(`/reports${qs(f)}`)
+export const getJournalReport = (f: Filters & { rule?: string | null; alert?: string | null } = {}) => request<JournalReport>(`/reports${qs(f)}`)
 export const journalExportUrl = (f: Filters = {}) => `${getApiBase()}${BASE}/export.xlsx${qs(f)}`
 
 export const OUTCOME_LABELS: Record<Outcome, string> = { pending: 'In corso', won: 'Vinta', lost: 'Persa', void: 'Nulla' }

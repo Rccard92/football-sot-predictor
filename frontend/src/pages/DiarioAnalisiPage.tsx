@@ -15,7 +15,14 @@ import {
   getJournalMeta,
   getJournalReport,
   getOddsMoves,
+  getEntry,
+  photoBlobUrl,
+  removeEntryPhoto,
+  uploadEntryPhoto,
+  type EntryChange,
+  type EntryPhoto,
   type OddsMovesSummary,
+  type RuleValue,
   journalExportUrl,
   listAnalysts,
   listCycles,
@@ -371,7 +378,7 @@ function EntriesTab({ meta, filters }: { meta: JournalMeta; filters: Filters }) 
                         className="mt-1 block w-fit rounded-full bg-rose-50 px-2 py-0.5 text-[12px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200"
                         title={(e.rule_warnings ?? []).map((w) => w.text).join(' · ')}
                       >
-                        fuori regola
+                        {e.is_exception ? 'eccezione' : 'fuori regola'}
                       </span>
                     ) : null}
                     {e.to_review ? (
@@ -456,28 +463,217 @@ function ClosingLine({ entry }: { entry: JournalEntry }) {
   return <p className="mt-1 text-[13px] text-slate-500">{bits.join(' · ')}</p>
 }
 
+const ANSWER_LABELS: Record<string, string> = { assenze: 'Assenze pesanti confermate', allenatore: 'Cambio allenatore o crisi', motivazione: 'Motivazione particolare' }
+const ANSWER_TEXT: Record<string, string> = { si: 'sì', no: 'no', nv: 'non verificato' }
+const FIELD_LABELS: Record<string, string> = {
+  market_key: 'segno',
+  quota: 'quota presa',
+  bookmaker: 'bookmaker',
+  stake: 'puntata',
+  stake_suggested: 'puntata suggerita',
+  cycle_id: 'progressione',
+  checklist_json: 'scheda pronostico',
+  analysis_note: 'modalità di intervento',
+  notes: 'note',
+  minutes_spent: 'minuti di analisi',
+  answers_json: 'tre domande',
+  risk_note: 'cosa potrebbe smentirla',
+}
+
+function dateTime(iso: string | null | undefined): string {
+  if (!iso) return 'n.d.'
+  return new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function hourOf(iso: string | null | undefined): string {
+  return iso ? new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }) : 'n.d.'
+}
+
+/** Scheda tecnica della giocata (modifica 12): salvata da sola, non modificabile; sotto, le modifiche successive. */
+function TechSheetBox({ entry, changes }: { entry: JournalEntry; changes: EntryChange[] | null }) {
+  const t = entry.tech
+  if (!t) return null
+  const before = entry.kickoff && t.saved_at ? new Date(t.saved_at) < new Date(entry.kickoff) : true
+  const rowsData: [string, string][] = [
+    ['Salvata il', `${dateTime(t.saved_at)}${before ? ' (prima del via)' : ''}`],
+    ['Quota presa · quota del tool', `${String(t.quota ?? entry.quota).replace('.', ',')} · ${t.q != null ? t.q.toFixed(2).replace('.', ',') : 'n.d.'}`],
+    ['Ora della quota usata dalle regole', `${hourOf(t.q_at)}${t.q_source === 't75' ? ' (seconda lettura)' : t.q_source === 'morning' ? ' (mattino)' : ''}`],
+    ['Versione Cecchino', t.cecchino_version ?? 'n.d.'],
+    ['Versione regole', t.rules_version ?? 'n.d.'],
+    ['Regole rispettate · violate', `${(t.violated ?? []).length ? 'tutte le altre' : 'tutte'} · ${(t.violated_text ?? []).join(', ') || 'nessuna'}`],
+    ['Eccezione', t.exception ? `sì · ${t.exception_reason ?? ''}` : 'no'],
+    ['Avvisi attivi al salvataggio', (t.alerts ?? []).map((a) => a.text).join(' · ') || 'nessuno'],
+  ]
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-sm font-semibold text-slate-800">Giocata salvata · scheda tecnica</p>
+      <table className="mt-1 w-full text-[13px]">
+        <tbody>
+          {rowsData.map(([k, v]) => (
+            <tr key={k} className="border-b border-slate-100">
+              <td className="w-56 py-1 pr-2 text-slate-500">{k}</td>
+              <td className="py-1 text-slate-800">{v}</td>
+            </tr>
+          ))}
+          <tr>
+            <td className="py-1 pr-2 align-top text-slate-500">Modifiche dopo il salvataggio</td>
+            <td className="py-1 text-slate-800">
+              {changes === null
+                ? '…'
+                : changes.length
+                  ? changes.map((c, i) => (
+                      <span key={i} className="block">
+                        {dateTime(c.at)} · {FIELD_LABELS[c.field] ?? c.field}
+                        {c.after_kickoff ? ' (dopo il via)' : ''}
+                      </span>
+                    ))
+                  : 'nessuna'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Foto della giocata (modifica 18): miniature con didascalia e ora; dopo il via si aggiungono ma non si tolgono. */
+function PhotosBox({ entry, photos, mine, onChanged }: { entry: JournalEntry; photos: EntryPhoto[] | null; mine: boolean; onChanged: () => void }) {
+  const [urls, setUrls] = useState<Record<number, string>>({})
+  const [open, setOpen] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [caption, setCaption] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let alive = true
+    const made: string[] = []
+    for (const p of photos ?? []) {
+      photoBlobUrl(p).then(
+        (u) => {
+          made.push(u)
+          if (alive) setUrls((x) => ({ ...x, [p.id]: u }))
+        },
+        () => undefined,
+      )
+    }
+    return () => {
+      alive = false
+      made.forEach((u) => URL.revokeObjectURL(u))
+    }
+  }, [photos])
+  const add = async () => {
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) return toast.error('Foto troppo grande: massimo 5 MB')
+    if (caption.trim().length < 5) return toast.error('Scrivi la didascalia (almeno 5 caratteri)')
+    setBusy(true)
+    try {
+      await uploadEntryPhoto(entry.id, file, caption.trim())
+      setFile(null)
+      setCaption('')
+      onChanged()
+    } catch (e) {
+      toast.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async (p: EntryPhoto) => {
+    if (!window.confirm('Togliere questa foto? Si può solo prima del via.')) return
+    try {
+      await removeEntryPhoto(entry.id, p.id)
+      onChanged()
+    } catch (e) {
+      toast.error(errorText(e))
+    }
+  }
+  if (!photos) return null
+  if (!photos.length && !mine) return null
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+      <p className="text-sm font-semibold text-slate-800">Foto</p>
+      {photos.length ? (
+        <div className="flex flex-wrap gap-3">
+          {photos.map((p) => (
+            <figure key={p.id} className="w-28 text-[12px] text-slate-600">
+              <button type="button" onClick={() => urls[p.id] && setOpen(urls[p.id])} className="block h-20 w-28 overflow-hidden rounded-lg bg-slate-100">
+                {urls[p.id] ? <img src={urls[p.id]} alt={p.caption} className="h-full w-full object-cover" /> : null}
+              </button>
+              <figcaption className="mt-0.5">
+                {p.caption}
+                <span className="block text-slate-400">{dateTime(p.uploaded_at)}</span>
+                {p.after_kickoff ? <span className="mt-0.5 inline-block rounded bg-slate-100 px-1 text-slate-500">aggiunta dopo il via</span> : null}
+                {mine && !entry.locked && !p.after_kickoff ? (
+                  <button type="button" className="block text-rose-700 underline" onClick={() => void remove(p)}>
+                    togli
+                  </button>
+                ) : null}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] text-slate-500">Nessuna foto.</p>
+      )}
+      {mine && photos.length < 5 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[13px]" />
+          <input className="min-w-[180px] flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" placeholder="didascalia" value={caption} onChange={(e) => setCaption(e.target.value)} />
+          <button type="button" className={btn} disabled={!file || busy} onClick={() => void add()}>
+            {busy ? 'Carico…' : 'Allega foto'}
+          </button>
+          <p className="w-full text-[12px] text-slate-400">
+            Niente foto con nomi, saldo o dati del conto: ritaglia prima di caricare.{entry.locked ? ' Dopo il via la foto resta con l’etichetta «aggiunta dopo il via».' : ''}
+          </p>
+        </div>
+      ) : null}
+      {open ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/70 p-4" onClick={() => setOpen(null)} role="dialog" aria-modal="true">
+          <img src={open} alt="" className="max-h-full max-w-full rounded-lg" />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry; meta: JournalMeta; onClose: () => void; onChanged: () => void }) {
   // solo il proprietario modifica; l'amministratore legge i diari degli altri
   const mine = meta.can_write && meta.user_id === entry.user_id
+  const newStyle = Boolean(entry.answers)
   const [checklist, setChecklist] = useState<Checklist>(entry.checklist)
   const [analysisNote, setAnalysisNote] = useState(entry.analysis_note ?? '')
+  const [risk, setRisk] = useState(entry.risk_note ?? '')
   const [notes, setNotes] = useState(entry.notes ?? '')
   const [minutes, setMinutes] = useState(entry.minutes_spent ? String(entry.minutes_spent) : '')
   const [quota, setQuota] = useState(String(entry.quota))
   const [bookmaker, setBookmaker] = useState(entry.bookmaker ?? '')
   const [stake, setStake] = useState(entry.stake ? String(entry.stake) : '')
   const [busy, setBusy] = useState(false)
+  const [detail, setDetail] = useState<{ changes: EntryChange[]; photos: EntryPhoto[] } | null>(null)
+  const loadDetail = useCallback(() => {
+    getEntry(entry.id).then(
+      (d) => setDetail({ changes: d.changes, photos: d.photos }),
+      () => setDetail({ changes: [], photos: [] }),
+    )
+  }, [entry.id])
+  useEffect(() => {
+    loadDetail()
+  }, [loadDetail])
 
   const save = async () => {
     setBusy(true)
     try {
       const patch: Record<string, unknown> = { notes, minutes_spent: minutes ? Number(minutes) : null }
       if (!entry.locked) {
-        patch.checklist = checklist
-        patch.analysis_note = analysisNote
-        patch.quota = Number(quota.replace(',', '.'))
+        if (newStyle) {
+          if (risk.trim() !== (entry.risk_note ?? '')) patch.risk_note = risk.trim()
+        } else {
+          patch.checklist = checklist
+          patch.analysis_note = analysisNote
+        }
+        const q = Number(quota.replace(',', '.'))
+        if (q !== entry.quota) patch.quota = q
         if (bookmaker.trim() && bookmaker.trim() !== (entry.bookmaker ?? '')) patch.bookmaker = bookmaker.trim()
-        patch.stake = stake ? Number(stake.replace(',', '.')) : null
+        const st = stake ? Number(stake.replace(',', '.')) : null
+        if (st !== entry.stake) patch.stake = st
       }
       await updateEntry(entry.id, patch)
       toast.success('Salvato')
@@ -577,16 +773,42 @@ function EntryDrawer({ entry, meta, onClose, onChanged }: { entry: JournalEntry;
           </div>
         ) : null}
 
-        <div>
-          <p className="text-sm font-semibold text-slate-800">Scheda pronostico</p>
-          <div className="mt-2">
-            <ChecklistEditor items={meta.checklist} value={checklist} disabled={entry.locked || !mine} onChange={setChecklist} />
+        {entry.is_exception ? (
+          <div className="rounded-xl border-2 border-[#B03030] p-3 text-[13px] text-slate-700">
+            <p className="font-semibold text-[#B03030]">Eccezione · giocata fuori regola</p>
+            <p className="mt-0.5">{entry.exception_reason}</p>
+            <p className="mt-0.5 text-[12px] text-slate-500">Contata a parte, nelle «eccezioni», e non nel rendimento delle regole.</p>
           </div>
-        </div>
-        <label className="block">
-          <span className="text-[13px] font-medium text-slate-600">Descrizione modalità di intervento</span>
-          <textarea className={`${inputClass} min-h-[64px]`} value={analysisNote} disabled={entry.locked || !mine} onChange={(e) => setAnalysisNote(e.target.value)} />
-        </label>
+        ) : null}
+        {newStyle ? (
+          <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+            <p className="text-sm font-semibold text-slate-800">Prima di salvare</p>
+            <p className="text-[13px] text-slate-700">
+              {Object.entries(ANSWER_LABELS)
+                .map(([k, label]) => `${label}: ${ANSWER_TEXT[(entry.answers as Record<string, string> | null | undefined)?.[k] ?? ''] ?? 'n.d.'}`)
+                .join(' · ')}
+            </p>
+            <label className="block">
+              <span className="text-[13px] font-medium text-slate-600">Cosa potrebbe smentire questa giocata?</span>
+              <textarea className={`${inputClass} min-h-[56px]`} value={risk} disabled={entry.locked || !mine} onChange={(e) => setRisk(e.target.value)} />
+            </label>
+          </div>
+        ) : (
+          <>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Scheda pronostico (fino al 26/11/2026)</p>
+              <div className="mt-2">
+                <ChecklistEditor items={meta.checklist} value={checklist} disabled={entry.locked || !mine} onChange={setChecklist} />
+              </div>
+            </div>
+            <label className="block">
+              <span className="text-[13px] font-medium text-slate-600">Descrizione modalità di intervento</span>
+              <textarea className={`${inputClass} min-h-[64px]`} value={analysisNote} disabled={entry.locked || !mine} onChange={(e) => setAnalysisNote(e.target.value)} />
+            </label>
+          </>
+        )}
+        <TechSheetBox entry={entry} changes={detail ? detail.changes : null} />
+        <PhotosBox entry={entry} photos={detail ? detail.photos : null} mine={mine} onChanged={loadDetail} />
         <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
           <label className="block">
             <span className="text-[13px] font-medium text-slate-600">Note</span>
@@ -981,19 +1203,133 @@ function OddsMovesReport() {
   )
 }
 
+function signedNum(v: number | null | undefined, suffix: string): string {
+  if (v == null) return 'n.d.'
+  const t = Math.abs(v).toLocaleString('it-IT', { minimumFractionDigits: suffix === ' u' ? 2 : 1, maximumFractionDigits: suffix === ' u' ? 2 : 1 })
+  return `${v > 0 ? '+' : v < 0 ? '−' : ''}${t}${suffix}`
+}
+
+/** CLV in due colonne nel resoconto (modifica 10). Chiusura mancante = n.d., fuori dalla media. */
+function ClvTwoColumns({ t }: { t: ReportRow }) {
+  const tone = (v: number | null | undefined) => (v == null ? 'text-slate-500' : v > 0 ? 'text-emerald-700' : v < 0 ? 'text-rose-700' : 'text-slate-700')
+  return (
+    <section className={`${todayCard} ${todayCardPadding}`}>
+      <h3 className={todaySectionTitle}>Resoconto · CLV in due colonne</h3>
+      <table className="mt-2 w-full max-w-2xl text-[13px] tabular-nums">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-[12px] text-slate-500">
+            <th className="py-1 font-medium" />
+            <th className="py-1 font-medium">
+              Movimento quota
+              <span className="block text-[11px] font-normal text-slate-400">quota presa ÷ quota di chiusura − 1</span>
+            </th>
+            <th className="py-1 font-medium">
+              Valore contro la chiusura
+              <span className="block text-[11px] font-normal text-slate-400">quota presa × prob. chiusura senza margine − 1</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-slate-100">
+            <td className="py-1.5 text-slate-600">Media ({t.clv_ratio_n ?? 0} e {t.clv_n ?? 0} giocate)</td>
+            <td className={`py-1.5 font-semibold ${tone(t.clv_ratio_avg_pct)}`}>{signedNum(t.clv_ratio_avg_pct, '%')}</td>
+            <td className={`py-1.5 font-semibold ${tone(t.clv_avg_pct)}`}>{signedNum(t.clv_avg_pct, '%')}</td>
+          </tr>
+          <tr>
+            <td className="py-1.5 text-slate-600">Giocate positive</td>
+            <td className="py-1.5 font-semibold">{pct(t.clv_ratio_pos_pct ?? null)}</td>
+            <td className="py-1.5 font-semibold">{pct(t.clv_pos_pct ?? null)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="mt-1.5 text-[12px] text-slate-500">
+        La prima dice se abbiamo preso un prezzo migliore della chiusura. La seconda dice se il prezzo era buono anche togliendo il margine del book: con la
+        quota ferma vale circa −5%, cioè il margine stesso. Chiusura mancante = n.d., fuori dalla media.
+      </p>
+    </section>
+  )
+}
+
+/** Quanto vale ogni regola (modifica 11): dentro le regole, eccezioni, tolte dalle regole sulla carta. */
+function RuleValuePanel({ value, rule, alert, onRule, onAlert }: { value: RuleValue; rule: string; alert: string; onRule: (v: string) => void; onAlert: (v: string) => void }) {
+  const tone: Record<string, string> = {
+    dentro: 'bg-emerald-50 text-emerald-800',
+    eccezioni: 'bg-rose-50 text-rose-800',
+    tolte: 'bg-slate-100 text-slate-700',
+    ipotesi_2: 'bg-amber-50 text-amber-800',
+  }
+  const rows = [...value.groups, value.hypothesis]
+  return (
+    <section className={`${todayCard} ${todayCardPadding}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={todaySectionTitle}>Quanto vale ogni regola</h3>
+        <div className="flex flex-wrap gap-2">
+          <select className="rounded-lg border border-slate-300 px-2 py-1 text-[13px]" value={rule} onChange={(e) => onRule(e.target.value)} aria-label="Filtro per regola">
+            <option value="">Tutte le regole</option>
+            {value.rule_filters.map((r) => (
+              <option key={r} value={r}>
+                {r === 'sito' ? 'regole del sito' : r}
+              </option>
+            ))}
+          </select>
+          <select className="rounded-lg border border-slate-300 px-2 py-1 text-[13px]" value={alert} onChange={(e) => onAlert(e.target.value)} aria-label="Filtro per avviso">
+            <option value="">Tutti gli avvisi</option>
+            {Object.entries(value.alert_filters).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <table className="mt-2 w-full max-w-2xl text-[13px] tabular-nums">
+        <thead>
+          <tr className="border-b border-slate-200 text-[12px] text-slate-500">
+            <th className="py-1 text-left font-medium">Gruppo</th>
+            <th className="py-1 text-right font-medium">Giocate</th>
+            <th className="py-1 text-right font-medium">Vinte</th>
+            <th className="py-1 text-right font-medium">Perse</th>
+            <th className="py-1 text-right font-medium">Unità</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((g) => (
+            <tr key={g.key} className="border-b border-slate-100">
+              <td className="py-1.5">
+                <span className={`rounded-md px-1.5 py-0.5 text-[12px] font-medium ${tone[g.key] ?? ''}`}>{g.label}</span>
+              </td>
+              <td className="py-1.5 text-right">{g.entries}</td>
+              <td className="py-1.5 text-right">{g.won}</td>
+              <td className="py-1.5 text-right">{g.lost}</td>
+              <td className={`py-1.5 text-right font-semibold ${g.units > 0 ? 'text-emerald-700' : g.units < 0 ? 'text-rose-700' : ''}`}>{signedNum(g.settled ? g.units : null, ' u')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1.5 text-[12px] text-slate-500">
+        «Tolte dalle regole»: i segni bloccati che l&apos;analista ha scelto e non ha registrato come eccezione, salvati senza puntata con il loro esito. Se
+        restano in perdita, la regola sta lavorando. Giudizio dopo 50 giocate, e anche dopo si continua a contare. Il filtro per regola vale per eccezioni e
+        tolte; il filtro per avviso per tutti i gruppi (avvisi salvati dal 26/11/2026).
+      </p>
+    </section>
+  )
+}
+
 function ReportTab({ filters }: { filters: Filters }) {
   const [report, setReport] = useState<JournalReport | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rule, setRule] = useState('')
+  const [alert, setAlert] = useState('')
   useEffect(() => {
     let alive = true
-    getJournalReport(filters).then(
+    getJournalReport({ ...filters, rule: rule || null, alert: alert || null }).then(
       (r) => alive && setReport(r),
       (e: unknown) => alive && setError(errorText(e)),
     )
     return () => {
       alive = false
     }
-  }, [filters])
+  }, [filters, rule, alert])
 
   if (error) return <p className="text-sm text-rose-700">{error}</p>
   if (!report) return <p className="text-sm text-slate-500">Calcolo i report…</p>
@@ -1012,21 +1348,11 @@ function ReportTab({ filters }: { filters: Filters }) {
         <Tile label="Puntato" value={formatEuro(t.staked)} />
         <Tile label="Ore di analisi" value={String(t.hours)} />
         <Tile label="Guadagno orario" value={t.profit_per_hour !== null ? money(t.profit_per_hour) : '—'} />
-        {/* CLV (09/11/2026): si compra meglio del mercato? Il numero con cui si valida una strategia dopo 50 giocate */}
-        <Tile
-          label="CLV medio"
-          value={t.clv_avg_pct != null ? `${t.clv_avg_pct > 0 ? '+' : ''}${pct(t.clv_avg_pct)}` : '—'}
-          sub={t.clv_n ? `su ${t.clv_n} giocate${t.clv_n < 50 ? ' (servono 50)' : ''}` : 'nessuna chiusura ancora'}
-          tone={t.clv_avg_pct != null ? (t.clv_avg_pct > 0 ? 'pos' : t.clv_avg_pct < 0 ? 'neg' : undefined) : undefined}
-        />
-        <Tile label="CLV positivi" value={pct(t.clv_pos_pct ?? null)} sub="senza margine (dal 18/11)" />
-        {/* 18/11/2026: la vecchia formula resta a parte, per confrontare i numeri */}
-        <Tile
-          label="CLV quota ÷ chiusura"
-          value={t.clv_ratio_avg_pct != null ? `${t.clv_ratio_avg_pct > 0 ? '+' : ''}${pct(t.clv_ratio_avg_pct)}` : '—'}
-          sub={t.clv_ratio_n ? `vecchia formula · ${t.clv_ratio_n} giocate · positivi ${pct(t.clv_ratio_pos_pct ?? null)}` : 'vecchia formula'}
-        />
       </div>
+
+      {/* modifica 10 (24/11/2026): le due formule del CLV una accanto all'altra, con media e giocate positive */}
+      <ClvTwoColumns t={t} />
+      {report.rule_value ? <RuleValuePanel value={report.rule_value} rule={rule} alert={alert} onRule={setRule} onAlert={setAlert} /> : null}
 
       <OddsMovesReport />
 
@@ -1066,9 +1392,9 @@ function ReportTab({ filters }: { filters: Filters }) {
         secondLabel="Valutazione"
       />
       <ReportTable
-        title="Dentro e fuori dalle regole"
-        subtitle="Le giocate dentro le quote minime e massime di acquisto contro quelle salvate fuori regola: i numeri dicono se le fasce sono giuste."
-        rows={(report.rules ?? []).map((r) => ({ key: r.key, first: r.label, row: r }))}
+        title="Dentro e fuori dalle regole · in euro"
+        subtitle="Le stesse giocate del riquadro «Quanto vale ogni regola», con puntate, profitto e ore: eccezioni comprese le giocate «fuori regola» di prima del 26/11."
+        rows={(report.rules ?? []).map((r) => ({ key: r.key, first: r.key === 'fuori' ? 'Eccezioni (fuori regola)' : r.label, row: r }))}
         firstLabel="Giocate"
         showMoney
       />
@@ -1175,6 +1501,25 @@ function parseNum(text: string): number | undefined {
   return text.trim() && Number.isFinite(v) && v > 0 ? v : undefined
 }
 
+type BlockDraft = {
+  r1_block: boolean
+  r1_pct: string
+  r2_home_block: boolean
+  r2_home_points_min: string
+  r2_pt_block: boolean
+  r2_pt_zero_min: string
+  anomaly_pct: string
+}
+const BLOCK_DEFAULTS: BlockDraft = {
+  r1_block: true,
+  r1_pct: '10',
+  r2_home_block: false,
+  r2_home_points_min: '4',
+  r2_pt_block: true,
+  r2_pt_zero_min: '3',
+  anomaly_pct: '30',
+}
+
 /** Quote minime e massime per segno (PDF di Giovanni): tutti le leggono, gli amministratori le cambiano. */
 function RulesTab() {
   const [rules, setRules] = useState<BuyRules | null>(null)
@@ -1183,12 +1528,22 @@ function RulesTab() {
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({})
   const [avoid, setAvoid] = useState<Record<string, boolean>>({})
   const [checklistMin, setChecklistMin] = useState('5')
+  const [blocks, setBlocks] = useState<BlockDraft>(BLOCK_DEFAULTS)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const apply = useCallback((r: BuyRules) => {
     setRules(r)
     setChecklistMin(String(r.checklist_min))
+    setBlocks({
+      r1_block: r.r1_block ?? true,
+      r1_pct: String(r.r1_pct ?? 10),
+      r2_home_block: r.r2_home_block ?? false,
+      r2_home_points_min: String(r.r2_home_points_min ?? 4),
+      r2_pt_block: r.r2_pt_block ?? true,
+      r2_pt_zero_min: String(r.r2_pt_zero_min ?? 3),
+      anomaly_pct: String(r.anomaly_pct ?? 30),
+    })
     const d: Record<string, Record<string, string>> = {}
     const a: Record<string, boolean> = {}
     for (const [key, rule] of Object.entries(r.markets)) {
@@ -1227,7 +1582,18 @@ function RulesTab() {
     }
     setBusy(true)
     try {
-      const r = await saveBuyRules({ ...rules, checklist_min: Number(checklistMin) || 0, markets: out })
+      const r = await saveBuyRules({
+        ...rules,
+        checklist_min: Number(checklistMin) || 0,
+        markets: out,
+        r1_block: blocks.r1_block,
+        r1_pct: Number(blocks.r1_pct) || 10,
+        r2_home_block: blocks.r2_home_block,
+        r2_home_points_min: Number(blocks.r2_home_points_min) || 0,
+        r2_pt_block: blocks.r2_pt_block,
+        r2_pt_zero_min: Number(blocks.r2_pt_zero_min) || 3,
+        anomaly_pct: Number(blocks.anomaly_pct) || 30,
+      })
       apply(r.rules)
       toast.success('Regole salvate')
     } catch (e) {
@@ -1284,9 +1650,38 @@ function RulesTab() {
           </tbody>
         </table>
       </div>
+      <div className="space-y-2 border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+        <p className="font-semibold text-slate-800">Blocchi (capitolato del 24/11/2026)</p>
+        <p className="text-[13px] text-slate-500">
+          Un segno bloccato si salva solo come eccezione, con il motivo scritto. Prova sullo storico del Today (26/11/2026, 34.757 segni nella fascia): R1
+          toglie metà dei segni e quelli tolti rendono −7,6% contro −5,8%; R2 su Over PT 0,5 −8,3% contro −7,0%; R2 su 1 e 1X tolti −2,9% contro −6,9% (cioè
+          meglio dei rimasti), per questo resta un avviso finché non si decide.
+        </p>
+        <label className="flex flex-wrap items-center gap-2">
+          <input type="checkbox" checked={blocks.r1_block} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r1_block: e.target.checked }))} />
+          R1 · blocca se la quota è sotto la quota Cecchino di oltre
+          <input className={cell} value={blocks.r1_pct} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r1_pct: e.target.value.replace(/\D/g, '') }))} />%
+        </label>
+        <label className="flex flex-wrap items-center gap-2">
+          <input type="checkbox" checked={blocks.r2_home_block} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r2_home_block: e.target.checked }))} />
+          R2 · su 1 e 1X blocca se la casa ha meno di
+          <input className={cell} value={blocks.r2_home_points_min} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r2_home_points_min: e.target.value.replace(/\D/g, '') }))} />
+          punti su 15 in casa (spento = solo avviso)
+        </label>
+        <label className="flex flex-wrap items-center gap-2">
+          <input type="checkbox" checked={blocks.r2_pt_block} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r2_pt_block: e.target.checked }))} />
+          R2 · su Over PT 0,5 blocca con almeno
+          <input className={cell} value={blocks.r2_pt_zero_min} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, r2_pt_zero_min: e.target.value.replace(/\D/g, '') }))} />
+          volte 0-0 al PT nelle ultime 5 in casa
+        </label>
+        <label className="flex flex-wrap items-center gap-2">
+          Da verificare · valore secondo il Cecchino oltre
+          <input className={cell} value={blocks.anomaly_pct} disabled={!canEdit} onChange={(e) => setBlocks((b) => ({ ...b, anomaly_pct: e.target.value.replace(/\D/g, '') }))} />%
+        </label>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <label className="flex items-center gap-2 text-sm text-slate-700">
-          Punti minimi della checklist
+          Punti minimi della checklist (solo giocate prima del 26/11)
           <input className={cell} value={checklistMin} disabled={!canEdit} onChange={(e) => setChecklistMin(e.target.value.replace(/\D/g, ''))} />
         </label>
         {canEdit ? (

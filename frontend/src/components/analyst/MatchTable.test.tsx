@@ -2,315 +2,272 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MatchTableResponse, TableGame } from '../../lib/analystJournalApi'
+import type { EvaluatedSign, MatchTableResponse, MatchTableRow, TableGame } from '../../lib/analystJournalApi'
 import { MatchTable } from './MatchTable'
 
-const g = (ft: string, ht: string, ftOutcome: 'V' | 'N' | 'P', htOutcome: 'V' | 'N' | 'P', boldFt = false, diff: number | null = null): TableGame => ({
-  date: '2026-10-20',
-  opponent: 'Rivale',
-  opponent_rank: 2,
+/** Gara di prova del capitolato di Giovanni (24/11/2026): Juve Stabia – Catanzaro, quote Bet365 delle 06:03. */
+const g = (ft: string, ht: string, ftOutcome: 'V' | 'N' | 'P', htOutcome: 'V' | 'N' | 'P', opponent: string, rank: number, level: 'strong' | 'even' | 'weak'): TableGame => ({
+  date: '2026-11-01',
+  opponent,
+  opponent_rank: rank,
   home: true,
   ft,
   ht,
   ft_outcome: ftOutcome,
   ht_outcome: htOutcome,
-  bold_ft: boldFt,
+  bold_ft: false,
   bold_ht: false,
-  diff,
-  level: diff == null ? null : diff >= 0.3 ? 'strong' : diff <= -0.3 ? 'weak' : 'even',
+  diff: level === 'strong' ? 0.4 : level === 'weak' ? -0.4 : 0.1,
+  level,
 })
 
+const juve = [
+  g('0-3', '0-1', 'P', 'P', 'Pisa', 5, 'even'),
+  g('1-1', '0-1', 'N', 'P', 'Cesena', 8, 'strong'),
+  g('3-0', '1-0', 'V', 'V', 'Sudtirol', 7, 'strong'),
+  g('0-1', '0-0', 'P', 'N', 'Verona', 9, 'weak'),
+  g('1-0', '1-0', 'V', 'V', 'Arezzo', 16, 'even'),
+]
+
+const sign = (key: string, label: string, group: string, q: number, qc: number, state: EvaluatedSign['state'], reason?: string): EvaluatedSign => ({
+  key,
+  label,
+  group,
+  q,
+  q_at: '2026-11-24T05:03:00+00:00',
+  q_source: 'morning',
+  morning: q,
+  change: null,
+  prob_book: 1 / q,
+  quota_cecchino: qc,
+  prob_cecchino: 1 / qc,
+  value: q / qc - 1,
+  state,
+  reasons: reason ? [{ code: reason.startsWith('R1') ? 'r1' : 'x', rule: 'R1', text: reason, short: 'R1' }] : [],
+  notes: [],
+})
+
+const row: MatchTableRow = {
+  today_fixture_id: 7,
+  scan_date: '2099-11-24',
+  kickoff: '2099-11-24T18:00:00+00:00',
+  country: 'Italy',
+  league: 'Serie B',
+  home_team: 'Juve Stabia',
+  away_team: 'Catanzaro',
+  eligible: true,
+  balance: { index: 39.4, class: 'Squilibrio' },
+  blocks: {
+    forma_casa: { games: 5, enough: true, points: 7, max_points: 15, scored: 5, conceded: 5, ht_games: 5, ht_scored: 2, ht_conceded: 2, team_rank: 12, results: juve, strength: 0.1, strength_level: 'even' },
+    forma_fuori: { games: 2, enough: false },
+    forma_totale_casa: { games: 2, enough: false },
+    forma_totale_fuori: { games: 1, enough: false },
+  },
+  yellows: { home: { games: 5, available: true, own: 8, opponents: 7, own_avg: 1.6, opponents_avg: 1.4 }, away: { games: 5, available: true, own: 9, opponents: 6, own_avg: 1.8, opponents_avg: 1.2 } },
+  standings_complete: true,
+  home_rank: 12,
+  away_rank: 20,
+  quotes: [
+    { key: 'HOME', label: '1', group: 'Fisse', quota: 1.9 },
+    { key: 'DRAW', label: 'X', group: 'Fisse', quota: 3.5 },
+    { key: 'AWAY', label: '2', group: 'Fisse', quota: 3.9 },
+    { key: 'OVER_2_5', label: 'Over 2.5', group: 'Over', quota: 1.75 },
+  ],
+  match_type: 'Scala 1X',
+  my_note: '',
+  other_notes: [],
+  started: false,
+  editable: true,
+  odds_checked_at: '2099-11-24T05:03:00+00:00',
+  goal_form: { goals: 22, games: 10, avg: 2.2, alert: false, threshold: 2.7, markets: [] },
+  pt_form: { goals: 7, games: 10, avg: 0.7, alert: false, threshold: 1.5, markets: [], x_pt: 5, u15_pt: 9, x_pct: 50, u15_pct: 90 },
+  reliability: { level: 'yellow', red: [], yellow: ['Quote lette più di 12 ore prima della gara'] },
+  squads: {
+    home: { lineups_known: 10, habitual: null, injured: [], missing_starters: 0, probable: null, injuries_known: false, history: [{ date: '2026-11-01', opponent: 'Pisa', rosa: null, home: true, ft: '0-3', ht: '0-1', ft_outcome: 'P', opponent_rank: 5, level: 'even' }] },
+    away: { lineups_known: 10, habitual: null, injured: [], missing_starters: 0, probable: null, injuries_known: false, history: [] },
+  },
+  evaluation: {
+    signs: [
+      sign('DRAW', 'X', 'ESITO FINALE', 3.5, 3.75, 'playable'),
+      sign('DRAW_PT', 'X PT', 'PRIMO TEMPO', 2.3, 2.09, 'playable'),
+      sign('OVER_2_5', 'Over 2.5', 'UNDER / OVER', 1.75, 2.26, 'blocked', 'R1 · book 23% sotto il Cecchino'),
+      sign('OVER_PT_0_5', 'Over PT 0.5', 'GOL PRIMO TEMPO', 1.3, 1.56, 'blocked', 'R1 · book 17% sotto il Cecchino'),
+      { ...sign('HOME', '1', 'ESITO FINALE', 1.9, 2.0, 'out'), reasons: [{ code: 'sopra_massimo', text: 'Oltre la quota massima 1,55' }] },
+    ],
+    counts: { playable: 2, check: 0, blocked: 2, out: 1 },
+    odds_at: '2099-11-24T05:03:00+00:00',
+    second_read: { done: false, at: null, due: '2099-11-24T16:45:00+00:00' },
+  },
+  computed_at: '2099-11-24T05:10:00+00:00',
+  weather: {
+    status: 'ok',
+    fetched_at: '2099-11-24T06:00:00+00:00',
+    kickoff: { at: '2099-11-24T18:00:00+00:00', temperature: 14, precipitation: 0, wind: 12, code: 3, icon: '☁', text: 'nuvoloso' },
+    hours: [{ at: '2099-11-24T18:00:00+00:00', temperature: 14, precipitation: 0, wind: 12, code: 3, icon: '☁', text: 'nuvoloso' }],
+  },
+  close_games: null,
+  season_end: null,
+}
+
 const response: MatchTableResponse = {
-  day: '2026-11-05',
+  day: '2099-11-24',
   total: 1,
   total_day: 1,
   page: 1,
   page_size: 50,
-  countries: ['Italia'],
-  leagues: ['Serie Z'],
+  countries: ['Italy'],
+  leagues: ['Serie B'],
+  match_types: ['Scala 1X'],
+  odds_at: '2099-11-24T05:03:00+00:00',
   can_write: true,
-  rows: [
-    {
-      today_fixture_id: 7,
-      scan_date: '2026-11-05',
-      kickoff: '2099-11-05T19:00:00+00:00',
-      country: 'Italia',
-      league: 'Serie Z',
-      home_team: 'Casa FC',
-      away_team: 'Ospite FC',
-      eligible: true,
-      balance: { index: 72.5, class: 'Equilibrio' },
-      blocks: {
-        forma_casa: {
-          games: 3,
-          enough: true,
-          points: 4,
-          max_points: 9,
-          scored: 4,
-          conceded: 4,
-          ht_games: 3,
-          ht_scored: 1,
-          ht_conceded: 1,
-          team_rank: 5,
-          results: [g('2-0', '1-0', 'V', 'V', false, -0.45), g('1-1', '0-0', 'N', 'N', true, 0.4), g('1-3', '0-1', 'P', 'P', true, 0.7)],
-          strength: 0.22,
-          strength_level: 'even',
-          signs: { ht_games: 3, x_pt: 1, u15_pt: 3, ft_games: 3, x: 1, u25: 2, u35: 2 },
-          missing_results: ['2026-10-27'],
-        },
-        forma_fuori: { games: 2, enough: false },
-        forma_totale_casa: { games: 2, enough: false },
-        forma_totale_fuori: { games: 1, enough: false },
-      },
-      yellows: { home: { games: 5, available: true, own: 9, opponents: 7, own_avg: 1.8, opponents_avg: 1.4 }, away: { games: 1, available: false } },
-      standings_complete: true,
-      home_rank: 5,
-      away_rank: 3,
-      quotes: [
-        { key: 'HOME', label: '1', group: 'Fisse', quota: 2.1, status: 'out', warnings: ['Oltre la quota massima 1,55'] },
-        { key: 'DRAW', label: 'X', group: 'Fisse', quota: 3.2, status: 'ok', warnings: [] },
-        { key: 'AWAY', label: '2', group: 'Fisse', quota: null },
-        { key: 'OVER_2_5', label: 'Over 2.5', group: 'Over', quota: 1.85 },
-        { key: 'UNDER_2_5', label: 'Under 2.5', group: 'Under', quota: 2.3, goal_alert: true },
-      ],
-      match_type: 'Scala 1X',
-      my_note: '',
-      other_notes: [],
-      started: false,
-      editable: false,
-      not_editable_reason: 'Meno di 3 gare in stagione: Ospite FC ha 2 gare fuori',
-      goal_form: { goals: 28, games: 10, avg: 2.8, alert: true, threshold: 2.7, markets: ['UNDER_2_5', 'UNDER_PT_1_5'] },
-    },
-  ],
+  rows: [row],
 }
 
+vi.mock('../../contexts/AuthContext', () => ({ useOptionalAuth: () => ({ me: { id: 1 }, canSee: () => true }) }))
 vi.mock('../../lib/analystJournalApi', async (orig) => ({
   ...(await orig<typeof import('../../lib/analystJournalApi')>()),
   getMatchTable: vi.fn(() => Promise.resolve(response)),
   getMatchStandings: vi.fn(() =>
     Promise.resolve({
       today_fixture_id: 7,
-      league: 'Serie Z',
-      country: 'Italia',
+      league: 'Serie B',
+      country: 'Italy',
       home_team_id: 1,
       away_team_id: 2,
       games: 3,
       complete: true,
       tables: {
         total: [
-          { rank: 1, team_id: 2, team: 'Ospite FC', played: 2, won: 2, drawn: 0, lost: 0, gf: 4, ga: 1, gd: 3, points: 6 },
-          { rank: 2, team_id: 1, team: 'Casa FC', played: 2, won: 1, drawn: 0, lost: 1, gf: 3, ga: 3, gd: 0, points: 3 },
+          { rank: 1, team_id: 2, team: 'Catanzaro', played: 2, won: 2, drawn: 0, lost: 0, gf: 4, ga: 1, gd: 3, points: 6 },
+          { rank: 2, team_id: 1, team: 'Juve Stabia', played: 2, won: 1, drawn: 0, lost: 1, gf: 3, ga: 3, gd: 0, points: 3 },
         ],
-        home: [{ rank: 1, team_id: 1, team: 'Casa FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
-        away: [
-          { rank: 1, team_id: 2, team: 'Ospite FC', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 },
-          { rank: 2, team_id: 1, team: 'Casa FC', played: 1, won: 0, drawn: 0, lost: 1, gf: 1, ga: 3, gd: -2, points: 0 },
-        ],
+        home: [{ rank: 1, team_id: 1, team: 'Juve Stabia', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
+        away: [{ rank: 1, team_id: 2, team: 'Catanzaro', played: 1, won: 1, drawn: 0, lost: 0, gf: 2, ga: 0, gd: 2, points: 3 }],
       },
-      recent: {
-        '1': {
-          total: [{ ...g('1-3', '0-1', 'P', 'P'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1, home: false }],
-          home: [{ ...g('2-0', '1-0', 'V', 'V'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1 }],
-          away: [{ ...g('1-3', '0-1', 'P', 'P'), opponent_id: 2, opponent: 'Ospite FC', opponent_rank: 1, home: false }],
-        },
-        '2': { total: [], home: [], away: [] },
-      },
+      recent: { '1': { total: [], home: [], away: [] }, '2': { total: [], home: [], away: [] } },
     }),
   ),
   saveMatchNote: vi.fn(() => Promise.resolve({ today_fixture_id: 7, note: 'x' })),
 }))
 
-describe('MatchTable', () => {
+async function detail() {
+  render(<MatchTable />)
+  await screen.findAllByText('Juve Stabia')
+  return screen.getByRole('heading', { level: 2 }).closest('aside')!
+}
+
+describe('MatchTable · capitolato del 24/11/2026', () => {
   afterEach(cleanup)
 
-  it('lista compatta e scheda partita con risultati, cornice, gol, gialli e quote', async () => {
+  it('lista: segni ✓ ✕, quote 1X2, tipo partita con indice, nessuna cifra ±forza (modifica 14)', async () => {
     render(<MatchTable />)
-    expect(await screen.findAllByText('Casa FC')).toBeTruthy()
-    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    expect(within(detail).getByText('4 pt')).toBeTruthy()
-    // sconfitta contro una squadra piu' in alto: quadratino rosso con il bordo
-    // il quadratino mostra il risultato; sconfitta contro una squadra piu' in alto: rosso con la cornice
-    const lost = within(detail).getAllByTitle(/1-3 FT, persa/)[0]
-    expect(lost.textContent).toBe('1-3')
-    expect(lost.className).toContain('bg-rose-100')
-    expect(lost.className).toContain('ring-2')
-    const drawn = within(detail).getAllByTitle(/1-1 FT, pareggiata/)[0]
-    expect(drawn.className).toContain('bg-slate-100')
-    expect(drawn.className).toContain('ring-2')
-    const won = within(detail).getAllByTitle(/2-0 FT, vinta/)[0]
-    expect(won.textContent).toBe('2-0')
-    expect(won.className).toContain('bg-emerald-100')
-    expect(won.className).not.toContain('ring-2')
-    expect(within(detail).getAllByTitle(/0-1 PT, persa/)[0].textContent).toBe('0-1')
-    expect(within(detail).getByText(/Gol PT 1-1/)).toBeTruthy()
-    expect(within(detail).getByText(/Gol FT 4-4/)).toBeTruthy()
-    expect(within(detail).getByText('n.d.')).toBeTruthy()
-    expect(within(detail).getByText('1,8')).toBeTruthy()
-    expect(within(detail).getByText(/totale 9 · 7 in 5 gare/)).toBeTruthy()
-    expect(within(detail).getByText('1,85')).toBeTruthy()
-    expect(within(detail).getAllByText('Meno di 3 gare in stagione (2)').length).toBe(4)
-    expect(screen.queryByText(/Equilibrio/)).toBeNull()
-    // tipo di partita e quote colorate con le regole di acquisto
-    expect(within(detail).getByText('Scala 1X')).toBeTruthy()
-    expect(within(detail).getByText('2,10').className).toContain('text-rose-700')
-    expect(within(detail).getByText('3,20').className).toContain('text-emerald-700')
-    expect(within(detail).getByText('2,10').closest('[title]')?.getAttribute('title')).toContain('Oltre la quota massima')
-  })
-
-  it('numero +/- alla data, forza media, segni, forma da gol e gara non editabile (09/11/2026)', async () => {
-    render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
-    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    // numeri sotto i risultati: verde da +3, rosso da -3
-    expect(within(detail).getAllByText('+0,70')[0].className).toContain('bg-emerald-600')
-    expect(within(detail).getAllByText('−0,45')[0].className).toContain('bg-rose-600')
-    // forza media e segni
-    expect(within(detail).getAllByText('+0,22').length).toBeGreaterThan(0)
-    expect(within(detail).getAllByText('U1,5 PT 3/3').length).toBe(1)
-    expect(within(detail).getAllByText('U3,5 2/3').length).toBe(1)
-    // nome e data dell'avversaria nella scheda, risultato mancante segnalato
-    expect(within(detail).getAllByText('Rivale').length).toBeGreaterThan(0)
-    expect(within(detail).getAllByText(/manca il risultato del 27\/10/).length).toBeGreaterThan(0)
-    // forma da gol: pillola e Under 2,5 in arancione
-    expect(within(detail).getByText('Forma da gol 2,8')).toBeTruthy()
-    expect(within(detail).getByText('2,30').closest('[title]')?.className).toContain('bg-orange-100')
-    // meno di 3 gare fuori: niente "Aggiungi al diario"
-    expect(within(detail).getByText(/non si aggiunge al diario/)).toBeTruthy()
-    expect(within(detail).queryByRole('button', { name: /Aggiungi/ })).toBeNull()
-    // nell'elenco: numero sotto il quadratino e forza media
+    await screen.findAllByText('Juve Stabia')
     const list = screen.getAllByRole('button', { pressed: true })[0]
-    expect(within(list).getByText('+0,22')).toBeTruthy()
-    expect(within(list).getByText('+0,40').className).toContain('text-emerald-700')
-    // note in fondo
-    expect(within(detail).getByText(/Solo stagione in corso/)).toBeTruthy()
+    expect(within(list).getByText('2 ✓')).toBeTruthy()
+    expect(within(list).getByText('2 ✕')).toBeTruthy()
+    expect(within(list).getByText('1,90 · 3,50 · 3,90')).toBeTruthy()
+    expect(within(list).getByText('Scala 1X')).toBeTruthy()
+    expect(within(list).getByText('39')).toBeTruthy()
+    expect(within(list).queryByText('+0,10')).toBeNull()
+    expect(screen.getByText('quote delle 06:03')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Solo con segni giocabili' })).toBeTruthy()
   })
 
-  it('classifica completa: totale, casa e trasferta', async () => {
-    render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
-    await userEvent.click(screen.getByRole('button', { name: 'Classifica' }))
-    const dialog = await screen.findByText('Ricostruita dai 3 risultati del campionato nel nostro archivio.')
-    const aside = dialog.closest('aside')!
-    expect(within(aside).getByText('6')).toBeTruthy()
-    await userEvent.click(within(aside).getByRole('button', { name: 'Casa' }))
-    expect(within(aside).queryByText('Ospite FC')).toBeNull()
-    await userEvent.click(within(aside).getByRole('button', { name: 'Trasferta' }))
-    expect(within(aside).getAllByText('Ospite FC').length).toBeGreaterThan(0)
-    // clic sulla squadra di casa: si accende l'avversaria delle ultime gare fuori e compare il box
-    await userEvent.click(within(aside).getByRole('button', { name: 'Casa FC' }))
-    const opponentRow = within(aside).getAllByText('Ospite FC')[0].closest('tr')!
-    expect(opponentRow.className).toContain('bg-rose-50')
-    expect(within(aside).getByText(/Casa FC · ultime 1 partite fuori casa/)).toBeTruthy()
-    // in casa la stessa selezione mostra la vittoria 2-0
-    await userEvent.click(within(aside).getByRole('button', { name: 'Casa' }))
-    expect(within(aside).getByText(/ultime 1 partite in casa/)).toBeTruthy()
-    expect(within(aside).getAllByText('2-0').length).toBeGreaterThan(0)
-    // secondo clic: si toglie
-    await userEvent.click(within(aside).getByRole('button', { name: 'Casa FC' }))
-    expect(within(aside).queryByText(/ultime 1 partite/)).toBeNull()
+  it('testata: tipo partita grigio, equilibrio in arancio, pulsante a tre stati (modifiche 15 e 16)', async () => {
+    const d = await detail()
+    expect(within(d).getByText('1,90 · 3,50 · 3,90')).toBeTruthy()
+    expect(within(d).getByText('Squilibrio · 39')).toBeTruthy()
+    expect(within(d).queryByText(/non concordano/)).toBeNull()
+    const save = within(d).getByTestId('salva-giocata')
+    expect(save.textContent).toContain('+ Salva giocata · scegli un segno')
+    expect((save as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.click(within(d).getByLabelText('Scegli X'))
+    expect(within(d).getByTestId('salva-giocata').textContent).toContain('+ Salva giocata · X a 3,50')
+    await userEvent.click(within(d).getByLabelText('Scegli Over 2.5 (bloccato)'))
+    expect(within(d).getByTestId('salva-giocata').textContent).toContain('🔒 Over 2,5 bloccato · R1')
   })
 
-  it('il pulsante Domani chiede il giorno dopo', async () => {
+  it('cinque riquadri e «Segni · decidi qui» (modifiche 2, 3 e 5)', async () => {
+    const d = await detail()
+    expect(within(d).getByText('gialla')).toBeTruthy()
+    expect(within(d).getByText('Quote lette più di 12 ore prima della gara')).toBeTruthy()
+    expect(within(d).getByText(/quote 06:03 · 2ª lettura 17:45/)).toBeTruthy()
+    expect(within(d).getByText('n.d. · n.d.')).toBeTruthy()
+    expect(within(d).getByText('ultime 10 gare · nessun avviso')).toBeTruthy()
+    expect(within(d).getAllByText(/14°C/).length).toBeGreaterThan(0)
+    // tabella dei segni: gruppi, bloccati con il motivo, fuori fascia nascosti
+    expect(within(d).getByText('ESITO FINALE')).toBeTruthy()
+    expect(within(d).getByText('BLOCCATI')).toBeTruthy()
+    expect(within(d).getByText('R1 · book 23% sotto il Cecchino')).toBeTruthy()
+    expect(within(d).getByText('−7%')).toBeTruthy()
+    expect(within(d).getByText('+10%')).toBeTruthy()
+    expect(within(d).queryByText('Oltre la quota massima 1,55')).toBeNull()
+    await userEvent.click(within(d).getByText(/altri 1 segni fuori fascia o da evitare/))
+    expect(within(d).getByText('Oltre la quota massima 1,55')).toBeTruthy()
+    expect(within(d).getByText(/Quote Bet365 delle 06:03/)).toBeTruthy()
+  })
+
+  it('forma: PT e finale, cornice quando cambia, forza a parole, punti contro le avversarie (modifica 6)', async () => {
+    const d = await detail()
+    expect(within(d).getByText('in casa · 7 punti su 15')).toBeTruthy()
+    const cesenaPt = within(d).getAllByTitle(/PT 0-1/)[1]
+    expect(cesenaPt.style.outline).toContain('dashed')
+    const pisaPt = within(d).getAllByTitle(/PT 0-1/)[0]
+    expect(pisaPt.style.outline).toBe('')
+    expect(within(d).getAllByText('▲ più forte').length).toBe(2)
+    expect(within(d).getAllByText('▼ più debole').length).toBe(1)
+    expect(within(d).getByText('4 su 6')).toBeTruthy()
+    expect(within(d).getByText('3 su 6')).toBeTruthy()
+    expect(within(d).getByText('0 su 3')).toBeTruthy()
+    expect(within(d).getByText('1 gara')).toBeTruthy()
+    expect(within(d).getAllByText('2,2').length).toBeGreaterThan(0)
+    expect(within(d).getByText('90%')).toBeTruthy()
+  })
+
+  it('contesto chiuso: movimento n.d. prima della seconda lettura, rosa n.d. mai 0 (modifiche 7, 9, 13)', async () => {
+    const d = await detail()
+    expect(within(d).getByText(/seconda lettura Bet365 alle 17:45/)).toBeTruthy()
+    expect(within(d).getByText(/rosa non nota per entrambe \(n\.d\., non 0\)/)).toBeTruthy()
+    expect(within(d).getByText(/1,6 e 1,8 a gara \(ultime 5\)/)).toBeTruthy()
+    expect(within(d).getAllByText('rosa n.d.').length).toBeGreaterThan(0)
+    expect(within(d).queryByText(/0 titolari/)).toBeNull()
+    expect(within(d).getAllByText('n.d.').length).toBeGreaterThan(0)
+  })
+
+  it('avvisi di calendario e motivazione nella testata (modifica 17)', async () => {
+    const api = await import('../../lib/analystJournalApi')
+    const r = {
+      ...row,
+      balance: { index: 80, class: 'Equilibrio' },
+      match_type: 'Squilibrio',
+      close_games: { code: 'ravvicinata', label: '⚠ gara ravvicinata', text: 'Juve Stabia ha giocato 2 giorni fa (campionato)' },
+      season_end: {
+        code: 'fine',
+        label: '⚑ ultime 2 giornate',
+        text: 'Juve Stabia: posizione decisa (retrocessa) · Catanzaro: posizione decisa (2ª)',
+        home: null,
+        away: null,
+        alerts: [{ code: 'senza_motivazioni', text: '⚠ gara senza motivazioni: risultato poco prevedibile, la X rende meno della quota (storico −9,0%)' }],
+      },
+    }
+    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [r] })
+    const d = await detail()
+    expect(within(d).getByText('⚠ gara ravvicinata')).toBeTruthy()
+    expect(within(d).getByText('⚑ ultime 2 giornate')).toBeTruthy()
+    expect(within(d).getByText(/posizione decisa \(retrocessa\)/)).toBeTruthy()
+    expect(within(d).getByText(/gara senza motivazioni/)).toBeTruthy()
+    expect(within(d).getByText('Quote e Cecchino non concordano sull’equilibrio della gara.'.replace('’', "'"))).toBeTruthy()
+  })
+
+  it('classifica e giorno dopo restano', async () => {
     const api = await import('../../lib/analystJournalApi')
     render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
+    await screen.findAllByText('Juve Stabia')
+    await userEvent.click(screen.getByRole('button', { name: 'Classifica' }))
+    expect(await screen.findByText(/Ricostruita/)).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Domani' }))
     const days = vi.mocked(api.getMatchTable).mock.calls.map((c) => c[0]?.day)
     const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' })
     expect(days).toContain(tomorrow)
-  })
-
-  it('dati da verificare, gara rinviata, gare mancanti e gialli nascosti (18/11/2026)', async () => {
-    const api = await import('../../lib/analystJournalApi')
-    const row = {
-      ...response.rows[0],
-      yellows: { home: { games: 1, available: false as const }, away: { games: 0, available: false as const } },
-      data_check: { level: 'red' as const, problems: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'] },
-      reliability: { level: 'red' as const, red: ['Casa FC: due gare quasi nello stesso momento (01/11 20:00 e 01/11 20:00)'], yellow: ['Ammonizioni mancanti'] },
-      moved: { status: 'moved', kickoff: '2099-12-06T00:30:00+00:00' },
-      remaining: { home: { games: 4, exact: true }, away: { games: 9, exact: false, season_games: 30 } },
-      not_editable_reason: 'Dati della squadra da verificare (gara esclusa) · Gara spostata al 06/12',
-    }
-    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
-    render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
-    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    expect(within(detail).getByText('Rosso · gara esclusa')).toBeTruthy()
-    expect(within(detail).getByText(/due gare quasi nello stesso momento/)).toBeTruthy()
-    expect(within(detail).getByText(/Gara spostata al 06\/12: non si aggiunge al diario/)).toBeTruthy()
-    expect(within(detail).getByText(/Casa FC: mancano 4 gare · Ospite FC: circa 9 gare \(stima\)/)).toBeTruthy()
-    // gialli senza dati per nessuna delle due: il riquadro non c'e'
-    expect(within(detail).queryByText('Gialli ultime 5 gare')).toBeNull()
-    // nell'elenco: etichette rosse e grigie
-    const list = screen.getAllByRole('button', { pressed: true })[0]
-    expect(within(list).getByText('dati da verificare').className).toContain('bg-rose-100')
-    expect(within(list).getByText('spostata al 06/12')).toBeTruthy()
-  })
-
-  it('barra della forza, riquadro primo tempo e affidabilità gialla (18/11/2026)', async () => {
-    const api = await import('../../lib/analystJournalApi')
-    const row = {
-      ...response.rows[0],
-      blocks: { ...response.rows[0].blocks, forma_fuori: response.rows[0].blocks.forma_casa },
-      pt_form: { goals: 19, games: 10, avg: 1.9, alert: true, threshold: 1.5, markets: ['UNDER_PT_1_5', 'DRAW_PT'], x_pt: 2, u15_pt: 5, x_pct: 20, u15_pct: 50 },
-      reliability: { level: 'yellow' as const, red: [], yellow: ['Classifica incompleta (mancano alcuni risultati)'] },
-    }
-    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
-    render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
-    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    // riquadro primo tempo: risultato PT grande e media delle due squadre
-    expect(within(detail).getByText('Primo tempo · ultime 5 (casa in casa, ospite fuori)')).toBeTruthy()
-    expect(within(detail).getAllByText('1–1').length).toBe(2)
-    expect(within(detail).getByText('1,9 gol PT')).toBeTruthy()
-    expect(within(detail).getByText('20%')).toBeTruthy()
-    expect(within(detail).getByText('Gol PT 1,9')).toBeTruthy()
-    // barra della forza con la frase
-    expect(within(detail).getByText('Forza media delle avversarie · ultime 5')).toBeTruthy()
-    expect(within(detail).getAllByText((t) => t.startsWith('Avversarie alla pari (in media +0,22 punti a partita): i suoi 4 punti su 9')).length).toBe(2)
-    // affidabilità gialla con il motivo, pallino nell'elenco
-    expect(within(detail).getByText('Giallo · solo da leggere')).toBeTruthy()
-    expect(within(detail).getByText('Classifica incompleta (mancano alcuni risultati)')).toBeTruthy()
-    expect(screen.getAllByLabelText('Giallo · solo da leggere').length).toBeGreaterThan(0)
-  })
-
-  it('movimento quote, calendario con le coppe e formazioni (18/11/2026)', async () => {
-    const api = await import('../../lib/analystJournalApi')
-    const row = {
-      ...response.rows[0],
-      odds_move: {
-        status: 'ok' as const,
-        read_at: '2099-11-05T17:45:00+00:00',
-        markets: [
-          { key: 'HOME', morning_quota: 2.1, later_quota: 1.9, morning_prob: 0.456, later_prob: 0.504, move_points: 4.8, cecchino_prob: 0.52, toward_cecchino: true, clv_morning: 0.058 },
-          { key: 'UNDER_2_5', morning_quota: 1.8, later_quota: 1.95, morning_prob: 0.531, later_prob: 0.49, move_points: -4.1, cecchino_prob: 0.6, toward_cecchino: false, clv_morning: -0.118 },
-        ],
-      },
-      schedule: {
-        home: { last: { date: '2099-11-01', kickoff: null, competition: 'Coppa Italia', league_match: false, opponent: 'Rivale', home: true, days: 4 }, next: { date: '2099-11-08', kickoff: null, competition: 'Serie Z', league_match: true, opponent: 'Altra', home: false, days: 3 }, games_7: 1, games_14: 2 },
-        away: null,
-      },
-      squads: {
-        home: {
-          lineups_known: 10,
-          habitual: [{ id: 1, name: 'Rossi', pos: 'G' }],
-          injured: [{ name: 'Rossi', kind: 'Missing Fixture', reason: 'Injury', starter: true }],
-          missing_starters: 1,
-          probable: [],
-          history: [{ date: '2099-10-20', opponent: 'Rivale', rosa: { complete: false, missing: 3, text: '−3 titolari (portiere, 2 difensori)' } }],
-        },
-      },
-    }
-    vi.mocked(api.getMatchTable).mockResolvedValueOnce({ ...response, rows: [row] })
-    render(<MatchTable />)
-    await screen.findAllByText('Casa FC')
-    const detail = screen.getByRole('heading', { level: 2 }).closest('aside')!
-    expect(within(detail).getByText((t) => t.startsWith('▲ +4,8 punti')).className).toContain('text-emerald-700')
-    expect(within(detail).getByText(/▼ −4,1 punti/).className).toContain('text-rose-700')
-    expect(within(detail).getByText('Coppa Italia')).toBeTruthy()
-    expect(within(detail).getByText(/tra 3 giorni: possibile turnover/)).toBeTruthy()
-    expect(within(detail).getByText('Calendario non disponibile')).toBeTruthy()
-    expect(within(detail).getByText('1 su 11')).toBeTruthy()
-    expect(within(detail).getByText('−3 titolari (portiere, 2 difensori)')).toBeTruthy()
   })
 })

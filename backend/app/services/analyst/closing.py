@@ -254,9 +254,22 @@ def run_extra_jobs(db: Session, client: Any) -> dict[str, Any]:
     from app.services.analyst.calendar import refresh_calendar
     from app.services.analyst.lineups import refresh_injuries, refresh_lineups
     from app.services.analyst.odds_reads import run_second_read
+    from app.services.analyst.paper import record_hypotheses
+    from app.services.analyst.weather import refresh_weather
+    from app.services.analyst.zones import refresh_zones
 
     out: dict[str, Any] = {}
-    for name, job in (("t75", run_second_read), ("calendar", refresh_calendar), ("lineups", refresh_lineups), ("injuries", refresh_injuries)):
+    # capitolato del 24/11/2026: zone della classifica (1 chiamata per campionato a settimana), meteo (Open-Meteo,
+    # nessuna chiamata API-Football), ipotesi 2 sulla carta e chiusura delle giocate sulla carta
+    for name, job in (
+        ("t75", run_second_read),
+        ("calendar", refresh_calendar),
+        ("lineups", refresh_lineups),
+        ("injuries", refresh_injuries),
+        ("zones", refresh_zones),
+        ("weather", refresh_weather),
+        ("paper", record_hypotheses),
+    ):
         try:
             out[name] = job(db, client)
         except Exception:  # noqa: BLE001

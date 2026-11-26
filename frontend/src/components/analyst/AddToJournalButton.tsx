@@ -10,7 +10,11 @@ import {
   getFixtureInfo,
   getJournalMeta,
   listCycles,
-  type Checklist,
+  savePaperPlay,
+  uploadEntryPhoto,
+  type AnswerKey,
+  type AnswerValue,
+  type Answers,
   type Cycle,
   type FixtureInfo,
   type JournalMeta,
@@ -18,13 +22,24 @@ import {
   type PlayCheck,
   type ToolSnapshot,
 } from '../../lib/analystJournalApi'
-import { ChecklistEditor } from './ChecklistEditor'
+import { C, hhmm, q2, signLabel } from './diarioFormat'
 import { OddsAge } from './OddsAge'
 
 const JOURNAL_TAB = 'diario-analisi'
 /** bookmaker piu' usati (si puo' scrivere anche un altro) */
 const BOOKMAKERS = ['Bet365', 'Sisal', 'Snai', 'Eurobet', 'Goldbet', 'Lottomatica', 'Planetwin365', 'Betfair', 'William Hill', 'Unibet', 'Pinnacle']
 const LAST_BOOK_KEY = 'diario-ultimo-bookmaker'
+const ANSWERS: { key: AnswerKey; label: string; none: string }[] = [
+  { key: 'assenze', label: 'Assenze pesanti confermate', none: 'non verificato' },
+  { key: 'allenatore', label: 'Cambio allenatore o crisi', none: 'non verificato' },
+  { key: 'motivazione', label: 'Motivazione particolare', none: 'non verificata' },
+]
+const RISK_MIN = 15
+const EXCEPTION_MIN = 15
+const MAX_PHOTOS = 5
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const CAPTION_MIN = 5
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 function lastBookmaker(): string {
   try {
@@ -41,8 +56,7 @@ function rememberBookmaker(name: string) {
     // niente: e' solo una comodita'
   }
 }
-const inputClass =
-  'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none'
+const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none'
 
 type Props = {
   todayFixtureId: number
@@ -77,29 +91,33 @@ export function AddToJournalButton({ todayFixtureId, source, marketKey, quota, t
       >
         + Aggiungi al diario
       </button>
-      {open ? (
-        <AddToJournalDialog
-          todayFixtureId={todayFixtureId}
-          source={source}
-          marketKey={marketKey ?? null}
-          quota={quota ?? null}
-          tool={tool}
-          onClose={() => setOpen(false)}
-        />
-      ) : null}
+      {open ? <JournalDialog todayFixtureId={todayFixtureId} source={source} marketKey={marketKey ?? null} quota={quota ?? null} tool={tool} onClose={() => setOpen(false)} /> : null}
     </>
   )
 }
 
-function AddToJournalDialog({
+type StagedPhoto = { file: File; caption: string; preview: string }
+
+/** «Prima di salvare» (capitolato del 24/11/2026, modifiche 4, 8 e 18): segno, quota presa, bookmaker, progressione,
+ *  puntata; tre domande obbligatorie; «Cosa potrebbe smentire questa giocata?»; foto facoltative. Un segno bloccato
+ *  (o fuori fascia) si salva solo come eccezione, con il motivo scritto. */
+export function JournalDialog({
   todayFixtureId,
   source,
   marketKey,
   quota,
   tool,
   onClose,
-}: Omit<Props, 'className' | 'compact'> & { marketKey: string | null; quota: number | null; onClose: () => void }) {
+}: {
+  todayFixtureId: number
+  source: JournalSource
+  marketKey: string | null
+  quota?: number | null
+  tool?: ToolSnapshot
+  onClose: () => void
+}) {
   const openedAt = useRef(0)
+  const papered = useRef<Set<string>>(new Set())
   const [meta, setMeta] = useState<JournalMeta | null>(null)
   const [info, setInfo] = useState<FixtureInfo | null>(null)
   const [cycles, setCycles] = useState<Cycle[]>([])
@@ -111,13 +129,13 @@ function AddToJournalDialog({
   const [cycleId, setCycleId] = useState<number | null>(null)
   const [stakeText, setStakeText] = useState('')
   const [suggestion, setSuggestion] = useState<Cycle['suggestion'] | null>(null)
-  const [checklist, setChecklist] = useState<Checklist>({})
-  const [analysisNote, setAnalysisNote] = useState('')
-  const [notes, setNotes] = useState('')
-  const [minutesText, setMinutesText] = useState('')
-  const [showChecklist, setShowChecklist] = useState(true)
+  const [answers, setAnswers] = useState<Answers>({})
+  const [risk, setRisk] = useState('')
+  const [exceptionReason, setExceptionReason] = useState('')
+  const [photos, setPhotos] = useState<StagedPhoto[]>([])
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [rulesCheck, setRulesCheck] = useState<PlayCheck | null>(null)
+  const [check, setCheck] = useState<PlayCheck | null>(null)
 
   useEffect(() => {
     openedAt.current = Date.now()
@@ -132,10 +150,15 @@ function AddToJournalDialog({
     )
   }, [todayFixtureId, marketKey])
 
+  // le anteprime si liberano solo alla chiusura (prima resterebbero vuote quelle ancora mostrate)
+  const previews = useRef<string[]>([])
+  useEffect(() => {
+    previews.current = photos.map((p) => p.preview)
+  }, [photos])
+  useEffect(() => () => previews.current.forEach((u) => URL.revokeObjectURL(u)), [])
+
   const marketRow = useMemo(() => info?.markets.find((m) => m.key === market) ?? null, [info, market])
   const quotaValue = Number(quotaText.replace(',', '.'))
-
-  const onMarketChange = (key: string) => setMarket(key)
 
   useEffect(() => {
     if (!cycleId || !(quotaValue > 1)) return
@@ -152,23 +175,54 @@ function AddToJournalDialog({
     }
   }, [cycleId, quotaValue])
 
-  // regole di acquisto (07/11/2026): avvisano mentre si sceglie, ma l'ultima parola resta all'analista
+  // stato del segno su Q, quota presa diversa dal tool, avvisi della testata
   useEffect(() => {
     if (!market) return
     let alive = true
     const t = window.setTimeout(() => {
-      checkPlay({ today_fixture_id: todayFixtureId, market_key: market, quota: quotaValue > 1 ? quotaValue : null, checklist }).then(
-        (r) => alive && setRulesCheck(r),
-        () => alive && setRulesCheck(null),
+      checkPlay({ today_fixture_id: todayFixtureId, market_key: market, quota: quotaValue > 1 ? quotaValue : null }).then(
+        (r) => alive && setCheck(r),
+        () => alive && setCheck(null),
       )
     }, 300)
     return () => {
       alive = false
       window.clearTimeout(t)
     }
-  }, [todayFixtureId, market, quotaValue, checklist])
-  const shownCheck = market ? rulesCheck : null
-  const outOfRules = Boolean(shownCheck?.warnings.length)
+  }, [todayFixtureId, market, quotaValue])
+
+  const shown = market ? check : null
+  const sign = shown?.sign ?? null
+  const exception = sign?.state === 'blocked' || sign?.state === 'out'
+
+  // un segno bloccato scelto si salva sulla carta (modifica 11): se poi diventa un'eccezione resta collegato
+  useEffect(() => {
+    if (sign?.state !== 'blocked' || !market || papered.current.has(market)) return
+    papered.current.add(market)
+    void savePaperPlay(todayFixtureId, market).catch(() => undefined)
+  }, [sign?.state, market, todayFixtureId])
+
+  const addPhotos = (files: FileList | null) => {
+    setPhotoError(null)
+    if (!files) return
+    const next = [...photos]
+    for (const f of Array.from(files)) {
+      if (next.length >= MAX_PHOTOS) {
+        setPhotoError(`Al massimo ${MAX_PHOTOS} foto per giocata`)
+        break
+      }
+      if (!PHOTO_TYPES.includes(f.type)) {
+        setPhotoError('Formato non ammesso: solo JPG, PNG o WEBP')
+        continue
+      }
+      if (f.size > MAX_PHOTO_BYTES) {
+        setPhotoError('Foto troppo grande: massimo 5 MB')
+        continue
+      }
+      next.push({ file: f, caption: '', preview: URL.createObjectURL(f) })
+    }
+    setPhotos(next)
+  }
 
   const save = async () => {
     if (!market) return setError('Scegli il pronostico')
@@ -176,11 +230,15 @@ function AddToJournalDialog({
     if (!bookmaker.trim()) return setError('Scrivi il bookmaker della quota presa')
     const stake = stakeText ? Number(stakeText.replace(',', '.')) : null
     if (stake !== null && !(stake > 0)) return setError('Puntata non valida')
-    const minutes = minutesText ? Number(minutesText) : Math.max(1, Math.round((Date.now() - openedAt.current) / 60000))
+    if (ANSWERS.some((a) => !answers[a.key])) return setError('Rispondi alle tre domande (sì, no o non verificato)')
+    if (risk.trim().length < RISK_MIN) return setError(`Scrivi cosa potrebbe smentire questa giocata (almeno ${RISK_MIN} caratteri)`)
+    if (exception && exceptionReason.trim().length < EXCEPTION_MIN) return setError(`Scrivi perché la vuoi registrare lo stesso (almeno ${EXCEPTION_MIN} caratteri)`)
+    if (photos.some((p) => p.caption.trim().length < CAPTION_MIN)) return setError(`Ogni foto ha bisogno della didascalia (almeno ${CAPTION_MIN} caratteri)`)
+    const minutes = Math.max(1, Math.round((Date.now() - openedAt.current) / 60000))
     setBusy(true)
     setError(null)
     try {
-      await createEntry({
+      const { entry } = await createEntry({
         today_fixture_id: todayFixtureId,
         market_key: market,
         quota: quotaValue,
@@ -190,13 +248,23 @@ function AddToJournalDialog({
         stake_suggested: cycleId && suggestion?.stake ? suggestion.stake : null,
         cycle_id: cycleId,
         tool: { ...tool, quota_tool: quota ?? undefined },
-        checklist,
-        analysis_note: analysisNote,
-        notes,
-        minutes_spent: Number.isFinite(minutes) ? minutes : null,
+        answers,
+        risk_note: risk.trim(),
+        exception,
+        exception_reason: exception ? exceptionReason.trim() : undefined,
+        minutes_spent: minutes,
       })
       rememberBookmaker(bookmaker.trim())
-      toast.success('Aggiunta al diario')
+      let failed = 0
+      for (const p of photos) {
+        try {
+          await uploadEntryPhoto(entry.id, p.file, p.caption.trim())
+        } catch {
+          failed += 1
+        }
+      }
+      if (failed) toast.error(`Giocata salvata, ma ${failed} foto non sono state caricate: riprova dalla giocata`)
+      toast.success(exception ? 'Eccezione registrata' : 'Aggiunta al diario')
       onClose()
     } catch (e) {
       setError(e instanceof AdminHttpError ? e.message : 'Salvataggio non riuscito')
@@ -212,25 +280,25 @@ function AddToJournalDialog({
     for (const m of info?.markets ?? []) out.set(m.group, [...(out.get(m.group) ?? []), m])
     return [...out.entries()]
   }, [info])
+  const values = meta?.answer_values ?? { si: 'sì', no: 'no', nv: 'non verificato' }
+  const motivationAlerts = (shown?.alerts ?? []).filter((a) => a.code !== 'ravvicinata')
 
   return (
     <div
       className="fixed inset-0 z-[65] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label="Aggiungi al diario"
+      aria-label="Prima di salvare"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="w-full max-w-2xl space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Aggiungi al diario</h2>
+            <h2 className="text-base font-semibold text-slate-900">{exception ? 'Registra eccezione' : 'Prima di salvare'}</h2>
             {fx ? (
               <p className="text-sm text-slate-600">
                 {fx.home_team} – {fx.away_team} · {fx.league_name}
-                {fx.kickoff
-                  ? ` · ${new Date(fx.kickoff).toLocaleString('it-IT', { timeZone: 'Europe/Rome', dateStyle: 'short', timeStyle: 'short' })}`
-                  : ''}
+                {fx.kickoff ? ` · ${new Date(fx.kickoff).toLocaleString('it-IT', { timeZone: 'Europe/Rome', dateStyle: 'short', timeStyle: 'short' })}` : ''}
               </p>
             ) : (
               <p className="text-sm text-slate-500">Carico la partita…</p>
@@ -250,15 +318,15 @@ function AddToJournalDialog({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-[13px] font-medium text-slate-600">Pronostico</span>
-            <select className={inputClass} value={market} onChange={(e) => onMarketChange(e.target.value)}>
+            <span className="text-[13px] font-medium text-slate-600">Segno</span>
+            <select className={inputClass} value={market} onChange={(e) => setMarket(e.target.value)}>
               <option value="">Scegli…</option>
               {groups.map(([group, items]) => (
                 <optgroup key={group} label={group}>
                   {items.map((m) => (
                     <option key={m.key} value={m.key}>
-                      {m.label}
-                      {m.quota_book ? ` · ${m.quota_book}` : ''}
+                      {signLabel(m.label)}
+                      {m.quota_book ? ` · ${q2(m.quota_book)}` : ''}
                     </option>
                   ))}
                 </optgroup>
@@ -280,19 +348,22 @@ function AddToJournalDialog({
               </datalist>
             </label>
             <div className="col-span-2">
-              {marketRow?.quota_book || quota ? (
+              {sign?.q ? (
                 <span className="block text-[13px] text-slate-500">
-                  Quota del tool <b className="tabular-nums text-slate-700">{quotaText2(marketRow?.quota_book ?? quota)}</b> (salvata a parte per il confronto)
+                  Quota del tool <b className="tabular-nums text-slate-700">{q2(sign.q)}</b> ({sign.q_source === 't75' ? 'seconda lettura' : 'mattino'} delle {hhmm(sign.q_at)}, salvata a parte)
+                </span>
+              ) : marketRow?.quota_book || quota ? (
+                <span className="block text-[13px] text-slate-500">
+                  Quota del tool <b className="tabular-nums text-slate-700">{q2(marketRow?.quota_book ?? quota)}</b> (salvata a parte per il confronto)
                 </span>
               ) : null}
               <OddsAge iso={fx?.odds_checked_at} />
+              {shown?.quota_gap ? (
+                <span className="mt-1 block rounded-md px-2 py-1 text-[13px]" style={{ color: C.warn.text, background: C.warn.bg }} role="status">
+                  {shown.quota_gap.text}
+                </span>
+              ) : null}
             </div>
-            {marketRow?.prob_cecchino ? (
-              <span className="col-span-2 block text-[13px] text-slate-500">
-                Probabilità del tool {(marketRow.prob_cecchino * 100).toFixed(0)}%
-                {tool?.probability ? ` · in pagina ${Math.round(tool.probability > 1 ? tool.probability : tool.probability * 100)}%` : ''}
-              </span>
-            ) : null}
           </div>
           <label className="block">
             <span className="text-[13px] font-medium text-slate-600">Progressione (metodo di cassa)</span>
@@ -328,33 +399,81 @@ function AddToJournalDialog({
           </label>
         </div>
 
-        {shownCheck ? <RulesAlert check={shownCheck} /> : null}
+        {shown ? <SignStateBox check={shown} reason={exceptionReason} onReason={setExceptionReason} /> : null}
 
-        <div>
-          <button type="button" className="text-sm font-semibold text-slate-800" onClick={() => setShowChecklist((v) => !v)}>
-            {showChecklist ? '▾' : '▸'} Scheda pronostico
-          </button>
-          {showChecklist && meta ? (
-            <div className="mt-2">
-              <ChecklistEditor items={meta.checklist} value={checklist} hints={info?.hints} onChange={setChecklist} />
-            </div>
-          ) : null}
-        </div>
-
-        <label className="block">
-          <span className="text-[13px] font-medium text-slate-600">Descrizione modalità di intervento</span>
-          <textarea className={`${inputClass} min-h-[64px]`} value={analysisNote} onChange={(e) => setAnalysisNote(e.target.value)} />
-        </label>
-        <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+        <section className="space-y-2 rounded-xl border border-slate-200 p-3">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Prima di salvare</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {ANSWERS.map((a) => (
+              <div key={a.key}>
+                <p className="text-[13px] text-slate-700">{a.label}</p>
+                <div className="mt-0.5 inline-flex overflow-hidden rounded-lg border border-slate-200" role="group" aria-label={a.label}>
+                  {(['si', 'no', 'nv'] as AnswerValue[]).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      aria-pressed={answers[a.key] === v}
+                      onClick={() => setAnswers((x) => ({ ...x, [a.key]: v }))}
+                      className={`px-2.5 py-1 text-[13px] font-medium ${answers[a.key] === v ? 'bg-[#2457B3] text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      {v === 'nv' ? a.none : values[v]}
+                    </button>
+                  ))}
+                </div>
+                {a.key === 'motivazione' && motivationAlerts.length ? (
+                  <div className="mt-1 space-y-0.5">
+                    {motivationAlerts.map((x) => (
+                      <p key={x.code} className="rounded-md px-2 py-0.5 text-[12px]" style={{ color: C.warn.text, background: C.warn.bg }}>
+                        {x.text}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
           <label className="block">
-            <span className="text-[13px] font-medium text-slate-600">Note</span>
-            <input className={inputClass} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <span className="text-[13px] font-semibold text-slate-800">Cosa potrebbe smentire questa giocata?</span>{' '}
+            <span className="text-[12px] text-slate-400">(obbligatorio, una frase)</span>
+            <textarea
+              className={`${inputClass} min-h-[64px]`}
+              placeholder="es. «Il Catanzaro ha giocato 4 gare su 5 contro avversarie più forti: il pari può essere meno probabile di quanto dice la forma»"
+              value={risk}
+              onChange={(e) => setRisk(e.target.value)}
+            />
           </label>
-          <label className="block">
-            <span className="text-[13px] font-medium text-slate-600">Minuti di analisi</span>
-            <input className={inputClass} inputMode="numeric" placeholder="automatico" value={minutesText} onChange={(e) => setMinutesText(e.target.value.replace(/\D/g, ''))} />
-          </label>
-        </div>
+          <div>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50">
+              Allega foto (facoltativo)
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" onChange={(e) => addPhotos(e.target.files)} />
+            </label>
+            <p className="mt-1 text-[12px] text-slate-400">Niente foto con nomi, saldo o dati del conto: ritaglia prima di caricare.</p>
+            {photoError ? <p className="mt-1 text-[13px] text-rose-700">{photoError}</p> : null}
+            {photos.length ? (
+              <div className="mt-2 space-y-2">
+                {photos.map((p, i) => (
+                  <div key={p.preview} className="flex items-center gap-2">
+                    <img src={p.preview} alt="" className="h-12 w-12 rounded object-cover" />
+                    <input
+                      className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                      placeholder="didascalia (es. formazione ufficiale)"
+                      value={p.caption}
+                      maxLength={200}
+                      onChange={(e) => setPhotos((xs) => xs.map((x, j) => (j === i ? { ...x, caption: e.target.value } : x)))}
+                    />
+                    <button type="button" className="text-[13px] text-slate-500 underline" onClick={() => {
+                        URL.revokeObjectURL(p.preview)
+                        setPhotos((xs) => xs.filter((_, j) => j !== i))
+                      }}
+                    >
+                      togli
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </section>
 
         {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <div className="flex justify-end gap-2">
@@ -365,9 +484,9 @@ function AddToJournalDialog({
             type="button"
             onClick={() => void save()}
             disabled={busy || !info || fx?.started}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${exception ? 'bg-[#B03030] hover:bg-[#962828]' : 'bg-slate-900 hover:bg-slate-800'}`}
           >
-            {busy ? 'Salvo…' : outOfRules ? 'Salva lo stesso' : 'Salva nel diario'}
+            {busy ? 'Salvo…' : exception ? 'Registra eccezione' : 'Salva nel diario'}
           </button>
         </div>
       </div>
@@ -375,49 +494,69 @@ function AddToJournalDialog({
   )
 }
 
-function quotaText(v: number | null | undefined): string {
-  return v == null ? '—' : v.toFixed(2).replace('.', ',')
-}
-
-/** Avviso delle regole di acquisto di Giovanni: non blocca, la giocata fuori regola resta segnata nel diario. */
-function RulesAlert({ check }: { check: PlayCheck }) {
-  const facts = [
-    check.match_type ? `Partita: ${check.match_type}` : null,
-    check.quota_cecchino ? `quota Cecchino ${quotaText(check.quota_cecchino)}` : null,
-    check.rule?.min || check.rule?.max
-      ? `fascia ${check.rule.min ? `da ${quotaText(check.rule.min)}` : ''}${check.rule.min && check.rule.max ? ' ' : ''}${check.rule.max ? `a ${quotaText(check.rule.max)}` : ''}`
-      : null,
-  ].filter(Boolean)
-  return (
-    <div className="space-y-1.5">
-      {check.warnings.length ? (
-        <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
-          <p className="font-semibold">Attenzione: questa giocata non è da comprare</p>
-          {check.warnings.map((w) => (
-            <p key={w.code}>{w.text}</p>
-          ))}
-          <p className="mt-1 text-[13px] text-rose-700">Puoi salvarla lo stesso: resterà segnata «fuori regola» nel diario e nel report.</p>
-        </div>
-      ) : check.rule ? (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Dentro le regole di acquisto.</p>
-      ) : null}
-      {check.checklist_warning ? <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{check.checklist_warning.text}</p> : null}
+/** Stato del segno scelto (modifiche 3 e 4): giocabile, da verificare, oppure fuori regola con il motivo da scrivere. */
+function SignStateBox({ check, reason, onReason }: { check: PlayCheck; reason: string; onReason: (v: string) => void }) {
+  const s = check.sign
+  const extra = (
+    <>
       {check.goal_alert && check.goal_form ? (
-        <p className="rounded-xl border border-orange-300 bg-orange-50 px-3 py-2 text-[13px] text-orange-800" role="status">
-          Forma da gol: {check.goal_form.goals} gol in {check.goal_form.games} gare ({String(check.goal_form.avg).replace('.', ',')} a partita, sopra{' '}
-          {String(check.goal_form.threshold).replace('.', ',')}). È solo un avviso.
+        <p className="rounded-xl px-3 py-2 text-[13px]" style={{ color: C.warn.text, background: C.warn.bg }} role="status">
+          Avviso Under: {check.goal_form.goals} gol in {check.goal_form.games} gare ({String(check.goal_form.avg).replace('.', ',')} a partita). È solo un avviso.
         </p>
       ) : null}
       {check.editable === false && check.not_editable_reason ? (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
-          {check.not_editable_reason}: nella Tabella del Diario questa partita non si aggiunge.
-        </p>
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{check.not_editable_reason}: nella Tabella del Diario questa partita non si aggiunge.</p>
       ) : null}
-      {facts.length ? <p className="text-[13px] text-slate-500">{facts.join(' · ')}</p> : null}
+    </>
+  )
+  if (!s) return extra
+  if (s.state === 'blocked' || s.state === 'out') {
+    return (
+      <div className="space-y-2">
+        <div className="space-y-2 rounded-xl border-2 border-[#B03030] p-3" role="alert">
+          <p className="font-semibold" style={{ color: C.loss.text }}>
+            Questa giocata è fuori regola
+          </p>
+          <p className="text-[13px] text-slate-700">
+            {signLabel(s.label)} a {q2(s.q)} ·{' '}
+            {s.reasons.map((r) => (
+              <span key={r.code} className="mr-1 inline-block rounded-md px-1.5 py-0.5 text-[12px] font-medium" style={{ color: C.loss.text, background: C.loss.bg }}>
+                {r.text}
+              </span>
+            ))}
+          </p>
+          <label className="block">
+            <span className="text-[13px] font-semibold text-slate-800">Perché la vuoi registrare lo stesso?</span> <span className="text-[12px] text-slate-400">(obbligatorio)</span>
+            <textarea
+              className="mt-1 min-h-[56px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="es. «formazione ufficiale con 3 attaccanti titolari, uscita dopo la lettura del mattino»"
+              value={reason}
+              onChange={(e) => onReason(e.target.value)}
+            />
+          </label>
+          <p className="text-[12px] text-slate-500">Sarà contata a parte, nelle «eccezioni», e non nel rendimento delle regole.</p>
+        </div>
+        {extra}
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5">
+      {s.state === 'check' ? (
+        <p className="rounded-xl px-3 py-2 text-sm" style={{ color: C.warn.text, background: C.warn.bg }}>
+          Da verificare: {s.reasons[0]?.text ?? 'controlla il modello'}. Si può salvare.
+        </p>
+      ) : (
+        <p className="rounded-xl px-3 py-2 text-sm" style={{ color: C.win.text, background: C.win.bg }}>
+          Giocabile: quota nella fascia e nessuna regola di blocco.
+        </p>
+      )}
+      {s.notes.map((n) => (
+        <p key={n.code} className="text-[12px]" style={{ color: C.warn.text }}>
+          avviso · {n.text}
+        </p>
+      ))}
+      {extra}
     </div>
   )
-}
-
-function quotaText2(v: number | null | undefined): string {
-  return v == null ? '—' : Number(v).toFixed(2).replace('.', ',')
 }

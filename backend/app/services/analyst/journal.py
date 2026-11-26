@@ -79,6 +79,24 @@ CHECKLIST: list[dict[str, str]] = [
 CHECKLIST_KEYS = {c["key"] for c in CHECKLIST}
 CHECKLIST_VALUES = ("favorevole", "neutro", "contrario")
 
+# "Prima di salvare" (capitolato del 24/11/2026, modifica 8): al posto della checklist di 16 voci tre domande
+# obbligatorie e "Cosa potrebbe smentire questa giocata?" (al posto di modalita' di intervento e note)
+ANSWER_KEYS: list[dict[str, str]] = [
+    {"key": "assenze", "label": "Assenze pesanti confermate"},
+    {"key": "allenatore", "label": "Cambio allenatore o crisi"},
+    {"key": "motivazione", "label": "Motivazione particolare"},
+]
+ANSWER_VALUES = {"si": "sì", "no": "no", "nv": "non verificato"}
+RISK_NOTE_MIN = 15
+EXCEPTION_MIN = 15
+
+
+def clean_answers(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    keys = {a["key"] for a in ANSWER_KEYS}
+    return {str(k): str(v) for k, v in raw.items() if str(k) in keys and str(v) in ANSWER_VALUES}
+
 SETTLE_AFTER = timedelta(minutes=110)  # una partita non si chiude prima di ~2 ore dal calcio d'inizio
 POSTPONED_GIVE_UP = timedelta(days=7)  # rinviata senza nuova data per una settimana: nulla
 _POSTPONED = {"PST", "SUSP", "INT"}
@@ -173,6 +191,12 @@ def entry_payload(entry: AnalystEntry, *, user_name: str | None = None, now: dat
         "settled_at": _aware(entry.settled_at).isoformat() if entry.settled_at else None,
         "locked": is_locked(entry, now),
         "created_at": _aware(entry.created_at).isoformat() if entry.created_at else None,
+        # capitolato del 24/11/2026
+        "is_exception": bool(getattr(entry, "is_exception", False)),
+        "exception_reason": getattr(entry, "exception_reason", None),
+        "answers": getattr(entry, "answers_json", None),
+        "risk_note": getattr(entry, "risk_note", None),
+        "tech": getattr(entry, "tech_json", None),
     }
 
 
