@@ -1240,12 +1240,17 @@ RULE_FILTERS = {
 }
 ALERT_FILTERS = {
     "ravvicinata": "gara ravvicinata",
-    "p27": "P27",
+    "p27": "P27 · posizione decisa",
+    "p27_senza": "P27 · senza obiettivi",
     "senza_motivazioni": "gara senza motivazioni",
     "turnover": "turnover",
     "ipotesi_2": "ipotesi 2",
     "casa_motivata": "casa motivata",
 }
+
+
+HYPOTHESIS_FROM = date(2026, 11, 26)
+HYPOTHESIS_TARGET = 100
 
 
 def _is_exception(e: AnalystEntry, codes: set[str]) -> bool:
@@ -1272,6 +1277,12 @@ def rule_value(
     def alerts_of(e: AnalystEntry) -> set[str]:
         return {str(a.get("code")) for a in ((getattr(e, "tech_json", None) or {}).get("alerts") or []) if isinstance(a, dict)}
 
+    # 26/11/2026 (Giovanni): i due casi di P27 su due righe separate, su tutte le giocate vere del periodo
+    alert_rows = [
+        {"key": code, "label": ALERT_FILTERS[code], **group_summary([e for e in rows if code in alerts_of(e)])} for code in ("p27", "p27_senza")
+    ]
+    # ipotesi 2: per il verdetto contano solo le gare sulla carta da oggi in poi (dal 26/11/2026), a 100 gare
+    hypothesis_all = paper_plays(db, kind=PAPER_HYPOTHESIS_2, user_id=None, date_from=HYPOTHESIS_FROM, date_to=None)
     inside = [e for e in rows if not _is_exception(e, codes.get(e.id, set()))]
     exceptions = [e for e in rows if _is_exception(e, codes.get(e.id, set()))]
     removed = paper_plays(db, kind=PAPER_BLOCKED, user_id=scope, date_from=date_from, date_to=date_to)
@@ -1291,6 +1302,8 @@ def rule_value(
     return {
         "groups": groups,
         "hypothesis": {"key": "ipotesi_2", "label": "ipotesi 2 · casa senza obiettivi, ospite in lotta (sulla carta)", **group_summary(hypothesis)},
+        "hypothesis_verdict": {"from": HYPOTHESIS_FROM.isoformat(), "target": HYPOTHESIS_TARGET, **group_summary(hypothesis_all)},
+        "alert_rows": alert_rows,
         "rule": rule if want_rule else None,
         "alert": want_alert,
         "rule_filters": list(RULE_FILTERS),

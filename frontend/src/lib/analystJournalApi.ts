@@ -279,6 +279,10 @@ export type RuleGroup = { key: string; label: string; entries: number; settled: 
 export type RuleValue = {
   groups: RuleGroup[]
   hypothesis: RuleGroup
+  /** ipotesi 2: gare sulla carta dal 26/11/2026, verdetto a 100 */
+  hypothesis_verdict?: { from: string; target: number; entries: number; settled: number; won: number; lost: number; units: number }
+  /** P27 · posizione decisa e P27 · senza obiettivi su due righe */
+  alert_rows?: RuleGroup[]
   rule: string | null
   alert: string | null
   rule_filters: string[]
