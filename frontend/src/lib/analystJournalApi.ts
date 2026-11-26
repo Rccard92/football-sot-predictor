@@ -538,7 +538,8 @@ export type TeamSquad = {
 }
 export type OddsMovesSummary = {
   reads: number
-  until: string
+  /** null = seconda lettura fissa (dal 26/11/2026) */
+  until: string | null
   markets: {
     key: string
     n: number

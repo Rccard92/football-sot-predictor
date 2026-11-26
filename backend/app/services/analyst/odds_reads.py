@@ -1,6 +1,7 @@
 """Seconda lettura Bet365 a 75 minuti dal via e movimento delle quote (Miglioria 1 di Giovanni, 17/11/2026).
 
-- Per 8 settimane (fino al 13/01/2027), per tutte le gare del Diario (eleggibili e nei campionati ammessi):
+- Fissa dal 26/11/2026 (prima per 8 settimane, decisione di Giovanni), per le gare del Diario (eleggibili, nei campionati
+  ammessi e con almeno un segno nella fascia del sito):
   75 minuti prima del calcio d'inizio una chiamata "odds?fixture=" e si salvano le quote Bet365.
 - Con le due letture (mattino 6:00 della fotografia di Today e T-75) la scheda della partita mostra il movimento
   della probabilita' senza margine e se il mercato si e' mosso verso il numero del Cecchino (= chi ha comprato al
@@ -28,7 +29,7 @@ from app.services.analyst.novig import novig_prob
 logger = logging.getLogger(__name__)
 
 READ_BEFORE = timedelta(minutes=75)
-READ_UNTIL = date(2027, 1, 13)  # 8 settimane dal 18/11/2026
+READ_UNTIL: date | None = None  # fissa dal 26/11/2026 (prima fino al 13/01/2027)
 KIND = "t75"
 BET365 = (8, "Bet365", "bet365")
 # mercati mostrati nel movimento (le doppie chance si leggono dall'1-X-2)
@@ -62,13 +63,39 @@ def due_reads(db: Session, now: datetime) -> list[tuple[CecchinoTodayFixture, da
             )
         ).all()
     }
-    return [(f, _aware(ko)) for f, ko in rows if int(f.id) not in done and league_admitted(f.country_name, f.league_name)]
+    from app.services.analyst.rules import load_rules
+
+    rules = load_rules(db)
+    return [
+        (f, _aware(ko))
+        for f, ko in rows
+        if int(f.id) not in done and league_admitted(f.country_name, f.league_name) and has_sign_in_range(rules, f)
+    ]
+
+
+_OUT_OF_RANGE = {"sotto_minimo", "sopra_massimo", "segno_da_evitare"}
+
+
+def has_sign_in_range(rules: dict[str, Any], fx: CecchinoTodayFixture) -> bool:
+    """Almeno un segno con una regola del sito e la quota del mattino nella sua fascia (26/11/2026, Giovanni):
+    le gare senza nessun segno giocabile non hanno bisogno della seconda lettura."""
+    from app.services.analyst.rules import match_type, quota_warnings
+
+    by_key = {str(r["market_key"]): r for r in ((fx.kpi_panel_json or {}).get("rows") or []) if isinstance(r, dict) and r.get("market_key")}
+    kind = match_type(*((by_key.get(k) or {}).get("quota_book") for k in ("HOME", "DRAW", "AWAY")))
+    for key, row in by_key.items():
+        if key not in (rules.get("markets") or {}) or not row.get("quota_book"):
+            continue
+        codes = {w["code"] for w in quota_warnings(rules, key, row.get("quota_book"), row.get("quota_cecchino"), kind)}
+        if not codes & _OUT_OF_RANGE:
+            return True
+    return False
 
 
 def run_second_read(db: Session, client: Any, now: datetime | None = None, *, max_calls: int = 80) -> dict[str, int]:
     now = now or datetime.now(timezone.utc)
     out = {"due": 0, "ok": 0, "nd": 0, "errors": 0}
-    if now.date() > READ_UNTIL:
+    if READ_UNTIL is not None and now.date() > READ_UNTIL:
         return out
     due = due_reads(db, now)
     out["due"] = len(due)
@@ -146,7 +173,7 @@ def summary(db: Session) -> dict[str, Any]:
     """Tutte le seconde letture: per mercato quante volte il mercato va verso il Cecchino e il CLV del mattino."""
     reads = db.execute(select(AnalystOddsRead).where(AnalystOddsRead.kind == KIND, AnalystOddsRead.status == "ok")).scalars().all()
     if not reads:
-        return {"reads": 0, "markets": [], "until": READ_UNTIL.isoformat()}
+        return {"reads": 0, "markets": [], "until": READ_UNTIL.isoformat() if READ_UNTIL else None}
     fixtures = {
         int(f.id): f
         for f in db.execute(
@@ -181,7 +208,7 @@ def summary(db: Session) -> dict[str, Any]:
         }
         for k, a in sorted(acc.items(), key=lambda kv: MOVE_MARKETS.index(kv[0]) if kv[0] in MOVE_MARKETS else 99)
     ]
-    return {"reads": len(reads), "markets": markets, "until": READ_UNTIL.isoformat()}
+    return {"reads": len(reads), "markets": markets, "until": READ_UNTIL.isoformat() if READ_UNTIL else None}
 
 
 def kpi_quotes(fx: CecchinoTodayFixture) -> tuple[dict[str, float], dict[str, float]]:

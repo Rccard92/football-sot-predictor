@@ -126,6 +126,31 @@ def geocode(db: Session, http: Any, city: str, country: str, now: datetime) -> A
     return row
 
 
+def home_city(db: Session, team_id: int, cache: dict[int, str | None]) -> str | None:
+    """Gara senza citta' dello stadio (26/11/2026, Giovanni): la citta' dello stadio della squadra di casa, dal
+    fornitore (scheda della squadra) o dall'ultima gara in casa che ce l'ha. Nessuna chiamata in piu'."""
+    if team_id in cache:
+        return cache[team_id]
+    from app.models.fixture import Fixture
+    from app.models.team import Team
+
+    city = None
+    team = db.get(Team, team_id)
+    raw = getattr(team, "raw_json", None) if team is not None else None
+    if isinstance(raw, dict):
+        city = clean_city(((raw.get("venue") or {}).get("city")) if isinstance(raw.get("venue"), dict) else None)
+    if not city:
+        last = db.execute(
+            select(Fixture.venue_city)
+            .where(Fixture.home_team_id == team_id, Fixture.venue_city.is_not(None))
+            .order_by(Fixture.kickoff_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        city = clean_city(last)
+    cache[team_id] = city
+    return city
+
+
 def parse_forecast(body: dict[str, Any]) -> dict[str, Any] | None:
     hourly = body.get("hourly") or {}
     times = hourly.get("time") or []
@@ -151,6 +176,7 @@ def refresh_weather(db: Session, client: Any = None, now: datetime | None = None
     have = {int(w.fixture_id): w for w in db.execute(select(AnalystWeather).where(AnalystWeather.fixture_id.in_([int(f.id) for _, f in matches]))).scalars()}
     own = http is None
     http = http or httpx.Client()
+    cities: dict[int, str | None] = {}
     try:
         for t, f in sorted(matches, key=lambda m: _aware(m[1].kickoff_at)):
             if out["calls"] >= max_calls:
@@ -158,8 +184,13 @@ def refresh_weather(db: Session, client: Any = None, now: datetime | None = None
             w = have.get(int(f.id))
             if w is not None and now - _aware(w.fetched_at) < REFRESH:
                 continue
-            city = clean_city(f.venue_city)
+            city = clean_city(f.venue_city) or home_city(db, int(f.home_team_id), cities)
             geo = geocode(db, http, city, t.country_name or "", now) if city and t.country_name else None
+            if (geo is None or geo.status != "ok") and t.country_name:
+                # la citta' dello stadio non si trova nel paese giusto: si prova quella della squadra di casa
+                alt = home_city(db, int(f.home_team_id), cities)
+                if alt and alt != city:
+                    geo = geocode(db, http, alt, t.country_name, now)
             if w is None:
                 w = AnalystWeather(fixture_id=int(f.id), status="nd", fetched_at=now)
                 db.add(w)

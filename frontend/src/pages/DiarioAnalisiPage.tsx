@@ -22,6 +22,7 @@ import {
   type EntryChange,
   type EntryPhoto,
   type OddsMovesSummary,
+  type RuleGroup,
   type RuleValue,
   journalExportUrl,
   listAnalysts,
@@ -1165,7 +1166,8 @@ function OddsMovesReport() {
     <section className={`${todayCard} ${todayCardPadding}`}>
       <h3 className={todaySectionTitle}>Movimento delle quote · mattino → 75&apos; dal via</h3>
       <p className={todaySectionSubtitle}>
-        Tutte le gare del Diario, seconda lettura Bet365 fino al {new Date(`${data.until}T12:00:00Z`).toLocaleDateString('it-IT')} · {data.reads} letture.
+        Tutte le gare del Diario con almeno un segno in fascia, seconda lettura Bet365{' '}
+        {data.until ? `fino al ${new Date(`${data.until}T12:00:00Z`).toLocaleDateString('it-IT')}` : 'fissa dal 26/11/2026'} · {data.reads} letture.
         &quot;Verso il Cecchino&quot; = il mercato si è mosso dalla parte del nostro numero; il CLV è quello di chi comprava al mattino.
       </p>
       {data.markets.length ? (
@@ -1250,6 +1252,32 @@ function ClvTwoColumns({ t }: { t: ReportRow }) {
   )
 }
 
+function roiOf(g: RuleGroup): number | null {
+  return g.settled ? (100 * g.units) / g.settled : null
+}
+
+/** Giudizio di R1 del 7/12/2026 (Giovanni): se i segni tolti non rendono almeno 1,5 punti meno dei rimasti, R1 passa ad avviso. */
+function R1Verdict({ value }: { value: RuleValue }) {
+  const inside = value.groups.find((g) => g.key === 'dentro')
+  const removed = value.groups.find((g) => g.key === 'tolte')
+  const a = inside ? roiOf(inside) : null
+  const b = removed ? roiOf(removed) : null
+  const gap = a != null && b != null ? a - b : null
+  return (
+    <p className='mt-1.5 rounded-md bg-slate-50 px-2 py-1 text-[12px] text-slate-600'>
+      Giudizio di R1 il 7 dicembre (filtro «R1»): resta un blocco se le tolte rendono almeno 1,5 punti meno delle giocate dentro le regole.{' '}
+      {value.rule === 'R1' && gap != null ? (
+        <b className={gap >= 1.5 ? 'text-emerald-700' : 'text-rose-700'}>
+          Oggi: {gap >= 0 ? '' : '−'}
+          {Math.abs(gap).toLocaleString('it-IT', { maximumFractionDigits: 1 })} punti ({gap >= 1.5 ? 'R1 regge' : 'R1 passerebbe ad avviso'}).
+        </b>
+      ) : (
+        <span>Scegli «R1» nel filtro per vedere il confronto.</span>
+      )}
+    </p>
+  )
+}
+
 /** Quanto vale ogni regola (modifica 11): dentro le regole, eccezioni, tolte dalle regole sulla carta. */
 function RuleValuePanel({ value, rule, alert, onRule, onAlert }: { value: RuleValue; rule: string; alert: string; onRule: (v: string) => void; onAlert: (v: string) => void }) {
   const tone: Record<string, string> = {
@@ -1290,6 +1318,7 @@ function RuleValuePanel({ value, rule, alert, onRule, onAlert }: { value: RuleVa
             <th className="py-1 text-right font-medium">Vinte</th>
             <th className="py-1 text-right font-medium">Perse</th>
             <th className="py-1 text-right font-medium">Unità</th>
+            <th className="py-1 text-right font-medium">ROI</th>
           </tr>
         </thead>
         <tbody>
@@ -1302,10 +1331,12 @@ function RuleValuePanel({ value, rule, alert, onRule, onAlert }: { value: RuleVa
               <td className="py-1.5 text-right">{g.won}</td>
               <td className="py-1.5 text-right">{g.lost}</td>
               <td className={`py-1.5 text-right font-semibold ${g.units > 0 ? 'text-emerald-700' : g.units < 0 ? 'text-rose-700' : ''}`}>{signedNum(g.settled ? g.units : null, ' u')}</td>
+              <td className="py-1.5 text-right">{signedNum(roiOf(g), '%')}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      <R1Verdict value={value} />
       <p className="mt-1.5 text-[12px] text-slate-500">
         «Tolte dalle regole»: i segni bloccati che l&apos;analista ha scelto e non ha registrato come eccezione, salvati senza puntata con il loro esito. Se
         restano in perdita, la regola sta lavorando. Giudizio dopo 50 giocate, e anche dopo si continua a contare. Il filtro per regola vale per eccezioni e
