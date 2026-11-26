@@ -16,3 +16,5 @@ scipy==1.18.0
 threadpoolctl==3.6.0
 pyarrow>=17.0.0,<23.0.0
 openpyxl>=3.1.0,<4.0.0
+# foto delle giocate del Diario (26/11/2026): riduzione a 1600 px e niente dati EXIF
+Pillow>=10.0.0,<13.0.0

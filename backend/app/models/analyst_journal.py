@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -98,6 +98,13 @@ class AnalystEntry(Base, TimestampMixin):
     clv: Mapped[float | None] = mapped_column(Float, nullable=True)
     clv_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     closing_prob: Mapped[float | None] = mapped_column(Float, nullable=True)  # chiusura senza margine
+    # capitolato del 24/11/2026: eccezione (segno bloccato registrato con il motivo), le tre domande e "cosa
+    # potrebbe smentire questa giocata?" al posto della checklist, scheda tecnica salvata e non modificabile
+    is_exception: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exception_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answers_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    risk_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tech_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class AnalystMatchNote(Base, TimestampMixin):

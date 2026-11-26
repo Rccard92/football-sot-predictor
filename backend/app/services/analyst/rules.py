@@ -27,9 +27,25 @@ from app.models.analyst_journal import AnalystSetting
 RULES_KEY = "rules"
 
 _RANGE_LOW = {"min": 1.30, "max": 1.55}
+# Capitolato del 24/11/2026 (modifica 3): R1 e R2 bloccano il segno, che si salva solo come eccezione.
+# Prova sullo storico del Today (26/11/2026, 34.757 segni nella fascia, giugno-novembre):
+# - R1 (book oltre il 10% sotto il Cecchino) toglie il 48% dei segni; quelli tolti rendono -7,6% contro -5,8%
+#   dei rimasti, ma non in tutti i mesi (meglio in 4 su 6) e non in tutti i mercati: attiva come blocco;
+# - R2 su Over PT 0,5 (almeno 3 volte 0-0 al PT nelle ultime 5 in casa): -8,3% contro -7,0%: attiva;
+# - R2 su 1 e 1X (casa sotto 4 punti su 15 in casa): i segni tolti rendono MEGLIO (1X -2,9% contro -6,9%),
+#   quindi resta un avviso e non blocca finche' Giovanni non decide (si accende dalla pagina Regole);
+# - valore secondo il Cecchino sopra +30%: -8,3% contro -3,9% della fascia +10/+30: "da verificare".
+RULES_SINCE = "26 nov 2026"
 DEFAULT_RULES: dict[str, Any] = {
-    "checklist_min": 5,
+    "checklist_min": 5,  # solo per le giocate salvate con la vecchia checklist (prima del 26/11/2026)
     "under_no_squilibrio": True,
+    "r1_pct": 10,
+    "r1_block": True,
+    "r2_home_points_min": 4,
+    "r2_home_block": False,
+    "r2_pt_zero_min": 3,
+    "r2_pt_block": True,
+    "anomaly_pct": 30,
     "markets": {
         "UNDER_3_5": {"min": 1.50, "cecchino_mult": 1.15},
         "UNDER_2_5": {"min": 2.00, "cecchino_mult": 1.15},
@@ -60,8 +76,12 @@ CODE_LABELS = {
     "segno_da_evitare": "Segno da evitare",
     "under_squilibrio": "Under in squilibrio",
     "checklist_incompleta": "Checklist incompleta",
+    # capitolato del 24/11/2026
+    "r1": "R1 · book sotto il Cecchino",
+    "r2_casa": "R2 · casa con pochi punti in casa",
+    "r2_pt": "R2 · casa con tanti 0-0 al PT",
 }
-QUOTA_CODES = ("sotto_minimo", "sopra_massimo", "segno_da_evitare", "under_squilibrio")
+QUOTA_CODES = ("sotto_minimo", "sopra_massimo", "segno_da_evitare", "under_squilibrio", "r1", "r2_casa", "r2_pt")
 # motivi che sceglie chi rivede la giocata
 MANUAL_TAGS = {
     "motivo_generico": "Motivo generico, non convincente",
@@ -106,12 +126,28 @@ def load_rules(db: Session) -> dict[str, Any]:
     row = db.get(AnalystSetting, RULES_KEY)
     rules = copy.deepcopy(DEFAULT_RULES)
     saved = row.value_json if row is not None and isinstance(row.value_json, dict) else {}
-    for key in ("checklist_min", "under_no_squilibrio"):
+    for key in ("checklist_min", "under_no_squilibrio", *BLOCK_KEYS):
         if key in saved:
             rules[key] = saved[key]
     if isinstance(saved.get("markets"), dict):
         rules["markets"] = saved["markets"]
+    if row is not None and row.updated_at is not None and any(k in saved for k in BLOCK_KEYS):
+        rules["since"] = row.updated_at.strftime("%d/%m/%Y")
     return rules
+
+
+BLOCK_KEYS = ("r1_pct", "r1_block", "r2_home_points_min", "r2_home_block", "r2_pt_zero_min", "r2_pt_block", "anomaly_pct")
+
+
+def rules_version(rules: dict[str, Any]) -> str:
+    """Versione delle regole salvata in ogni giocata (modifica 12), es. "R1 10% + R2 PT · 26 nov 2026"."""
+    parts = []
+    if rules.get("r1_block", True):
+        parts.append(f"R1 {int(rules.get('r1_pct', 10))}%")
+    r2 = [name for name, key in (("casa", "r2_home_block"), ("PT", "r2_pt_block")) if rules.get(key)]
+    if r2:
+        parts.append("R2 " + " e ".join(r2))
+    return (" + ".join(parts) or "solo fasce") + " · " + str(rules.get("since") or RULES_SINCE)
 
 
 def clean_rules(raw: Any, market_keys: set[str]) -> dict[str, Any]:
@@ -124,6 +160,16 @@ def clean_rules(raw: Any, market_keys: set[str]) -> dict[str, Any]:
     except (TypeError, ValueError):
         raise ValueError("Punti minimi della checklist non validi") from None
     out["under_no_squilibrio"] = bool(raw.get("under_no_squilibrio", True))
+    for key in ("r1_block", "r2_home_block", "r2_pt_block"):
+        out[key] = bool(raw.get(key, DEFAULT_RULES[key]))
+    for key, low, high in (("r1_pct", 1, 50), ("r2_home_points_min", 0, 15), ("r2_pt_zero_min", 1, 5), ("anomaly_pct", 5, 200)):
+        try:
+            value = int(raw.get(key, DEFAULT_RULES[key]))
+        except (TypeError, ValueError):
+            raise ValueError(f"{key}: numero non valido") from None
+        if not low <= value <= high:
+            raise ValueError(f"{key}: deve stare tra {low} e {high}")
+        out[key] = value
     for key, rule in (raw.get("markets") or {}).items():
         if key not in market_keys or not isinstance(rule, dict):
             continue
@@ -202,6 +248,11 @@ def quota_status(rules: dict[str, Any], market_key: str, quota: Any, quota_cecch
     return "ok"
 
 
+def uses_checklist(entry: Any) -> bool:
+    """Giocata salvata con la vecchia scheda di 16 voci (prima del 26/11/2026)."""
+    return getattr(entry, "answers_json", None) is None
+
+
 def checklist_count(checklist: Any) -> int:
     if not isinstance(checklist, dict):
         return 0
@@ -241,7 +292,10 @@ def entry_check(rules: dict[str, Any], fx: Any, market_key: str, quota: Any) -> 
 def entry_codes(entry: Any, rules: dict[str, Any], review_tags: set[str] | None = None) -> set[str]:
     """Motivi d'errore di una giocata: avvisi salvati + checklist (letta ora: si chiude al calcio d'inizio) + revisioni."""
     codes = {w.get("code") for w in ((entry.rule_check_json or {}).get("warnings") or []) if isinstance(w, dict)}
-    if checklist_warning(rules, entry.checklist_json):
+    # dal 26/11/2026 la checklist non c'e' piu' (modifica 8): vale solo per le giocate salvate con la checklist
+    if uses_checklist(entry) and checklist_warning(rules, entry.checklist_json):
         codes.add("checklist_incompleta")
+    tech = getattr(entry, "tech_json", None) or {}
+    codes |= {str(c) for c in (tech.get("violated") or [])}
     codes |= review_tags or set()
     return {c for c in codes if c}

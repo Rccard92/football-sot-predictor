@@ -67,6 +67,14 @@ from app.models.cecchino_xg_league_tag import CecchinoXgLeagueTag
 from app.models.app_user import AppLoginEvent, AppUser, AppUserSession
 from app.models.analyst_journal import AnalystCycle, AnalystEntry, AnalystEntryReview, AnalystMatchNote, AnalystSetting
 from app.models.analyst_extra import AnalystCalendarDay, AnalystInjury, AnalystLineup, AnalystOddsRead, AnalystTeamGame
+from app.models.analyst_capitolato import (
+    AnalystEntryChange,
+    AnalystEntryPhoto,
+    AnalystLeagueZones,
+    AnalystPaperPlay,
+    AnalystVenueGeo,
+    AnalystWeather,
+)
 from app.models.cecchino_v3 import (
     CecchinoV3EvaluatorPlay,
     CecchinoV3EvaluatorRun,
@@ -152,6 +160,12 @@ __all__ = [
     "AnalystLineup",
     "AnalystOddsRead",
     "AnalystTeamGame",
+    "AnalystEntryChange",
+    "AnalystEntryPhoto",
+    "AnalystLeagueZones",
+    "AnalystPaperPlay",
+    "AnalystVenueGeo",
+    "AnalystWeather",
     "ApiUsageEvent",
     "Base",
     "CecchinoGoalIntensityV5PreviewBundle",
