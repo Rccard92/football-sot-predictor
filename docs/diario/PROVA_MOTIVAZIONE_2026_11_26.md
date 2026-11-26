@@ -35,3 +35,22 @@ Altri avvisi (solo quante gare): «gara senza motivazioni» 665 prima e 665 dopo
   errori standard da zero. Resta un'ipotesi in prova, registrata sulla carta.
 - P27 scatta meno (417 → 285): la favorita a centro classifica decisa, lontana dalle zone, ora è «senza
   obiettivi» e non più «posizione decisa», e P27 conta solo la posizione decisa.
+
+## P27 nei due casi (seconda prova, 26/11/2026)
+
+Giovanni: P27 conta anche la favorita «senza obiettivi» (contro una squadra in lotta), tenuta distinta dalla
+favorita a «posizione decisa». Stesse 6.160 gare; favorita secca (1 o 2) e in doppia chance (1X o X2) alla quota
+Bet365 di apertura (la doppia chance solo dove il CSV ha la quota).
+
+| Caso | Gare | Favorita secca: vinte | unità | ROI | Doppia chance: gare | vinte | unità | ROI |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| P27 · posizione decisa | 285 | 157 | −16,06 | −5,6% | 275 | 219 | −8,03 | −2,9% |
+| P27 · senza obiettivi | 134 | 57 | −8,62 | −6,4% | 129 | 86 | −13,67 | −10,6% |
+
+Prima della regola del 26/11 la favorita «senza obiettivi» non c'era quasi mai (2 gare): i due casi insieme fanno
+419 gare, quasi le stesse 417 di prima, divise in due.
+
+Lettura: in entrambi i casi la favorita perde, quindi l'avviso «non giocare la favorita» regge. Con la posizione
+decisa la favorita secca perde circa quanto il margine del book (−5,6%) e la doppia chance meno (−2,9%); con la
+favorita senza obiettivi la doppia chance perde molto di più (−10,6%). Sono numeri piccoli (134 gare): da seguire
+nel pannello, riga per riga.
