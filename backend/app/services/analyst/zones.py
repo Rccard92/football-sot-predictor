@@ -53,8 +53,11 @@ def refresh_zones(db: Session, client: Any, now: datetime | None = None, *, max_
     todo = []
     for pair in sorted(pairs):
         z = have.get(pair)
-        fetched = z.fetched_at if z is None or z.fetched_at.tzinfo else z.fetched_at.replace(tzinfo=timezone.utc)
-        if z is None or now - fetched > (REFRESH if z.status == "ok" else RETRY):
+        if z is None:
+            todo.append(pair)
+            continue
+        fetched = z.fetched_at if z.fetched_at.tzinfo else z.fetched_at.replace(tzinfo=timezone.utc)
+        if now - fetched > (REFRESH if z.status == "ok" else RETRY):
             todo.append(pair)
     out = {"leagues": len(pairs), "calls": 0}
     for league_id, season_id in todo[:max_calls]:

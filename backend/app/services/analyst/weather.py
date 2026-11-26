@@ -140,7 +140,11 @@ def parse_forecast(body: dict[str, Any]) -> dict[str, Any] | None:
 def refresh_weather(db: Session, client: Any = None, now: datetime | None = None, *, max_calls: int = 20, http: Any = None) -> dict[str, int]:
     """Giro del Diario: previsione delle gare ammesse di oggi e domani (client API-Football non usato)."""
     now = now or datetime.now(timezone.utc)
-    matches = _admitted_upcoming(db, now)
+    # la stessa gara puo' stare nella scansione di oggi e in quella di domani: una sola previsione per gara
+    unique: dict[int, Any] = {}
+    for t, f in _admitted_upcoming(db, now):
+        unique.setdefault(int(f.id), (t, f))
+    matches = list(unique.values())
     out = {"fixtures": len(matches), "calls": 0, "nd": 0}
     if not matches:
         return out
