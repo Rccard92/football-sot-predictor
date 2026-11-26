@@ -92,7 +92,15 @@ def season_games(matches: list[Any], division: str) -> list[dict[str, Any]]:
                 continue
             qh, qa = m.bet365_home, m.bet365_away
             favorite = ("home" if qh < qa else "away" if qa < qh else None) if qh and qa else None
-            row = {"home_goals": m.ft_home_goals, "away_goals": m.ft_away_goals, "q_home": float(qh) if qh else None, "q_away": float(qa) if qa else None}
+            dc = getattr(m, "bet365_dc_1x", None) if favorite == "home" else getattr(m, "bet365_dc_x2", None) if favorite == "away" else None
+            row = {
+                "home_goals": m.ft_home_goals,
+                "away_goals": m.ft_away_goals,
+                "q_home": float(qh) if qh else None,
+                "q_away": float(qa) if qa else None,
+                "favorite": favorite,
+                "q_fav_dc": float(dc) if dc else None,
+            }
             for rule, gap in (("old", None), ("new", MIDDLE_NONE_GAP)):
                 hs = team_status(h, table, left, zones, descriptions=desc, middle_none_gap=gap)
                 as_ = team_status(a, table, left, zones, descriptions=desc, middle_none_gap=gap)
@@ -130,6 +138,27 @@ def _roi(rows: list[dict[str, Any]], sign: str) -> dict[str, Any]:
     }
 
 
+def _roi_favorite(rows: list[dict[str, Any]], double: bool) -> dict[str, Any]:
+    """Favorita secca (1 o 2) o in doppia chance (1X o X2) alla quota Bet365 di apertura."""
+    bets = []
+    for r in rows:
+        fav = r.get("favorite")
+        if fav not in ("home", "away"):
+            continue
+        hg, ag = r["home_goals"], r["away_goals"]
+        if double:
+            q = r.get("q_fav_dc")
+            won = hg >= ag if fav == "home" else ag >= hg
+        else:
+            q = r["q_home"] if fav == "home" else r["q_away"]
+            won = hg > ag if fav == "home" else ag > hg
+        if not q:
+            continue
+        bets.append(q - 1 if won else -1.0)
+    n = len(bets)
+    return {"games": n, "won": sum(1 for b in bets if b > 0), "units": round(sum(bets), 2), "roi_pct": round(100 * sum(bets) / n, 1) if n else None}
+
+
 def summarize(games: list[dict[str, Any]]) -> dict[str, Any]:
     out: dict[str, Any] = {"games_last_rounds": len(games)}
     for code, sign in ALERTS.items():
@@ -137,8 +166,16 @@ def summarize(games: list[dict[str, Any]]) -> dict[str, Any]:
         new = [g for g in games if code in g["new"]]
         added = [g for g in games if code in g["new"] and code not in g["old"]]
         out[code] = {"sign": sign, "before": _roi(old, sign), "after": _roi(new, sign), "added": _roi(added, sign)}
-    for code in ("senza_motivazioni", "p27"):
-        out[code] = {"before": sum(1 for g in games if code in g["old"]), "after": sum(1 for g in games if code in g["new"])}
+    out["senza_motivazioni"] = {"before": sum(1 for g in games if "senza_motivazioni" in g["old"]), "after": sum(1 for g in games if "senza_motivazioni" in g["new"])}
+    # 26/11/2026: P27 con la favorita a posizione decisa e con la favorita senza obiettivi, separati (regola nuova)
+    for code in ("p27", "p27_senza"):
+        rows = [g for g in games if code in g["new"]]
+        out[code] = {
+            "before": sum(1 for g in games if code in g["old"]),
+            "after": len(rows),
+            "favorite": _roi_favorite(rows, double=False),
+            "favorite_double_chance": _roi_favorite(rows, double=True),
+        }
     return out
 
 

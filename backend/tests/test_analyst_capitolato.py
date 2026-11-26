@@ -215,7 +215,10 @@ def test_p27_and_hypothesis_two():
     p27 = motivation_alerts(home="A", away="B", home_status={"status": STATUS_DECIDED}, away_status={"status": STATUS_GOAL}, remaining=None, favorite="home", schedule=None)
     assert p27[0]["code"] == "p27"
     h2 = motivation_alerts(home="A", away="B", home_status={"status": STATUS_NONE}, away_status={"status": STATUS_SAFETY}, remaining=None, favorite="home", schedule=None)
-    assert [x["code"] for x in h2] == ["ipotesi_2"]
+    # la casa favorita senza obiettivi contro una squadra in lotta: P27 senza obiettivi (26/11) e ipotesi 2
+    assert [x["code"] for x in h2] == ["p27_senza", "ipotesi_2"]
+    away_fav = motivation_alerts(home="A", away="B", home_status={"status": STATUS_NONE}, away_status={"status": STATUS_SAFETY}, remaining=None, favorite="away", schedule=None)
+    assert [x["code"] for x in away_fav] == ["ipotesi_2"]
 
 
 def test_end_of_season_only_in_the_last_eight_rounds_and_nd_without_zones():

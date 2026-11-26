@@ -231,6 +231,14 @@ def motivation_alerts(
                 "text": "⚠ P27 · favorita senza nulla da giocarsi contro una squadra in lotta: non giocare la favorita, né secca né in doppia chance (storico −9,4% secca, −7,1% doppia chance)",
             }
         )
+    elif fav_s == STATUS_NONE and other_s in fighting:
+        # 26/11/2026 (Giovanni): conta anche la favorita "senza obiettivi", tenuta distinta nel resoconto
+        out.append(
+            {
+                "code": "p27_senza",
+                "text": "⚠ P27 · favorita senza obiettivi contro una squadra in lotta: non giocare la favorita, né secca né in doppia chance",
+            }
+        )
     if hs in fighting and as_ == STATUS_NONE:
         out.append({"code": "casa_motivata", "text": "⚠ casa motivata, ma il book lo sa già: l'1 non rende (storico −5,2%)"})
     if hs == STATUS_NONE and as_ in fighting:

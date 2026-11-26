@@ -1337,6 +1337,44 @@ function RuleValuePanel({ value, rule, alert, onRule, onAlert }: { value: RuleVa
         </tbody>
       </table>
       <R1Verdict value={value} />
+      {value.alert_rows?.length ? (
+        <table className="mt-3 w-full max-w-2xl text-[13px] tabular-nums">
+          <thead>
+            <tr className="border-b border-slate-200 text-[12px] text-slate-500">
+              <th className="py-1 text-left font-medium">Giocate con l&apos;avviso P27</th>
+              <th className="py-1 text-right font-medium">Giocate</th>
+              <th className="py-1 text-right font-medium">Vinte</th>
+              <th className="py-1 text-right font-medium">Perse</th>
+              <th className="py-1 text-right font-medium">Unità</th>
+              <th className="py-1 text-right font-medium">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {value.alert_rows.map((g) => (
+              <tr key={g.key} className="border-b border-slate-100">
+                <td className="py-1.5">
+                  <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[12px] font-medium text-amber-800">{g.label}</span>
+                </td>
+                <td className="py-1.5 text-right">{g.entries}</td>
+                <td className="py-1.5 text-right">{g.won}</td>
+                <td className="py-1.5 text-right">{g.lost}</td>
+                <td className={`py-1.5 text-right font-semibold ${g.units > 0 ? 'text-emerald-700' : g.units < 0 ? 'text-rose-700' : ''}`}>{signedNum(g.settled ? g.units : null, ' u')}</td>
+                <td className="py-1.5 text-right">{signedNum(roiOf(g), '%')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {value.hypothesis_verdict ? (
+        <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[12px] text-amber-900">
+          Ipotesi 2 · per il verdetto contano solo le gare sulla carta dal 26/11/2026:{' '}
+          <b>
+            {value.hypothesis_verdict.settled} su {value.hypothesis_verdict.target}
+          </b>{' '}
+          chiuse
+          {value.hypothesis_verdict.settled ? ` (${value.hypothesis_verdict.won} vinte, ${signedNum(value.hypothesis_verdict.units, ' u')})` : ''}. Lo storico non conta.
+        </p>
+      ) : null}
       <p className="mt-1.5 text-[12px] text-slate-500">
         «Tolte dalle regole»: i segni bloccati che l&apos;analista ha scelto e non ha registrato come eccezione, salvati senza puntata con il loro esito. Se
         restano in perdita, la regola sta lavorando. Giudizio dopo 50 giocate, e anche dopo si continua a contare. Il filtro per regola vale per eccezioni e
