@@ -58,7 +58,7 @@ def zone_descriptions(teams: int, goal: int, danger: int) -> dict[str, str]:
     return out
 
 
-def _table(points: dict[str, int], won: dict[str, int], gd: dict[str, int], gf: dict[str, int], teams: list[str]) -> list[dict[str, Any]]:
+def _table(points: dict[int, int], won: dict[int, int], gd: dict[int, int], gf: dict[int, int], teams: list[int]) -> list[dict[str, Any]]:
     order = sorted(teams, key=lambda t: (-points[t], -gd[t], -gf[t], t))
     return [{"rank": i + 1, "team_id": t, "points": points[t], "won": won[t]} for i, t in enumerate(order)]
 
@@ -67,11 +67,13 @@ def season_games(matches: list[Any], division: str) -> list[dict[str, Any]]:
     """Gare delle ultime 8 giornate di una stagione con le due motivazioni (regola del 24/11 e del 26/11)."""
     rows = [m for m in matches if m.match_date and m.home_team and m.away_team and m.ft_home_goals is not None and m.ft_away_goals is not None]
     rows.sort(key=lambda m: (m.match_date, m.id))
-    teams = sorted({m.home_team for m in rows} | {m.away_team for m in rows})
+    names = sorted({m.home_team for m in rows} | {m.away_team for m in rows})
+    ids = {n: i + 1 for i, n in enumerate(names)}  # la motivazione lavora con id numerici
+    teams = list(ids.values())
     total = defaultdict(int)
     for m in rows:
-        total[m.home_team] += 1
-        total[m.away_team] += 1
+        total[ids[m.home_team]] += 1
+        total[ids[m.away_team]] += 1
     goal, danger = ZONES[division]
     desc = zone_descriptions(len(teams), goal, danger)
     zones = fasce(desc, len(teams))
@@ -85,7 +87,7 @@ def season_games(matches: list[Any], division: str) -> list[dict[str, Any]]:
         table = _table(points, won, gd, gf, teams)
         left = {t: total[t] - played[t] for t in teams}
         for m in games:
-            h, a = m.home_team, m.away_team
+            h, a = ids[m.home_team], ids[m.away_team]
             if min(left[h], left[a]) > LAST_ROUNDS or not zones:
                 continue
             qh, qa = m.bet365_home, m.bet365_away
@@ -94,11 +96,11 @@ def season_games(matches: list[Any], division: str) -> list[dict[str, Any]]:
             for rule, gap in (("old", None), ("new", MIDDLE_NONE_GAP)):
                 hs = team_status(h, table, left, zones, descriptions=desc, middle_none_gap=gap)
                 as_ = team_status(a, table, left, zones, descriptions=desc, middle_none_gap=gap)
-                alerts = motivation_alerts(home=h, away=a, home_status=hs, away_status=as_, remaining=None, favorite=favorite, schedule=None)
+                alerts = motivation_alerts(home=m.home_team, away=m.away_team, home_status=hs, away_status=as_, remaining=None, favorite=favorite, schedule=None)
                 row[rule] = {x["code"] for x in alerts}
             out.append(row)
         for m in games:
-            h, a, x, y = m.home_team, m.away_team, int(m.ft_home_goals), int(m.ft_away_goals)
+            h, a, x, y = ids[m.home_team], ids[m.away_team], int(m.ft_home_goals), int(m.ft_away_goals)
             for t, f_, s_ in ((h, x, y), (a, y, x)):
                 played[t] += 1
                 gd[t] += f_ - s_
