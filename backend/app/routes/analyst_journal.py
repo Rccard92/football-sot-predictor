@@ -810,6 +810,14 @@ def remove_photo(entry_id: int, photo_id: int, principal: Principal = Depends(jo
     return {"removed": photo_id}
 
 
+@router.get("/motivation-exam")
+def motivation_exam(start: bool = False, principal: Principal = Depends(journal_principal)) -> dict[str, Any]:
+    """Prova storica di "casa motivata" e "ipotesi 2" prima e dopo la regola del 26/11/2026 (in background)."""
+    from app.services.analyst.motivation_exam import exam_state
+
+    return exam_state(start=start)  # solo calcolo in memoria sui dati del Lab: non scrive niente
+
+
 @router.post("/paper")
 def paper_blocked(body: dict[str, Any], principal: Principal = Depends(journal_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     """L'analista ha scelto un segno bloccato (modifica 11): si salva sulla carta, senza puntata, con il suo esito.

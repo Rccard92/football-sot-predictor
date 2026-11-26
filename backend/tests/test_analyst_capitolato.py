@@ -167,9 +167,15 @@ def test_team_status_two_rounds_from_the_end():
     assert fourth["status"] == STATUS_GOAL
     seventeenth = team_status(17, table, left, zones, descriptions=ZONES20)
     assert seventeenth["status"] == STATUS_SAFETY
-    # a due giornate dalla fine il centro classifica e' una posizione decisa (fascia centro)
+    # 26/11 (Giovanni): centro deciso a piu' di 6 punti da entrambe le zone = senza obiettivi (43: 15 sotto, 13 sopra)
     middle = team_status(10, table, left, zones, descriptions=ZONES20)
-    assert middle["status"] == STATUS_DECIDED and "centro classifica" in middle["text"]
+    assert middle["status"] == STATUS_NONE and middle["text"].startswith("senza obiettivi (centro classifica deciso: 15 punti sotto")
+    # con la regola del 24/11 restava "posizione decisa"
+    old = team_status(10, table, left, zones, descriptions=ZONES20, middle_none_gap=None)
+    assert old["status"] == STATUS_DECIDED and "centro classifica" in old["text"]
+    # a 6 punti o meno da una zona resta "posizione decisa"
+    near = _table([85, 75, 60, 58, 54, 48, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 37, 20, 15])
+    assert team_status(16, near, left, zones, descriptions=ZONES20)["status"] != STATUS_NONE
 
 
 def test_brazil_tie_on_points_is_decided_by_wins():
@@ -276,3 +282,62 @@ def test_quota_gap_over_three_percent():
     assert quota_gap(1.85, 1.80) is None  # +2,8%: nessun avviso
     gap = quota_gap(1.90, 1.80)
     assert gap["text"] == "La quota presa è diversa da quella del tool di 6%: controlla"
+
+def test_motivation_exam_rebuilds_the_last_rounds_of_a_season():
+    from datetime import date, timedelta
+
+    from app.services.analyst.motivation_exam import season_games, summarize
+
+    teams = list("ABCDEFGH")
+    matches, n = [], 0
+    for i, h in enumerate(teams):
+        for a in teams[i + 1 :]:
+            n += 1
+            matches.append(
+                SimpleNamespace(
+                    id=n,
+                    match_date=date(2026, 1, 1) + timedelta(days=n // 4),
+                    home_team=h,
+                    away_team=a,
+                    ft_home_goals=(n * 7) % 3,
+                    ft_away_goals=(n * 5) % 2,
+                    bet365_home=2.0,
+                    bet365_away=3.5,
+                )
+            )
+    rows = season_games(matches, "D2")
+    assert len(rows) == 28  # ogni squadra gioca 7 gare: tutte nelle ultime 8 giornate
+    assert all("old" in r and "new" in r for r in rows)
+    out = summarize(rows)
+    assert set(out) >= {"casa_motivata", "ipotesi_2", "games_last_rounds"}
+    assert out["casa_motivata"]["added"]["games"] <= out["casa_motivata"]["after"]["games"]
+
+
+def test_second_read_only_for_games_with_a_sign_in_range():
+    from app.services.analyst.odds_reads import READ_UNTIL, has_sign_in_range
+
+    assert READ_UNTIL is None  # fissa dal 26/11/2026
+    rows = [
+        {"market_key": "HOME", "quota_book": 1.20, "quota_cecchino": 1.25},
+        {"market_key": "DRAW", "quota_book": 6.0, "quota_cecchino": 5.5},
+        {"market_key": "AWAY", "quota_book": 12.0, "quota_cecchino": 10.0},
+        {"market_key": "OVER_3_5", "quota_book": 2.0, "quota_cecchino": 2.0},
+    ]
+    outside = SimpleNamespace(kpi_panel_json={"rows": rows})
+    assert has_sign_in_range(RULES, outside) is False
+    inside = SimpleNamespace(kpi_panel_json={"rows": rows + [{"market_key": "ONE_X", "quota_book": 1.40, "quota_cecchino": 1.45}]})
+    assert has_sign_in_range(RULES, inside) is True
+
+
+def test_weather_uses_the_home_team_city_when_the_venue_has_none():
+    from app.services.analyst.weather import home_city
+
+    team = SimpleNamespace(raw_json={"venue": {"city": "Castellammare di Stabia, Campania"}})
+
+    class Db:
+        def get(self, _model, _id):
+            return team
+
+    cache: dict = {}
+    assert home_city(Db(), 5, cache) == "Castellammare di Stabia"
+    assert cache[5] == "Castellammare di Stabia"

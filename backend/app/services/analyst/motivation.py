@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 LAST_ROUNDS = 8
+MIDDLE_NONE_GAP = 6  # 26/11/2026: centro deciso a piu' di 6 punti da entrambe le zone = "senza obiettivi" (None = regola del 24/11)
 CLOSE_DAYS = 2
 CUP_TURNOVER_DAYS = 4
 
@@ -85,6 +86,7 @@ def team_status(
     *,
     descriptions: dict[str, Any],
     wins_tiebreak: bool = False,
+    middle_none_gap: int | None = MIDDLE_NONE_GAP,
 ) -> dict[str, Any] | None:
     """Stato di motivazione di una squadra con la classifica alla data (rank, points, won) e le gare che restano."""
     me = next((r for r in table if int(r["team_id"]) == int(team_id)), None)
@@ -110,8 +112,32 @@ def team_status(
     best, worst = min(best, n), min(worst, n)
     by_rank = {int(t["rank"]): t for t in table}
     rank = int(me["rank"])
+    goal_ranks = [i + 1 for i, z in enumerate(zones) if z == ZONE_GOAL] or [1]
+    danger_ranks = [i + 1 for i, z in enumerate(zones) if z == ZONE_DANGER]
+    goal_holder = by_rank.get(max(goal_ranks))
+    danger_holder = by_rank.get(min(danger_ranks)) if danger_ranks else None
+    gap_goal = int(goal_holder["points"]) - p if goal_holder is not None else None
+    gap_danger = p - int(danger_holder["points"]) if danger_holder is not None else None
     if zones[best - 1] == zones[worst - 1]:
         zone = zones[best - 1]
+        # 26/11/2026 (Giovanni): il centro classifica deciso conta come "senza obiettivi" se la squadra e' a piu'
+        # di 6 punti sia dalla zona Europa/promozione sia dalla zona retrocessione/playout
+        if (
+            middle_none_gap is not None
+            and zone == ZONE_MIDDLE
+            and gap_goal is not None
+            and gap_danger is not None
+            and gap_goal > middle_none_gap
+            and gap_danger > middle_none_gap
+        ):
+            words = goal_words(descriptions.get(str(max(goal_ranks))))
+            return {
+                "status": STATUS_NONE,
+                "text": f"senza obiettivi (centro classifica deciso: {gap_goal} punti sotto {words}, {gap_danger} sopra la zona retrocessione)",
+                "best": best,
+                "worst": worst,
+                "rank": rank,
+            }
         if zone == ZONE_DANGER:
             what = "retrocessa"
         elif best == worst:
